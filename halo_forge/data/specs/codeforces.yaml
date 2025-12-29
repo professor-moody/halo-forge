@@ -1,0 +1,21 @@
+# CodeForces C++ Dataset Specification
+# Competitive programming solutions with reasoning
+
+name: codeforces_cpp
+hf_path: open-r1/codeforces-cots
+hf_split: train
+prompt_field: problem
+response_field: solution
+reasoning_field: reasoning
+language_field: language
+language_filter: cpp
+difficulty_field: difficulty
+tags_field: topics
+max_examples: 4000
+system_prompt: "You are an expert competitive programmer. Solve problems efficiently with optimal time and space complexity."
+include_reasoning: true
+
+# Also available:
+# - codeforces_python (language_filter: python, max_examples: 1000)
+# - codeforces_rust (language_filter: rust, max_examples: 500)
+

@@ -1,0 +1,33 @@
+# Rust Async Topic Specification
+# For LLM-powered generation of async Rust examples
+
+name: rust_async
+description: Async Rust programming with tokio
+
+categories:
+  - http_client
+  - file_io
+  - channels
+  - timers
+  - tcp_server
+
+complexity_levels:
+  - beginner
+  - intermediate
+  - advanced
+
+examples_per_category: 20
+
+required_patterns:
+  - "use tokio"
+
+forbidden_patterns:
+  - "unwrap()"
+
+style_guide: |
+  Use anyhow for error handling.
+  Use async fn main with #[tokio::main].
+  Prefer structured concurrency patterns.
+
+system_prompt: "You are an expert Rust programmer. Write safe, efficient async Rust code."
+

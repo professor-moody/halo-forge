@@ -1,0 +1,33 @@
+# Python Testing Topic Specification
+# For LLM-powered generation of pytest examples
+
+name: python_testing
+description: Python unit testing with pytest
+
+categories:
+  - unit_tests
+  - fixtures
+  - mocking
+  - parametrize
+  - async_tests
+
+complexity_levels:
+  - simple
+  - medium
+  - complex
+
+examples_per_category: 30
+
+required_patterns:
+  - "import pytest"
+
+forbidden_patterns: []
+
+style_guide: |
+  Use pytest idioms, not unittest.
+  Include clear docstrings for test functions.
+  Use fixtures appropriately.
+  Show proper assertion messages.
+
+system_prompt: "You are an expert Python developer specializing in testing."
+

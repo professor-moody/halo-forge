@@ -1,0 +1,12 @@
+# MBPP (Mostly Basic Python Problems) Dataset Specification
+# Simple Python function implementations from Google
+
+name: mbpp
+hf_path: google-research-datasets/mbpp
+hf_split: train
+prompt_field: text
+response_field: code
+max_examples: 500
+system_prompt: "You are an expert Python programmer. Write clean, efficient Python code."
+include_reasoning: false
+
