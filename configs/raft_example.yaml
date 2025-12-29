@@ -1,0 +1,42 @@
+# RAFT Training Configuration
+# Copy to configs/raft.yaml and customize
+
+# Model paths
+sft_checkpoint: models/sft/final_model
+output_dir: models/raft
+prompts: data/prompts.jsonl
+
+# RAFT parameters
+raft:
+  num_cycles: 5
+  samples_per_prompt: 8
+  reward_threshold: 0.5  # Keep samples with reward >= 0.5
+  keep_top_percent: 0.5  # Keep top 50% of samples above threshold
+
+# Generation settings
+generation:
+  max_new_tokens: 1024
+  temperature: 0.7
+  batch_size: 4
+
+# Training settings (per cycle)
+training:
+  epochs: 1
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  learning_rate: 5e-5
+
+# Verifier settings
+verifier:
+  type: gcc  # gcc, mingw, msvc, pytest
+  
+  # For MSVC remote compilation:
+  # type: msvc
+  # host: 192.168.1.100
+  # user: developer
+  # ssh_key: ~/.ssh/win
+  
+  # For pytest verification:
+  # type: pytest
+  # timeout: 60
+
