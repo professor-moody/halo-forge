@@ -1,0 +1,34 @@
+# halo-forge requirements
+# Note: torch is provided by the custom toolbox with ROCm support
+# If running outside toolbox, install torch separately with ROCm
+
+# Core ML
+transformers>=4.46.0
+peft>=0.13.0
+datasets>=2.14.0
+trl>=0.12.0
+accelerate
+bitsandbytes
+scipy
+sentencepiece
+protobuf
+einops
+
+# Data generation
+requests>=2.31.0
+pyyaml>=6.0
+tqdm
+jsonlines
+
+# Monitoring
+tensorboard
+wandb
+
+# Utilities
+pandas
+matplotlib
+
+# Optional: LLM backends for data generation
+# anthropic>=0.18.0
+# openai>=1.0.0
+

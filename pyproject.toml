@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "halo-forge"
+version = "0.1.0"
+description = "Complete RLVR training framework for AMD Strix Halo"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "keys"}
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["llm", "fine-tuning", "rlvr", "raft", "amd", "strix-halo", "rocm"]
+
+dependencies = [
+    "torch>=2.1.0",
+    "transformers>=4.46.0",
+    "peft>=0.13.0",
+    "datasets>=2.14.0",
+    "trl>=0.12.0",
+    "accelerate",
+    "pyyaml>=6.0",
+    "requests>=2.31.0",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+]
+llm-backends = [
+    "anthropic>=0.18.0",
+    "openai>=1.0.0",
+]
+
+[project.scripts]
+halo-forge = "halo_forge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/keys/halo-forge"
+Documentation = "https://github.com/keys/halo-forge/tree/main/docs"
+Repository = "https://github.com/keys/halo-forge"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["halo_forge*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
