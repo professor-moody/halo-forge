@@ -135,13 +135,20 @@ ROCm 7 on gfx1151 has specific requirements:
 2. **Native wheels**: Use scottt's PyTorch builds, not emulation
 3. **Kernel serialization**: `AMD_SERIALIZE_KERNEL=1` for debugging
 
-### Memory-Efficient Training
+### Memory Usage (Strix Halo)
 
-QLoRA with our settings:
-- 4-bit quantization: ~4GB for 7B model weights
-- LoRA adapters: ~100MB trainable parameters
-- Activations: 10-20GB during training
-- **Total**: ~25GB for 7B model training
+Actual observed memory during 7B bf16 LoRA training (2048 seq len):
+
+| Metric | Value |
+|--------|-------|
+| **GTT (GPU system memory)** | ~62GB |
+| **VRAM (dedicated)** | ~1GB |
+| **Total system RAM** | ~71GB |
+| **GPU utilization** | 100% |
+
+The GTT (Graphics Translation Table) is where unified memory training happens. Monitor with `radeontop` or similar tools.
+
+**Note**: `torch.cuda.max_memory_allocated()` reports incorrectly on unified memory architecture - it shows ~24GB when actual usage is ~62GB. Always verify with system tools.
 
 ## Observations from Training
 

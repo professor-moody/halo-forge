@@ -70,6 +70,52 @@ Your home directory is automatically mounted in the toolbox:
 - Models, datasets, checkpoints all persist
 - HuggingFace cache at `~/.cache/huggingface/`
 
+## Known Issues
+
+### bitsandbytes (4-bit Quantization)
+
+The ROCm 7 PyTorch wheels may have a version mismatch with bitsandbytes:
+
+```
+RuntimeError: Configured ROCm binary not found at .../libbitsandbytes_rocm65.so
+```
+
+**Workaround**: Use bf16 training without quantization. With 96GB+ unified memory, you don't need 4-bit quantization:
+
+```python
+# Use bf16 instead of QLoRA 4-bit:
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.bfloat16,  # Full bf16
+    device_map="auto"
+)
+```
+
+**Actual memory usage (7B model, 2048 seq len, bf16 LoRA)**:
+
+| Metric | Observed |
+|--------|----------|
+| GTT (GPU system memory) | ~62GB |
+| VRAM (dedicated) | ~1GB |
+| Total system RAM | ~71GB |
+| GPU utilization | 100% |
+
+With 96-128GB unified memory, bf16 LoRA is recommended over 4-bit QLoRA.
+
+**Memory monitoring**: Use `radeontop` (install via `cargo install radeontop`) to see GTT usage. PyTorch's `torch.cuda.max_memory_allocated()` reports incorrectly (~24GB when actual is ~62GB).
+
+**To fix bitsandbytes** (compile from source):
+
+```bash
+pip uninstall bitsandbytes
+git clone https://github.com/bitsandbytes-foundation/bitsandbytes
+cd bitsandbytes
+pip install -r requirements-dev.txt
+cmake -DCOMPUTE_BACKEND=hip -S .
+make
+pip install .
+```
+
 ## Troubleshooting
 
 ### GPU not visible
