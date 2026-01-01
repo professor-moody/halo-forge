@@ -168,7 +168,7 @@ class SFTTrainer:
         
         if total_memory_gb < 25:
             print(f"\nWARNING: Only {total_memory_gb:.1f} GB detected!")
-            print("Expected: ~96GB for Strix Halo")
+            print("Expected: ~128GB for Strix Halo")
         else:
             print("Memory check passed")
         

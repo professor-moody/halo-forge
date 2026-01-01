@@ -1,25 +1,25 @@
 # SFT Training Configuration
+# Optimized for AMD Strix Halo (gfx1151)
+#
 # Copy to configs/sft.yaml and customize
 
 model:
   name: Qwen/Qwen2.5-Coder-7B
   trust_remote_code: true
-  attn_implementation: eager  # Required for ROCm
+  attn_implementation: eager  # Or flash_attention_2 with ROCm fork
 
 data:
   train_file: data/train.jsonl
   validation_split: 0.05
   max_seq_length: 2048
 
-qlora:
-  load_in_4bit: true
-  bnb_4bit_quant_type: nf4
-  bnb_4bit_compute_dtype: bfloat16
-  bnb_4bit_use_double_quant: true
-  
-  lora_r: 16
-  lora_alpha: 32
-  lora_dropout: 0.05
+# LoRA configuration (BF16 - optimal for Strix Halo)
+# NOTE: 4-bit quantization is 2x SLOWER on Strix Halo due to
+# compute-bound workload and dequantization overhead. Use BF16.
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
   target_modules:
     - q_proj
     - k_proj
@@ -55,4 +55,7 @@ training:
   eval_strategy: steps
   eval_steps: 250
   load_best_model_at_end: true
-
+  
+  # CRITICAL for Strix Halo unified memory - prevents GPU hangs
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false

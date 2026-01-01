@@ -4,9 +4,9 @@ Get started with halo-forge in under 30 minutes.
 
 ## Prerequisites
 
-- AMD Strix Halo hardware (or other ROCm-compatible GPU)
+- AMD Strix Halo hardware (gfx1151) with 128GB unified memory
 - Fedora 42+ with podman/toolbox
-- 64GB+ RAM recommended
+- Kernel 6.16+ recommended for gfx1151 support
 
 ## 1. Build the Toolbox
 
@@ -30,7 +30,7 @@ halo-forge info
 
 # Expected output for Strix Halo:
 # GPU: AMD Radeon Graphics
-# Memory: ~96 GB
+# Memory: ~128 GB unified
 # Strix Halo: Yes
 ```
 

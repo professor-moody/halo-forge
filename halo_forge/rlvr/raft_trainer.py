@@ -448,6 +448,14 @@ class RAFTTrainer:
                 for line in f:
                     all_data.append(json.loads(line))
             
+            # FREE MEMORY: samples not needed when loading from verified cache
+            try:
+                del samples
+            except NameError:
+                pass
+            gc.collect()
+            print("🧹 Freed cached samples memory")
+            
             # Apply filtering
             cfg = self.config
             above_threshold = [d for d in all_data if d['reward'] >= cfg.reward_threshold]

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Fedora 42+ with toolbox/podman installed
-- AMD Strix Halo hardware (gfx1151)
+- AMD Strix Halo hardware (gfx1151) with 128GB unified memory
 - Kernel 6.16+ recommended (eliminates need for kernel parameters)
 
 ### Kernel Parameters (if kernel < 6.16)
@@ -30,8 +30,10 @@ chmod +x build.sh
 
 This builds a container image with:
 - Fedora 42 base
-- Python 3.11
-- PyTorch 2.7 with ROCm support (scottt's wheel)
+- ROCm 7 nightly from TheRock
+- PyTorch nightly from AMD gfx1151 nightlies
+- bitsandbytes built from upstream with gfx1151 target
+- Flash Attention from ROCm fork (main_perf branch)
 - All ML libraries (transformers, peft, trl, etc.)
 
 ## Create and Enter
@@ -60,8 +62,10 @@ Expected output:
 ```
 ROCm: True
 GPU: AMD Radeon(TM) Graphics
-Memory: 96.0 GB
+Memory: ~25-30 GB (VRAM cache, actual unified memory is 128GB)
 ```
+
+> **Note:** PyTorch reports VRAM allocation, not full unified memory. Use `radeontop` to see actual GTT usage.
 
 ## Persistence
 
@@ -70,51 +74,51 @@ Your home directory is automatically mounted in the toolbox:
 - Models, datasets, checkpoints all persist
 - HuggingFace cache at `~/.cache/huggingface/`
 
-## Known Issues
+## Recommended Settings
 
-### bitsandbytes (4-bit Quantization)
+### Use BF16 (NOT 4-bit)
 
-The ROCm 7 PyTorch wheels may have a version mismatch with bitsandbytes:
-
-```
-RuntimeError: Configured ROCm binary not found at .../libbitsandbytes_rocm65.so
-```
-
-**Workaround**: Use bf16 training without quantization. With 96GB+ unified memory, you don't need 4-bit quantization:
+4-bit quantization is **2x slower** on Strix Halo due to compute-bound workload and dequantization overhead. Use BF16:
 
 ```python
-# Use bf16 instead of QLoRA 4-bit:
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.bfloat16,  # Full bf16
-    device_map="auto"
+    torch_dtype=torch.bfloat16,  # Optimal for Strix Halo
+    device_map="auto",
+    attn_implementation="eager"  # Or flash_attention_2 with ROCm fork
 )
 ```
 
-**Actual memory usage (7B model, 2048 seq len, bf16 LoRA)**:
+### Dataloader Settings
+
+Critical for unified memory architecture:
+
+```yaml
+training:
+  dataloader_num_workers: 0   # Required - prevents GPU hangs
+  dataloader_pin_memory: false # Required - prevents GPU hangs
+```
+
+### Actual Memory Usage (7B model, 2048 seq len, BF16 LoRA)
 
 | Metric | Observed |
 |--------|----------|
 | GTT (GPU system memory) | ~62GB |
-| VRAM (dedicated) | ~1GB |
+| VRAM (dedicated cache) | ~1GB |
 | Total system RAM | ~71GB |
-| GPU utilization | 100% |
+| GPU utilization | 95-99% |
 
-With 96-128GB unified memory, bf16 LoRA is recommended over 4-bit QLoRA.
-
-**Memory monitoring**: Use `radeontop` (install via `cargo install radeontop`) to see GTT usage. PyTorch's `torch.cuda.max_memory_allocated()` reports incorrectly (~24GB when actual is ~62GB).
-
-**To fix bitsandbytes** (compile from source):
+## Memory Monitoring
 
 ```bash
-pip uninstall bitsandbytes
-git clone https://github.com/bitsandbytes-foundation/bitsandbytes
-cd bitsandbytes
-pip install -r requirements-dev.txt
-cmake -DCOMPUTE_BACKEND=hip -S .
-make
-pip install .
+# Real-time GPU stats
+radeontop
+
+# Or use rocm-smi
+watch -n 1 rocm-smi
 ```
+
+> **Note:** PyTorch's `torch.cuda.max_memory_allocated()` reports VRAM only (~24GB), not GTT. Use `radeontop` for accurate unified memory usage.
 
 ## Troubleshooting
 
@@ -138,7 +142,20 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 Ensure kernel parameters are set correctly. With kernel 6.16+, this should not be needed.
 
-### Performance issues
+### GPU hang during training
 
-gfx1151 training is 30-40x slower than H100. This is expected due to driver maturity. See `docs/HARDWARE_NOTES.md` for optimization tips.
+1. Ensure `dataloader_num_workers: 0`
+2. Ensure `dataloader_pin_memory: false`
+3. Add `export HSA_ENABLE_SDMA=0` to your environment
 
+### Slow generation
+
+1. Verify using BF16 (not 4-bit quantization)
+2. Check GPU is at 95%+ compute utilization
+3. Ensure only one training process running
+
+See `docs/HARDWARE_NOTES.md` for detailed optimization guidance.
+
+## Acknowledgments
+
+Based on [kyuz0/amd-strix-halo-llm-finetuning](https://github.com/kyuz0/amd-strix-halo-llm-finetuning) with community improvements.

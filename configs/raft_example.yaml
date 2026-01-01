@@ -1,4 +1,6 @@
 # RAFT Training Configuration
+# Optimized for AMD Strix Halo (gfx1151)
+#
 # Copy to configs/raft.yaml and customize
 
 # Model paths
@@ -17,7 +19,7 @@ raft:
 generation:
   max_new_tokens: 1024
   temperature: 0.7
-  batch_size: 4
+  batch_size: 8  # Can be higher on Strix Halo with 128GB
 
 # Training settings (per cycle)
 training:
@@ -25,6 +27,17 @@ training:
   batch_size: 2
   gradient_accumulation_steps: 16
   learning_rate: 5e-5
+  warmup_steps: 10
+  
+  # CRITICAL for Strix Halo unified memory
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# Hardware settings (Strix Halo optimized)
+hardware:
+  bf16: true
+  gradient_checkpointing: true
+  attn_implementation: eager  # Or flash_attention_2 with ROCm fork
 
 # Verifier settings
 verifier:
@@ -39,4 +52,3 @@ verifier:
   # For pytest verification:
   # type: pytest
   # timeout: 60
-

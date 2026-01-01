@@ -51,18 +51,20 @@ halo-forge benchmark --model ./models/raft/cycle_3 --prompts data/prompts.jsonl
 
 ## Hardware Requirements
 
-- **AMD Strix Halo** (gfx1151) with 96GB unified memory
+- **AMD Strix Halo** (gfx1151) with 128GB unified memory
 - **Storage**: 100GB+ for models and datasets
 - **OS**: Fedora 42+ recommended (for toolbox support)
 
 ### Performance Notes
 
-gfx1151 training is currently 30-40x slower than NVIDIA H100 due to driver maturity. This framework is optimized for this hardware with:
+This framework is optimized for Strix Halo with:
 
-- Eager attention (Flash Attention not stable on gfx1151)
+- **BF16 precision** (optimal - 4-bit is 2x slower due to compute-bound workload)
+- **Flash Attention** via ROCm fork (main_perf branch)
 - Gradient checkpointing enabled by default
-- bf16 mixed precision
-- Memory-efficient batch sizes
+- Large batch sizes enabled by 128GB unified memory
+
+> **Note:** Training on Strix Halo is slower than datacenter GPUs (A100/H100) but the 128GB unified memory enables training 7B+ models without VRAM limitations.
 
 ## Documentation
 
