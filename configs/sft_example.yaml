@@ -1,61 +1,184 @@
+# =============================================================================
 # SFT Training Configuration
-# Optimized for AMD Strix Halo (gfx1151)
+# =============================================================================
+# Optimized for AMD Strix Halo (gfx1151) with 128GB unified memory.
 #
-# Copy to configs/sft.yaml and customize
+# Usage:
+#   halo-forge sft train --config configs/sft_example.yaml
+#
+# Copy this file and customize for your use case.
+# =============================================================================
 
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
 model:
+  # Base model from HuggingFace
+  # Recommended: Qwen2.5-Coder series for code generation
   name: Qwen/Qwen2.5-Coder-7B
+  
+  # Required for some models (Qwen, Mistral, etc.)
   trust_remote_code: true
-  attn_implementation: eager  # Or flash_attention_2 with ROCm fork
+  
+  # Attention implementation
+  # Options:
+  #   - "eager": Standard attention (always works)
+  #   - "flash_attention_2": Faster, requires ROCm Flash Attention fork
+  # Note: Flash Attention works on Strix Halo via ROCm fork (main_perf branch)
+  attn_implementation: eager
 
+# -----------------------------------------------------------------------------
+# Data Configuration
+# -----------------------------------------------------------------------------
 data:
+  # Path to training data in JSONL format
+  # Each line should have a "text" field with the formatted conversation
   train_file: data/train.jsonl
+  
+  # Fraction of data to use for validation (0.0 to 1.0)
+  # Validation is used for early stopping and checkpoint selection
   validation_split: 0.05
+  
+  # Maximum sequence length in tokens
+  # Longer sequences use more memory but capture more context
+  # Recommended: 2048 for most code tasks, 4096 for complex tasks
   max_seq_length: 2048
 
-# LoRA configuration (BF16 - optimal for Strix Halo)
-# NOTE: 4-bit quantization is 2x SLOWER on Strix Halo due to
-# compute-bound workload and dequantization overhead. Use BF16.
+# -----------------------------------------------------------------------------
+# LoRA Configuration
+# -----------------------------------------------------------------------------
+# LoRA (Low-Rank Adaptation) enables memory-efficient fine-tuning
+# by training small adapter weights instead of full model weights.
+#
+# IMPORTANT: BF16 LoRA is optimal for Strix Halo.
+# 4-bit quantization (QLoRA) is 2x SLOWER due to:
+#   - Compute-bound workload (GPU at 96-99% utilization)
+#   - Dequantization overhead with no memory benefit
+#   - 128GB unified memory means you're never VRAM-limited
+# -----------------------------------------------------------------------------
 lora:
+  # LoRA rank (r): Number of low-rank dimensions
+  # Higher = more capacity but more memory and slower
+  # Recommended: 16 for most tasks, 32-64 for complex tasks
   r: 16
+  
+  # LoRA alpha: Scaling factor for LoRA weights
+  # Typically set to 2x the rank
   alpha: 32
+  
+  # Dropout rate for LoRA layers
+  # Helps prevent overfitting
   dropout: 0.05
+  
+  # Modules to apply LoRA to
+  # These are the attention and MLP layers for Qwen models
+  # Other models may have different module names
   target_modules:
-    - q_proj
-    - k_proj
-    - v_proj
-    - o_proj
-    - gate_proj
-    - up_proj
-    - down_proj
+    - q_proj    # Query projection
+    - k_proj    # Key projection
+    - v_proj    # Value projection
+    - o_proj    # Output projection
+    - gate_proj # MLP gate
+    - up_proj   # MLP up projection
+    - down_proj # MLP down projection
 
+# -----------------------------------------------------------------------------
+# Training Configuration
+# -----------------------------------------------------------------------------
 training:
+  # Directory to save checkpoints and logs
   output_dir: models/sft
+  
+  # Number of training epochs
+  # More epochs = more training but risk of overfitting
+  # Recommended: 3 for initial training, 1 for quick tests
   num_train_epochs: 3
   
+  # Batch size per GPU
+  # Limited by GPU memory. With 128GB unified memory, 2 works well.
+  # Increase if you have headroom, decrease if OOM
   per_device_train_batch_size: 2
+  
+  # Same for evaluation
   per_device_eval_batch_size: 2
+  
+  # Gradient accumulation steps
+  # Effective batch size = batch_size * gradient_accumulation_steps
+  # Example: 2 * 16 = 32 effective batch size
   gradient_accumulation_steps: 16
   
+  # Learning rate
+  # Higher = faster learning but may overshoot
+  # Recommended: 2e-4 for SFT, 5e-5 for RAFT
   learning_rate: 2e-4
+  
+  # Warmup ratio (fraction of training for warmup)
+  # Gradually increases LR from 0 to target
   warmup_ratio: 0.03
+  
+  # Learning rate scheduler type
+  # "cosine": Smooth decay, recommended for most tasks
+  # "linear": Linear decay
+  # "constant": No decay
   lr_scheduler_type: cosine
   
+  # Weight decay for regularization
   weight_decay: 0.01
+  
+  # Maximum gradient norm for clipping
+  # Prevents exploding gradients
   max_grad_norm: 0.3
   
+  # -----------------------------------------------------------------------------
+  # Memory Optimization
+  # -----------------------------------------------------------------------------
+  
+  # Gradient checkpointing: Trade compute for memory
+  # Recomputes activations during backward pass instead of storing them
+  # Essential for 7B+ models
   gradient_checkpointing: true
+  
+  # Use BF16 precision (16-bit brain floating point)
+  # Optimal for Strix Halo - do NOT use 4-bit quantization
   bf16: true
   
+  # -----------------------------------------------------------------------------
+  # Logging and Checkpoints
+  # -----------------------------------------------------------------------------
+  
+  # Log every N steps
   logging_steps: 10
+  
+  # Save checkpoint strategy
+  # "steps": Save every N steps
+  # "epoch": Save every epoch
   save_strategy: steps
+  
+  # Save checkpoint every N steps
   save_steps: 500
+  
+  # Maximum checkpoints to keep (deletes oldest)
   save_total_limit: 3
   
+  # Evaluation strategy (same options as save_strategy)
   eval_strategy: steps
+  
+  # Evaluate every N steps
   eval_steps: 250
+  
+  # Load best model at end based on eval loss
   load_best_model_at_end: true
   
-  # CRITICAL for Strix Halo unified memory - prevents GPU hangs
+  # -----------------------------------------------------------------------------
+  # CRITICAL: Strix Halo Unified Memory Settings
+  # -----------------------------------------------------------------------------
+  # These settings are REQUIRED for stable training on Strix Halo.
+  # The unified memory architecture requires special handling.
+  
+  # Number of dataloader workers
+  # MUST be 0 for Strix Halo - multiprocess dataloading causes GPU hangs
   dataloader_num_workers: 0
+  
+  # Pin memory for dataloaders
+  # MUST be false for Strix Halo - pinned memory doesn't work with unified memory
   dataloader_pin_memory: false

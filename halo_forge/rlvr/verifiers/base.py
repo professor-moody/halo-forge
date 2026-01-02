@@ -3,13 +3,53 @@ Abstract Verifier Interface
 
 Base class for all verifiers used in RLVR training.
 Verifiers check generated code and return rewards.
+
+Reward Levels (graduated rewards):
+- 0.0: Complete failure (syntax errors, doesn't compile)
+- 0.3: Compiles with warnings
+- 0.5: Compiles clean
+- 0.7: Runs without crash
+- 1.0: Produces correct output
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from enum import Enum
+from typing import List, Optional, Dict, Any, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
+
+
+class RewardLevel(Enum):
+    """
+    Standard reward levels for graduated verification.
+    
+    Use these to provide partial credit for near-successes,
+    which helps gradient flow during training.
+    """
+    FAILURE = 0.0           # Complete failure (syntax errors)
+    COMPILE_WARNINGS = 0.3  # Compiles with warnings
+    COMPILE_CLEAN = 0.5     # Compiles without warnings
+    RUNS_NO_CRASH = 0.7     # Executes without crashing
+    CORRECT_OUTPUT = 1.0    # Produces correct output
+    
+    @classmethod
+    def from_compile_result(cls, success: bool, has_warnings: bool = False) -> float:
+        """Get reward from compilation result."""
+        if not success:
+            return cls.FAILURE.value
+        return cls.COMPILE_WARNINGS.value if has_warnings else cls.COMPILE_CLEAN.value
+    
+    @classmethod
+    def from_execution_result(cls, compiles: bool, runs: bool, correct: bool) -> float:
+        """Get reward from full execution result."""
+        if not compiles:
+            return cls.FAILURE.value
+        if not runs:
+            return cls.COMPILE_CLEAN.value
+        if not correct:
+            return cls.RUNS_NO_CRASH.value
+        return cls.CORRECT_OUTPUT.value
 
 
 @dataclass
@@ -17,7 +57,7 @@ class VerifyResult:
     """Result from verifying a code sample."""
     
     success: bool
-    reward: float  # 0.0 to 1.0
+    reward: float  # 0.0 to 1.0 (see RewardLevel for standard values)
     details: str   # Human-readable explanation
     error: Optional[str] = None  # Error message if failed
     metadata: Dict[str, Any] = field(default_factory=dict)  # Additional info

@@ -116,14 +116,17 @@ HumanEval and MBPP showed:
 
 ### Unified Memory Architecture
 
-Strix Halo's 96GB unified memory changes training dynamics:
+Strix Halo's 128GB unified memory changes training dynamics:
 
 1. **No GPU memory limit worry**: Can load 14B models in bf16
-2. **But slower than discrete**: Bandwidth is lower than VRAM
+2. **Compute-bound, not memory-bound**: GPU runs at 96-99% utilization
 3. **CPU-GPU coordination**: Need to avoid ping-ponging
 
+**Key insight**: Because Strix Halo is compute-bound (not memory-bound), 4-bit quantization is actually 2x slower than BF16 due to dequantization overhead with no memory benefit.
+
 **Our optimizations**:
-- `dataloader_num_workers=0` (avoid multiprocess issues)
+- `bf16=True` (optimal precision, NOT 4-bit)
+- `dataloader_num_workers=0` (avoid multiprocess issues with unified memory)
 - `dataloader_pin_memory=False` (unified memory doesn't benefit)
 - `gradient_checkpointing` with `use_reentrant=False` (ROCm stability)
 
@@ -131,24 +134,24 @@ Strix Halo's 96GB unified memory changes training dynamics:
 
 ROCm 7 on gfx1151 has specific requirements:
 
-1. **Eager attention**: Flash attention not yet optimized
-2. **Native wheels**: Use scottt's PyTorch builds, not emulation
+1. **Flash Attention**: Works via ROCm fork (main_perf branch)
+2. **Native wheels**: Use AMD gfx1151 nightlies from TheRock
 3. **Kernel serialization**: `AMD_SERIALIZE_KERNEL=1` for debugging
 
 ### Memory Usage (Strix Halo)
 
-Actual observed memory during 7B bf16 LoRA training (2048 seq len):
+Actual observed memory during 7B BF16 LoRA training (2048 seq len):
 
 | Metric | Value |
 |--------|-------|
 | **GTT (GPU system memory)** | ~62GB |
-| **VRAM (dedicated)** | ~1GB |
+| **VRAM (dedicated cache)** | ~1GB |
 | **Total system RAM** | ~71GB |
-| **GPU utilization** | 100% |
+| **GPU utilization** | 95-99% |
 
-The GTT (Graphics Translation Table) is where unified memory training happens. Monitor with `radeontop` or similar tools.
+The GTT (Graphics Translation Table) is where unified memory training happens. Monitor with `radeontop` or `rocm-smi`.
 
-**Note**: `torch.cuda.max_memory_allocated()` reports incorrectly on unified memory architecture - it shows ~24GB when actual usage is ~62GB. Always verify with system tools.
+**Note**: `torch.cuda.max_memory_allocated()` reports VRAM only on unified memory architecture - it shows ~24GB when actual GTT usage is ~62GB. Always verify with system tools.
 
 ## Observations from Training
 

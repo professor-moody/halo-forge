@@ -1,54 +1,192 @@
+# =============================================================================
 # RAFT Training Configuration
-# Optimized for AMD Strix Halo (gfx1151)
+# =============================================================================
+# Optimized for AMD Strix Halo (gfx1151) with 128GB unified memory.
 #
-# Copy to configs/raft.yaml and customize
+# RAFT (Reward-Ranked Fine-Tuning) iteratively improves a model by:
+#   1. Generating multiple samples per prompt
+#   2. Verifying each sample with a verifier (compile, test, etc.)
+#   3. Filtering to keep only high-reward samples
+#   4. Training on filtered samples
+#   5. Repeating for N cycles
+#
+# Usage:
+#   halo-forge raft train --config configs/raft_example.yaml
+#
+# Copy this file and customize for your use case.
+# =============================================================================
 
-# Model paths
+# -----------------------------------------------------------------------------
+# Model Paths
+# -----------------------------------------------------------------------------
+
+# Path to SFT checkpoint to start from
+# This should be the output of SFT training (final_model directory)
 sft_checkpoint: models/sft/final_model
+
+# Directory to save RAFT outputs
+# Each cycle creates: cycle_N_samples.jsonl, cycle_N_verified.jsonl, cycle_N_final/
 output_dir: models/raft
+
+# Path to prompts file in JSONL format
+# Each line should have a "prompt" field
 prompts: data/prompts.jsonl
 
-# RAFT parameters
+# -----------------------------------------------------------------------------
+# RAFT Parameters
+# -----------------------------------------------------------------------------
 raft:
+  # Number of generate-verify-train cycles
+  # More cycles = more refinement, but diminishing returns after ~5-6
+  # Recommended: 3-5 for initial experiments, 5-8 for production
   num_cycles: 5
+  
+  # Number of samples to generate per prompt
+  # More samples = better exploration but slower
+  # Recommended: 8 for good balance of exploration and speed
   samples_per_prompt: 8
-  reward_threshold: 0.5  # Keep samples with reward >= 0.5
-  keep_top_percent: 0.5  # Keep top 50% of samples above threshold
+  
+  # Minimum reward to keep a sample
+  # Samples below this threshold are discarded entirely
+  # For compile verification: 0.5 means "at least compiles clean"
+  # See docs/VERIFIERS.md for reward level meanings
+  reward_threshold: 0.5
+  
+  # Percentage of samples above threshold to keep
+  # After threshold filtering, keep top N% by reward
+  # 0.5 = keep top 50% of samples that pass threshold
+  # This creates the "ranking" in "Reward-Ranked"
+  keep_top_percent: 0.5
 
-# Generation settings
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
 generation:
+  # Maximum tokens to generate per sample
+  # Longer = more complete code but slower
+  # Recommended: 1024 for most tasks, 2048 for complex tasks
   max_new_tokens: 1024
+  
+  # Sampling temperature
+  # Higher = more diverse/creative, lower = more deterministic
+  # Recommended: 0.7 for good diversity, 0.9+ for more exploration
   temperature: 0.7
-  batch_size: 8  # Can be higher on Strix Halo with 128GB
+  
+  # Generation batch size
+  # How many samples to generate in parallel
+  # Limited by GPU memory during generation
+  # With 128GB unified memory, 8 works well
+  batch_size: 8
 
-# Training settings (per cycle)
+# -----------------------------------------------------------------------------
+# Training Settings (Per Cycle)
+# -----------------------------------------------------------------------------
+# These settings apply to the SFT step within each RAFT cycle.
+# They train the model on the filtered high-reward samples.
 training:
+  # Epochs per cycle
+  # Usually 1 is sufficient since we're refining iteratively
   epochs: 1
+  
+  # Training batch size per GPU
   batch_size: 2
+  
+  # Gradient accumulation steps
+  # Effective batch = batch_size * gradient_accumulation_steps
   gradient_accumulation_steps: 16
+  
+  # Learning rate
+  # Lower than SFT to avoid catastrophic forgetting
+  # Recommended: 5e-5 for RAFT (vs 2e-4 for SFT)
   learning_rate: 5e-5
+  
+  # Warmup steps (not ratio, since training is short)
   warmup_steps: 10
   
-  # CRITICAL for Strix Halo unified memory
+  # -----------------------------------------------------------------------------
+  # CRITICAL: Strix Halo Unified Memory Settings
+  # -----------------------------------------------------------------------------
+  # These settings are REQUIRED for stable training on Strix Halo.
+  
+  # Number of dataloader workers - MUST be 0
   dataloader_num_workers: 0
+  
+  # Pin memory - MUST be false
   dataloader_pin_memory: false
 
-# Hardware settings (Strix Halo optimized)
+# -----------------------------------------------------------------------------
+# Hardware Settings
+# -----------------------------------------------------------------------------
 hardware:
+  # Use BF16 precision
+  # Optimal for Strix Halo - do NOT use 4-bit quantization
   bf16: true
-  gradient_checkpointing: true
-  attn_implementation: eager  # Or flash_attention_2 with ROCm fork
-
-# Verifier settings
-verifier:
-  type: gcc  # gcc, mingw, msvc, pytest
   
-  # For MSVC remote compilation:
+  # Enable gradient checkpointing
+  # Essential for 7B+ models
+  gradient_checkpointing: true
+  
+  # Attention implementation
+  # "eager": Standard attention (always works)
+  # "flash_attention_2": Faster, requires ROCm Flash Attention fork
+  attn_implementation: eager
+
+# -----------------------------------------------------------------------------
+# Verifier Settings
+# -----------------------------------------------------------------------------
+# The verifier determines how samples are scored.
+# See docs/VERIFIERS.md for detailed documentation.
+verifier:
+  # Verifier type
+  # Options: gcc, clang, mingw, msvc, pytest, unittest
+  type: gcc
+  
+  # -----------------------------------------------------------------------------
+  # GCC/Clang Options
+  # -----------------------------------------------------------------------------
+  # Uncomment and customize for compile verification:
+  #
+  # flags: ['-w', '-O2']           # Compiler flags
+  # timeout: 30                     # Compilation timeout in seconds
+  # run_after_compile: false        # If true, also run the binary
+  # run_timeout: 5                  # Execution timeout in seconds
+  # expected_output: null           # If set, compare output to this string
+  # stdin_input: null               # Input to provide to stdin
+  # memory_limit_mb: 256            # Memory limit for execution
+  # warn_as_error: false            # If true, warnings reduce reward to 0.3
+  
+  # -----------------------------------------------------------------------------
+  # MinGW Options (Cross-compile to Windows)
+  # -----------------------------------------------------------------------------
+  # type: mingw
+  # flags: ['-static', '-lntdll', '-w', '-O2']
+  # Note: run_after_compile not supported (cannot run Windows binaries on Linux)
+  
+  # -----------------------------------------------------------------------------
+  # Remote MSVC Options (SSH to Windows)
+  # -----------------------------------------------------------------------------
   # type: msvc
   # host: 192.168.1.100
   # user: developer
   # ssh_key: ~/.ssh/win
-  
-  # For pytest verification:
-  # type: pytest
   # timeout: 60
+  
+  # -----------------------------------------------------------------------------
+  # Pytest Options
+  # -----------------------------------------------------------------------------
+  # type: pytest
+  # test_file: null                 # External test file (or null for inline tests)
+  # timeout: 60                     # Test timeout in seconds
+
+# -----------------------------------------------------------------------------
+# Advanced: Reward Configuration
+# -----------------------------------------------------------------------------
+# These are the default reward levels used by verifiers.
+# Customize if you want different reward shaping.
+#
+# rewards:
+#   failure: 0.0           # Complete failure (doesn't compile)
+#   compile_warnings: 0.3  # Compiles with warnings
+#   compile_clean: 0.5     # Compiles without warnings
+#   runs_no_crash: 0.7     # Executes without crashing
+#   correct_output: 1.0    # Produces correct output

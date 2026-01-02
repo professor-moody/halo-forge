@@ -25,13 +25,33 @@ toolbox enter halo-forge
 ## 2. Verify Setup
 
 ```bash
-# Check hardware detection
-halo-forge info
+# Quick validation (5 seconds, no GPU needed)
+halo-forge test --level smoke
 
-# Expected output for Strix Halo:
-# GPU: AMD Radeon Graphics
-# Memory: ~128 GB unified
-# Strix Halo: Yes
+# Full validation with model loading (2-3 minutes)
+halo-forge test --level standard
+
+# Check hardware info
+halo-forge info
+```
+
+Expected test output:
+```
+============================================================
+halo-forge Standard Test
+Model: Qwen/Qwen2.5-Coder-0.5B
+============================================================
+
+  [OK] Import modules (0.0s)
+  [OK] Compiler available (0.0s)
+  [OK] GPU available (0.0s)
+  [OK] Model loading (1.2s)
+  [OK] Code generation (21.6s)
+  [OK] Code verification (0.3s)
+
+============================================================
+Test Results: 6/6 passed
+============================================================
 ```
 
 ## 3. Prepare Training Data

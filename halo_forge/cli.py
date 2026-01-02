@@ -10,13 +10,18 @@ Usage:
     halo-forge sft train --config configs/sft.yaml
     halo-forge raft train --config configs/raft.yaml
     halo-forge benchmark run --model models/raft/cycle_3 --prompts data/test.jsonl
+    halo-forge test --level standard  # Validate pipeline
     halo-forge info  # Show hardware info
 """
 
 import argparse
 import sys
 import json
+import time
+import shutil
+import tempfile
 from pathlib import Path
+from typing import List, Dict, Any, Optional
 
 
 def cmd_data_prepare(args):
@@ -193,6 +198,400 @@ def cmd_info(args):
     print_hardware_info()
 
 
+# =============================================================================
+# Test Command
+# =============================================================================
+
+# Built-in test prompts for pipeline validation
+TEST_PROMPTS = [
+    {
+        "prompt": "Write a C++ program that prints 'Hello, World!' to stdout.",
+        "expected_output": "Hello, World!"
+    },
+    {
+        "prompt": "Write a C++ function that returns the sum of two integers a and b, then call it in main to print the result of 5 + 3.",
+        "expected_output": "8"
+    },
+    {
+        "prompt": "Write a C++ program that prints the numbers 1 through 5, each on a new line.",
+        "expected_output": "1\n2\n3\n4\n5"
+    },
+]
+
+
+class TestRunner:
+    """Pipeline test runner with multiple test levels."""
+    
+    def __init__(self, verbose: bool = False, model: str = "Qwen/Qwen2.5-Coder-0.5B"):
+        self.verbose = verbose
+        self.model_name = model
+        self.results = {"passed": [], "failed": [], "skipped": []}
+    
+    def log(self, msg: str, level: str = "info"):
+        """Log message if verbose or if it's an error."""
+        if self.verbose or level in ("error", "result"):
+            prefix = {"info": "  ", "ok": "  [OK] ", "fail": "  [FAIL] ", "skip": "  [SKIP] ", "error": "  [ERROR] ", "result": ""}
+            print(f"{prefix.get(level, '  ')}{msg}")
+    
+    def run_test(self, name: str, test_fn, skip_condition: bool = False, skip_reason: str = ""):
+        """Run a single test with timing."""
+        if skip_condition:
+            self.results["skipped"].append(name)
+            self.log(f"{name}: {skip_reason}", "skip")
+            return None
+        
+        start = time.time()
+        try:
+            result = test_fn()
+            elapsed = time.time() - start
+            self.results["passed"].append(name)
+            self.log(f"{name} ({elapsed:.1f}s)", "ok")
+            return result
+        except Exception as e:
+            elapsed = time.time() - start
+            self.results["failed"].append(name)
+            self.log(f"{name} ({elapsed:.1f}s): {e}", "fail")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return None
+    
+    def print_summary(self):
+        """Print test summary."""
+        total = len(self.results["passed"]) + len(self.results["failed"]) + len(self.results["skipped"])
+        passed = len(self.results["passed"])
+        failed = len(self.results["failed"])
+        skipped = len(self.results["skipped"])
+        
+        print(f"\n{'='*60}")
+        print(f"Test Results: {passed}/{total} passed", end="")
+        if skipped:
+            print(f", {skipped} skipped", end="")
+        if failed:
+            print(f", {failed} FAILED", end="")
+        print()
+        
+        if failed:
+            print(f"\nFailed tests:")
+            for name in self.results["failed"]:
+                print(f"  - {name}")
+        
+        print(f"{'='*60}")
+        
+        return failed == 0
+    
+    # =========================================================================
+    # Smoke Tests (no GPU required)
+    # =========================================================================
+    
+    def test_imports(self) -> bool:
+        """Test that all modules import correctly."""
+        # Core modules
+        from halo_forge.rlvr.verifiers import GCCVerifier, VerifyResult, RewardLevel
+        from halo_forge.rlvr.raft_trainer import RAFTTrainer
+        from halo_forge.sft.trainer import SFTTrainer
+        from halo_forge.utils.hardware import print_hardware_info
+        return True
+    
+    def test_compiler_available(self) -> bool:
+        """Test that g++ is available."""
+        if not shutil.which("g++"):
+            raise RuntimeError("g++ not found in PATH")
+        return True
+    
+    def test_verifier_basic(self) -> bool:
+        """Test verifier with known good/bad code."""
+        from halo_forge.rlvr.verifiers import GCCVerifier
+        
+        verifier = GCCVerifier()
+        
+        # Test valid code
+        valid = '#include <iostream>\nint main() { std::cout << "test"; return 0; }'
+        result = verifier.verify(valid)
+        if result.reward == 0.0:
+            raise RuntimeError(f"Valid code got reward 0: {result.details}")
+        
+        # Test invalid code
+        invalid = 'this is not valid C++ code at all'
+        result = verifier.verify(invalid)
+        if result.reward > 0.0:
+            raise RuntimeError("Invalid code got positive reward")
+        
+        return True
+    
+    # =========================================================================
+    # Standard Tests (GPU required)
+    # =========================================================================
+    
+    def test_gpu_available(self) -> bool:
+        """Test GPU availability."""
+        import torch
+        if not torch.cuda.is_available():
+            raise RuntimeError("No GPU available (torch.cuda.is_available() = False)")
+        
+        device_name = torch.cuda.get_device_name(0)
+        props = torch.cuda.get_device_properties(0)
+        mem_gb = props.total_memory / 1e9
+        
+        self.log(f"GPU: {device_name}, Memory: {mem_gb:.1f} GB")
+        return True
+    
+    def test_model_load(self) -> Any:
+        """Test model loading."""
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        
+        self.log(f"Loading {self.model_name}...")
+        
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        
+        self.log(f"Loaded: {model.num_parameters() / 1e6:.1f}M parameters")
+        
+        return model, tokenizer
+    
+    def test_generation(self, model, tokenizer) -> List[Dict]:
+        """Test code generation."""
+        import torch
+        
+        results = []
+        
+        for i, item in enumerate(TEST_PROMPTS):
+            prompt = item["prompt"]
+            
+            messages = [
+                {"role": "system", "content": "You are a helpful coding assistant. Write clean, working C++ code."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = tokenizer(text, return_tensors="pt").to(model.device)
+            
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=256,
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=tokenizer.pad_token_id,
+                )
+            
+            generated = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+            
+            self.log(f"Prompt {i+1}: {prompt[:40]}...")
+            self.log(f"Generated: {generated[:60]}...")
+            
+            results.append({
+                "prompt": prompt,
+                "generated": generated,
+                "expected_output": item.get("expected_output"),
+            })
+        
+        return results
+    
+    def test_verification(self, samples: List[Dict]) -> List[Dict]:
+        """Test verification of generated samples."""
+        from halo_forge.rlvr.verifiers import GCCVerifier
+        
+        # Create verifier with run_after_compile to test execution
+        verifier = GCCVerifier(run_after_compile=True, timeout=30, run_timeout=5)
+        
+        verified = []
+        for i, sample in enumerate(samples):
+            result = verifier.verify(sample["generated"])
+            
+            status = "PASS" if result.success else "FAIL"
+            self.log(f"Sample {i+1}: {status} (reward={result.reward:.2f})")
+            
+            verified.append({
+                **sample,
+                "success": result.success,
+                "reward": result.reward,
+                "details": result.details,
+            })
+        
+        passed = sum(1 for v in verified if v["success"])
+        avg_reward = sum(v["reward"] for v in verified) / len(verified) if verified else 0
+        
+        self.log(f"Verification: {passed}/{len(verified)} passed, avg_reward={avg_reward:.2f}")
+        
+        return verified
+    
+    # =========================================================================
+    # Full Tests (includes training)
+    # =========================================================================
+    
+    def test_training_step(self, model, tokenizer, verified_samples: List[Dict]) -> bool:
+        """Test a minimal SFT training step."""
+        from transformers import TrainingArguments
+        from trl import SFTTrainer, SFTConfig
+        from datasets import Dataset
+        
+        # Prepare data - keep samples with any reward
+        kept = [s for s in verified_samples if s["reward"] > 0]
+        if not kept:
+            self.log("No samples passed verification, using all for test")
+            kept = verified_samples
+        
+        # Format for SFT
+        training_data = []
+        for sample in kept:
+            training_data.append({
+                "messages": [
+                    {"role": "system", "content": "You are a helpful coding assistant."},
+                    {"role": "user", "content": sample["prompt"]},
+                    {"role": "assistant", "content": sample["generated"]},
+                ]
+            })
+        
+        dataset = Dataset.from_list(training_data)
+        
+        self.log(f"Training on {len(dataset)} samples...")
+        
+        # Minimal training config
+        with tempfile.TemporaryDirectory(prefix="halo_forge_test_") as tmp_dir:
+            training_args = SFTConfig(
+                output_dir=tmp_dir,
+                num_train_epochs=1,
+                per_device_train_batch_size=1,
+                gradient_accumulation_steps=1,
+                learning_rate=2e-5,
+                logging_steps=1,
+                save_steps=9999,
+                max_steps=2,  # Just 2 steps
+                bf16=True,
+                dataloader_num_workers=0,
+                dataloader_pin_memory=False,
+                report_to="none",
+            )
+            
+            trainer = SFTTrainer(
+                model=model,
+                args=training_args,
+                train_dataset=dataset,
+                processing_class=tokenizer,
+            )
+            
+            result = trainer.train()
+            
+            self.log(f"Training: {result.global_step} steps, loss={result.training_loss:.4f}")
+        
+        return True
+    
+    # =========================================================================
+    # Test Level Runners
+    # =========================================================================
+    
+    def run_smoke(self) -> bool:
+        """Run smoke tests (no GPU required)."""
+        print(f"\n{'='*60}")
+        print("halo-forge Smoke Test")
+        print(f"{'='*60}\n")
+        
+        self.run_test("Import modules", self.test_imports)
+        self.run_test("Compiler available", self.test_compiler_available)
+        self.run_test("Verifier basic", self.test_verifier_basic)
+        
+        return self.print_summary()
+    
+    def run_standard(self) -> bool:
+        """Run standard tests (GPU required)."""
+        print(f"\n{'='*60}")
+        print("halo-forge Standard Test")
+        print(f"Model: {self.model_name}")
+        print(f"{'='*60}\n")
+        
+        # Smoke tests first
+        self.run_test("Import modules", self.test_imports)
+        self.run_test("Compiler available", self.test_compiler_available)
+        
+        # GPU tests
+        gpu_ok = self.run_test("GPU available", self.test_gpu_available)
+        if gpu_ok is None:
+            print("\nCannot continue without GPU")
+            return self.print_summary()
+        
+        # Model loading
+        result = self.run_test("Model loading", self.test_model_load)
+        if result is None:
+            return self.print_summary()
+        model, tokenizer = result
+        
+        # Generation
+        samples = self.run_test("Code generation", lambda: self.test_generation(model, tokenizer))
+        if samples is None:
+            return self.print_summary()
+        
+        # Verification
+        self.run_test("Code verification", lambda: self.test_verification(samples))
+        
+        return self.print_summary()
+    
+    def run_full(self) -> bool:
+        """Run full tests including training."""
+        print(f"\n{'='*60}")
+        print("halo-forge Full Pipeline Test")
+        print(f"Model: {self.model_name}")
+        print(f"{'='*60}\n")
+        
+        # Smoke tests
+        self.run_test("Import modules", self.test_imports)
+        self.run_test("Compiler available", self.test_compiler_available)
+        
+        # GPU tests
+        gpu_ok = self.run_test("GPU available", self.test_gpu_available)
+        if gpu_ok is None:
+            print("\nCannot continue without GPU")
+            return self.print_summary()
+        
+        # Model loading
+        result = self.run_test("Model loading", self.test_model_load)
+        if result is None:
+            return self.print_summary()
+        model, tokenizer = result
+        
+        # Generation
+        samples = self.run_test("Code generation", lambda: self.test_generation(model, tokenizer))
+        if samples is None:
+            return self.print_summary()
+        
+        # Verification
+        verified = self.run_test("Code verification", lambda: self.test_verification(samples))
+        if verified is None:
+            verified = samples  # Use unverified for training test
+        
+        # Training step
+        self.run_test("Training step", lambda: self.test_training_step(model, tokenizer, verified))
+        
+        return self.print_summary()
+
+
+def cmd_test(args):
+    """Run pipeline validation tests."""
+    runner = TestRunner(verbose=args.verbose, model=args.model)
+    
+    if args.level == "smoke":
+        success = runner.run_smoke()
+    elif args.level == "standard":
+        success = runner.run_standard()
+    elif args.level == "full":
+        success = runner.run_full()
+    else:
+        print(f"Unknown test level: {args.level}")
+        print("Valid levels: smoke, standard, full")
+        sys.exit(1)
+    
+    sys.exit(0 if success else 1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog='halo-forge',
@@ -268,6 +667,16 @@ def main():
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
     
+    # test command
+    test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
+    test_parser.add_argument('--level', '-l', default='standard',
+                             choices=['smoke', 'standard', 'full'],
+                             help='Test level: smoke (no GPU), standard (with GPU), full (with training)')
+    test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
+                             help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
+    test_parser.add_argument('--verbose', '-v', action='store_true',
+                             help='Verbose output with detailed logging')
+    
     # Parse
     args = parser.parse_args()
     
@@ -288,6 +697,8 @@ def main():
             cmd_benchmark(args)
     elif args.command == 'info':
         cmd_info(args)
+    elif args.command == 'test':
+        cmd_test(args)
 
 
 if __name__ == '__main__':

@@ -19,12 +19,12 @@ Complete guide to training a code generation model with halo-forge.
 │            └──────────┬───────────┘                             │
 │                       ▼                                         │
 │   2. SFT TRAINING                                               │
-│   ┌─────────────────────────────────────────┐                  │
-│   │ QLoRA Fine-tuning                        │                  │
-│   │ - 4-bit quantization                     │                  │
-│   │ - Gradient checkpointing                 │                  │
-│   │ - Early stopping                         │                  │
-│   └────────────────────┬────────────────────┘                  │
+    │   ┌─────────────────────────────────────────┐                  │
+    │   │ LoRA Fine-tuning (BF16)                  │                  │
+    │   │ - BF16 precision (optimal)               │                  │
+    │   │ - Gradient checkpointing                 │                  │
+    │   │ - Early stopping                         │                  │
+    │   └────────────────────┬────────────────────┘                  │
 │                        ▼                                        │
 │   3. RAFT TRAINING (RLVR)                                       │
 │   ┌─────────────────────────────────────────┐                  │
@@ -140,11 +140,12 @@ data:
   validation_split: 0.05
   max_seq_length: 2048
 
-qlora:
-  load_in_4bit: true
-  bnb_4bit_quant_type: nf4
-  lora_r: 16
-  lora_alpha: 32
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+
+# Note: BF16 is optimal for Strix Halo (4-bit is 2x slower)
 
 training:
   output_dir: models/sft

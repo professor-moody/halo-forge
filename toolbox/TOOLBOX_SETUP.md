@@ -51,21 +51,32 @@ toolbox enter halo-forge
 Inside the toolbox:
 
 ```bash
-# Check PyTorch sees the GPU
+# Quick validation (recommended)
+halo-forge test --level smoke
+
+# Full validation with model loading
+halo-forge test --level standard
+
+# Or manually check PyTorch
 python3 -c "import torch; print(f'ROCm: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0)}')"
-
-# Check memory
-python3 -c "import torch; print(f'Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')"
 ```
 
-Expected output:
+Expected test output:
 ```
-ROCm: True
-GPU: AMD Radeon(TM) Graphics
-Memory: ~25-30 GB (VRAM cache, actual unified memory is 128GB)
+============================================================
+halo-forge Smoke Test
+============================================================
+
+  [OK] Import modules (0.0s)
+  [OK] Compiler available (0.0s)
+  [OK] Verifier basic (0.1s)
+
+============================================================
+Test Results: 3/3 passed
+============================================================
 ```
 
-> **Note:** PyTorch reports VRAM allocation, not full unified memory. Use `radeontop` to see actual GTT usage.
+> **Note:** PyTorch reports VRAM allocation (~25GB), not full unified memory (~128GB). Use `radeontop` to see actual GTT usage.
 
 ## Persistence
 
