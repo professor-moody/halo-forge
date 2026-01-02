@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-forge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Complete RLVR training framework for AMD Strix Halo"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "keys"}
+    {name = "halo-forge contributors"}
 ]
 requires-python = ">=3.10"
 classifiers = [
@@ -51,9 +51,9 @@ llm-backends = [
 halo-forge = "halo_forge.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/keys/halo-forge"
-Documentation = "https://github.com/keys/halo-forge/tree/main/docs"
-Repository = "https://github.com/keys/halo-forge"
+Homepage = "https://github.com/professor-moody/halo-forge"
+Documentation = "https://github.com/professor-moody/halo-forge/tree/main/docs"
+Repository = "https://github.com/professor-moody/halo-forge"
 
 [tool.setuptools.packages.find]
 where = ["."]

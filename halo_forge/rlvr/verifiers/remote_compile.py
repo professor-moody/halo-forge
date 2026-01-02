@@ -41,9 +41,9 @@ class RemoteMSVCVerifier(Verifier):
     
     Example:
         verifier = RemoteMSVCVerifier(
-            host="10.0.0.152",
-            user="keys",
-            ssh_key="/home/user/.ssh/win"
+            host="192.168.1.100",
+            user="developer",
+            ssh_key="~/.ssh/windows_key"
         )
         result = verifier.verify(code)
     """
