@@ -132,6 +132,8 @@ Cycle 7: 35.2% compile rate  # Stop and use cycle 6
 - **Degradation**: Performance drops
 - **Typically**: 5-6 cycles is optimal
 
+If you see degradation, consider [learning rate decay](./learning-rates.md).
+
 ## Advanced: Different Verifiers per Cycle
 
 ```yaml

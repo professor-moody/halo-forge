@@ -34,6 +34,7 @@
 - [Theory & Research](./theory.md)
 - [RAFT vs PPO vs GRPO](./raft-vs-ppo.md)
 - [Graduated Rewards](./graduated-rewards.md)
+- [Learning Rate Strategies](./learning-rates.md)
 
 ---
 
