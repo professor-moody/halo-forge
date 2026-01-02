@@ -123,7 +123,8 @@ RUN python -m pip install --no-cache-dir \
     pyyaml \
     requests \
     jsonlines \
-    paramiko
+    paramiko \
+    pytest
 
 # --- PyTorch memory optimization for Strix Halo (128GB unified memory) ---
 ENV PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"
