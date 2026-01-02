@@ -99,7 +99,10 @@ def cmd_raft_train(args):
     """Run RAFT training."""
     import yaml
     from halo_forge.rlvr.raft_trainer import RAFTTrainer, RAFTConfig
-    from halo_forge.rlvr.verifiers import GCCVerifier, MinGWVerifier, RemoteMSVCVerifier
+    from halo_forge.rlvr.verifiers import (
+        GCCVerifier, MinGWVerifier, RemoteMSVCVerifier,
+        HumanEvalVerifier, MBPPVerifier
+    )
     
     # Load config
     if args.config:
@@ -121,8 +124,15 @@ def cmd_raft_train(args):
             user=cfg_dict.get('verifier', {}).get('user', 'user'),
             ssh_key=cfg_dict.get('verifier', {}).get('ssh_key', '~/.ssh/id_rsa')
         )
+    elif verifier_type == 'humaneval':
+        dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/humaneval_full.jsonl')
+        verifier = HumanEvalVerifier(dataset_path)
+    elif verifier_type == 'mbpp':
+        dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/mbpp_train_full.jsonl')
+        verifier = MBPPVerifier(dataset_path)
     else:
         print(f"Unknown verifier: {verifier_type}")
+        print("Available: gcc, mingw, msvc, humaneval, mbpp")
         sys.exit(1)
     
     # Create config

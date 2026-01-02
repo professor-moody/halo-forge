@@ -63,6 +63,8 @@ class RLVRPytestVerifier:
         self.timeout = timeout
         self.reward_partial = reward_partial
         self.test_cases: Dict[str, Dict] = {}
+        self.prompt_to_task_id: Dict[str, str] = {}  # Reverse lookup
+        self.dataset_type = "humaneval"  # Default, override in subclasses
         
         self._load_dataset(dataset_path)
     
@@ -77,6 +79,13 @@ class RLVRPytestVerifier:
                 record = json.loads(line)
                 task_id = str(record["task_id"])
                 self.test_cases[task_id] = record
+                
+                # Build reverse lookup: prompt text -> task_id
+                prompt = record.get("prompt", "")
+                if prompt:
+                    # Store first 200 chars as key (enough to be unique)
+                    prompt_key = prompt[:200].strip()
+                    self.prompt_to_task_id[prompt_key] = task_id
         
         print(f"Loaded {len(self.test_cases)} test cases from {path}")
     
@@ -287,28 +296,51 @@ test_solution()
     
     def verify_batch(
         self,
-        samples: List[Dict[str, str]],
-        dataset_type: str = "humaneval"
+        codes: List[str],
+        prompts: Optional[List[str]] = None
     ) -> List[VerifyResult]:
         """
         Verify multiple samples.
         
         Args:
-            samples: List of {"code": ..., "task_id": ...}
-            dataset_type: "humaneval" or "mbpp"
+            codes: List of generated code strings
+            prompts: List of prompts (used to look up task_id)
             
         Returns:
             List of VerifyResult
         """
         results = []
-        for sample in samples:
-            result = self.verify(
-                sample["code"],
-                sample["task_id"],
-                dataset_type
-            )
+        for i, code in enumerate(codes):
+            prompt = prompts[i] if prompts else None
+            if prompt:
+                result = self._verify_with_prompt(code, prompt)
+            else:
+                # Fallback: try to verify without task_id (will likely fail)
+                result = VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="No prompt provided for task_id lookup",
+                    error="RLVRPytestVerifier requires prompts for verification"
+                )
             results.append(result)
         return results
+    
+    def _verify_with_prompt(self, code: str, prompt: str) -> VerifyResult:
+        """Verify code using prompt to look up task_id."""
+        # Look up task_id from prompt
+        prompt_key = prompt[:200].strip()
+        task_id = self.prompt_to_task_id.get(prompt_key)
+        
+        if not task_id:
+            return VerifyResult(
+                success=False,
+                reward=0.0,
+                details=f"Could not find task_id for prompt: {prompt_key[:50]}...",
+                error="Unknown prompt"
+            )
+        
+        # Call parent class verify with all 3 args (subclasses override with 2 args)
+        return RLVRPytestVerifier.verify(self, code, task_id, self.dataset_type)
 
 
 class HumanEvalVerifier(RLVRPytestVerifier):

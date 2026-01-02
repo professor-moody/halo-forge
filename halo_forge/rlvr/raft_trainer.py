@@ -256,7 +256,8 @@ class RAFTTrainer:
         cfg = self.config
         print(f"\nVerifying {len(samples)} samples...")
         
-        # Extract completions for verification
+        # Extract prompts and completions for verification
+        prompts = [s[0] for s in samples]
         completions = [s[1] for s in samples]
         
         # CHUNKED verification to prevent memory exhaustion
@@ -267,11 +268,13 @@ class RAFTTrainer:
         start_time = time.time()
         for i in range(0, len(completions), chunk_size):
             chunk_end = min(i + chunk_size, len(completions))
+            chunk_prompts = prompts[i:chunk_end]
             chunk_completions = completions[i:chunk_end]
             
             print(f"  Processing chunk {i//chunk_size + 1}/{(len(completions) + chunk_size - 1)//chunk_size} ({len(chunk_completions)} samples)...")
             
-            chunk_results = self.verifier.verify_batch(chunk_completions)
+            # Pass both prompts and completions (for verifiers that need context like HumanEval/MBPP)
+            chunk_results = self.verifier.verify_batch(chunk_completions, chunk_prompts)
             results.extend(chunk_results)
             
             # Force garbage collection after each chunk

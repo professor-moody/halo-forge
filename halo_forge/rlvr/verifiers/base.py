@@ -106,12 +106,17 @@ class Verifier(ABC):
         """
         pass
     
-    def verify_batch(self, codes: List[str]) -> List[VerifyResult]:
+    def verify_batch(
+        self, 
+        codes: List[str], 
+        prompts: Optional[List[str]] = None
+    ) -> List[VerifyResult]:
         """
         Verify multiple code samples in parallel.
         
         Args:
             codes: List of code strings to verify
+            prompts: Optional list of prompts (for verifiers that need context)
             
         Returns:
             List of VerifyResult objects in same order as input
@@ -119,7 +124,13 @@ class Verifier(ABC):
         results = [None] * len(codes)
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {executor.submit(self.verify, code): i for i, code in enumerate(codes)}
+            if prompts:
+                futures = {
+                    executor.submit(self._verify_with_prompt, code, prompt): i 
+                    for i, (code, prompt) in enumerate(zip(codes, prompts))
+                }
+            else:
+                futures = {executor.submit(self.verify, code): i for i, code in enumerate(codes)}
             
             for future in as_completed(futures):
                 idx = futures[future]
@@ -134,6 +145,13 @@ class Verifier(ABC):
                     )
         
         return results
+    
+    def _verify_with_prompt(self, code: str, prompt: str) -> VerifyResult:
+        """
+        Verify code with prompt context. Override in subclasses that need prompt.
+        Default implementation ignores prompt.
+        """
+        return self.verify(code)
     
     def extract_code(self, text: str) -> str:
         """
