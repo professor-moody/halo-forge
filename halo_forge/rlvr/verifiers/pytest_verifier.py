@@ -364,6 +364,10 @@ test_solution()
         
         # Call parent class verify with all 3 args (subclasses override with 2 args)
         return RLVRPytestVerifier.verify(self, code, task_id, self.dataset_type)
+    
+    def cleanup(self):
+        """Cleanup resources. No-op for this verifier."""
+        pass
 
 
 class HumanEvalVerifier(RLVRPytestVerifier):

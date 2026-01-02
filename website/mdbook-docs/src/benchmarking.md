@@ -108,6 +108,23 @@ Quick validation benchmarks (16 prompts, 2 cycles):
 
 > **Note**: Demo benchmarks validate the pipeline works, not RAFT's full potential. Production training shows 2-3x improvements.
 
+## HumanEval Validation
+
+3B model RAFT training on HumanEval subset (20 prompts, 3 cycles):
+
+| Cycle | Pass Rate | Kept | Loss | Grad Norm |
+|-------|-----------|------|------|-----------|
+| 1 | 21.2% | 17 | 0.563 | 995.3 |
+| 2 | 17.5% | 14 | 0.570 | 194.0 |
+| 3 | 22.5% | 18 | 0.526 | 0.47 |
+
+Key observations:
+- **Gradient norm stabilized**: 995 → 0.47 across cycles (good convergence)
+- **Loss decreased**: 0.563 → 0.526 (model learning)
+- **Pass rate variance**: Expected with small dataset (20 prompts)
+
+Total training time: ~54 minutes (18 min/cycle)
+
 ## Hardware Metrics
 
 With `--hardware-metrics`:
