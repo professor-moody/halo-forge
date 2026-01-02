@@ -5,6 +5,11 @@ from halo_forge.rlvr.verifiers.compile import GCCVerifier, MinGWVerifier, ClangV
 from halo_forge.rlvr.verifiers.remote_compile import RemoteMSVCVerifier, RemoteConfig
 from halo_forge.rlvr.verifiers.test_runner import PytestVerifier, UnittestVerifier
 from halo_forge.rlvr.verifiers.custom import CustomVerifier, SubprocessVerifier
+from halo_forge.rlvr.verifiers.pytest_verifier import (
+    RLVRPytestVerifier,
+    HumanEvalVerifier,
+    MBPPVerifier,
+)
 
 __all__ = [
     # Base
@@ -22,6 +27,10 @@ __all__ = [
     # Test
     "PytestVerifier",
     "UnittestVerifier",
+    # RLVR Dataset Verifiers (HumanEval/MBPP)
+    "RLVRPytestVerifier",
+    "HumanEvalVerifier",
+    "MBPPVerifier",
     # Custom
     "CustomVerifier",
     "SubprocessVerifier",
