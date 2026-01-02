@@ -639,7 +639,7 @@ class BenchmarkRunner:
             model=self.model,
             args=training_args,
             train_dataset=tokenized,
-            tokenizer=self.tokenizer,
+            processing_class=self.tokenizer,  # Updated from deprecated 'tokenizer'
             data_collator=data_collator
         )
         

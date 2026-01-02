@@ -245,6 +245,8 @@ class RAFTTrainer:
         """
         Verify samples and filter by reward.
         
+        Uses chunked verification to prevent memory exhaustion on large batches.
+        
         Args:
             samples: List of (prompt, completion) tuples
         
@@ -257,11 +259,25 @@ class RAFTTrainer:
         # Extract completions for verification
         completions = [s[1] for s in samples]
         
-        # Batch verify
-        start_time = time.time()
-        results = self.verifier.verify_batch(completions)
-        elapsed = time.time() - start_time
+        # CHUNKED verification to prevent memory exhaustion
+        # Process 200 samples at a time to avoid OOM
+        chunk_size = 200
+        results = []
         
+        start_time = time.time()
+        for i in range(0, len(completions), chunk_size):
+            chunk_end = min(i + chunk_size, len(completions))
+            chunk_completions = completions[i:chunk_end]
+            
+            print(f"  Processing chunk {i//chunk_size + 1}/{(len(completions) + chunk_size - 1)//chunk_size} ({len(chunk_completions)} samples)...")
+            
+            chunk_results = self.verifier.verify_batch(chunk_completions)
+            results.extend(chunk_results)
+            
+            # Force garbage collection after each chunk
+            gc.collect()
+        
+        elapsed = time.time() - start_time
         print(f"Verification completed in {elapsed:.1f}s")
         
         # Combine with prompts and rewards
@@ -292,7 +308,13 @@ class RAFTTrainer:
             'kept': len(filtered),
             'avg_reward': sum(d['reward'] for d in all_data) / len(all_data) if all_data else 0,
             'avg_kept_reward': sum(d['reward'] for d in filtered) / len(filtered) if filtered else 0,
-            'success_rate': sum(1 for d in all_data if d['success']) / len(all_data) if all_data else 0
+            'success_rate': sum(1 for d in all_data if d['success']) / len(all_data) if all_data else 0,
+            'reward_distribution': {
+                '0.0': sum(1 for d in all_data if d['reward'] < 0.2),
+                '0.5': sum(1 for d in all_data if 0.4 <= d['reward'] < 0.6),
+                '0.7': sum(1 for d in all_data if 0.6 <= d['reward'] < 0.9),
+                '1.0': sum(1 for d in all_data if d['reward'] >= 0.9)
+            }
         }
         
         print(f"\nFiltering results:")
@@ -301,6 +323,11 @@ class RAFTTrainer:
         print(f"  Kept: {stats['kept']} ({stats['kept']/stats['total_samples']*100:.1f}%)")
         print(f"  Avg reward: {stats['avg_reward']:.3f}")
         print(f"  Success rate: {stats['success_rate']*100:.1f}%")
+        print(f"\n  Reward distribution:")
+        print(f"    0.0 (failed): {stats['reward_distribution']['0.0']}")
+        print(f"    0.5 (compiled): {stats['reward_distribution']['0.5']}")
+        print(f"    0.7 (runs): {stats['reward_distribution']['0.7']}")
+        print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
         
         return filtered, stats, all_data
     
@@ -351,7 +378,7 @@ class RAFTTrainer:
             remove_columns=['text']
         )
         
-        # Training args
+        # Training args - optimized for Strix Halo
         training_args = TrainingArguments(
             output_dir=str(self.output_dir / f"cycle_{cycle}"),
             num_train_epochs=cfg.train_epochs,
@@ -361,12 +388,16 @@ class RAFTTrainer:
             warmup_steps=1,
             bf16=True,
             gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
             logging_steps=1,
             save_steps=500,
             save_total_limit=2,
             optim="adamw_torch",
             report_to="tensorboard",
-            logging_dir=str(self.output_dir / f"cycle_{cycle}" / "logs")
+            logging_dir=str(self.output_dir / f"cycle_{cycle}" / "logs"),
+            # CRITICAL: Required for Strix Halo unified memory
+            dataloader_num_workers=0,
+            dataloader_pin_memory=False,
         )
         
         # Data collator
@@ -380,7 +411,7 @@ class RAFTTrainer:
             model=self.model,
             args=training_args,
             train_dataset=tokenized,
-            tokenizer=self.tokenizer,
+            processing_class=self.tokenizer,  # Updated from deprecated 'tokenizer'
             data_collator=data_collator
         )
         

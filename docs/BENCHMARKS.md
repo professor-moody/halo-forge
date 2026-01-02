@@ -188,6 +188,64 @@ Note: GPU utilization requires root access to report correctly via rocm-smi.
 
 ---
 
+## Demo Benchmark Results
+
+The following results were obtained on AMD Strix Halo hardware with 128GB unified memory, running the demo benchmark suite (16 prompts, 2 cycles each).
+
+### Summary Table
+
+| Model | Baseline Compile | Final Compile | Improvement | pass@1 | Time | Energy |
+|-------|-----------------|---------------|-------------|--------|------|--------|
+| Qwen2.5-Coder-0.5B | 32.0% | 32.0% | +0.0% | 81% → 88% | 41 min | 43 Wh |
+| Qwen2.5-Coder-1.5B | 67.2% | 67.2% | +0.0% | 100% → 100% | 52 min | 69 Wh |
+| Qwen2.5-Coder-3B | 97.7% | 99.2% | +1.6% | 100% → 100% | 79 min | 114 Wh |
+
+### Key Observations
+
+1. **Larger models start stronger**: The 3B model begins at 97.7% compile rate vs 32% for 0.5B
+2. **Demo benchmarks show modest gains**: With only 16 prompts and 2 cycles, expect 0-5% improvement
+3. **pass@1 improvements visible**: The 0.5B model improved pass@1 from 81% to 88% (+7%)
+4. **Energy scales with model size**: 3B uses ~3x more energy than 0.5B
+
+### Detailed Results
+
+**Qwen2.5-Coder-0.5B**
+```
+Baseline: 32.0% compile, 81.2% pass@1
+Cycle 1:  32.0% compile (kept 21 samples, loss=0.444)
+Cycle 2:  28.9% compile (kept 19 samples, loss=0.516)
+Final:    32.0% compile, 87.5% pass@1
+Peak GPU Memory: 11.9 GB | Energy: 42.5 Wh
+```
+
+**Qwen2.5-Coder-1.5B**
+```
+Baseline: 67.2% compile, 100.0% pass@1
+Cycle 1:  66.4% compile (kept 43 samples, loss=0.604)
+Cycle 2:  66.4% compile (kept 43 samples, loss=0.624)
+Final:    67.2% compile, 100.0% pass@1
+Peak GPU Memory: 14.5 GB | Energy: 68.5 Wh
+```
+
+**Qwen2.5-Coder-3B**
+```
+Baseline: 97.7% compile, 100.0% pass@1
+Cycle 1:  97.7% compile (kept 63 samples, loss=0.878)
+Cycle 2:  96.1% compile (kept 62 samples, loss=0.751)
+Final:    99.2% compile, 100.0% pass@1
+Peak GPU Memory: 18.5 GB | Energy: 114.0 Wh
+```
+
+### Generation Speed
+
+| Model | Tokens/sec |
+|-------|------------|
+| 0.5B | 220-230 |
+| 1.5B | 185-195 |
+| 3B | 130-135 |
+
+---
+
 ## Production Benchmark Example
 
 For meaningful performance metrics, run production-scale training:

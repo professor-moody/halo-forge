@@ -256,13 +256,13 @@ class SFTTrainer:
             print("Loading model in full bf16 precision...")
             bnb_config = None
         
-        # Load model on CPU first (avoids HIP kernel issues)
-        print("Loading base model on CPU...")
+        # Load model directly on GPU (unified memory handles this automatically)
+        print("Loading base model...")
         self.model = AutoModelForCausalLM.from_pretrained(
             cfg.model_name,
             quantization_config=bnb_config,
             torch_dtype=torch.bfloat16,
-            device_map="cpu",
+            device_map="auto",  # Unified memory on Strix Halo makes this optimal
             trust_remote_code=cfg.trust_remote_code,
             attn_implementation=cfg.attn_implementation
         )
@@ -288,12 +288,11 @@ class SFTTrainer:
         self.model = get_peft_model(self.model, lora_config)
         self.model.print_trainable_parameters()
         
-        # Move to GPU
-        print("Moving model to GPU...")
+        # Note: With device_map="auto", model is already on GPU
+        # Just clear cache for memory efficiency
         if torch.cuda.is_available():
-            self.model = self.model.to('cuda')
             torch.cuda.empty_cache()
-            print("Model moved to GPU")
+            print("Model ready on GPU")
         
         print()
         
@@ -476,7 +475,7 @@ class SFTTrainer:
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
-            tokenizer=self.tokenizer,
+            processing_class=self.tokenizer,  # Updated from deprecated 'tokenizer'
             data_collator=data_collator,
             callbacks=[
                 EarlyStoppingCallback(
