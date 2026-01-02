@@ -296,6 +296,15 @@ class RAFTTrainer:
                 
                 for completion in prompt_completions:
                     all_samples.append((prompt, completion))
+            
+            # FREE MEMORY: Clear tensors after each batch to prevent GPU memory exhaustion
+            del inputs
+            del outputs
+            del completions
+            if batch_idx % 5 == 0:  # Periodic deep cleanup
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
         
         if progress:
             progress.stop()
@@ -595,6 +604,11 @@ class RAFTTrainer:
         else:
             filtered, stats, all_data = self.verify_and_filter(samples)
             
+            # FREE MEMORY: samples no longer needed after verification
+            del samples
+            gc.collect()
+            self._log("Freed generation samples memory", "dim")
+            
             # Save cache
             with open(verified_cache, 'w') as f:
                 for item in all_data:
@@ -606,6 +620,16 @@ class RAFTTrainer:
         
         # Train
         self.train_on_filtered(filtered, cycle)
+        
+        # FREE MEMORY: Clear training data before model reload
+        del filtered
+        try:
+            del all_data
+        except NameError:
+            pass
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
         # Reload for next cycle
         self._reload_model(str(self.output_dir / f"cycle_{cycle}_final"))
