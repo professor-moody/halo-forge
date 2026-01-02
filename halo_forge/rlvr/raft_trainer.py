@@ -111,10 +111,10 @@ class RAFTTrainer:
         self.cycle_stats = []
     
     def _load_model(self):
-        """Load base model and SFT adapters."""
+        """Load base model and optionally SFT adapters."""
         cfg = self.config
         
-        print(f"\nLoading model from {cfg.sft_checkpoint}")
+        print(f"\nLoading model...")
         
         self.tokenizer = AutoTokenizer.from_pretrained(
             cfg.base_model,
@@ -125,8 +125,8 @@ class RAFTTrainer:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        # Load and cache base model
-        print("Loading base model...")
+        # Load base model
+        print(f"Loading base model: {cfg.base_model}")
         self.base_model = AutoModelForCausalLM.from_pretrained(
             cfg.base_model,
             torch_dtype=torch.bfloat16,
@@ -134,13 +134,33 @@ class RAFTTrainer:
             attn_implementation="eager"
         )
         
-        # Load SFT adapters
-        print(f"Loading LoRA adapters from: {cfg.sft_checkpoint}")
-        self.model = PeftModel.from_pretrained(
-            self.base_model,
-            cfg.sft_checkpoint,
-            is_trainable=True
-        )
+        # Check if SFT checkpoint has PEFT adapters
+        checkpoint_path = Path(cfg.sft_checkpoint)
+        has_peft = (checkpoint_path.exists() and 
+                    (checkpoint_path / "adapter_config.json").exists())
+        
+        if has_peft:
+            # Load existing PEFT adapters
+            print(f"Loading LoRA adapters from: {cfg.sft_checkpoint}")
+            self.model = PeftModel.from_pretrained(
+                self.base_model,
+                cfg.sft_checkpoint,
+                is_trainable=True
+            )
+        else:
+            # Create new LoRA adapters (fresh start from base model)
+            print("No SFT checkpoint found, creating new LoRA adapters...")
+            lora_config = LoraConfig(
+                r=16,
+                lora_alpha=32,
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj", 
+                               "gate_proj", "up_proj", "down_proj"],
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+            self.model = get_peft_model(self.base_model, lora_config)
+            print(f"Created LoRA adapters with rank={lora_config.r}")
         
         self.model.enable_input_require_grads()
         print("Model loaded")

@@ -1,0 +1,128 @@
+# =============================================================================
+# EXPERIMENTAL: RAFT Configuration - Aggressive LR Decay
+# =============================================================================
+#
+# ⚠️  EXPERIMENTAL & THEORETICAL
+# 
+# This configuration has NOT been validated in production runs.
+# Tests more aggressive LR decay for scenarios where early degradation observed.
+#
+# Purpose: Prevent degradation when standard decay isn't sufficient.
+# Hypothesis: If 0.85 decay still shows degradation, 0.7 may help.
+# Risk: May be TOO aggressive, causing slow learning in later cycles.
+#
+# =============================================================================
+
+experiment:
+  name: "aggressive_lr_decay"
+  description: "RAFT with aggressive LR decay (factor 0.7) across cycles"
+  hypothesis: "More aggressive decay needed if standard decay insufficient"
+  status: "UNTESTED"
+  compare_to: "exponential_lr_decay"
+  risk_note: "May slow learning too much in later cycles"
+
+model:
+  name: Qwen/Qwen2.5-Coder-7B
+  trust_remote_code: true
+  attn_implementation: eager
+
+data:
+  prompts: data/rlvr/mbpp_train_prompts.jsonl
+  tests: data/rlvr/mbpp_train_full.jsonl
+
+raft:
+  num_cycles: 5
+  samples_per_prompt: 8
+  temperature: 0.7
+  top_p: 0.95
+  reward_threshold: 0.5
+  keep_top_percent: 1.0
+
+# =============================================================================
+# LEARNING RATE CONFIGURATION - AGGRESSIVE DECAY
+# =============================================================================
+#
+# Decay factor: 0.7 (vs 0.85 in standard decay)
+#
+# With base_lr=5e-5 and decay=0.7:
+#   Cycle 1: 5.00e-5
+#   Cycle 2: 3.50e-5  (vs 4.25e-5 with 0.85)
+#   Cycle 3: 2.45e-5  (vs 3.61e-5 with 0.85)
+#   Cycle 4: 1.72e-5  (vs 3.07e-5 with 0.85)
+#   Cycle 5: 1.20e-5  (vs 2.61e-5 with 0.85)
+#
+# By cycle 5, LR is ~2x lower than standard decay.
+
+training:
+  base_learning_rate: 5e-5
+  lr_decay_factor: 0.7  # More aggressive than 0.85
+  
+  learning_rate_schedule:
+    cycle_1: 5.00e-5
+    cycle_2: 3.50e-5
+    cycle_3: 2.45e-5
+    cycle_4: 1.72e-5
+    cycle_5: 1.20e-5
+  
+  warmup_steps: 10
+  lr_scheduler_type: linear
+  epochs_per_cycle: 1
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  weight_decay: 0.01
+  max_grad_norm: 0.3
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  bf16: true
+  gradient_checkpointing: true
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+verifier:
+  type: rlvr_pytest
+  dataset_type: mbpp
+  timeout: 30
+  reward_partial: true
+
+checkpointing:
+  save_every_cycle: true
+  output_dir: models/experiments/aggressive_decay
+  save_total_limit: 6
+
+logging:
+  log_every_n_steps: 5
+  metrics_to_track:
+    - train_loss
+    - gradient_norm
+    - verification_rate
+    - samples_kept
+    - cycle_duration
+    - current_learning_rate
+
+# =============================================================================
+# WHEN TO USE THIS CONFIG
+# =============================================================================
+#
+# Use aggressive decay if standard decay (0.85) shows:
+# - Degradation still occurring in cycles 4-5
+# - High gradient norms / frequent clipping
+# - Rapid diversity collapse
+#
+# DO NOT use if standard decay shows:
+# - Slow improvement (LR may already be too low)
+# - Flat loss curves
+# - Little difference from constant LR
+#
+# In those cases, try HIGHER base_lr or LESS decay (0.9-0.95)
+# =============================================================================

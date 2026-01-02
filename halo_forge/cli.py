@@ -137,6 +137,7 @@ def cmd_raft_train(args):
     
     # Create config
     config = RAFTConfig(
+        base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
         sft_checkpoint=args.checkpoint or cfg_dict.get('sft_checkpoint', 'models/sft/final_model'),
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
         num_cycles=args.cycles or cfg_dict.get('num_cycles', 3)
@@ -787,7 +788,8 @@ def main():
     # raft train
     raft_train_parser = raft_subparsers.add_parser('train', help='Run RAFT training')
     raft_train_parser.add_argument('--config', '-c', help='Config file path')
-    raft_train_parser.add_argument('--checkpoint', help='SFT checkpoint path')
+    raft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-3B', help='Base model')
+    raft_train_parser.add_argument('--checkpoint', help='SFT checkpoint path (optional)')
     raft_train_parser.add_argument('--prompts', '-p', help='Prompts file')
     raft_train_parser.add_argument('--output', '-o', default='models/raft', help='Output directory')
     raft_train_parser.add_argument('--cycles', type=int, help='Number of RAFT cycles')

@@ -794,7 +794,11 @@ halo-forge/
 │   ├── FULL_PIPELINE.md
 │   ├── THEORY.md
 │   ├── VERIFIERS.md
-│   └── HARDWARE_NOTES.md
+│   ├── HARDWARE_NOTES.md
+│   └── experimental/     # Research & experimental features
+│       ├── LEARNING_RATE_THEORY.md
+│       ├── LR_QUICK_REFERENCE.md
+│       └── configs/      # Experimental config templates
 ├── examples/             # Working examples
 │   ├── full_pipeline/
 │   ├── compile_verified/
