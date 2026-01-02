@@ -1,0 +1,29 @@
+[book]
+title = "halo-forge"
+description = "RLVR Training Framework for AMD Strix Halo"
+authors = ["halo-forge contributors"]
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/professor-moody/halo-forge"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/professor-moody/halo-forge/edit/main/docs/{path}"
+additional-css = ["theme/custom.css"]
+no-section-label = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-hierarchical = true
+
+[output.html.playground]
+editable = false
