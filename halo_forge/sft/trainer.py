@@ -48,8 +48,8 @@ class SFTConfig:
     validation_split: float = 0.05
     max_seq_length: int = 2048
     
-    # QLoRA
-    load_in_4bit: bool = True
+    # QLoRA (4-bit is slower on Strix Halo - use BF16 by default)
+    load_in_4bit: bool = False
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_compute_dtype: str = "bfloat16"
     bnb_4bit_use_double_quant: bool = True

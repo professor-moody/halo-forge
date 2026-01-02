@@ -192,6 +192,62 @@ def cmd_benchmark(args):
     )
 
 
+def cmd_benchmark_full(args):
+    """Run comprehensive RAFT benchmark with hardware monitoring."""
+    try:
+        from halo_forge import ui
+        use_rich = True
+    except ImportError:
+        use_rich = False
+    
+    from halo_forge.benchmark import BenchmarkRunner, run_benchmark_suite, DEFAULT_MODELS
+    
+    if use_rich:
+        ui.print_banner()
+        ui.print_header("RAFT Benchmark", f"Comprehensive training benchmark with metrics")
+    
+    # Handle --suite option
+    if args.suite:
+        if args.suite == "all":
+            models = DEFAULT_MODELS
+        elif args.suite == "small":
+            models = [DEFAULT_MODELS[0]]  # Just 0.5B
+        elif args.suite == "medium":
+            models = DEFAULT_MODELS[:2]  # 0.5B and 1.5B
+        else:
+            print(f"Unknown suite: {args.suite}")
+            print("Valid suites: all, small, medium")
+            sys.exit(1)
+        
+        results = run_benchmark_suite(
+            models=models,
+            output_dir=args.output,
+            n_cycles=args.cycles,
+            verbose=not args.quiet,
+        )
+        
+        # Print comparison
+        if use_rich:
+            ui.print_header("Results Summary")
+        print(f"\nBenchmark complete. Results saved to: {args.output}")
+        
+        for r in results:
+            improvement = (r.final.compile_rate - r.baseline.compile_rate) if r.final and r.baseline else 0
+            print(f"  {r.model_short}: {r.baseline.compile_rate:.1%} -> {r.final.compile_rate:.1%} (+{improvement:.1%})")
+        
+    else:
+        # Single model benchmark
+        runner = BenchmarkRunner(
+            model_name=args.model,
+            output_dir=args.output,
+            n_cycles=args.cycles,
+            verbose=not args.quiet,
+        )
+        
+        result = runner.run()
+        print(f"\nBenchmark complete. Results saved to: {args.output}/summary.json")
+
+
 def cmd_info(args):
     """Show hardware info."""
     try:
@@ -731,8 +787,8 @@ def main():
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
     bench_subparsers = bench_parser.add_subparsers(dest='bench_command', required=True)
     
-    # benchmark run
-    bench_run_parser = bench_subparsers.add_parser('run', help='Run benchmark')
+    # benchmark run (legacy pass@k benchmark)
+    bench_run_parser = bench_subparsers.add_parser('run', help='Run pass@k benchmark')
     bench_run_parser.add_argument('--model', '-m', required=True, help='Model path')
     bench_run_parser.add_argument('--prompts', '-p', required=True, help='Prompts file')
     bench_run_parser.add_argument('--output', '-o', help='Output file path')
@@ -745,6 +801,15 @@ def main():
     bench_run_parser.add_argument('--host', help='MSVC host')
     bench_run_parser.add_argument('--user', help='MSVC user')
     bench_run_parser.add_argument('--ssh-key', help='MSVC SSH key')
+    
+    # benchmark full (comprehensive RAFT benchmark with hardware metrics)
+    bench_full_parser = bench_subparsers.add_parser('full', help='Run comprehensive RAFT benchmark')
+    bench_full_parser.add_argument('--model', '-m', help='Model to benchmark (e.g., Qwen/Qwen2.5-Coder-0.5B)')
+    bench_full_parser.add_argument('--suite', '-s', choices=['all', 'small', 'medium'],
+                                   help='Run predefined suite: all (0.5B, 1.5B, 3B), small (0.5B), medium (0.5B, 1.5B)')
+    bench_full_parser.add_argument('--cycles', '-c', type=int, default=2, help='Number of RAFT cycles (default: 2)')
+    bench_full_parser.add_argument('--output', '-o', default='results/benchmarks', help='Output directory')
+    bench_full_parser.add_argument('--quiet', '-q', action='store_true', help='Minimal output')
     
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
@@ -777,6 +842,14 @@ def main():
     elif args.command == 'benchmark':
         if args.bench_command == 'run':
             cmd_benchmark(args)
+        elif args.bench_command == 'full':
+            if not args.model and not args.suite:
+                print("Error: Either --model or --suite is required")
+                print("Examples:")
+                print("  halo-forge benchmark full --model Qwen/Qwen2.5-Coder-0.5B")
+                print("  halo-forge benchmark full --suite all")
+                sys.exit(1)
+            cmd_benchmark_full(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'test':
