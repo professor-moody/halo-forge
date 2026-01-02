@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 @dataclass
@@ -50,7 +51,8 @@ class RLVRPytestVerifier:
         self,
         dataset_path: str,
         timeout: int = 30,
-        reward_partial: bool = True
+        reward_partial: bool = True,
+        max_workers: int = 8
     ):
         """
         Initialize verifier with dataset.
@@ -59,9 +61,11 @@ class RLVRPytestVerifier:
             dataset_path: Path to JSONL file with tests
             timeout: Test execution timeout in seconds
             reward_partial: Give partial reward for some tests passing
+            max_workers: Max parallel workers for verification (default: 8)
         """
         self.timeout = timeout
         self.reward_partial = reward_partial
+        self.max_workers = max_workers
         self.test_cases: Dict[str, Dict] = {}
         self.prompt_to_task_id: Dict[str, str] = {}  # Reverse lookup
         self.dataset_type = "humaneval"  # Default, override in subclasses
@@ -300,7 +304,7 @@ test_solution()
         prompts: Optional[List[str]] = None
     ) -> List[VerifyResult]:
         """
-        Verify multiple samples.
+        Verify multiple samples in parallel.
         
         Args:
             codes: List of generated code strings
@@ -309,20 +313,39 @@ test_solution()
         Returns:
             List of VerifyResult
         """
-        results = []
-        for i, code in enumerate(codes):
-            prompt = prompts[i] if prompts else None
-            if prompt:
-                result = self._verify_with_prompt(code, prompt)
-            else:
-                # Fallback: try to verify without task_id (will likely fail)
-                result = VerifyResult(
+        if not prompts:
+            # Can't verify without prompts
+            return [
+                VerifyResult(
                     success=False,
                     reward=0.0,
                     details="No prompt provided for task_id lookup",
                     error="RLVRPytestVerifier requires prompts for verification"
                 )
-            results.append(result)
+                for _ in codes
+            ]
+        
+        # Parallel verification using ThreadPoolExecutor
+        results = [None] * len(codes)
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {
+                executor.submit(self._verify_with_prompt, code, prompt): i
+                for i, (code, prompt) in enumerate(zip(codes, prompts))
+            }
+            
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    results[idx] = VerifyResult(
+                        success=False,
+                        reward=0.0,
+                        details="Verification exception",
+                        error=str(e)
+                    )
+        
         return results
     
     def _verify_with_prompt(self, code: str, prompt: str) -> VerifyResult:

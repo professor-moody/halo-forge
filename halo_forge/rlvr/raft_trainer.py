@@ -52,7 +52,7 @@ class RAFTConfig:
     # Generation
     max_new_tokens: int = 1024
     temperature: float = 0.7
-    generation_batch_size: int = 4
+    generation_batch_size: int = 8  # Match strix-edr-training
     
     # Training (per cycle)
     train_epochs: int = 1
