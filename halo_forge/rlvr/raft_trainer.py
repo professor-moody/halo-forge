@@ -473,7 +473,7 @@ class RAFTTrainer:
             per_device_train_batch_size=cfg.train_batch_size,
             gradient_accumulation_steps=cfg.gradient_accumulation_steps,
             learning_rate=cfg.learning_rate,
-            warmup_steps=1,
+            warmup_steps=0,  # No warmup - prevents LR=0 with few training steps
             bf16=True,
             gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False},
