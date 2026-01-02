@@ -194,8 +194,37 @@ def cmd_benchmark(args):
 
 def cmd_info(args):
     """Show hardware info."""
-    from halo_forge.utils.hardware import print_hardware_info
-    print_hardware_info()
+    try:
+        from halo_forge import ui
+        import torch
+        
+        ui.print_banner()
+        
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            props = torch.cuda.get_device_properties(0)
+            memory_gb = props.total_memory / 1e9
+            
+            # Try to get versions
+            rocm_version = ""
+            if hasattr(torch.version, 'hip'):
+                rocm_version = torch.version.hip or ""
+            
+            pytorch_version = torch.__version__
+            
+            ui.print_hardware_info(
+                gpu_name=gpu_name,
+                memory_gb=memory_gb,
+                rocm_version=rocm_version,
+                pytorch_version=pytorch_version
+            )
+        else:
+            ui.print_warning("No GPU detected")
+            ui.print_info("PyTorch CUDA/ROCm not available")
+    except ImportError:
+        # Fallback if rich not installed
+        from halo_forge.utils.hardware import print_hardware_info
+        print_hardware_info()
 
 
 # =============================================================================
@@ -226,18 +255,42 @@ class TestRunner:
         self.verbose = verbose
         self.model_name = model
         self.results = {"passed": [], "failed": [], "skipped": []}
+        
+        # Try to use rich UI
+        try:
+            from halo_forge import ui
+            self.ui = ui
+            self.use_rich = True
+        except ImportError:
+            self.ui = None
+            self.use_rich = False
     
     def log(self, msg: str, level: str = "info"):
         """Log message if verbose or if it's an error."""
         if self.verbose or level in ("error", "result"):
-            prefix = {"info": "  ", "ok": "  [OK] ", "fail": "  [FAIL] ", "skip": "  [SKIP] ", "error": "  [ERROR] ", "result": ""}
-            print(f"{prefix.get(level, '  ')}{msg}")
+            if self.use_rich:
+                if level == "ok":
+                    self.ui.print_step(msg, "success")
+                elif level == "fail":
+                    self.ui.print_step(msg, "error")
+                elif level == "skip":
+                    self.ui.print_step(msg, "skip")
+                elif level == "error":
+                    self.ui.print_error(msg)
+                else:
+                    self.ui.print_dim(f"  {msg}")
+            else:
+                prefix = {"info": "  ", "ok": "  [OK] ", "fail": "  [FAIL] ", "skip": "  [SKIP] ", "error": "  [ERROR] ", "result": ""}
+                print(f"{prefix.get(level, '  ')}{msg}")
     
     def run_test(self, name: str, test_fn, skip_condition: bool = False, skip_reason: str = ""):
         """Run a single test with timing."""
         if skip_condition:
             self.results["skipped"].append(name)
-            self.log(f"{name}: {skip_reason}", "skip")
+            if self.use_rich:
+                self.ui.print_step(name, "skip", skip_reason)
+            else:
+                self.log(f"{name}: {skip_reason}", "skip")
             return None
         
         start = time.time()
@@ -245,12 +298,18 @@ class TestRunner:
             result = test_fn()
             elapsed = time.time() - start
             self.results["passed"].append(name)
-            self.log(f"{name} ({elapsed:.1f}s)", "ok")
+            if self.use_rich:
+                self.ui.print_step(name, "success", time_s=elapsed)
+            else:
+                self.log(f"{name} ({elapsed:.1f}s)", "ok")
             return result
         except Exception as e:
             elapsed = time.time() - start
             self.results["failed"].append(name)
-            self.log(f"{name} ({elapsed:.1f}s): {e}", "fail")
+            if self.use_rich:
+                self.ui.print_step(name, "error", str(e), time_s=elapsed)
+            else:
+                self.log(f"{name} ({elapsed:.1f}s): {e}", "fail")
             if self.verbose:
                 import traceback
                 traceback.print_exc()
@@ -258,6 +317,11 @@ class TestRunner:
     
     def print_summary(self):
         """Print test summary."""
+        if self.use_rich:
+            self.ui.print_test_results(self.results)
+            return len(self.results["failed"]) == 0
+        
+        # Fallback plain output
         total = len(self.results["passed"]) + len(self.results["failed"]) + len(self.results["skipped"])
         passed = len(self.results["passed"])
         failed = len(self.results["failed"])
@@ -492,9 +556,13 @@ class TestRunner:
     
     def run_smoke(self) -> bool:
         """Run smoke tests (no GPU required)."""
-        print(f"\n{'='*60}")
-        print("halo-forge Smoke Test")
-        print(f"{'='*60}\n")
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("Smoke Test", "Quick validation without GPU")
+        else:
+            print(f"\n{'='*60}")
+            print("halo-forge Smoke Test")
+            print(f"{'='*60}\n")
         
         self.run_test("Import modules", self.test_imports)
         self.run_test("Compiler available", self.test_compiler_available)
@@ -504,10 +572,14 @@ class TestRunner:
     
     def run_standard(self) -> bool:
         """Run standard tests (GPU required)."""
-        print(f"\n{'='*60}")
-        print("halo-forge Standard Test")
-        print(f"Model: {self.model_name}")
-        print(f"{'='*60}\n")
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("Standard Test", f"Model: {self.model_name}")
+        else:
+            print(f"\n{'='*60}")
+            print("halo-forge Standard Test")
+            print(f"Model: {self.model_name}")
+            print(f"{'='*60}\n")
         
         # Smoke tests first
         self.run_test("Import modules", self.test_imports)
@@ -516,7 +588,10 @@ class TestRunner:
         # GPU tests
         gpu_ok = self.run_test("GPU available", self.test_gpu_available)
         if gpu_ok is None:
-            print("\nCannot continue without GPU")
+            if self.use_rich:
+                self.ui.print_error("Cannot continue without GPU")
+            else:
+                print("\nCannot continue without GPU")
             return self.print_summary()
         
         # Model loading
@@ -537,10 +612,14 @@ class TestRunner:
     
     def run_full(self) -> bool:
         """Run full tests including training."""
-        print(f"\n{'='*60}")
-        print("halo-forge Full Pipeline Test")
-        print(f"Model: {self.model_name}")
-        print(f"{'='*60}\n")
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("Full Pipeline Test", f"Model: {self.model_name}")
+        else:
+            print(f"\n{'='*60}")
+            print("halo-forge Full Pipeline Test")
+            print(f"Model: {self.model_name}")
+            print(f"{'='*60}\n")
         
         # Smoke tests
         self.run_test("Import modules", self.test_imports)
@@ -549,7 +628,10 @@ class TestRunner:
         # GPU tests
         gpu_ok = self.run_test("GPU available", self.test_gpu_available)
         if gpu_ok is None:
-            print("\nCannot continue without GPU")
+            if self.use_rich:
+                self.ui.print_error("Cannot continue without GPU")
+            else:
+                print("\nCannot continue without GPU")
             return self.print_summary()
         
         # Model loading

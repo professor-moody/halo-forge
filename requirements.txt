@@ -28,6 +28,7 @@ wandb
 pandas
 matplotlib
 paramiko
+rich
 
 # Optional: LLM backends for data generation
 # anthropic>=0.18.0
