@@ -33,6 +33,13 @@ from tqdm import tqdm
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
 
+# Rich UI (optional, falls back to plain print)
+try:
+    from halo_forge import ui
+    HAS_RICH = True
+except ImportError:
+    HAS_RICH = False
+
 
 @dataclass
 class RAFTConfig:
@@ -104,17 +111,38 @@ class RAFTTrainer:
         self.output_dir = Path(self.config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # UI helpers
+        self.use_rich = HAS_RICH
+        
         # Load model and tokenizer
         self._load_model()
         
         # Statistics
         self.cycle_stats = []
     
+    def _log(self, msg: str, level: str = "info"):
+        """Log a message with optional rich formatting."""
+        if self.use_rich:
+            if level == "success":
+                ui.print_success(msg)
+            elif level == "error":
+                ui.print_error(msg)
+            elif level == "warning":
+                ui.print_warning(msg)
+            elif level == "dim":
+                ui.print_dim(msg)
+            elif level == "step":
+                ui.print_step(msg, "running")
+            else:
+                ui.print_info(msg)
+        else:
+            print(msg)
+    
     def _load_model(self):
         """Load base model and optionally SFT adapters."""
         cfg = self.config
         
-        print(f"\nLoading model...")
+        self._log("Loading model...", "step")
         
         self.tokenizer = AutoTokenizer.from_pretrained(
             cfg.base_model,
@@ -126,7 +154,7 @@ class RAFTTrainer:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
         # Load base model
-        print(f"Loading base model: {cfg.base_model}")
+        self._log(f"Loading base model: {cfg.base_model}", "dim")
         self.base_model = AutoModelForCausalLM.from_pretrained(
             cfg.base_model,
             torch_dtype=torch.bfloat16,
@@ -141,7 +169,7 @@ class RAFTTrainer:
         
         if has_peft:
             # Load existing PEFT adapters
-            print(f"Loading LoRA adapters from: {cfg.sft_checkpoint}")
+            self._log(f"Loading LoRA adapters from: {cfg.sft_checkpoint}", "dim")
             self.model = PeftModel.from_pretrained(
                 self.base_model,
                 cfg.sft_checkpoint,
@@ -149,7 +177,7 @@ class RAFTTrainer:
             )
         else:
             # Create new LoRA adapters (fresh start from base model)
-            print("No SFT checkpoint found, creating new LoRA adapters...")
+            self._log("No SFT checkpoint found, creating new LoRA adapters...", "warning")
             lora_config = LoraConfig(
                 r=16,
                 lora_alpha=32,
@@ -160,10 +188,10 @@ class RAFTTrainer:
                 task_type="CAUSAL_LM"
             )
             self.model = get_peft_model(self.base_model, lora_config)
-            print(f"Created LoRA adapters with rank={lora_config.r}")
+            self._log(f"Created LoRA adapters with rank={lora_config.r}", "dim")
         
         self.model.enable_input_require_grads()
-        print("Model loaded")
+        self._log("Model loaded", "success")
     
     def generate_samples(
         self,
@@ -193,15 +221,31 @@ class RAFTTrainer:
         batch_size = batch_size or cfg.generation_batch_size
         
         total = len(prompts) * num_samples
-        print(f"\nGenerating {total} samples...")
-        print(f"  {len(prompts)} prompts x {num_samples} samples/prompt")
+        
+        if self.use_rich:
+            ui.print_header("Generation", f"{total} samples ({len(prompts)} prompts x {num_samples} samples)")
+        else:
+            print(f"\nGenerating {total} samples...")
+            print(f"  {len(prompts)} prompts x {num_samples} samples/prompt")
         
         self.model.eval()
         all_samples = []
         start_time = time.time()
         
-        for i in tqdm(range(0, len(prompts), batch_size), desc="Generating"):
+        # Use rich progress bar when available
+        batch_count = (len(prompts) + batch_size - 1) // batch_size
+        if self.use_rich:
+            progress = ui.create_progress()
+            progress.start()
+            task = progress.add_task("Generating", total=batch_count)
+        else:
+            progress = None
+        
+        for batch_idx, i in enumerate(range(0, len(prompts), batch_size)):
             batch_prompts = prompts[i:i+batch_size]
+            
+            if progress:
+                progress.update(task, completed=batch_idx + 1, description=f"Generating batch {batch_idx + 1}/{batch_count}")
             
             # Format with chat template
             formatted = []
@@ -253,8 +297,11 @@ class RAFTTrainer:
                 for completion in prompt_completions:
                     all_samples.append((prompt, completion))
         
+        if progress:
+            progress.stop()
+        
         elapsed = time.time() - start_time
-        print(f"Generated {len(all_samples)} samples in {elapsed/60:.1f} minutes")
+        self._log(f"Generated {len(all_samples)} samples in {elapsed/60:.1f} minutes", "success")
         
         return all_samples
     
@@ -274,7 +321,11 @@ class RAFTTrainer:
             (filtered_samples, stats)
         """
         cfg = self.config
-        print(f"\nVerifying {len(samples)} samples...")
+        
+        if self.use_rich:
+            ui.print_header("Verification", f"{len(samples)} samples")
+        else:
+            print(f"\nVerifying {len(samples)} samples...")
         
         # Extract prompts and completions for verification
         prompts = [s[0] for s in samples]
@@ -291,7 +342,7 @@ class RAFTTrainer:
             chunk_prompts = prompts[i:chunk_end]
             chunk_completions = completions[i:chunk_end]
             
-            print(f"  Processing chunk {i//chunk_size + 1}/{(len(completions) + chunk_size - 1)//chunk_size} ({len(chunk_completions)} samples)...")
+            self._log(f"Processing chunk {i//chunk_size + 1}/{(len(completions) + chunk_size - 1)//chunk_size} ({len(chunk_completions)} samples)", "dim")
             
             # Pass both prompts and completions (for verifiers that need context like HumanEval/MBPP)
             chunk_results = self.verifier.verify_batch(chunk_completions, chunk_prompts)
@@ -301,7 +352,7 @@ class RAFTTrainer:
             gc.collect()
         
         elapsed = time.time() - start_time
-        print(f"Verification completed in {elapsed:.1f}s")
+        self._log(f"Verification completed in {elapsed:.1f}s", "success")
         
         # Combine with prompts and rewards
         all_data = []
@@ -340,17 +391,27 @@ class RAFTTrainer:
             }
         }
         
-        print(f"\nFiltering results:")
-        print(f"  Total: {stats['total_samples']}")
-        print(f"  Above threshold ({cfg.reward_threshold}): {stats['above_threshold']} ({stats['above_threshold']/stats['total_samples']*100:.1f}%)")
-        print(f"  Kept: {stats['kept']} ({stats['kept']/stats['total_samples']*100:.1f}%)")
-        print(f"  Avg reward: {stats['avg_reward']:.3f}")
-        print(f"  Success rate: {stats['success_rate']*100:.1f}%")
-        print(f"\n  Reward distribution:")
-        print(f"    0.0 (failed): {stats['reward_distribution']['0.0']}")
-        print(f"    0.5 (compiled): {stats['reward_distribution']['0.5']}")
-        print(f"    0.7 (runs): {stats['reward_distribution']['0.7']}")
-        print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
+        # Print filtering summary
+        if self.use_rich:
+            ui.print_raft_summary({
+                'generated': stats['total_samples'],
+                'verified': stats['above_threshold'],
+                'kept': stats['kept'],
+                'compile_rate': stats['success_rate'],
+                'avg_reward': stats['avg_reward']
+            })
+        else:
+            print(f"\nFiltering results:")
+            print(f"  Total: {stats['total_samples']}")
+            print(f"  Above threshold ({cfg.reward_threshold}): {stats['above_threshold']} ({stats['above_threshold']/stats['total_samples']*100:.1f}%)")
+            print(f"  Kept: {stats['kept']} ({stats['kept']/stats['total_samples']*100:.1f}%)")
+            print(f"  Avg reward: {stats['avg_reward']:.3f}")
+            print(f"  Success rate: {stats['success_rate']*100:.1f}%")
+            print(f"\n  Reward distribution:")
+            print(f"    0.0 (failed): {stats['reward_distribution']['0.0']}")
+            print(f"    0.5 (compiled): {stats['reward_distribution']['0.5']}")
+            print(f"    0.7 (runs): {stats['reward_distribution']['0.7']}")
+            print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
         
         return filtered, stats, all_data
     
@@ -367,7 +428,11 @@ class RAFTTrainer:
             cycle: Current cycle number
         """
         cfg = self.config
-        print(f"\nTraining on {len(filtered_samples)} filtered samples...")
+        
+        if self.use_rich:
+            ui.print_header("Training", f"{len(filtered_samples)} filtered samples")
+        else:
+            print(f"\nTraining on {len(filtered_samples)} filtered samples...")
         
         # Prepare dataset
         texts = []
@@ -443,7 +508,7 @@ class RAFTTrainer:
         # Save checkpoint
         checkpoint_path = self.output_dir / f"cycle_{cycle}_final"
         trainer.save_model(str(checkpoint_path))
-        print(f"Saved checkpoint: {checkpoint_path}")
+        self._log(f"Saved checkpoint: {checkpoint_path}", "success")
     
     def run_cycle(
         self,
@@ -460,9 +525,12 @@ class RAFTTrainer:
         Returns:
             Cycle statistics
         """
-        print("\n" + "=" * 70)
-        print(f"RAFT CYCLE {cycle}")
-        print("=" * 70)
+        if self.use_rich:
+            ui.print_raft_cycle_header(cycle, self.config.num_cycles)
+        else:
+            print("\n" + "=" * 70)
+            print(f"RAFT CYCLE {cycle}")
+            print("=" * 70)
         
         cycle_start = time.time()
         
@@ -473,19 +541,19 @@ class RAFTTrainer:
         
         # Skip if already complete
         if final_checkpoint.exists():
-            print(f"\nCycle {cycle} already complete")
+            self._log(f"Cycle {cycle} already complete, skipping...", "dim")
             self._reload_model(str(final_checkpoint))
             return {'cycle': cycle, 'skipped': True}
         
         # Generate (or load from cache)
         if samples_cache.exists():
-            print(f"\nLoading cached samples...")
+            self._log("Loading cached samples...", "dim")
             samples = []
             with open(samples_cache) as f:
                 for line in f:
                     data = json.loads(line)
                     samples.append((data['prompt'], data['completion']))
-            print(f"Loaded {len(samples)} samples")
+            self._log(f"Loaded {len(samples)} samples from cache", "dim")
         else:
             samples = self.generate_samples(prompts)
             
@@ -496,7 +564,7 @@ class RAFTTrainer:
         
         # Verify (or load from cache)
         if verified_cache.exists():
-            print(f"\nLoading cached verification...")
+            self._log("Loading cached verification...", "dim")
             all_data = []
             with open(verified_cache) as f:
                 for line in f:
@@ -508,7 +576,7 @@ class RAFTTrainer:
             except NameError:
                 pass
             gc.collect()
-            print("🧹 Freed cached samples memory")
+            self._log("Freed cached samples memory", "dim")
             
             # Apply filtering
             cfg = self.config
@@ -533,7 +601,7 @@ class RAFTTrainer:
                     f.write(json.dumps(item) + '\n')
         
         if len(filtered) == 0:
-            print("\nNo samples passed filtering!")
+            self._log("No samples passed filtering!", "error")
             return None
         
         # Train
@@ -551,13 +619,13 @@ class RAFTTrainer:
         }
         
         self.cycle_stats.append(cycle_stats)
-        print(f"\nCycle {cycle} complete in {cycle_elapsed/60:.1f} minutes")
+        self._log(f"Cycle {cycle} complete in {cycle_elapsed/60:.1f} minutes", "success")
         
         return cycle_stats
     
     def _reload_model(self, checkpoint_path: str):
         """Reload model from checkpoint."""
-        print(f"\nReloading model from {checkpoint_path}")
+        self._log(f"Reloading model from {checkpoint_path}", "step")
         
         # Free memory
         if hasattr(self, 'model'):
@@ -588,38 +656,57 @@ class RAFTTrainer:
         """
         num_cycles = num_cycles or self.config.num_cycles
         
-        print(f"\nStarting RAFT training: {num_cycles} cycles")
+        if self.use_rich:
+            ui.print_banner()
+            ui.print_header("RAFT Training", f"{num_cycles} cycles")
+        else:
+            print(f"\nStarting RAFT training: {num_cycles} cycles")
         
         for cycle in range(1, num_cycles + 1):
             stats = self.run_cycle(prompts, cycle)
             
             if stats is None:
-                print(f"\nCycle {cycle} failed. Stopping.")
+                self._log(f"Cycle {cycle} failed. Stopping.", "error")
                 break
         
         # Save statistics
         self.save_statistics()
         
         # Summary
-        print("\n" + "=" * 70)
-        print("RAFT TRAINING COMPLETE")
-        print("=" * 70)
-        
-        for stats in self.cycle_stats:
-            cycle = stats['cycle']
-            if stats.get('skipped'):
-                print(f"\nCycle {cycle}: SKIPPED")
-            else:
-                print(f"\nCycle {cycle}:")
-                print(f"  Time: {stats['elapsed_minutes']:.1f} min")
-                print(f"  Kept: {stats['kept']}/{stats['total_samples']}")
-                print(f"  Avg reward: {stats['avg_reward']:.3f}")
+        if self.use_rich:
+            ui.print_divider()
+            ui.print_header("RAFT Training Complete")
+            
+            for stats in self.cycle_stats:
+                cycle = stats['cycle']
+                if stats.get('skipped'):
+                    ui.print_step(f"Cycle {cycle}", "skip")
+                else:
+                    ui.print_raft_summary({
+                        'generated': stats.get('total_samples', 0),
+                        'kept': stats.get('kept', 0),
+                        'avg_reward': stats.get('avg_reward', 0)
+                    })
+        else:
+            print("\n" + "=" * 70)
+            print("RAFT TRAINING COMPLETE")
+            print("=" * 70)
+            
+            for stats in self.cycle_stats:
+                cycle = stats['cycle']
+                if stats.get('skipped'):
+                    print(f"\nCycle {cycle}: SKIPPED")
+                else:
+                    print(f"\nCycle {cycle}:")
+                    print(f"  Time: {stats['elapsed_minutes']:.1f} min")
+                    print(f"  Kept: {stats['kept']}/{stats['total_samples']}")
+                    print(f"  Avg reward: {stats['avg_reward']:.3f}")
         
         # Cleanup
         self.verifier.cleanup()
         
         final_path = self.output_dir / f"cycle_{num_cycles}_final"
-        print(f"\nFinal model: {final_path}")
+        self._log(f"Final model: {final_path}", "success")
         
         return str(final_path)
     
@@ -628,5 +715,5 @@ class RAFTTrainer:
         stats_path = self.output_dir / "raft_statistics.json"
         with open(stats_path, 'w') as f:
             json.dump(self.cycle_stats, f, indent=2)
-        print(f"\nSaved statistics: {stats_path}")
+        self._log(f"Saved statistics: {stats_path}", "dim")
 
