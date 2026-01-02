@@ -570,7 +570,7 @@ Quick validation benchmarks on built-in prompts (16 prompts, 2 cycles):
 | Model | Baseline | After 2 Cycles | Time |
 |-------|----------|----------------|------|
 | Qwen2.5-Coder-0.5B | 32.0% | 32.0% | 41 min |
-| Qwen2.5-Coder-1.5B | TBD | TBD | ~90 min |
+| Qwen2.5-Coder-1.5B | 67.2% | 67.2% | 56 min |
 | Qwen2.5-Coder-3B | TBD | TBD | ~150 min |
 
 Demo benchmarks use a small prompt set to quickly validate the pipeline works on your hardware. Production training with larger datasets shows more significant improvements.

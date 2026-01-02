@@ -1,0 +1,238 @@
+{
+  "model_name": "Qwen/Qwen2.5-Coder-1.5B",
+  "model_short": "qwen2-5-coder-1-5b",
+  "n_cycles": 2,
+  "total_time_sec": 3107.8,
+  "baseline": {
+    "total_prompts": 16,
+    "total_samples": 128,
+    "compiled": 86,
+    "passed": 22,
+    "compile_rate": 0.6719,
+    "pass_rate": 0.1719,
+    "pass_at_1": 1.0,
+    "pass_at_k": 0.25,
+    "avg_reward": 0.3359,
+    "tokens_per_sec": 194.0,
+    "generation_time_sec": 675.5,
+    "verification_time_sec": 28.3,
+    "hardware": {
+      "duration_sec": 701.3,
+      "samples_count": 281,
+      "gpu": {
+        "utilization_avg_pct": 0.0,
+        "utilization_peak_pct": 0.0,
+        "memory_avg_gb": 7.33,
+        "memory_peak_gb": 8.07,
+        "temp_avg_c": 47.9,
+        "temp_peak_c": 56.0,
+        "power_avg_w": 80.9,
+        "power_peak_w": 115.1,
+        "energy_wh": 15.77
+      },
+      "system": {
+        "memory_avg_gb": 23.89,
+        "memory_peak_gb": 25.04,
+        "cpu_util_avg_pct": 5.8,
+        "cpu_util_peak_pct": 29.4
+      }
+    }
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "generated": 128,
+      "verified": 128,
+      "kept": 43,
+      "compile_rate": 0.6641,
+      "avg_reward": 0.332,
+      "training_loss": 0.603564,
+      "training_steps": 2,
+      "cycle_time_sec": 816.5,
+      "hardware": {
+        "duration_sec": 813.9,
+        "samples_count": 325,
+        "gpu": {
+          "utilization_avg_pct": 0.0,
+          "utilization_peak_pct": 0.0,
+          "memory_avg_gb": 8.77,
+          "memory_peak_gb": 14.13,
+          "temp_avg_c": 49.7,
+          "temp_peak_c": 61.0,
+          "power_avg_w": 85.6,
+          "power_peak_w": 130.1,
+          "energy_wh": 19.35
+        },
+        "system": {
+          "memory_avg_gb": 25.59,
+          "memory_peak_gb": 40.59,
+          "cpu_util_avg_pct": 6.1,
+          "cpu_util_peak_pct": 34.2
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "generated": 128,
+      "verified": 128,
+      "kept": 43,
+      "compile_rate": 0.6641,
+      "avg_reward": 0.332,
+      "training_loss": 0.623738,
+      "training_steps": 2,
+      "cycle_time_sec": 835.0,
+      "hardware": {
+        "duration_sec": 832.2,
+        "samples_count": 333,
+        "gpu": {
+          "utilization_avg_pct": 0.0,
+          "utilization_peak_pct": 0.0,
+          "memory_avg_gb": 6.41,
+          "memory_peak_gb": 14.5,
+          "temp_avg_c": 48.7,
+          "temp_peak_c": 61.0,
+          "power_avg_w": 81.8,
+          "power_peak_w": 130.0,
+          "energy_wh": 18.92
+        },
+        "system": {
+          "memory_avg_gb": 24.46,
+          "memory_peak_gb": 36.67,
+          "cpu_util_avg_pct": 5.2,
+          "cpu_util_peak_pct": 10.5
+        }
+      }
+    }
+  ],
+  "final": {
+    "total_prompts": 16,
+    "total_samples": 128,
+    "compiled": 86,
+    "passed": 25,
+    "compile_rate": 0.6719,
+    "pass_rate": 0.1953,
+    "pass_at_1": 1.0,
+    "pass_at_k": 0.0625,
+    "avg_reward": 0.3359,
+    "tokens_per_sec": 187.8,
+    "generation_time_sec": 698.0,
+    "verification_time_sec": 30.0,
+    "hardware": {
+      "duration_sec": 726.4,
+      "samples_count": 292,
+      "gpu": {
+        "utilization_avg_pct": 0.0,
+        "utilization_peak_pct": 0.0,
+        "memory_avg_gb": 5.34,
+        "memory_peak_gb": 5.55,
+        "temp_avg_c": 46.8,
+        "temp_peak_c": 57.0,
+        "power_avg_w": 71.9,
+        "power_peak_w": 104.0,
+        "energy_wh": 14.5
+      },
+      "system": {
+        "memory_avg_gb": 23.25,
+        "memory_peak_gb": 23.94,
+        "cpu_util_avg_pct": 4.5,
+        "cpu_util_peak_pct": 16.3
+      }
+    }
+  },
+  "hardware_summary": {
+    "gpu_peak_utilization_pct": 0.0,
+    "gpu_peak_memory_gb": 14.5,
+    "sys_peak_memory_gb": 40.59,
+    "total_energy_wh": 68.54,
+    "phases": {
+      "baseline": {
+        "duration_sec": 701.3,
+        "samples_count": 281,
+        "gpu": {
+          "utilization_avg_pct": 0.0,
+          "utilization_peak_pct": 0.0,
+          "memory_avg_gb": 7.33,
+          "memory_peak_gb": 8.07,
+          "temp_avg_c": 47.9,
+          "temp_peak_c": 56.0,
+          "power_avg_w": 80.9,
+          "power_peak_w": 115.1,
+          "energy_wh": 15.77
+        },
+        "system": {
+          "memory_avg_gb": 23.89,
+          "memory_peak_gb": 25.04,
+          "cpu_util_avg_pct": 5.8,
+          "cpu_util_peak_pct": 29.4
+        }
+      },
+      "cycle_1": {
+        "duration_sec": 813.9,
+        "samples_count": 325,
+        "gpu": {
+          "utilization_avg_pct": 0.0,
+          "utilization_peak_pct": 0.0,
+          "memory_avg_gb": 8.77,
+          "memory_peak_gb": 14.13,
+          "temp_avg_c": 49.7,
+          "temp_peak_c": 61.0,
+          "power_avg_w": 85.6,
+          "power_peak_w": 130.1,
+          "energy_wh": 19.35
+        },
+        "system": {
+          "memory_avg_gb": 25.59,
+          "memory_peak_gb": 40.59,
+          "cpu_util_avg_pct": 6.1,
+          "cpu_util_peak_pct": 34.2
+        }
+      },
+      "cycle_2": {
+        "duration_sec": 832.2,
+        "samples_count": 333,
+        "gpu": {
+          "utilization_avg_pct": 0.0,
+          "utilization_peak_pct": 0.0,
+          "memory_avg_gb": 6.41,
+          "memory_peak_gb": 14.5,
+          "temp_avg_c": 48.7,
+          "temp_peak_c": 61.0,
+          "power_avg_w": 81.8,
+          "power_peak_w": 130.0,
+          "energy_wh": 18.92
+        },
+        "system": {
+          "memory_avg_gb": 24.46,
+          "memory_peak_gb": 36.67,
+          "cpu_util_avg_pct": 5.2,
+          "cpu_util_peak_pct": 10.5
+        }
+      },
+      "final": {
+        "duration_sec": 726.4,
+        "samples_count": 292,
+        "gpu": {
+          "utilization_avg_pct": 0.0,
+          "utilization_peak_pct": 0.0,
+          "memory_avg_gb": 5.34,
+          "memory_peak_gb": 5.55,
+          "temp_avg_c": 46.8,
+          "temp_peak_c": 57.0,
+          "power_avg_w": 71.9,
+          "power_peak_w": 104.0,
+          "energy_wh": 14.5
+        },
+        "system": {
+          "memory_avg_gb": 23.25,
+          "memory_peak_gb": 23.94,
+          "cpu_util_avg_pct": 4.5,
+          "cpu_util_peak_pct": 16.3
+        }
+      }
+    }
+  },
+  "improvement": {
+    "compile_rate": 0.0,
+    "pass_at_1": 0.0
+  }
+}
