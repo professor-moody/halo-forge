@@ -91,6 +91,7 @@ class ProgressPanel(Container):
         margin: 1;
         padding: 1;
         height: auto;
+        min-height: 10;
     }
     
     ProgressPanel > .panel-title {
@@ -100,7 +101,7 @@ class ProgressPanel(Container):
     }
     
     ProgressPanel > .progress-row {
-        height: 1;
+        height: 2;
         margin: 0 0 1 0;
     }
     
@@ -247,6 +248,7 @@ class MetricsPanel(Container):
         margin: 1;
         padding: 1;
         height: auto;
+        min-height: 12;
     }
     
     MetricsPanel > .panel-title {
@@ -255,13 +257,13 @@ class MetricsPanel(Container):
         padding-bottom: 1;
     }
     
-    MetricsPanel > .compile-rate {
+    MetricsPanel > #compile-display {
         height: 4;
     }
     
-    MetricsPanel > .metrics-grid {
+    MetricsPanel > #metrics-display {
         height: auto;
-        margin-top: 1;
+        min-height: 5;
     }
     
     MetricsPanel .metric-label {
@@ -359,6 +361,7 @@ class HardwarePanel(Container):
         margin: 1;
         padding: 1;
         height: auto;
+        min-height: 8;
     }
     
     HardwarePanel > .panel-title {
