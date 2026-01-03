@@ -287,21 +287,31 @@ def generate_demo_state(step: int = 0) -> TrainingState:
             "elapsed_minutes": 45 + random.uniform(-5, 5)
         })
     
-    # Add sample logs
+    # Add sample logs with error details
     prompts = [
-        "Write quicksort in C++",
-        "Implement binary search",
-        "Create a linked list class",
-        "HTTP request parser",
-        "Thread pool implementation",
+        ("Write quicksort in C++", "", True),
+        ("Implement binary search", "", True),
+        ("Create a linked list class", "", True),
+        ("HTTP request parser", "error: expected ';' before '}'", False),
+        ("Thread pool implementation", "error: 'mutex' not found", False),
+        ("Sort array using merge sort", "", True),
+        ("Graph traversal BFS", "error: undeclared identifier", False),
     ]
     
-    for _ in range(5):
-        reward = random.choice([0.0, 0.0, 0.3, 0.5, 0.5, 0.7, 1.0])
+    for _ in range(6):
+        prompt, error, can_succeed = random.choice(prompts)
+        if can_succeed:
+            reward = random.choice([0.3, 0.5, 0.5, 0.7, 1.0])
+            details = ""
+        else:
+            reward = 0.0
+            details = error
+        
         state.recent_samples.append({
-            "prompt": random.choice(prompts),
+            "prompt": prompt,
             "reward": reward,
             "success": reward >= 0.5,
+            "details": details,
             "timestamp": datetime.now().strftime("%H:%M:%S")
         })
     

@@ -624,3 +624,61 @@ VerticalScroll {
     height: 1fr;
 }
 
+/* =============================================================================
+   New Dashboard Panels
+   ============================================================================= */
+
+RewardDistributionPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+    min-height: 8;
+}
+
+QuickActionsPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+    min-height: 10;
+}
+
+RecentRunsPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+    min-height: 12;
+}
+
+SystemInfoPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+}
+
+/* Comparison Screen Panels */
+
+PassKCurvesPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+    min-height: 12;
+}
+
+ImprovementPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+}
+

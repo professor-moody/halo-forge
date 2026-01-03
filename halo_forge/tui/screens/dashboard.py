@@ -18,6 +18,8 @@ from ..widgets import (
     HistoryPanel,
     SamplesPanel,
     LogPanel,
+    QuickActionsPanel,
+    RewardDistributionPanel,
 )
 from ..state import TrainingState
 
@@ -44,10 +46,12 @@ class DashboardScreen(Screen):
                 with Vertical(id="left-column"):
                     yield ProgressPanel(id="progress")
                     yield MetricsPanel(id="metrics")
+                    yield RewardDistributionPanel(id="reward-dist")
                 
                 with Vertical(id="right-column"):
                     yield HistoryPanel(id="history")
                     yield HardwarePanel(id="hardware")
+                    yield QuickActionsPanel(id="quick-actions")
             
             with Horizontal(id="bottom-row"):
                 yield SamplesPanel(id="samples")
