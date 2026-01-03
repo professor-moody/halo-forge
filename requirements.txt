@@ -30,6 +30,9 @@ matplotlib
 paramiko
 rich
 
+# TUI
+textual>=0.50.0
+
 # Optional: LLM backends for data generation
 # anthropic>=0.18.0
 # openai>=1.0.0

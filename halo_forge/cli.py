@@ -746,6 +746,19 @@ def cmd_test(args):
     sys.exit(0 if success else 1)
 
 
+def cmd_tui(args):
+    """Launch Terminal User Interface."""
+    try:
+        from halo_forge.tui import HaloForgeApp
+    except ImportError as e:
+        print("Error: TUI requires 'textual' package")
+        print("Install with: pip install textual")
+        sys.exit(1)
+    
+    app = HaloForgeApp(demo_mode=args.demo)
+    app.run()
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog='halo-forge',
@@ -845,6 +858,11 @@ def main():
     test_parser.add_argument('--verbose', '-v', action='store_true',
                              help='Verbose output with detailed logging')
     
+    # tui command
+    tui_parser = subparsers.add_parser('tui', help='Launch Terminal User Interface')
+    tui_parser.add_argument('--demo', action='store_true',
+                            help='Run in demo mode with simulated data')
+    
     # Parse
     args = parser.parse_args()
     
@@ -875,6 +893,8 @@ def main():
         cmd_info(args)
     elif args.command == 'test':
         cmd_test(args)
+    elif args.command == 'tui':
+        cmd_tui(args)
 
 
 if __name__ == '__main__':

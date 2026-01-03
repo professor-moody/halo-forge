@@ -1,0 +1,396 @@
+/* halo-forge TUI Stylesheet */
+/* Matches the website design system */
+
+/* =============================================================================
+   Base Styles
+   ============================================================================= */
+
+Screen {
+    background: #0a0908;
+}
+
+/* =============================================================================
+   Header
+   ============================================================================= */
+
+#header {
+    dock: top;
+    height: 3;
+    background: #12100e;
+    border-bottom: solid #2a2520;
+    padding: 0 2;
+}
+
+#header-content {
+    width: 100%;
+    height: 100%;
+    align: center middle;
+}
+
+.logo {
+    color: #2dd4bf;
+    text-style: bold;
+}
+
+.version {
+    color: #6b635a;
+}
+
+.status-running {
+    color: #2dd4bf;
+}
+
+.status-paused {
+    color: #f97316;
+}
+
+.status-idle {
+    color: #6b635a;
+}
+
+.status-error {
+    color: #ef4444;
+}
+
+/* =============================================================================
+   Panels
+   ============================================================================= */
+
+.panel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+}
+
+.panel-title {
+    color: #6b635a;
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+/* =============================================================================
+   Progress
+   ============================================================================= */
+
+#progress-panel {
+    height: auto;
+    min-height: 10;
+}
+
+.progress-row {
+    height: 1;
+    margin-bottom: 1;
+}
+
+.progress-label {
+    width: 8;
+    color: #6b635a;
+}
+
+ProgressBar {
+    width: 1fr;
+    padding: 0 1;
+}
+
+ProgressBar > .bar--bar {
+    color: #2dd4bf;
+}
+
+ProgressBar > .bar--complete {
+    color: #2dd4bf;
+}
+
+.progress-value {
+    width: 12;
+    text-align: right;
+}
+
+/* Phase indicator */
+.phase-row {
+    margin-top: 1;
+}
+
+.phase {
+    color: #6b635a;
+}
+
+.phase-active {
+    color: #f97316;
+    text-style: bold;
+}
+
+.phase-arrow {
+    color: #3d352c;
+}
+
+/* =============================================================================
+   Metrics
+   ============================================================================= */
+
+#metrics-panel {
+    height: auto;
+}
+
+.metric-row {
+    height: 3;
+    margin-bottom: 1;
+}
+
+.metric-label {
+    color: #6b635a;
+}
+
+.metric-value {
+    text-style: bold;
+}
+
+.metric-value-teal {
+    color: #2dd4bf;
+    text-style: bold;
+}
+
+.metric-value-orange {
+    color: #f97316;
+    text-style: bold;
+}
+
+/* =============================================================================
+   Hardware
+   ============================================================================= */
+
+#hardware-panel {
+    height: auto;
+    min-height: 8;
+}
+
+.hw-row {
+    height: 1;
+    margin-bottom: 1;
+}
+
+.hw-label {
+    width: 10;
+    color: #6b635a;
+}
+
+.hw-bar {
+    width: 1fr;
+}
+
+.hw-value {
+    width: 8;
+    text-align: right;
+}
+
+/* =============================================================================
+   Cycle History
+   ============================================================================= */
+
+#history-panel {
+    height: auto;
+}
+
+.sparkline {
+    color: #2dd4bf;
+    margin-bottom: 1;
+}
+
+DataTable {
+    height: auto;
+    max-height: 10;
+}
+
+DataTable > .datatable--header {
+    background: #1a1714;
+    color: #6b635a;
+}
+
+DataTable > .datatable--cursor {
+    background: #2a2520;
+}
+
+/* =============================================================================
+   Samples
+   ============================================================================= */
+
+#samples-panel {
+    height: auto;
+    min-height: 8;
+}
+
+.sample-row {
+    height: 1;
+}
+
+.sample-icon-success {
+    color: #22c55e;
+    width: 2;
+}
+
+.sample-icon-error {
+    color: #ef4444;
+    width: 2;
+}
+
+.sample-reward {
+    width: 6;
+    color: #a8a198;
+}
+
+.sample-prompt {
+    color: #6b635a;
+}
+
+/* =============================================================================
+   Logs
+   ============================================================================= */
+
+#log-panel {
+    height: auto;
+    min-height: 8;
+}
+
+RichLog {
+    background: #12100e;
+    scrollbar-background: #1a1714;
+    scrollbar-color: #3d352c;
+}
+
+.log-time {
+    color: #6b635a;
+}
+
+.log-msg {
+    color: #a8a198;
+}
+
+.log-msg-success {
+    color: #2dd4bf;
+}
+
+.log-msg-error {
+    color: #ef4444;
+}
+
+.log-msg-warning {
+    color: #f97316;
+}
+
+/* =============================================================================
+   Footer
+   ============================================================================= */
+
+#footer {
+    dock: bottom;
+    height: 1;
+    background: #12100e;
+    border-top: solid #2a2520;
+}
+
+Footer {
+    background: #12100e;
+}
+
+Footer > .footer--key {
+    background: #1a1714;
+    color: #e8e4df;
+}
+
+Footer > .footer--description {
+    color: #6b635a;
+}
+
+/* =============================================================================
+   Layout
+   ============================================================================= */
+
+#main-container {
+    layout: horizontal;
+}
+
+#left-column {
+    width: 50%;
+}
+
+#right-column {
+    width: 50%;
+}
+
+#bottom-row {
+    height: auto;
+    min-height: 10;
+    layout: horizontal;
+}
+
+#bottom-row > * {
+    width: 50%;
+}
+
+/* =============================================================================
+   Buttons
+   ============================================================================= */
+
+Button {
+    background: #1a1714;
+    border: solid #2a2520;
+    color: #e8e4df;
+    min-width: 10;
+}
+
+Button:hover {
+    border: solid #3d352c;
+}
+
+Button.danger {
+    border: solid #ef4444;
+    color: #ef4444;
+}
+
+Button.danger:hover {
+    background: #ef4444;
+    color: #0a0908;
+}
+
+Button.primary {
+    border: solid #2dd4bf;
+    color: #2dd4bf;
+}
+
+Button.primary:hover {
+    background: #2dd4bf;
+    color: #0a0908;
+}
+
+/* =============================================================================
+   Utility
+   ============================================================================= */
+
+.teal {
+    color: #2dd4bf;
+}
+
+.orange {
+    color: #f97316;
+}
+
+.green {
+    color: #22c55e;
+}
+
+.red {
+    color: #ef4444;
+}
+
+.muted {
+    color: #6b635a;
+}
+
+.dim {
+    color: #4a4a4a;
+}
+
+.bold {
+    text-style: bold;
+}
+
