@@ -268,20 +268,96 @@ halo-forge uses graduated rewards for better gradient flow:
 | Runs without crash | 0.7 |
 | Correct output | 1.0 |
 
-## Caching & Recovery
+## Caching & Automatic Resume
 
-RAFT automatically caches:
-- Generated samples (per cycle)
-- Verification results
-- Training state checkpoints
+RAFT automatically caches progress at each stage, allowing seamless resume after crashes or interruptions.
 
-Resume after crash:
+### Cache Files
+
+For each cycle, these files are saved to your output directory:
+
+```
+models/raft/
+├── cycle_1_samples.jsonl    # All generated completions
+├── cycle_1_verified.jsonl   # Verification results with rewards
+├── cycle_1_final/           # Trained model checkpoint
+│   ├── adapter_config.json
+│   └── adapter_model.safetensors
+├── cycle_2_samples.jsonl
+├── cycle_2_verified.jsonl
+├── cycle_2_final/
+└── ...
+```
+
+### Automatic Resume Behavior
+
+When you re-run the same command, RAFT automatically detects existing cache files:
+
+| If this exists... | RAFT will... |
+|-------------------|--------------|
+| `cycle_N_final/` | Skip entire cycle, load checkpoint |
+| `cycle_N_samples.jsonl` | Skip generation, load cached samples |
+| `cycle_N_verified.jsonl` | Skip verification, load cached results |
+| Nothing | Start from scratch |
+
+### Resume Example
 
 ```bash
-halo-forge raft train \
-  --config configs/raft.yaml \
-  --resume  # Automatically finds last checkpoint
+# Original run crashes during cycle 2 verification
+halo-forge raft train --model Qwen/Qwen2.5-Coder-7B --cycles 5 --output models/raft
+
+# State after crash:
+# - cycle_1_final/ exists (complete)
+# - cycle_2_samples.jsonl exists (generation done)
+# - cycle_2_verified.jsonl missing (crashed during verification)
+
+# Resume with SAME command:
+halo-forge raft train --model Qwen/Qwen2.5-Coder-7B --cycles 5 --output models/raft
+
+# RAFT will:
+# 1. Skip cycle 1 entirely (loads cycle_1_final checkpoint)
+# 2. Load cycle_2_samples.jsonl (skip 8+ hours of generation!)
+# 3. Resume verification from start
+# 4. Continue normally
 ```
+
+### What Gets Logged
+
+```
+Cycle 1 already complete, skipping...
+Loading cached samples...
+Loaded 2992 samples from cache
+Verifying 2992 samples...
+```
+
+### Recovery Time Savings
+
+| Crash Point | Time Saved on Resume |
+|-------------|---------------------|
+| During generation batch 50/100 | 0 (generation restarts) |
+| After generation, during verification | ~4-8 hours (full generation) |
+| After verification, during training | ~8-10 hours (generation + verification) |
+| After training completes | Entire cycle skipped |
+
+### Manual Cache Management
+
+**Clear cache to restart a cycle:**
+```bash
+rm models/raft/cycle_3_*  # Remove cycle 3 cache files
+```
+
+**Force fresh start:**
+```bash
+rm -rf models/raft/cycle_*  # Remove all cache files
+```
+
+### Known Limitation
+
+Currently, **mid-generation resume is not supported**. If a crash occurs during generation (before all batches complete), that cycle's generation restarts from scratch. The samples are only cached after all generation completes.
+
+{{% hint info %}}
+**Tip**: For very long runs, consider using `screen` or `tmux` to prevent terminal disconnection issues.
+{{% /hint %}}
 
 ## Memory Management
 

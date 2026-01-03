@@ -540,6 +540,26 @@ During training on Strix Halo:
 - **GTT memory**: 40-60GB typical
 - **Power consumption**: ~100W sustained
 
+### Automatic Resume
+
+RAFT automatically caches progress at each stage. If a run crashes, simply re-run the same command:
+
+```bash
+# If this crashes during cycle 3...
+halo-forge raft train --cycles 5 --output models/raft
+
+# Just run it again - it auto-resumes:
+halo-forge raft train --cycles 5 --output models/raft
+# Output: "Cycle 1 already complete, skipping..."
+# Output: "Cycle 2 already complete, skipping..."
+# Output: "Loading cached samples..." (resumes cycle 3)
+```
+
+Cache files per cycle:
+- `cycle_N_samples.jsonl` - Generated completions (skip generation on resume)
+- `cycle_N_verified.jsonl` - Verification results (skip verification on resume)
+- `cycle_N_final/` - Trained checkpoint (skip entire cycle on resume)
+
 ---
 
 ## Benchmark Results
