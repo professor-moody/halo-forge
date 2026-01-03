@@ -199,10 +199,11 @@ class RAFTTrainer:
         num_samples: int = None,
         max_new_tokens: int = None,
         temperature: float = None,
-        batch_size: int = None
+        batch_size: int = None,
+        cache_path: Optional[Path] = None
     ) -> List[Tuple[str, str]]:
         """
-        Generate samples for each prompt.
+        Generate samples for each prompt with streaming checkpoints.
         
         Args:
             prompts: List of prompts
@@ -210,6 +211,7 @@ class RAFTTrainer:
             max_new_tokens: Max tokens (default from config)
             temperature: Sampling temperature (default from config)
             batch_size: Generation batch size (default from config)
+            cache_path: Path to stream samples to (enables resume)
         
         Returns:
             List of (prompt, completion) tuples
@@ -222,14 +224,34 @@ class RAFTTrainer:
         
         total = len(prompts) * num_samples
         
+        # Check for partial cache and resume
+        all_samples = []
+        start_batch = 0
+        if cache_path and cache_path.exists():
+            with open(cache_path) as f:
+                for line in f:
+                    data = json.loads(line)
+                    all_samples.append((data['prompt'], data['completion']))
+            
+            # Calculate how many prompts were completed
+            completed_prompts = len(all_samples) // num_samples
+            start_batch = completed_prompts // batch_size
+            
+            if len(all_samples) > 0:
+                self._log(f"Resuming from batch {start_batch + 1} ({len(all_samples)} samples already cached)", "dim")
+        
         if self.use_rich:
             ui.print_header("Generation", f"{total} samples ({len(prompts)} prompts x {num_samples} samples)")
         else:
             print(f"\nGenerating {total} samples...")
             print(f"  {len(prompts)} prompts x {num_samples} samples/prompt")
         
+        # If already complete, return cached
+        if len(all_samples) >= total:
+            self._log(f"Generation already complete ({len(all_samples)} samples cached)", "success")
+            return all_samples
+        
         self.model.eval()
-        all_samples = []
         start_time = time.time()
         
         # Use rich progress bar when available
@@ -237,72 +259,97 @@ class RAFTTrainer:
         if self.use_rich:
             progress = ui.create_progress()
             progress.start()
-            task = progress.add_task("Generating", total=batch_count)
+            task = progress.add_task("Generating", total=batch_count, completed=start_batch)
         else:
             progress = None
         
-        for batch_idx, i in enumerate(range(0, len(prompts), batch_size)):
-            batch_prompts = prompts[i:i+batch_size]
-            
-            if progress:
-                progress.update(task, description=f"Generating batch {batch_idx + 1}/{batch_count}")
-            
-            # Format with chat template
-            formatted = []
-            for prompt in batch_prompts:
-                messages = [
-                    {"role": "system", "content": cfg.system_prompt},
-                    {"role": "user", "content": prompt}
-                ]
+        # Open cache file in append mode for streaming writes
+        cache_file = open(cache_path, 'a') if cache_path else None
+        
+        try:
+            for batch_idx, i in enumerate(range(0, len(prompts), batch_size)):
+                # Skip already-completed batches
+                if batch_idx < start_batch:
+                    continue
+                    
+                batch_prompts = prompts[i:i+batch_size]
                 
-                formatted_prompt = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True
-                )
-                formatted.append(formatted_prompt)
-            
-            # Tokenize
-            inputs = self.tokenizer(
-                formatted,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=2048
-            ).to(self.model.device)
-            
-            # Generate
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens,
-                    num_return_sequences=num_samples,
-                    temperature=temperature,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.pad_token_id
-                )
-            
-            # Decode
-            completions = self.tokenizer.batch_decode(
-                outputs,
-                skip_special_tokens=True
-            )
-            
-            # Pair prompts with completions
-            for j, prompt in enumerate(batch_prompts):
-                start_idx = j * num_samples
-                end_idx = (j + 1) * num_samples
-                prompt_completions = completions[start_idx:end_idx]
+                if progress:
+                    progress.update(task, description=f"Generating batch {batch_idx + 1}/{batch_count}")
                 
-                for completion in prompt_completions:
-                    all_samples.append((prompt, completion))
-            
-            # Advance progress (enables speed calculation)
-            if progress:
-                progress.advance(task)
-            
-            # NOTE: Explicit memory cleanup removed - causes GPU hangs on ROCm/HIP
-            # strix-edr-training works fine without cleanup, so we match that behavior
+                # Format with chat template
+                formatted = []
+                for prompt in batch_prompts:
+                    messages = [
+                        {"role": "system", "content": cfg.system_prompt},
+                        {"role": "user", "content": prompt}
+                    ]
+                    
+                    formatted_prompt = self.tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=True
+                    )
+                    formatted.append(formatted_prompt)
+                
+                # Tokenize
+                inputs = self.tokenizer(
+                    formatted,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=2048
+                ).to(self.model.device)
+                
+                # Generate
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=max_new_tokens,
+                        num_return_sequences=num_samples,
+                        temperature=temperature,
+                        do_sample=True,
+                        pad_token_id=self.tokenizer.pad_token_id
+                    )
+                
+                # Decode
+                completions = self.tokenizer.batch_decode(
+                    outputs,
+                    skip_special_tokens=True
+                )
+                
+                # Pair prompts with completions and stream to disk
+                batch_samples = []
+                for j, prompt in enumerate(batch_prompts):
+                    start_idx = j * num_samples
+                    end_idx = (j + 1) * num_samples
+                    prompt_completions = completions[start_idx:end_idx]
+                    
+                    for completion in prompt_completions:
+                        sample = (prompt, completion)
+                        all_samples.append(sample)
+                        batch_samples.append(sample)
+                        
+                        # Stream to cache file immediately
+                        if cache_file:
+                            cache_file.write(json.dumps({'prompt': prompt, 'completion': completion}) + '\n')
+                
+                # Flush to disk after each batch (ensures checkpoint)
+                if cache_file:
+                    cache_file.flush()
+                
+                # Advance progress (enables speed calculation)
+                if progress:
+                    progress.advance(task)
+                
+                # ALWAYS print text progress (works through pipes)
+                elapsed = time.time() - start_time
+                samples_so_far = len(all_samples)
+                print(f"  Batch {batch_idx + 1}/{batch_count} complete | {samples_so_far}/{total} samples | {elapsed/60:.1f}min elapsed", flush=True)
+                
+        finally:
+            if cache_file:
+                cache_file.close()
         
         if progress:
             progress.stop()
@@ -552,22 +599,8 @@ class RAFTTrainer:
             self._reload_model(str(final_checkpoint))
             return {'cycle': cycle, 'skipped': True}
         
-        # Generate (or load from cache)
-        if samples_cache.exists():
-            self._log("Loading cached samples...", "dim")
-            samples = []
-            with open(samples_cache) as f:
-                for line in f:
-                    data = json.loads(line)
-                    samples.append((data['prompt'], data['completion']))
-            self._log(f"Loaded {len(samples)} samples from cache", "dim")
-        else:
-            samples = self.generate_samples(prompts)
-            
-            # Save cache
-            with open(samples_cache, 'w') as f:
-                for prompt, completion in samples:
-                    f.write(json.dumps({'prompt': prompt, 'completion': completion}) + '\n')
+        # Generate with streaming checkpoint (handles resume automatically)
+        samples = self.generate_samples(prompts, cache_path=samples_cache)
         
         # Verify (or load from cache)
         if verified_cache.exists():
