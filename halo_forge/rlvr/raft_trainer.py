@@ -297,14 +297,8 @@ class RAFTTrainer:
                 for completion in prompt_completions:
                     all_samples.append((prompt, completion))
             
-            # FREE MEMORY: Clear tensors after each batch to prevent GPU memory exhaustion
-            del inputs
-            del outputs
-            del completions
-            if batch_idx % 5 == 0:  # Periodic deep cleanup
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+            # NOTE: Explicit memory cleanup removed - causes GPU hangs on ROCm/HIP
+            # strix-edr-training works fine without cleanup, so we match that behavior
         
         if progress:
             progress.stop()
@@ -680,11 +674,18 @@ class RAFTTrainer:
         """
         num_cycles = num_cycles or self.config.num_cycles
         
+        cfg = self.config
         if self.use_rich:
             ui.print_banner()
             ui.print_header("RAFT Training", f"{num_cycles} cycles")
+            ui.print_dim(f"  Reward threshold: {cfg.reward_threshold}")
+            ui.print_dim(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
+            ui.print_dim(f"  Samples per prompt: {cfg.samples_per_prompt}")
         else:
             print(f"\nStarting RAFT training: {num_cycles} cycles")
+            print(f"  Reward threshold: {cfg.reward_threshold}")
+            print(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
+            print(f"  Samples per prompt: {cfg.samples_per_prompt}")
         
         for cycle in range(1, num_cycles + 1):
             stats = self.run_cycle(prompts, cycle)

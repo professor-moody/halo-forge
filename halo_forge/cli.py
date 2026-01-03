@@ -136,11 +136,16 @@ def cmd_raft_train(args):
         sys.exit(1)
     
     # Create config
+    keep_percent = getattr(args, 'keep_percent', None) or cfg_dict.get('keep_top_percent', 0.5)
+    reward_threshold = getattr(args, 'reward_threshold', None) or cfg_dict.get('reward_threshold', 0.5)
+    
     config = RAFTConfig(
         base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
         sft_checkpoint=args.checkpoint or cfg_dict.get('sft_checkpoint', 'models/sft/final_model'),
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
-        num_cycles=args.cycles or cfg_dict.get('num_cycles', 3)
+        num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
+        keep_top_percent=keep_percent,
+        reward_threshold=reward_threshold
     )
     
     # Load prompts
@@ -794,6 +799,10 @@ def main():
     raft_train_parser.add_argument('--output', '-o', default='models/raft', help='Output directory')
     raft_train_parser.add_argument('--cycles', type=int, help='Number of RAFT cycles')
     raft_train_parser.add_argument('--verifier', default='gcc', help='Verifier type')
+    raft_train_parser.add_argument('--keep-percent', type=float, default=0.5, 
+                                   help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
+    raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
+                                   help='Minimum reward to consider sample passing (default: 0.5)')
     
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')

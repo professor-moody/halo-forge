@@ -8,7 +8,7 @@ for a polished CLI experience.
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, MofNCompleteColumn
 from rich.text import Text
 from rich.style import Style
 from rich import box
@@ -174,13 +174,18 @@ def print_test_results(results: Dict[str, Any]):
 
 
 def create_progress() -> Progress:
-    """Create a styled progress bar."""
+    """Create a styled progress bar with speed display."""
     return Progress(
         SpinnerColumn(style=COLORS['primary']),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(bar_width=40, style=COLORS['dim'], complete_style=COLORS['primary']),
+        MofNCompleteColumn(),
+        TextColumn("•"),
         TaskProgressColumn(),
+        TextColumn("•"),
         TimeElapsedColumn(),
+        TextColumn("•"),
+        TextColumn("[dim]{task.speed:>.2f} it/s[/dim]", style="dim"),
         console=console,
         transient=False
     )
