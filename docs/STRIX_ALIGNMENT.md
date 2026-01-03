@@ -176,18 +176,6 @@ gc.collect()
 
 ---
 
-## Applying to strix-edr-training
-
-The following fixes should also be applied to `strix-edr-training/rlvr/raft_trainer.py`:
-
-1. Add `gradient_checkpointing_kwargs={"use_reentrant": False}` to TrainingArguments
-2. Replace `tokenizer=self.tokenizer` with `processing_class=self.tokenizer`
-3. Explicitly add `dataloader_num_workers=0` and `dataloader_pin_memory=False`
-
-These are minor fixes that improve warning-free operation but don't affect functionality.
-
----
-
 ## Changelog
 
 - **2025-01-02**: Initial alignment completed
