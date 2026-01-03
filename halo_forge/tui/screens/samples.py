@@ -12,7 +12,7 @@ from textual.screen import Screen
 from textual.widgets import (
     Footer, Static, DataTable, Input, Button, TextArea
 )
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.binding import Binding
 from rich.text import Text
 
@@ -63,6 +63,10 @@ class SamplesScreen(Screen):
         self.filtered_samples = []
         self.show_only_passed = False
         self.show_only_failed = False
+    
+    def action_pop_screen(self) -> None:
+        """Go back to previous screen."""
+        self.app.pop_screen()
     
     def compose(self) -> ComposeResult:
         """Compose the samples screen."""

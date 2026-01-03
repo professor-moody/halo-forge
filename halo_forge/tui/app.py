@@ -22,6 +22,10 @@ from .widgets import (
     HistoryPanel,
     SamplesPanel,
     LogPanel,
+    QuickActionsPanel,
+    RecentRunsPanel,
+    SystemInfoPanel,
+    RewardDistributionPanel,
 )
 from .screens import (
     DashboardScreen,
@@ -48,10 +52,12 @@ class HaloForgeApp(App):
     }
     
     BINDINGS = [
-        Binding("c", "push_screen('config')", "Config", show=True),
+        Binding("n", "push_screen('config')", "New", show=True),
+        Binding("c", "push_screen('config')", "Config", show=False),
         Binding("v", "push_screen('samples')", "Samples", show=True),
         Binding("m", "push_screen('comparison')", "Compare", show=True),
         Binding("e", "push_screen('export')", "Export", show=True),
+        Binding("b", "run_benchmark", "Bench", show=True),
         Binding("p", "pause", "Pause", show=True),
         Binding("r", "resume", "Resume", show=False),
         Binding("s", "stop", "Stop", show=True, priority=True),
@@ -165,6 +171,10 @@ class HaloForgeApp(App):
         self.demo_step = 0
         mode = "Demo" if self.demo_mode else "Live"
         self.notify(f"Switched to {mode} mode", severity="information")
+    
+    def action_run_benchmark(self):
+        """Run a benchmark."""
+        self.notify("Benchmark: Coming soon - use CLI for now", severity="information")
     
     # -------------------------------------------------------------------------
     # Training Control

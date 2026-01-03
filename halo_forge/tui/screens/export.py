@@ -10,7 +10,7 @@ from datetime import datetime
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Footer, Static, Button, Input, TextArea, Checkbox
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.binding import Binding
 from rich.text import Text
 
@@ -46,6 +46,10 @@ class ExportScreen(Screen):
     BINDINGS = [
         Binding("escape", "pop_screen", "Back", show=True),
     ]
+    
+    def action_pop_screen(self) -> None:
+        """Go back to previous screen."""
+        self.app.pop_screen()
     
     def compose(self) -> ComposeResult:
         """Compose the export screen."""

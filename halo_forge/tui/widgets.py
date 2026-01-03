@@ -435,8 +435,8 @@ class HistoryPanel(Container):
         table.add_columns("Cycle", "Rate", "Kept", "Loss")
     
     def update_from_state(self, state: TrainingState):
-        """Update from state."""
-        # Sparkline
+        """Update from state with enhanced sparklines and trend."""
+        # Sparkline with trend indicator
         if state.cycle_history:
             rates = [h["compile_rate"] for h in state.cycle_history]
             min_rate = min(rates) if rates else 0
@@ -449,33 +449,69 @@ class HistoryPanel(Container):
                 idx = min(8, int((r - min_rate) / range_rate * 8))
                 sparkline += blocks[idx]
             
+            # Trend indicator
+            if len(rates) >= 2:
+                trend = rates[-1] - rates[-2]
+                if trend > 2:
+                    trend_icon = "↑"
+                    trend_color = "#22c55e"
+                elif trend < -2:
+                    trend_icon = "↓"
+                    trend_color = "#ef4444"
+                else:
+                    trend_icon = "→"
+                    trend_color = "#f97316"
+            else:
+                trend_icon = ""
+                trend_color = "#6b635a"
+            
             text = Text()
-            text.append("Rate: ", style="#6b635a")
+            text.append("Rate  ", style="#6b635a")
             text.append(sparkline, style="#2dd4bf")
-            text.append(f" ({min_rate:.0f}>{max_rate:.0f}%)", style="#6b635a")
+            text.append(f" ({min_rate:.0f}→{max_rate:.0f}%)", style="#a8a198")
+            if trend_icon:
+                text.append(f" {trend_icon}", style=trend_color)
             
             try:
                 self.query_one("#sparkline", Static).update(text)
             except Exception:
                 pass
+        else:
+            try:
+                self.query_one("#sparkline", Static).update(
+                    Text("No history yet...", style="#6b635a")
+                )
+            except Exception:
+                pass
         
-        # Table
+        # Table with color-coded rates
         try:
             table = self.query_one("#history-table", DataTable)
             table.clear()
             for h in state.cycle_history[-5:]:
+                rate = h.get('compile_rate', 0)
+                # Color code the rate
+                if rate >= 40:
+                    rate_str = f"[#22c55e]{rate:.1f}%[/]"
+                elif rate >= 25:
+                    rate_str = f"[#2dd4bf]{rate:.1f}%[/]"
+                elif rate >= 15:
+                    rate_str = f"[#f97316]{rate:.1f}%[/]"
+                else:
+                    rate_str = f"[#ef4444]{rate:.1f}%[/]"
+                
                 table.add_row(
-                    str(h["cycle"]),
-                    f"{h['compile_rate']:.1f}%",
-                    str(h["samples_kept"]),
-                    f"{h['loss']:.3f}"
+                    str(h.get("cycle", "?")),
+                    Text.from_markup(rate_str),
+                    str(h.get("samples_kept", 0)),
+                    f"{h.get('loss', 0):.3f}"
                 )
         except Exception:
             pass
 
 
 class SamplesPanel(Container):
-    """Live samples panel."""
+    """Live samples panel with enhanced details."""
     
     DEFAULT_CSS = """
     SamplesPanel {
@@ -499,23 +535,287 @@ class SamplesPanel(Container):
         yield Static("", id="samples-display")
     
     def update_from_state(self, state: TrainingState):
-        """Update from state."""
+        """Update from state with enhanced sample details."""
         text = Text()
         
         for sample in state.recent_samples[-6:]:
-            if sample["success"]:
-                text.append("v ", style="#22c55e")
+            # Status icon
+            if sample.get("success"):
+                text.append("✓ ", style="#22c55e")
             else:
-                text.append("x ", style="#ef4444")
+                text.append("✗ ", style="#ef4444")
             
-            text.append(f"{sample['reward']:.2f}  ", style="#a8a198")
-            text.append(f"{sample['prompt'][:45]}...\n", style="#6b635a")
+            # Reward
+            reward = sample.get('reward', 0)
+            reward_color = "#22c55e" if reward >= 0.7 else "#f97316" if reward >= 0.3 else "#ef4444"
+            text.append(f"{reward:.2f}  ", style=reward_color)
+            
+            # Prompt (truncated)
+            prompt = sample.get('prompt', '')[:40]
+            text.append(f'"{prompt}"', style="#a8a198")
+            
+            # Error details if failed
+            details = sample.get('details', '')
+            if not sample.get("success") and details:
+                # Extract just the error type
+                if "error:" in details.lower():
+                    error_msg = details.split("error:")[-1].strip()[:30]
+                    text.append(f" → {error_msg}", style="#ef4444")
+                elif details:
+                    text.append(f" → {details[:30]}", style="#ef4444")
+            
+            text.append("\n")
         
         if not state.recent_samples:
             text.append("Waiting for samples...", style="#6b635a")
         
         try:
             self.query_one("#samples-display", Static).update(text)
+        except Exception:
+            pass
+
+
+class RewardDistributionPanel(Container):
+    """Panel showing reward distribution histogram."""
+    
+    DEFAULT_CSS = """
+    RewardDistributionPanel {
+        background: #12100e;
+        border: solid #2a2520;
+        margin: 1;
+        padding: 1;
+        height: auto;
+        min-height: 10;
+    }
+    
+    RewardDistributionPanel > .panel-title {
+        color: #6b635a;
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    """
+    
+    def compose(self) -> ComposeResult:
+        yield Static("REWARD DISTRIBUTION", classes="panel-title")
+        yield Static("", id="reward-dist-display")
+    
+    def update_distribution(self, distribution: Dict):
+        """Update the distribution histogram.
+        
+        Args:
+            distribution: Dict with keys '0.0', '0.5', '0.7', '1.0' and counts
+        """
+        text = Text()
+        
+        if not distribution:
+            text.append("No data yet...", style="#6b635a")
+        else:
+            # Find max for scaling
+            max_count = max(distribution.values()) if distribution.values() else 1
+            bar_width = 20
+            
+            # Histogram bars
+            labels = [
+                ("1.0", "#22c55e", "correct"),
+                ("0.7", "#2dd4bf", "runs"),
+                ("0.5", "#f97316", "compiled"),
+                ("0.0", "#ef4444", "failed"),
+            ]
+            
+            for key, color, desc in labels:
+                count = distribution.get(key, 0)
+                pct = (count / max_count * bar_width) if max_count > 0 else 0
+                bar = "█" * int(pct)
+                
+                text.append(f"{key} ", style="#6b635a")
+                text.append("▏", style="#3d352c")
+                text.append(f"{bar:<{bar_width}}", style=color)
+                text.append(f" {count:>4}", style="#a8a198")
+                text.append(f" {desc}\n", style="#6b635a")
+        
+        try:
+            self.query_one("#reward-dist-display", Static).update(text)
+        except Exception:
+            pass
+
+
+class QuickActionsPanel(Container):
+    """Panel with quick action buttons."""
+    
+    DEFAULT_CSS = """
+    QuickActionsPanel {
+        background: #12100e;
+        border: solid #2a2520;
+        margin: 1;
+        padding: 1;
+        height: auto;
+    }
+    
+    QuickActionsPanel > .panel-title {
+        color: #6b635a;
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    
+    QuickActionsPanel > .action-item {
+        height: 2;
+    }
+    """
+    
+    def compose(self) -> ComposeResult:
+        yield Static("QUICK ACTIONS", classes="panel-title")
+        yield Static("", id="actions-display")
+    
+    def on_mount(self):
+        """Set up quick actions display."""
+        text = Text()
+        text.append("  [N]", style="bold #f97316")
+        text.append(" New Training Run\n", style="#e8e4df")
+        text.append("  [R]", style="bold #f97316")
+        text.append(" Resume Last Run\n", style="#e8e4df")
+        text.append("  [B]", style="bold #f97316")
+        text.append(" Run Benchmark\n", style="#e8e4df")
+        text.append("  [C]", style="bold #f97316")
+        text.append(" Configuration\n", style="#e8e4df")
+        text.append("  [V]", style="bold #f97316")
+        text.append(" View Samples\n", style="#e8e4df")
+        
+        try:
+            self.query_one("#actions-display", Static).update(text)
+        except Exception:
+            pass
+
+
+class RecentRunsPanel(Container):
+    """Panel showing recent training runs."""
+    
+    DEFAULT_CSS = """
+    RecentRunsPanel {
+        background: #12100e;
+        border: solid #2a2520;
+        margin: 1;
+        padding: 1;
+        height: auto;
+        min-height: 10;
+    }
+    
+    RecentRunsPanel > .panel-title {
+        color: #6b635a;
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    """
+    
+    def compose(self) -> ComposeResult:
+        yield Static("RECENT RUNS", classes="panel-title")
+        yield Static("", id="runs-display")
+    
+    def update_runs(self, runs: List[Dict]):
+        """Update recent runs display.
+        
+        Args:
+            runs: List of run dictionaries with name, status, cycles, compile_rate, time
+        """
+        text = Text()
+        
+        if not runs:
+            text.append("No recent runs.\n", style="#6b635a")
+            text.append("Press [N] to start a new run.", style="#a8a198")
+        else:
+            for run in runs[-5:]:
+                # Status indicator
+                status = run.get("status", "unknown")
+                if status == "complete":
+                    text.append("● ", style="#22c55e")
+                elif status == "running":
+                    text.append("◐ ", style="#2dd4bf")
+                elif status == "paused":
+                    text.append("◑ ", style="#f97316")
+                else:
+                    text.append("○ ", style="#6b635a")
+                
+                # Run name
+                name = run.get("name", "unnamed")[:20]
+                text.append(f"{name:<20}", style="#e8e4df")
+                
+                # Time ago
+                time_ago = run.get("time_ago", "")
+                text.append(f" {time_ago:>8}\n", style="#6b635a")
+                
+                # Details
+                cycles = run.get("cycles", "?/?")
+                rate = run.get("compile_rate", 0)
+                text.append(f"   Cycle {cycles}", style="#a8a198")
+                if status == "complete":
+                    text.append(" ✓", style="#22c55e")
+                text.append(f"  {rate:.1f}% compile\n", style="#2dd4bf")
+        
+        try:
+            self.query_one("#runs-display", Static).update(text)
+        except Exception:
+            pass
+
+
+class SystemInfoPanel(Container):
+    """Panel showing system information."""
+    
+    DEFAULT_CSS = """
+    SystemInfoPanel {
+        background: #12100e;
+        border: solid #2a2520;
+        margin: 1;
+        padding: 1;
+        height: auto;
+    }
+    
+    SystemInfoPanel > .panel-title {
+        color: #6b635a;
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    """
+    
+    def compose(self) -> ComposeResult:
+        yield Static("SYSTEM", classes="panel-title")
+        yield Static("", id="system-display")
+    
+    def update_system_info(self, gpu_name: str = "", vram_used: float = 0, 
+                           vram_total: float = 0, temp: float = 0, util: float = 0,
+                           rocm_version: str = "", pytorch_version: str = ""):
+        """Update system info display."""
+        text = Text()
+        
+        # GPU
+        text.append("GPU   ", style="#6b635a")
+        text.append(f"{gpu_name or 'Unknown'}\n", style="#e8e4df")
+        
+        # VRAM
+        text.append("VRAM  ", style="#6b635a")
+        text.append(f"{vram_used:.1f} / {vram_total:.1f} GB\n", style="#e8e4df")
+        
+        # Temperature with sparkline
+        text.append("Temp  ", style="#6b635a")
+        temp_color = "#ef4444" if temp > 80 else "#f97316" if temp > 70 else "#2dd4bf"
+        text.append(f"{temp:.0f}°C", style=temp_color)
+        text.append("  ▁▂▃▄▃▂▁\n", style="#2dd4bf")
+        
+        # Utilization bar
+        text.append("Util  ", style="#6b635a")
+        bar_width = 10
+        filled = int(util / 100 * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        text.append(f"{util:.0f}%  ", style="#e8e4df")
+        text.append(bar, style="#2dd4bf")
+        text.append("\n\n", style="")
+        
+        # Versions
+        text.append("ROCm  ", style="#6b635a")
+        text.append(f"{rocm_version or 'N/A'}\n", style="#a8a198")
+        text.append("PyTorch ", style="#6b635a")
+        text.append(f"{pytorch_version or 'N/A'}\n", style="#a8a198")
+        
+        try:
+            self.query_one("#system-display", Static).update(text)
         except Exception:
             pass
 

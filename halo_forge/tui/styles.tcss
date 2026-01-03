@@ -597,3 +597,30 @@ Checkbox:focus {
     color: #2dd4bf;
 }
 
+/* =============================================================================
+   Scrollable Containers
+   ============================================================================= */
+
+VerticalScroll {
+    scrollbar-background: #1a1714;
+    scrollbar-color: #3d352c;
+    scrollbar-color-hover: #6b635a;
+    scrollbar-color-active: #2dd4bf;
+}
+
+#config-container {
+    height: 1fr;
+}
+
+#export-container {
+    height: 1fr;
+}
+
+#comparison-container {
+    height: 1fr;
+}
+
+#samples-container {
+    height: 1fr;
+}
+

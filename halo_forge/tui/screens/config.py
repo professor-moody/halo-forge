@@ -11,7 +11,7 @@ from textual.widgets import (
     Footer, Static, Input, Button, Select, Label,
     RadioSet, RadioButton
 )
-from textual.containers import Container, Horizontal, Vertical, Grid
+from textual.containers import Container, Horizontal, Vertical, Grid, VerticalScroll
 from textual.binding import Binding
 from rich.text import Text
 
@@ -59,11 +59,15 @@ class ConfigScreen(Screen):
         Binding("enter", "start_training", "Start", show=True),
     ]
     
+    def action_pop_screen(self) -> None:
+        """Go back to previous screen."""
+        self.app.pop_screen()
+    
     def compose(self) -> ComposeResult:
         """Compose the config screen."""
         yield Static("CONFIGURATION", id="screen-title", classes="screen-title")
         
-        with Container(id="config-container"):
+        with VerticalScroll(id="config-container"):
             # Model Configuration
             with ConfigPanel(id="model-config"):
                 yield Static("MODEL", classes="panel-title")
