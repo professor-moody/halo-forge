@@ -88,9 +88,9 @@ class ProgressPanel(Container):
     ProgressPanel {
         background: #12100e;
         border: solid #2a2520;
-        margin: 1;
         padding: 1;
         height: 100%;
+        overflow-y: auto;
     }
     
     ProgressPanel > .panel-title {
@@ -244,9 +244,9 @@ class MetricsPanel(Container):
     MetricsPanel {
         background: #12100e;
         border: solid #2a2520;
-        margin: 1;
         padding: 1;
         height: 100%;
+        overflow-y: auto;
     }
     
     MetricsPanel > .panel-title {
@@ -356,9 +356,9 @@ class HardwarePanel(Container):
     HardwarePanel {
         background: #12100e;
         border: solid #2a2520;
-        margin: 1;
         padding: 1;
         height: 100%;
+        overflow-y: auto;
     }
     
     HardwarePanel > .panel-title {
@@ -423,9 +423,9 @@ class HistoryPanel(Container):
     HistoryPanel {
         background: #12100e;
         border: solid #2a2520;
-        margin: 1;
         padding: 1;
         height: 100%;
+        overflow-y: auto;
     }
     
     HistoryPanel > .panel-title {
@@ -532,7 +532,6 @@ class SamplesPanel(Container):
     SamplesPanel {
         background: #12100e;
         border: solid #2a2520;
-        margin: 1;
         padding: 1;
         height: 100%;
         overflow-y: auto;
@@ -545,7 +544,7 @@ class SamplesPanel(Container):
     }
     
     SamplesPanel > #samples-display {
-        height: 1fr;
+        height: auto;
     }
     """
     
@@ -861,7 +860,6 @@ class LogPanel(Container):
     LogPanel {
         background: #12100e;
         border: solid #2a2520;
-        margin: 1;
         padding: 1;
         height: 100%;
         overflow-y: auto;
@@ -874,7 +872,7 @@ class LogPanel(Container):
     }
     
     LogPanel > #log-display {
-        height: 1fr;
+        height: auto;
     }
     """
     

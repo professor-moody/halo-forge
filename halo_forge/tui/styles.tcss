@@ -302,23 +302,15 @@ Footer > .footer--description {
 }
 
 /* =============================================================================
-   Layout
-   ============================================================================= */
-
-#main-container {
-    layout: horizontal;
-}
-
-/* =============================================================================
-   Main Layout - Row-based approach for reliable alignment
+   Main Layout - Simple 2x3 Grid
    ============================================================================= */
 
 #main-body {
     height: 100%;
-    padding: 0 1 1 1;
+    padding: 1;
 }
 
-/* Each row is a Horizontal with equal-height panels */
+/* CRITICAL: Each row has EQUAL height using 1fr */
 .panel-row {
     height: 1fr;
     margin-bottom: 1;
@@ -328,74 +320,21 @@ Footer > .footer--description {
     margin-bottom: 0;
 }
 
-/* Panels within rows take equal width */
-#left-column {
+/* =============================================================================
+   Panel Sizing - All panels same structure
+   ============================================================================= */
+
+/* All panels: equal width, fill row height, scroll if overflow */
+#progress, #history, #metrics, #hardware, #samples, #logs {
     width: 1fr;
     height: 100%;
     margin-right: 1;
+    overflow-y: auto;
 }
 
-#right-column {
-    width: 1fr;
-    height: 100%;
-}
-
-/* Top row is taller (has more content) */
-#top-row {
-    height: 2fr;
-}
-
-/* Bottom row is shorter */
-#bottom-row {
-    height: 1fr;
-}
-
-/* All panels fill their container */
-#progress, #metrics, #reward-dist {
-    height: 1fr;
-    margin-bottom: 1;
-}
-
-#progress {
-    height: auto;
-    min-height: 10;
-}
-
-#metrics {
-    height: auto;
-    min-height: 14;
-}
-
-#reward-dist {
-    height: 1fr;
-}
-
-#history, #hardware, #quick-actions {
-    height: 1fr;
-    margin-bottom: 1;
-}
-
-#history {
-    height: auto;
-    min-height: 10;
-}
-
-#hardware {
-    height: auto;
-    min-height: 8;
-}
-
-#quick-actions {
-    height: 1fr;
-}
-
-/* Bottom row panels fill available space */
-#samples {
-    height: 100%;
-}
-
-#logs {
-    height: 100%;
+/* Remove right margin from last panel in each row */
+#history, #hardware, #logs {
+    margin-right: 0;
 }
 
 /* =============================================================================

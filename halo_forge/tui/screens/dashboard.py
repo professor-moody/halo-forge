@@ -18,8 +18,6 @@ from ..widgets import (
     HistoryPanel,
     SamplesPanel,
     LogPanel,
-    QuickActionsPanel,
-    RewardDistributionPanel,
 )
 from ..state import TrainingState
 
@@ -38,24 +36,22 @@ class DashboardScreen(Screen):
     ]
     
     def compose(self) -> ComposeResult:
-        """Compose the dashboard layout."""
+        """Compose the dashboard layout - simple 2x3 grid."""
         yield HeaderBar(id="header")
         
         with Vertical(id="main-body"):
-            # Row 1: Progress/Metrics + History/Hardware
-            with Horizontal(id="top-row", classes="panel-row"):
-                with Vertical(id="left-column"):
-                    yield ProgressPanel(id="progress")
-                    yield MetricsPanel(id="metrics")
-                    yield RewardDistributionPanel(id="reward-dist")
-                
-                with Vertical(id="right-column"):
-                    yield HistoryPanel(id="history")
-                    yield HardwarePanel(id="hardware")
-                    yield QuickActionsPanel(id="quick-actions")
+            # Row 1: Progress + Cycle History
+            with Horizontal(classes="panel-row"):
+                yield ProgressPanel(id="progress")
+                yield HistoryPanel(id="history")
             
-            # Row 2: Samples + Logs
-            with Horizontal(id="bottom-row", classes="panel-row"):
+            # Row 2: Metrics + Hardware
+            with Horizontal(classes="panel-row"):
+                yield MetricsPanel(id="metrics")
+                yield HardwarePanel(id="hardware")
+            
+            # Row 3: Live Samples + Log
+            with Horizontal(classes="panel-row"):
                 yield SamplesPanel(id="samples")
                 yield LogPanel(id="logs")
         

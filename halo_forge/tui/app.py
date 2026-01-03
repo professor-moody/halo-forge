@@ -22,10 +22,6 @@ from .widgets import (
     HistoryPanel,
     SamplesPanel,
     LogPanel,
-    QuickActionsPanel,
-    RecentRunsPanel,
-    SystemInfoPanel,
-    RewardDistributionPanel,
 )
 from .screens import (
     DashboardScreen,
@@ -77,24 +73,22 @@ class HaloForgeApp(App):
         self._training_process = None
     
     def compose(self) -> ComposeResult:
-        """Compose the app layout (dashboard is the main screen)."""
+        """Compose the app layout - simple 2x3 grid."""
         yield HeaderBar(id="header")
         
         with Vertical(id="main-body"):
-            # Row 1: Progress/Metrics + History/Hardware
-            with Horizontal(id="top-row", classes="panel-row"):
-                with Vertical(id="left-column"):
-                    yield ProgressPanel(id="progress")
-                    yield MetricsPanel(id="metrics")
-                    yield RewardDistributionPanel(id="reward-dist")
-                
-                with Vertical(id="right-column"):
-                    yield HistoryPanel(id="history")
-                    yield HardwarePanel(id="hardware")
-                    yield QuickActionsPanel(id="quick-actions")
+            # Row 1: Progress + Cycle History
+            with Horizontal(classes="panel-row"):
+                yield ProgressPanel(id="progress")
+                yield HistoryPanel(id="history")
             
-            # Row 2: Samples + Logs
-            with Horizontal(id="bottom-row", classes="panel-row"):
+            # Row 2: Metrics + Hardware
+            with Horizontal(classes="panel-row"):
+                yield MetricsPanel(id="metrics")
+                yield HardwarePanel(id="hardware")
+            
+            # Row 3: Live Samples + Log
+            with Horizontal(classes="panel-row"):
                 yield SamplesPanel(id="samples")
                 yield LogPanel(id="logs")
         
@@ -128,17 +122,13 @@ class HaloForgeApp(App):
             header = self.query_one("#header", HeaderBar)
             header.status = self._state.status
             
-            # Update core panels
+            # Update all panels
             self.query_one("#progress", ProgressPanel).update_from_state(self._state)
             self.query_one("#metrics", MetricsPanel).update_from_state(self._state)
             self.query_one("#hardware", HardwarePanel).update_from_state(self._state)
             self.query_one("#history", HistoryPanel).update_from_state(self._state)
             self.query_one("#samples", SamplesPanel).update_from_state(self._state)
             self.query_one("#logs", LogPanel).update_from_state(self._state)
-            
-            # Update reward distribution (computed from recent samples)
-            reward_dist = self._compute_reward_distribution()
-            self.query_one("#reward-dist", RewardDistributionPanel).update_distribution(reward_dist)
         except Exception:
             # Panels might not exist if on a different screen
             pass
@@ -183,23 +173,6 @@ class HaloForgeApp(App):
     def action_run_benchmark(self):
         """Run a benchmark."""
         self.notify("Benchmark: Coming soon - use CLI for now", severity="information")
-    
-    def _compute_reward_distribution(self) -> dict:
-        """Compute reward distribution from recent samples."""
-        dist = {"0.0": 0, "0.5": 0, "0.7": 0, "1.0": 0}
-        
-        for sample in self._state.recent_samples:
-            reward = sample.get("reward", 0)
-            if reward >= 1.0:
-                dist["1.0"] += 1
-            elif reward >= 0.7:
-                dist["0.7"] += 1
-            elif reward >= 0.5:
-                dist["0.5"] += 1
-            else:
-                dist["0.0"] += 1
-        
-        return dist
     
     # -------------------------------------------------------------------------
     # Training Control
