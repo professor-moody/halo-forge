@@ -59,7 +59,7 @@ class HaloForgeApp(App):
         Binding("e", "push_screen('export')", "Export", show=True),
         Binding("b", "run_benchmark", "Bench", show=True),
         Binding("p", "pause", "Pause", show=True),
-        Binding("r", "resume", "Resume", show=False),
+        Binding("r", "resume", "Resume", show=True),
         Binding("s", "stop", "Stop", show=True, priority=True),
         Binding("l", "toggle_log", "Toggle Log", show=False),
         Binding("q", "quit", "Quit", show=True),

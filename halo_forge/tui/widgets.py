@@ -151,6 +151,13 @@ class ProgressPanel(Container):
         yield Static("", id="phase-display", classes="phase-row")
         yield Static("", id="eta-display", classes="eta-row")
     
+    def on_mount(self):
+        """Initialize display on mount."""
+        self._update_cycle()
+        self._update_step()
+        self._update_phase()
+        self._update_eta()
+    
     def watch_cycle(self, cycle: int):
         self._update_cycle()
     
@@ -282,6 +289,10 @@ class MetricsPanel(Container):
         yield Static("", id="compile-display", classes="compile-rate")
         yield Static("", id="metrics-display", classes="metrics-grid")
     
+    def on_mount(self):
+        """Initialize display on mount."""
+        self._update_display()
+    
     def watch_compile_rate(self, rate: float):
         self._update_display()
     
@@ -364,6 +375,10 @@ class HardwarePanel(Container):
     def compose(self) -> ComposeResult:
         yield Static("HARDWARE", classes="panel-title")
         yield Static("", id="hardware-display")
+    
+    def on_mount(self):
+        """Initialize display on mount."""
+        self._update_display()
     
     def watch_gpu_util(self, util: float):
         self._update_display()
@@ -534,6 +549,14 @@ class SamplesPanel(Container):
         yield Static("LIVE SAMPLES", classes="panel-title")
         yield Static("", id="samples-display")
     
+    def on_mount(self):
+        """Show initial message."""
+        text = Text("Waiting for samples...", style="#6b635a")
+        try:
+            self.query_one("#samples-display", Static).update(text)
+        except Exception:
+            pass
+    
     def update_from_state(self, state: TrainingState):
         """Update from state with enhanced sample details."""
         text = Text()
@@ -598,6 +621,14 @@ class RewardDistributionPanel(Container):
     def compose(self) -> ComposeResult:
         yield Static("REWARD DISTRIBUTION", classes="panel-title")
         yield Static("", id="reward-dist-display")
+    
+    def on_mount(self):
+        """Show initial message."""
+        text = Text("No data yet...", style="#6b635a")
+        try:
+            self.query_one("#reward-dist-display", Static).update(text)
+        except Exception:
+            pass
     
     def update_distribution(self, distribution: Dict):
         """Update the distribution histogram.
@@ -843,6 +874,14 @@ class LogPanel(Container):
     def compose(self) -> ComposeResult:
         yield Static("LOG", classes="panel-title")
         yield Static("", id="log-display")
+    
+    def on_mount(self):
+        """Show initial message."""
+        text = Text("No logs yet...", style="#6b635a")
+        try:
+            self.query_one("#log-display", Static).update(text)
+        except Exception:
+            pass
     
     def update_from_state(self, state: TrainingState):
         """Update from state."""
