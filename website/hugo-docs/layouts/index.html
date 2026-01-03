@@ -1,0 +1,207 @@
+{{ define "main" }}
+<section class="hero">
+    <div class="hero-content">
+        <h1>Verification-Guided <span class="accent">Code Generation</span> Training</h1>
+        <p class="subtitle">An RLVR framework using compiler feedback as reward signals for iterative model refinement. Built for AMD Strix Halo.</p>
+        <div class="hero-meta">
+            <span class="meta-item"><span class="label">Version</span> {{ .Site.Params.version }}</span>
+            <span class="meta-item"><span class="label">Hardware</span> AMD gfx1151</span>
+            <span class="meta-item"><span class="label">License</span> Apache 2.0</span>
+        </div>
+        <div class="hero-actions">
+            <a href="/docs/getting-started/quickstart/" class="btn btn-primary">Get Started</a>
+            <a href="{{ .Site.Params.github }}" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <h2>The Problem</h2>
+        <p class="section-intro">Traditional approaches to improving code generation models face limitations:</p>
+        
+        <div class="card-grid">
+            <div class="card">
+                <h3>SFT Only</h3>
+                <p>Distribution mismatch — model outputs differ from training data</p>
+            </div>
+            <div class="card">
+                <h3>RLHF</h3>
+                <p>Expensive human labeling, inconsistent judgments, doesn't scale</p>
+            </div>
+            <div class="card">
+                <h3>Self-Evaluation</h3>
+                <p>Models hallucinate correctness, reward signals can be gamed</p>
+            </div>
+        </div>
+
+        <div class="callout">
+            <strong>Core insight:</strong> A compiler provides a perfect reward signal — unambiguous, deterministic feedback about code correctness that cannot be gamed.
+        </div>
+    </div>
+</section>
+
+<section class="section alt">
+    <div class="container">
+        <h2>The RAFT Approach</h2>
+        <p class="section-intro">halo-forge implements RAFT (Reward-Ranked Fine-Tuning) — essentially iterated rejection sampling:</p>
+        
+        <div class="code-block">
+            <div class="code-header">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                <span class="code-lang">python</span>
+            </div>
+            <pre><code><span class="keyword">for</span> cycle <span class="keyword">in</span> <span class="builtin">range</span>(num_cycles):
+    <span class="comment"># 1. Generate samples</span>
+    samples = model.generate(prompts, n=<span class="number">8</span>)
+    
+    <span class="comment"># 2. Verify with compiler</span>
+    results = verifier.verify_batch(samples)
+    
+    <span class="comment"># 3. Filter by reward threshold</span>
+    filtered = [s <span class="keyword">for</span> s, r <span class="keyword">in</span> <span class="builtin">zip</span>(samples, results) 
+                <span class="keyword">if</span> r.reward >= <span class="number">0.5</span>]
+    
+    <span class="comment"># 4. Fine-tune on verified samples</span>
+    model.train(filtered)</code></pre>
+        </div>
+
+        <p>This is simpler than PPO/GRPO (1x model memory vs 2-4x), stable to train, and produces comparable results.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <h2>Results</h2>
+        <p class="section-intro">Production training on Qwen2.5-Coder-7B with 569 C/C++ prompts:</p>
+
+        <div class="results-grid">
+            <div class="result-card">
+                <div class="result-value">46.7%</div>
+                <div class="result-label">Peak compile rate</div>
+                <div class="result-context">Cycle 6</div>
+            </div>
+            <div class="result-card">
+                <div class="result-value">3×</div>
+                <div class="result-label">Improvement</div>
+                <div class="result-context">vs SFT baseline</div>
+            </div>
+            <div class="result-card">
+                <div class="result-value">55.3%</div>
+                <div class="result-label">pass@1</div>
+                <div class="result-context">Cycle 6</div>
+            </div>
+            <div class="result-card">
+                <div class="result-value">15.2%</div>
+                <div class="result-label">SFT baseline</div>
+                <div class="result-context">Before RAFT</div>
+            </div>
+        </div>
+
+        <table>
+            <thead><tr><th>Stage</th><th>Compile Rate</th><th>pass@1</th></tr></thead>
+            <tbody>
+                <tr><td>SFT Baseline</td><td>15.2%</td><td>18.7%</td></tr>
+                <tr><td>Cycle 1</td><td>28.4%</td><td>35.2%</td></tr>
+                <tr><td>Cycle 3</td><td>39.7%</td><td>48.2%</td></tr>
+                <tr class="highlight"><td>Cycle 6 (Peak)</td><td>46.7%</td><td>55.3%</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="section alt">
+    <div class="container">
+        <h2>Quick Start</h2>
+        
+        <div class="code-block">
+            <div class="code-header">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                <span class="code-lang">bash</span>
+            </div>
+            <pre><code><span class="comment"># Build the toolbox (ROCm 7 + PyTorch nightly)</span>
+git clone https://github.com/professor-moody/halo-forge.git
+cd halo-forge/toolbox && ./build.sh
+
+<span class="comment"># Create and enter the container</span>
+toolbox create halo-forge --image localhost/halo-forge:latest
+toolbox enter halo-forge
+
+<span class="comment"># Validate installation</span>
+halo-forge test --level smoke      <span class="comment"># Quick check, no GPU</span>
+halo-forge test --level standard   <span class="comment"># Full validation</span>
+
+<span class="comment"># Run demo benchmark</span>
+halo-forge benchmark full --model Qwen/Qwen2.5-Coder-0.5B --cycles <span class="number">2</span></code></pre>
+        </div>
+
+        <div class="cta-row">
+            <a href="/docs/getting-started/quickstart/" class="btn btn-primary">Full Quick Start Guide →</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <h2>Graduated Rewards</h2>
+        <p class="section-intro">Binary rewards create sparse gradients. halo-forge uses graduated rewards:</p>
+        
+        <table>
+            <thead><tr><th>Outcome</th><th>Reward</th><th>Signal</th></tr></thead>
+            <tbody>
+                <tr><td>Syntax error</td><td>0.0</td><td>Completely wrong</td></tr>
+                <tr><td>Compiles with warnings</td><td>0.3</td><td>Close but imperfect</td></tr>
+                <tr><td>Compiles clean</td><td>0.5</td><td>Correct syntax</td></tr>
+                <tr><td>Runs without crash</td><td>0.7</td><td>Executable</td></tr>
+                <tr><td>Correct output</td><td>1.0</td><td>Fully correct</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="section alt">
+    <div class="container">
+        <h2>Documentation</h2>
+        
+        <div class="doc-grid">
+            <a href="/docs/getting-started/quickstart/" class="doc-card">
+                <div class="doc-icon">→</div>
+                <h3>Quick Start</h3>
+                <p>Get running in under 30 minutes</p>
+            </a>
+            <a href="/docs/training-pipeline/full-pipeline/" class="doc-card">
+                <div class="doc-icon">//</div>
+                <h3>Full Pipeline</h3>
+                <p>Complete training workflow</p>
+            </a>
+            <a href="/docs/background/theory/" class="doc-card">
+                <div class="doc-icon">~</div>
+                <h3>Theory</h3>
+                <p>RAFT research foundations</p>
+            </a>
+            <a href="/docs/verifiers/" class="doc-card">
+                <div class="doc-icon">#</div>
+                <h3>Verifiers</h3>
+                <p>GCC, MinGW, pytest, custom</p>
+            </a>
+            <a href="/docs/reference/configuration/" class="doc-card">
+                <div class="doc-icon">%</div>
+                <h3>Configuration</h3>
+                <p>Full config reference</p>
+            </a>
+            <a href="/docs/getting-started/hardware/" class="doc-card">
+                <div class="doc-icon">*</div>
+                <h3>Hardware Notes</h3>
+                <p>Strix Halo configuration</p>
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <h2>Related Projects</h2>
+        <p><a href="https://github.com/professor-moody/malagent">malagent</a> — Applies RLVR to security research (EDR evasion with Elastic Security as verifier)</p>
+    </div>
+</section>
+{{ end }}

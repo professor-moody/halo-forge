@@ -1,0 +1,12 @@
+{{ define "main" }}
+<div class="docs-layout">
+    {{ partial "docs-sidebar.html" . }}
+    <article class="docs-content">
+        <header class="docs-header">
+            <h1>{{ .Title }}</h1>
+            {{ with .Description }}<p class="docs-description">{{ . }}</p>{{ end }}
+        </header>
+        <div class="docs-body">{{ .Content }}</div>
+    </article>
+</div>
+{{ end }}

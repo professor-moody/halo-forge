@@ -1,0 +1,17 @@
+baseURL = "https://halo-forge.io/"
+languageCode = "en-us"
+title = "halo-forge"
+enableRobotsTXT = true
+
+[params]
+  description = "RLVR Training Framework for AMD Strix Halo"
+  github = "https://github.com/professor-moody/halo-forge"
+  version = "0.2.0"
+
+[markup]
+  [markup.highlight]
+    style = "monokai"
+    lineNos = false
+    codeFences = true
+  [markup.goldmark.renderer]
+    unsafe = true

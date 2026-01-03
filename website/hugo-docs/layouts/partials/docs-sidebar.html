@@ -1,0 +1,42 @@
+<aside class="docs-sidebar">
+    <nav class="docs-nav">
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <ul>
+                <li><a href="/docs/"{{ if eq .RelPermalink "/docs/" }} class="active"{{ end }}>Overview</a></li>
+                <li><a href="/docs/getting-started/quickstart/"{{ if eq .RelPermalink "/docs/getting-started/quickstart/" }} class="active"{{ end }}>Quick Start</a></li>
+                <li><a href="/docs/getting-started/toolbox/"{{ if eq .RelPermalink "/docs/getting-started/toolbox/" }} class="active"{{ end }}>Toolbox Setup</a></li>
+                <li><a href="/docs/getting-started/hardware/"{{ if eq .RelPermalink "/docs/getting-started/hardware/" }} class="active"{{ end }}>Hardware Notes</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Training Pipeline</div>
+            <ul>
+                <li><a href="/docs/training-pipeline/full-pipeline/"{{ if eq .RelPermalink "/docs/training-pipeline/full-pipeline/" }} class="active"{{ end }}>Full Pipeline</a></li>
+                <li><a href="/docs/training-pipeline/sft/"{{ if eq .RelPermalink "/docs/training-pipeline/sft/" }} class="active"{{ end }}>SFT Training</a></li>
+                <li><a href="/docs/training-pipeline/raft/"{{ if eq .RelPermalink "/docs/training-pipeline/raft/" }} class="active"{{ end }}>RAFT Training</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Verifiers</div>
+            <ul>
+                <li><a href="/docs/verifiers/"{{ if eq .RelPermalink "/docs/verifiers/" }} class="active"{{ end }}>Overview</a></li>
+                <li><a href="/docs/verifiers/compile/"{{ if eq .RelPermalink "/docs/verifiers/compile/" }} class="active"{{ end }}>Compile Verifiers</a></li>
+                <li><a href="/docs/verifiers/custom/"{{ if eq .RelPermalink "/docs/verifiers/custom/" }} class="active"{{ end }}>Custom Verifiers</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Reference</div>
+            <ul>
+                <li><a href="/docs/reference/configuration/"{{ if eq .RelPermalink "/docs/reference/configuration/" }} class="active"{{ end }}>Configuration</a></li>
+                <li><a href="/docs/reference/troubleshooting/"{{ if eq .RelPermalink "/docs/reference/troubleshooting/" }} class="active"{{ end }}>Troubleshooting</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Background</div>
+            <ul>
+                <li><a href="/docs/background/theory/"{{ if eq .RelPermalink "/docs/background/theory/" }} class="active"{{ end }}>Theory & Research</a></li>
+            </ul>
+        </div>
+    </nav>
+</aside>

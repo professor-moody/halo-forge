@@ -63,3 +63,9 @@ Thumbs.db
 *.local.yaml
 .env.local
 
+# Hugo
+website/hugo-docs/public/
+website/hugo-docs/resources/
+website/hugo-docs/.hugo_build.lock
+website/.backup/
+
