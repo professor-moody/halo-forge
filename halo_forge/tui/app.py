@@ -222,11 +222,25 @@ class HaloForgeApp(App):
             "--output", config["output_dir"],
         ]
         
-        # Add optional parameters
+        # Add SFT checkpoint if provided
+        if config.get("sft_checkpoint") and config["sft_checkpoint"] != "models/sft/final_model":
+            cmd.extend(["--checkpoint", config["sft_checkpoint"]])
+        
+        # Add filtering parameters
         if config.get("reward_threshold"):
             cmd.extend(["--reward-threshold", str(config["reward_threshold"])])
         if config.get("keep_top_percent"):
             cmd.extend(["--keep-percent", str(config["keep_top_percent"])])
+        
+        # Add generation parameters
+        if config.get("samples_per_prompt"):
+            cmd.extend(["--samples-per-prompt", str(config["samples_per_prompt"])])
+        if config.get("max_new_tokens"):
+            cmd.extend(["--max-tokens", str(config["max_new_tokens"])])
+        if config.get("temperature"):
+            cmd.extend(["--temperature", str(config["temperature"])])
+        if config.get("batch_size"):
+            cmd.extend(["--batch-size", str(config["batch_size"])])
         
         self.notify(f"Starting training: {' '.join(cmd[:6])}...")
         

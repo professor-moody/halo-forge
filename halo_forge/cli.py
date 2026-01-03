@@ -145,7 +145,11 @@ def cmd_raft_train(args):
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
         num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
         keep_top_percent=keep_percent,
-        reward_threshold=reward_threshold
+        reward_threshold=reward_threshold,
+        samples_per_prompt=getattr(args, 'samples_per_prompt', None) or cfg_dict.get('samples_per_prompt', 8),
+        max_new_tokens=getattr(args, 'max_tokens', None) or cfg_dict.get('max_new_tokens', 1024),
+        temperature=getattr(args, 'temperature', None) or cfg_dict.get('temperature', 0.7),
+        generation_batch_size=getattr(args, 'batch_size', None) or cfg_dict.get('generation_batch_size', 8),
     )
     
     # Load prompts
@@ -816,6 +820,14 @@ def main():
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
                                    help='Minimum reward to consider sample passing (default: 0.5)')
+    raft_train_parser.add_argument('--samples-per-prompt', type=int, default=8,
+                                   help='Number of samples to generate per prompt (default: 8)')
+    raft_train_parser.add_argument('--max-tokens', type=int, default=1024,
+                                   help='Max tokens to generate per sample (default: 1024)')
+    raft_train_parser.add_argument('--temperature', type=float, default=0.7,
+                                   help='Sampling temperature (default: 0.7)')
+    raft_train_parser.add_argument('--batch-size', type=int, default=8,
+                                   help='Generation batch size (default: 8)')
     
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
