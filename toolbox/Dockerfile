@@ -14,11 +14,13 @@ LABEL description="halo-forge: RLVR Training Framework for Strix Halo"
 LABEL version="0.2.0"
 
 # --- base toolchain ---
+# Includes: compilers, build tools, Python, system utilities
 RUN dnf -y --nodocs --setopt=install_weak_deps=False install \
-       make gcc cmake lld clang clang-devel compiler-rt libcurl-devel \
+       make gcc gcc-c++ cmake lld clang clang-devel compiler-rt libcurl-devel \
        radeontop git vim patch curl ninja-build tar libatomic xz \
        python python3-devel pip aria2c jq \
        openssh-clients pciutils numactl numactl-devel libdrm mesa-libGL \
+       mingw64-gcc-c++ wine \
     && dnf clean all && rm -rf /var/cache/dnf/*
 
 # --- fetch and unpack ROCm TheRock ---
@@ -34,7 +36,8 @@ RUN set -euo pipefail; \
     echo "Latest tarball: ${KEY}"; \
     aria2c -x 16 -s 16 -j 16 --file-allocation=none "${BASE}/${KEY}" -o therock.tar.gz
 RUN mkdir -p /opt/rocm-7.0 && \
-    tar xzf therock.tar.gz -C /opt/rocm-7.0 --strip-components=1
+    tar xzf therock.tar.gz -C /opt/rocm-7.0 --strip-components=1 && \
+    rm -f therock.tar.gz
 
 # --- ROCm env vars ---
 ENV ROCM_PATH=/opt/rocm-7.0 \
@@ -50,6 +53,7 @@ ENV ROCM_PATH=/opt/rocm-7.0 \
     PKG_CONFIG_PATH=/opt/rocm-7.0/lib/pkgconfig \
     PYTHONNOUSERSITE=1
 
+# Write ROCm env to profile.d for shell sessions
 RUN printf '%s\n' \
   'export ROCM_PATH=/opt/rocm-7.0' \
   'export HIP_PLATFORM=amd' \
@@ -64,7 +68,7 @@ RUN printf '%s\n' \
   'export PKG_CONFIG_PATH="$ROCM_PATH/lib/pkgconfig"' \
   'export ROCBLAS_USE_HIPBLASLT=1' \
   'export PYTHONNOUSERSITE=1' \
-  > /etc/profile.d/rocm.sh && chmod +x /etc/profile.d/rocm.sh && echo 'source /etc/profile.d/rocm.sh' >> /etc/bashrc
+  > /etc/profile.d/01-rocm.sh && chmod +x /etc/profile.d/01-rocm.sh
 
 # --- create venv ---
 RUN /usr/bin/python3 -m venv /opt/venv
@@ -101,31 +105,36 @@ RUN git clone https://github.com/ROCm/flash-attention.git && \
 
 # --- LLM runtime stack ---
 RUN python -m pip install --no-cache-dir \
-    transformers \
-    peft \
+    transformers>=4.46.0 \
+    peft>=0.13.0 \
     accelerate \
     safetensors \
     sentencepiece \
     huggingface-hub \
-    trl \
+    trl>=0.12.0 \
     einops \
-    datasets \
+    datasets>=2.14.0 \
     scipy \
     protobuf
 
 # --- Training utilities ---
 RUN python -m pip install --no-cache-dir \
     tensorboard \
+    wandb \
     tqdm \
     pandas \
     matplotlib \
     seaborn \
-    pyyaml \
-    requests \
+    pyyaml>=6.0 \
+    requests>=2.31.0 \
     jsonlines \
     paramiko \
-    pytest \
-    rich
+    pytest
+
+# --- CLI and TUI ---
+RUN python -m pip install --no-cache-dir \
+    rich \
+    textual>=0.50.0
 
 # --- PyTorch memory optimization for Strix Halo (128GB unified memory) ---
 ENV PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"
@@ -136,6 +145,22 @@ ENV ROCBLAS_USE_HIPBLASLT=1
 # Toolbox compatibility
 ENV SHELL=/bin/bash
 ENV container=podman
+
+# --- profile.d scripts ---
+# Triton environment for flash-attention
+COPY scripts/01-triton-env.sh /etc/profile.d/01-triton-env.sh
+
+# halo-forge banner
+COPY scripts/99-halo-forge-banner.sh /etc/profile.d/99-halo-forge-banner.sh
+
+# Venv path fix (ensure /opt/venv/bin stays first)
+COPY scripts/zz-venv-path-fix.sh /etc/profile.d/zz-venv-path-fix.sh
+
+RUN chmod 0644 /etc/profile.d/*.sh && \
+    echo 'source /etc/profile.d/01-rocm.sh' >> /etc/bashrc
+
+# --- disable core dumps ---
+RUN printf 'ulimit -S -c 0\n' > /etc/profile.d/90-nocoredump.sh && chmod 0644 /etc/profile.d/90-nocoredump.sh
 
 # --- cleanup ---
 RUN chmod -R a+rwX /opt && \

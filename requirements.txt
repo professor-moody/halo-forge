@@ -1,39 +1,50 @@
 # halo-forge requirements
+# =============================================================================
 # Note: torch is provided by the custom toolbox with ROCm support
 # If running outside toolbox, install torch separately with ROCm
+# =============================================================================
 
-# Core ML
+# --- Core ML Stack ---
 transformers>=4.46.0
 peft>=0.13.0
 datasets>=2.14.0
 trl>=0.12.0
 accelerate
-bitsandbytes
-scipy
+safetensors
 sentencepiece
-protobuf
+huggingface-hub
 einops
+scipy
+protobuf
 
-# Data generation
+# --- Quantization (built from source in toolbox) ---
+# bitsandbytes  # Built with gfx1151 support in Dockerfile
+
+# --- Data Processing ---
 requests>=2.31.0
 pyyaml>=6.0
 tqdm
 jsonlines
+pandas
 
-# Monitoring
+# --- Monitoring & Logging ---
 tensorboard
 wandb
 
-# Utilities
-pandas
+# --- Visualization ---
 matplotlib
-paramiko
-rich
+seaborn
 
-# TUI
+# --- Remote Verification ---
+paramiko
+
+# --- CLI & TUI ---
+rich
 textual>=0.50.0
 
-# Optional: LLM backends for data generation
+# --- Testing ---
+pytest
+
+# --- Optional: LLM backends for data generation ---
 # anthropic>=0.18.0
 # openai>=1.0.0
-
