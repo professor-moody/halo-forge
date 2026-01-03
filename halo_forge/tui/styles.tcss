@@ -309,22 +309,70 @@ Footer > .footer--description {
     layout: horizontal;
 }
 
+/* Main layout structure */
+#main-body {
+    height: 1fr;
+    layout: vertical;
+}
+
+#top-row {
+    height: 60%;
+    layout: horizontal;
+}
+
 #left-column {
     width: 50%;
+    height: 100%;
+    layout: vertical;
 }
 
 #right-column {
     width: 50%;
+    height: 100%;
+    layout: vertical;
 }
 
 #bottom-row {
-    height: auto;
-    min-height: 10;
+    height: 40%;
     layout: horizontal;
 }
 
 #bottom-row > * {
     width: 50%;
+}
+
+/* Fixed heights for top-row panels to prevent jumping */
+#progress {
+    height: 10;
+}
+
+#metrics {
+    height: 14;
+}
+
+#reward-dist {
+    height: 1fr;
+}
+
+#history {
+    height: 12;
+}
+
+#hardware {
+    height: 8;
+}
+
+#quick-actions {
+    height: 1fr;
+}
+
+/* Bottom row panels are flexible */
+#samples {
+    height: 100%;
+}
+
+#logs {
+    height: 100%;
 }
 
 /* =============================================================================

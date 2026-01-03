@@ -90,8 +90,7 @@ class ProgressPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
-        min-height: 10;
+        height: 100%;
     }
     
     ProgressPanel > .panel-title {
@@ -247,8 +246,7 @@ class MetricsPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
-        min-height: 12;
+        height: 100%;
     }
     
     MetricsPanel > .panel-title {
@@ -360,8 +358,7 @@ class HardwarePanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
-        min-height: 8;
+        height: 100%;
     }
     
     HardwarePanel > .panel-title {
@@ -428,7 +425,7 @@ class HistoryPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
+        height: 100%;
     }
     
     HistoryPanel > .panel-title {
@@ -438,8 +435,8 @@ class HistoryPanel(Container):
     }
     
     HistoryPanel > DataTable {
-        height: auto;
-        max-height: 8;
+        height: 1fr;
+        max-height: 6;
     }
     """
     
@@ -537,14 +534,18 @@ class SamplesPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
-        min-height: 10;
+        height: 100%;
+        overflow-y: auto;
     }
     
     SamplesPanel > .panel-title {
         color: #6b635a;
         text-style: bold;
         padding-bottom: 1;
+    }
+    
+    SamplesPanel > #samples-display {
+        height: 1fr;
     }
     """
     
@@ -610,8 +611,7 @@ class RewardDistributionPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
-        min-height: 10;
+        height: 100%;
     }
     
     RewardDistributionPanel > .panel-title {
@@ -682,7 +682,7 @@ class QuickActionsPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
+        height: 100%;
     }
     
     QuickActionsPanel > .panel-title {
@@ -863,14 +863,18 @@ class LogPanel(Container):
         border: solid #2a2520;
         margin: 1;
         padding: 1;
-        height: auto;
-        min-height: 10;
+        height: 100%;
+        overflow-y: auto;
     }
     
     LogPanel > .panel-title {
         color: #6b635a;
         text-style: bold;
         padding-bottom: 1;
+    }
+    
+    LogPanel > #log-display {
+        height: 1fr;
     }
     """
     
