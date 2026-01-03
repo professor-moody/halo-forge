@@ -63,10 +63,10 @@ def print_step(name: str, status: str = "running", detail: str = "", time_s: Opt
     """Print a step status line."""
     icons = {
         "running": f"[{COLORS['info']}]>[/{COLORS['info']}]",
-        "success": f"[{COLORS['success']}]✓[/{COLORS['success']}]",
-        "error": f"[{COLORS['error']}]✗[/{COLORS['error']}]",
-        "skip": f"[{COLORS['muted']}]-[/{COLORS['muted']}]",
-        "pending": f"[{COLORS['muted']}]○[/{COLORS['muted']}]",
+        "success": f"[{COLORS['success']}][OK][/{COLORS['success']}]",
+        "error": f"[{COLORS['error']}][FAIL][/{COLORS['error']}]",
+        "skip": f"[{COLORS['muted']}][-][/{COLORS['muted']}]",
+        "pending": f"[{COLORS['muted']}][ ][/{COLORS['muted']}]",
     }
     
     icon = icons.get(status, icons["pending"])
@@ -78,17 +78,17 @@ def print_step(name: str, status: str = "running", detail: str = "", time_s: Opt
 
 def print_success(message: str):
     """Print a success message."""
-    console.print(f"[{COLORS['success']}]✓[/{COLORS['success']}] {message}")
+    console.print(f"[{COLORS['success']}][OK][/{COLORS['success']}] {message}")
 
 
 def print_error(message: str):
     """Print an error message."""
-    console.print(f"[{COLORS['error']}]✗[/{COLORS['error']}] {message}")
+    console.print(f"[{COLORS['error']}][ERROR][/{COLORS['error']}] {message}")
 
 
 def print_warning(message: str):
     """Print a warning message."""
-    console.print(f"[{COLORS['warning']}]![/{COLORS['warning']}] {message}")
+    console.print(f"[{COLORS['warning']}][!][/{COLORS['warning']}] {message}")
 
 
 def print_info(message: str):

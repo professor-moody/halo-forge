@@ -121,22 +121,17 @@ class RAFTTrainer:
         self.cycle_stats = []
     
     def _log(self, msg: str, level: str = "info"):
-        """Log a message with optional rich formatting."""
-        if self.use_rich:
-            if level == "success":
-                ui.print_success(msg)
-            elif level == "error":
-                ui.print_error(msg)
-            elif level == "warning":
-                ui.print_warning(msg)
-            elif level == "dim":
-                ui.print_dim(msg)
-            elif level == "step":
-                ui.print_step(msg, "running")
-            else:
-                ui.print_info(msg)
-        else:
-            print(msg)
+        """Log a message with simple text prefix (works through pipes)."""
+        prefixes = {
+            "success": "[OK]",
+            "error": "[ERROR]",
+            "warning": "[!]",
+            "dim": "  ",
+            "step": "  >",
+            "info": "  >",
+        }
+        prefix = prefixes.get(level, "")
+        print(f"{prefix} {msg}", flush=True)
     
     def _load_model(self):
         """Load base model and optionally SFT adapters."""
@@ -240,11 +235,8 @@ class RAFTTrainer:
             if len(all_samples) > 0:
                 self._log(f"Resuming from batch {start_batch + 1} ({len(all_samples)} samples already cached)", "dim")
         
-        if self.use_rich:
-            ui.print_header("Generation", f"{total} samples ({len(prompts)} prompts x {num_samples} samples)")
-        else:
-            print(f"\nGenerating {total} samples...")
-            print(f"  {len(prompts)} prompts x {num_samples} samples/prompt")
+        # Plain text header (works through pipes)
+        print(f"\nGeneration: {total} samples ({len(prompts)} prompts x {num_samples} samples)")
         
         # If already complete, return cached
         if len(all_samples) >= total:
@@ -254,28 +246,24 @@ class RAFTTrainer:
         self.model.eval()
         start_time = time.time()
         
-        # Use rich progress bar when available
+        # Calculate batch info
         batch_count = (len(prompts) + batch_size - 1) // batch_size
-        if self.use_rich:
-            progress = ui.create_progress()
-            progress.start()
-            task = progress.add_task("Generating", total=batch_count, completed=start_batch)
-        else:
-            progress = None
         
         # Open cache file in append mode for streaming writes
         cache_file = open(cache_path, 'a') if cache_path else None
         
         try:
-            for batch_idx, i in enumerate(range(0, len(prompts), batch_size)):
+            # Use tqdm for progress (works through pipes)
+            batch_iter = range(0, len(prompts), batch_size)
+            pbar = tqdm(enumerate(batch_iter), total=batch_count, desc="Generating", 
+                       initial=start_batch, unit="batch")
+            
+            for batch_idx, i in pbar:
                 # Skip already-completed batches
                 if batch_idx < start_batch:
                     continue
                     
                 batch_prompts = prompts[i:i+batch_size]
-                
-                if progress:
-                    progress.update(task, description=f"Generating batch {batch_idx + 1}/{batch_count}")
                 
                 # Format with chat template
                 formatted = []
@@ -338,21 +326,14 @@ class RAFTTrainer:
                 if cache_file:
                     cache_file.flush()
                 
-                # Advance progress (enables speed calculation)
-                if progress:
-                    progress.advance(task)
+                # Update tqdm postfix with sample count
+                pbar.set_postfix(samples=len(all_samples), refresh=True)
                 
-                # ALWAYS print text progress (works through pipes)
-                elapsed = time.time() - start_time
-                samples_so_far = len(all_samples)
-                print(f"  Batch {batch_idx + 1}/{batch_count} complete | {samples_so_far}/{total} samples | {elapsed/60:.1f}min elapsed", flush=True)
+            pbar.close()
                 
         finally:
             if cache_file:
                 cache_file.close()
-        
-        if progress:
-            progress.stop()
         
         elapsed = time.time() - start_time
         self._log(f"Generated {len(all_samples)} samples in {elapsed/60:.1f} minutes", "success")
@@ -376,10 +357,8 @@ class RAFTTrainer:
         """
         cfg = self.config
         
-        if self.use_rich:
-            ui.print_header("Verification", f"{len(samples)} samples")
-        else:
-            print(f"\nVerifying {len(samples)} samples...")
+        # Simple header (works through pipes)
+        print(f"\nVerifying {len(samples)} samples...")
         
         # Extract prompts and completions for verification
         prompts = [s[0] for s in samples]
@@ -389,14 +368,13 @@ class RAFTTrainer:
         # Process 200 samples at a time to avoid OOM
         chunk_size = 200
         results = []
+        num_chunks = (len(completions) + chunk_size - 1) // chunk_size
         
         start_time = time.time()
-        for i in range(0, len(completions), chunk_size):
+        for i in tqdm(range(0, len(completions), chunk_size), desc="Verifying", unit="chunk", total=num_chunks):
             chunk_end = min(i + chunk_size, len(completions))
             chunk_prompts = prompts[i:chunk_end]
             chunk_completions = completions[i:chunk_end]
-            
-            self._log(f"Processing chunk {i//chunk_size + 1}/{(len(completions) + chunk_size - 1)//chunk_size} ({len(chunk_completions)} samples)", "dim")
             
             # Pass both prompts and completions (for verifiers that need context like HumanEval/MBPP)
             chunk_results = self.verifier.verify_batch(chunk_completions, chunk_prompts)
@@ -406,7 +384,7 @@ class RAFTTrainer:
             gc.collect()
         
         elapsed = time.time() - start_time
-        self._log(f"Verification completed in {elapsed:.1f}s", "success")
+        print(f"[OK] Verification completed in {elapsed:.1f}s")
         
         # Combine with prompts and rewards
         all_data = []
@@ -445,27 +423,18 @@ class RAFTTrainer:
             }
         }
         
-        # Print filtering summary
-        if self.use_rich:
-            ui.print_raft_summary({
-                'generated': stats['total_samples'],
-                'verified': stats['above_threshold'],
-                'kept': stats['kept'],
-                'compile_rate': stats['success_rate'],
-                'avg_reward': stats['avg_reward']
-            })
-        else:
-            print(f"\nFiltering results:")
-            print(f"  Total: {stats['total_samples']}")
-            print(f"  Above threshold ({cfg.reward_threshold}): {stats['above_threshold']} ({stats['above_threshold']/stats['total_samples']*100:.1f}%)")
-            print(f"  Kept: {stats['kept']} ({stats['kept']/stats['total_samples']*100:.1f}%)")
-            print(f"  Avg reward: {stats['avg_reward']:.3f}")
-            print(f"  Success rate: {stats['success_rate']*100:.1f}%")
-            print(f"\n  Reward distribution:")
-            print(f"    0.0 (failed): {stats['reward_distribution']['0.0']}")
-            print(f"    0.5 (compiled): {stats['reward_distribution']['0.5']}")
-            print(f"    0.7 (runs): {stats['reward_distribution']['0.7']}")
-            print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
+        # Print filtering summary (plain text, works through pipes)
+        print(f"\nFiltering results:")
+        print(f"  Total: {stats['total_samples']}")
+        print(f"  Above threshold ({cfg.reward_threshold}): {stats['above_threshold']} ({stats['above_threshold']/stats['total_samples']*100:.1f}%)")
+        print(f"  Kept: {stats['kept']} ({stats['kept']/stats['total_samples']*100:.1f}%)")
+        print(f"  Avg reward: {stats['avg_reward']:.3f}")
+        print(f"  Success rate: {stats['success_rate']*100:.1f}%")
+        print(f"\n  Reward distribution:")
+        print(f"    0.0 (failed): {stats['reward_distribution']['0.0']}")
+        print(f"    0.5 (compiled): {stats['reward_distribution']['0.5']}")
+        print(f"    0.7 (runs): {stats['reward_distribution']['0.7']}")
+        print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
         
         return filtered, stats, all_data
     
@@ -483,10 +452,8 @@ class RAFTTrainer:
         """
         cfg = self.config
         
-        if self.use_rich:
-            ui.print_header("Training", f"{len(filtered_samples)} filtered samples")
-        else:
-            print(f"\nTraining on {len(filtered_samples)} filtered samples...")
+        # Plain text header (works through pipes)
+        print(f"\nTraining: {len(filtered_samples)} filtered samples")
         
         # Prepare dataset
         texts = []
@@ -579,12 +546,10 @@ class RAFTTrainer:
         Returns:
             Cycle statistics
         """
-        if self.use_rich:
-            ui.print_raft_cycle_header(cycle, self.config.num_cycles)
-        else:
-            print("\n" + "=" * 70)
-            print(f"RAFT CYCLE {cycle}")
-            print("=" * 70)
+        # Simple stage header (works through pipes)
+        print("\n" + "=" * 70)
+        print(f"RAFT CYCLE {cycle}/{self.config.num_cycles}")
+        print("=" * 70)
         
         cycle_start = time.time()
         
@@ -712,17 +677,17 @@ class RAFTTrainer:
         num_cycles = num_cycles or self.config.num_cycles
         
         cfg = self.config
+        # Print banner with Rich if available (startup only), then plain text
         if self.use_rich:
             ui.print_banner()
-            ui.print_header("RAFT Training", f"{num_cycles} cycles")
-            ui.print_dim(f"  Reward threshold: {cfg.reward_threshold}")
-            ui.print_dim(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
-            ui.print_dim(f"  Samples per prompt: {cfg.samples_per_prompt}")
-        else:
-            print(f"\nStarting RAFT training: {num_cycles} cycles")
-            print(f"  Reward threshold: {cfg.reward_threshold}")
-            print(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
-            print(f"  Samples per prompt: {cfg.samples_per_prompt}")
+        
+        # Plain text config summary (works through pipes)
+        print("\n" + "=" * 70)
+        print(f"RAFT Training: {num_cycles} cycles")
+        print("=" * 70)
+        print(f"  Reward threshold: {cfg.reward_threshold}")
+        print(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
+        print(f"  Samples per prompt: {cfg.samples_per_prompt}")
         
         for cycle in range(1, num_cycles + 1):
             stats = self.run_cycle(prompts, cycle)
@@ -734,35 +699,20 @@ class RAFTTrainer:
         # Save statistics
         self.save_statistics()
         
-        # Summary
-        if self.use_rich:
-            ui.print_divider()
-            ui.print_header("RAFT Training Complete")
-            
-            for stats in self.cycle_stats:
-                cycle = stats['cycle']
-                if stats.get('skipped'):
-                    ui.print_step(f"Cycle {cycle}", "skip")
-                else:
-                    ui.print_raft_summary({
-                        'generated': stats.get('total_samples', 0),
-                        'kept': stats.get('kept', 0),
-                        'avg_reward': stats.get('avg_reward', 0)
-                    })
-        else:
-            print("\n" + "=" * 70)
-            print("RAFT TRAINING COMPLETE")
-            print("=" * 70)
-            
-            for stats in self.cycle_stats:
-                cycle = stats['cycle']
-                if stats.get('skipped'):
-                    print(f"\nCycle {cycle}: SKIPPED")
-                else:
-                    print(f"\nCycle {cycle}:")
-                    print(f"  Time: {stats['elapsed_minutes']:.1f} min")
-                    print(f"  Kept: {stats['kept']}/{stats['total_samples']}")
-                    print(f"  Avg reward: {stats['avg_reward']:.3f}")
+        # Summary (plain text, works through pipes)
+        print("\n" + "=" * 70)
+        print("RAFT TRAINING COMPLETE")
+        print("=" * 70)
+        
+        for stats in self.cycle_stats:
+            cycle = stats['cycle']
+            if stats.get('skipped'):
+                print(f"\nCycle {cycle}: SKIPPED")
+            else:
+                print(f"\nCycle {cycle}:")
+                print(f"  Time: {stats['elapsed_minutes']:.1f} min")
+                print(f"  Kept: {stats['kept']}/{stats['total_samples']}")
+                print(f"  Avg reward: {stats['avg_reward']:.3f}")
         
         # Cleanup
         self.verifier.cleanup()
