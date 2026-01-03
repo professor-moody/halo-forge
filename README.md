@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="halo-forge.png" alt="halo-forge logo" width="200">
+  <img src="halo-forge.png" alt="halo-forge logo" width="350">
 </p>
 
 <h1 align="center">halo-forge</h1>
