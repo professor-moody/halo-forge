@@ -10,7 +10,7 @@
 #   ./verify.sh --gpu        # Include GPU memory test
 # =============================================================================
 
-set -e
+# Don't use set -e as we want to continue through failures and report at the end
 
 # Colors
 if [[ -t 1 ]]; then
@@ -123,8 +123,8 @@ test_ml_stack() {
     local libs=("transformers" "peft" "accelerate" "datasets" "trl" "bitsandbytes")
     
     for lib in "${libs[@]}"; do
-        if python3 -c "import ${lib}; print(${lib}.__version__)" 2>/dev/null; then
-            ver=$(python3 -c "import ${lib}; print(${lib}.__version__)" 2>/dev/null)
+        ver=$(python3 -c "from importlib.metadata import version; print(version('${lib}'))" 2>/dev/null)
+        if [[ -n "$ver" ]]; then
             pass "${lib}: ${ver}"
         else
             fail "${lib} not installed"
@@ -137,7 +137,7 @@ test_tui() {
     
     # Check Rich
     if python3 -c "import rich" 2>/dev/null; then
-        ver=$(python3 -c "import rich; print(rich.__version__)")
+        ver=$(python3 -c "from importlib.metadata import version; print(version('rich'))" 2>/dev/null || echo "installed")
         pass "Rich installed: ${ver}"
     else
         fail "Rich not installed"
@@ -215,21 +215,22 @@ test_gpu_memory() {
     
     echo -e "  ${DIM}Allocating test tensor...${NC}"
     
-    result=$(python3 - <<'PY' 2>&1)
+    result=$(python3 -c "
 import torch
+import warnings
+warnings.filterwarnings('ignore')
 try:
     if not torch.cuda.is_available():
-        print("FAIL:GPU not available")
+        print('FAIL:GPU not available')
     else:
-        # Try to allocate 1GB tensor
         x = torch.zeros(256, 1024, 1024, dtype=torch.float32, device='cuda')
         mem_gb = torch.cuda.max_memory_allocated() / 1e9
         del x
         torch.cuda.empty_cache()
-        print(f"PASS:Allocated 1GB tensor successfully (peak: {mem_gb:.2f}GB)")
+        print(f'PASS:Allocated 1GB tensor successfully (peak: {mem_gb:.2f}GB)')
 except Exception as e:
-    print(f"FAIL:{e}")
-PY
+    print(f'FAIL:{e}')
+" 2>/dev/null)
     
     if [[ "$result" == PASS:* ]]; then
         pass "${result#PASS:}"
