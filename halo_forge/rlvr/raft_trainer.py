@@ -245,7 +245,7 @@ class RAFTTrainer:
             batch_prompts = prompts[i:i+batch_size]
             
             if progress:
-                progress.update(task, completed=batch_idx + 1, description=f"Generating batch {batch_idx + 1}/{batch_count}")
+                progress.update(task, description=f"Generating batch {batch_idx + 1}/{batch_count}")
             
             # Format with chat template
             formatted = []
@@ -296,6 +296,10 @@ class RAFTTrainer:
                 
                 for completion in prompt_completions:
                     all_samples.append((prompt, completion))
+            
+            # Advance progress (enables speed calculation)
+            if progress:
+                progress.advance(task)
             
             # NOTE: Explicit memory cleanup removed - causes GPU hangs on ROCm/HIP
             # strix-edr-training works fine without cleanup, so we match that behavior
