@@ -37,7 +37,7 @@ body { font-family: var(--font-body); background: var(--bg-void); color: var(--t
 /* Hero */
 .hero { padding: 5rem 2rem; text-align: center; background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-void) 100%); border-bottom: 1px solid var(--border); }
 .hero-content { max-width: 800px; margin: 0 auto; }
-.hero-logo { display: block; width: 180px !important; max-width: 180px !important; height: auto !important; margin: 0 auto 1.5rem auto; }
+.hero-logo { display: block; width: 280px !important; max-width: 280px !important; height: auto !important; margin: 0 auto 1.5rem auto; }
 .hero h1 { font-family: var(--font-display); font-size: 2.75rem; font-weight: 600; line-height: 1.15; margin-bottom: 1.25rem; letter-spacing: -0.03em; }
 .hero h1 .accent { color: var(--accent); }
 .hero .subtitle { font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 2rem; max-width: 640px; margin-left: auto; margin-right: auto; }
