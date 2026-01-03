@@ -355,9 +355,7 @@ rm -rf models/raft/cycle_*  # Remove all cache files
 
 Currently, **mid-generation resume is not supported**. If a crash occurs during generation (before all batches complete), that cycle's generation restarts from scratch. The samples are only cached after all generation completes.
 
-{{% hint info %}}
-**Tip**: For very long runs, consider using `screen` or `tmux` to prevent terminal disconnection issues.
-{{% /hint %}}
+> **Tip**: For very long runs, consider using `screen` or `tmux` to prevent terminal disconnection issues.
 
 ## Memory Management
 
