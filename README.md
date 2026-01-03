@@ -1,6 +1,13 @@
-# halo-forge
+<p align="center">
+  <img src="halo-forge.png" alt="halo-forge logo" width="200">
+</p>
 
-A complete RLVR (Reinforcement Learning from Verifier Rewards) training framework for AMD Strix Halo. Train language models to generate verified code through iterative refinement using automated verification.
+<h1 align="center">halo-forge</h1>
+
+<p align="center">
+  A complete RLVR (Reinforcement Learning from Verifier Rewards) training framework for AMD Strix Halo.<br>
+  Train language models to generate verified code through iterative refinement using automated verification.
+</p>
 
 ---
 
