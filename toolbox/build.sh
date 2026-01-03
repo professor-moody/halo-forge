@@ -78,9 +78,13 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --no-cache    Build without using cached layers (recommended for release)"
-    echo "  --quick       Quick test build (may skip some heavy deps)"
+    echo "  --core        Build core image without TUI (uses Dockerfile.core)"
     echo "  --tag TAG     Use custom tag (default: latest)"
     echo "  --help        Show this help message"
+    echo ""
+    echo "Build variants:"
+    echo "  Default:      Full build with TUI support (textual, rich)"
+    echo "  --core:       Minimal build for CLI-only usage (no textual)"
     echo ""
     echo "Build Requirements:"
     echo "  - podman installed"
@@ -109,11 +113,11 @@ check_prerequisites() {
     print_success "podman found: $(podman --version | head -1)"
     
     # Check for Dockerfile
-    if [[ ! -f "${SCRIPT_DIR}/Dockerfile" ]]; then
-        print_error "Dockerfile not found in ${SCRIPT_DIR}"
+    if [[ ! -f "${SCRIPT_DIR}/${DOCKERFILE}" ]]; then
+        print_error "${DOCKERFILE} not found in ${SCRIPT_DIR}"
         exit 1
     fi
-    print_success "Dockerfile found"
+    print_success "${DOCKERFILE} found"
     
     # Check for scripts directory
     if [[ ! -d "${SCRIPT_DIR}/scripts" ]]; then
@@ -180,6 +184,11 @@ build_image() {
         print_step "Building with cache..."
     fi
     
+    if [[ "${CORE_BUILD}" == "true" ]]; then
+        echo -e "${DIM}Build type: Core (CLI only, no TUI)${NC}"
+    else
+        echo -e "${DIM}Build type: Full (with TUI support)${NC}"
+    fi
     echo -e "${DIM}Image: localhost/${IMAGE_NAME}:${IMAGE_TAG}${NC}"
     echo -e "${DIM}Log:   ${LOG_FILE}${NC}"
     echo ""
@@ -192,7 +201,7 @@ build_image() {
     
     echo -e "${DIM}─────────────────────────────────────────────────────────────${NC}"
     
-    if podman build ${build_args} -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile . 2>&1 | tee "${LOG_FILE}"; then
+    if podman build ${build_args} -t "${IMAGE_NAME}:${IMAGE_TAG}" -f "${DOCKERFILE}" . 2>&1 | tee "${LOG_FILE}"; then
         end_time=$(date +%s)
         duration=$((end_time - start_time))
         minutes=$((duration / 60))
@@ -239,10 +248,15 @@ verify_build() {
         print_warning "Could not verify Transformers"
     fi
     
-    if podman run --rm "${IMAGE_NAME}:${IMAGE_TAG}" python -c "import textual; print(f'Textual {textual.__version__}')" 2>/dev/null; then
-        print_success "Textual (TUI) installed correctly"
+    # Only check Textual for full builds
+    if [[ "${CORE_BUILD}" != "true" ]]; then
+        if podman run --rm "${IMAGE_NAME}:${IMAGE_TAG}" python -c "import textual; print(f'Textual {textual.__version__}')" 2>/dev/null; then
+            print_success "Textual (TUI) installed correctly"
+        else
+            print_warning "Could not verify Textual"
+        fi
     else
-        print_warning "Could not verify Textual"
+        print_success "Core build (TUI not included)"
     fi
     
     echo ""
@@ -279,15 +293,18 @@ print_next_steps() {
 
 # Parse arguments
 NO_CACHE="false"
-QUICK_BUILD="false"
+CORE_BUILD="false"
+DOCKERFILE="Dockerfile"
 
 for arg in "$@"; do
     case $arg in
         --no-cache)
             NO_CACHE="true"
             ;;
-        --quick)
-            QUICK_BUILD="true"
+        --core)
+            CORE_BUILD="true"
+            DOCKERFILE="Dockerfile.core"
+            IMAGE_NAME="halo-forge-core"
             ;;
         --tag)
             shift

@@ -135,20 +135,20 @@ test_ml_stack() {
 test_tui() {
     section "TUI & CLI"
     
-    # Check Rich
+    # Check Rich (optional but recommended)
     if python3 -c "import rich" 2>/dev/null; then
         ver=$(python3 -c "from importlib.metadata import version; print(version('rich'))" 2>/dev/null || echo "installed")
         pass "Rich installed: ${ver}"
     else
-        fail "Rich not installed"
+        warn "Rich not installed (optional, provides nicer CLI output)"
     fi
     
-    # Check Textual
+    # Check Textual (optional, for TUI)
     if python3 -c "import textual" 2>/dev/null; then
         ver=$(python3 -c "import textual; print(textual.__version__)")
         pass "Textual installed: ${ver}"
     else
-        fail "Textual not installed"
+        warn "Textual not installed (TUI disabled, CLI still works)"
     fi
     
     # Check halo-forge CLI
@@ -242,16 +242,15 @@ except Exception as e:
 test_halo_forge_modules() {
     section "halo-forge Modules"
     
-    # Test imports
-    local modules=(
+    # Core modules (required)
+    local core_modules=(
         "halo_forge.rlvr.raft_trainer:RAFTTrainer"
         "halo_forge.rlvr.verifiers:GCCVerifier"
         "halo_forge.sft.trainer:SFTTrainer"
-        "halo_forge.tui.app:HaloForgeApp"
         "halo_forge.cli:main"
     )
     
-    for mod in "${modules[@]}"; do
+    for mod in "${core_modules[@]}"; do
         module="${mod%:*}"
         cls="${mod#*:}"
         if python3 -c "from ${module} import ${cls}" 2>/dev/null; then
@@ -260,6 +259,13 @@ test_halo_forge_modules() {
             warn "${module}.${cls} not importable (run: pip install -e .)"
         fi
     done
+    
+    # TUI module (optional)
+    if python3 -c "from halo_forge.tui.app import HaloForgeApp" 2>/dev/null; then
+        pass "halo_forge.tui.app.HaloForgeApp"
+    else
+        warn "halo_forge.tui.app.HaloForgeApp not available (TUI disabled)"
+    fi
 }
 
 print_summary() {
