@@ -17,26 +17,26 @@
 
 <section class="section">
     <div class="container">
-        <h2>The Problem</h2>
-        <p class="section-intro">Traditional approaches to improving code generation models face limitations:</p>
+        <h2>Why This Exists</h2>
+        <p class="section-intro">An open-source experiment in local model training on AMD's new unified memory architecture.</p>
         
         <div class="card-grid">
             <div class="card">
-                <h3>SFT Only</h3>
-                <p>Distribution mismatch — model outputs differ from training data</p>
+                <h3>128GB Unified Memory</h3>
+                <p>AMD Strix Halo can fit 7B+ models entirely in memory — no quantization needed</p>
             </div>
             <div class="card">
-                <h3>RLHF</h3>
-                <p>Expensive human labeling, inconsistent judgments, doesn't scale</p>
+                <h3>Compiler as Teacher</h3>
+                <p>Use GCC/pytest as a free, deterministic reward signal — no human labeling required</p>
             </div>
             <div class="card">
-                <h3>Self-Evaluation</h3>
-                <p>Models hallucinate correctness, reward signals can be gamed</p>
+                <h3>Iterate Locally</h3>
+                <p>Run full RLVR training cycles on your own hardware, no cloud dependencies</p>
             </div>
         </div>
 
         <div class="callout">
-            <strong>Core insight:</strong> A compiler provides a perfect reward signal — unambiguous, deterministic feedback about code correctness that cannot be gamed.
+            <strong>The experiment:</strong> Can we meaningfully improve code generation models using only local compute and compiler feedback? Early results suggest yes.
         </div>
     </div>
 </section>
