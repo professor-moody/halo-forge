@@ -40,6 +40,13 @@ try:
 except ImportError:
     HAS_RICH = False
 
+# TUI State Manager (optional, for live monitoring)
+try:
+    from halo_forge.tui.state import StateManager
+    HAS_TUI = True
+except ImportError:
+    HAS_TUI = False
+
 
 @dataclass
 class RAFTConfig:
@@ -114,6 +121,11 @@ class RAFTTrainer:
         # UI helpers
         self.use_rich = HAS_RICH
         
+        # TUI State Manager for live monitoring
+        self.state_manager = StateManager() if HAS_TUI else None
+        self._paused = False
+        self._stop_requested = False
+        
         # Load model and tokenizer
         self._load_model()
         
@@ -132,6 +144,53 @@ class RAFTTrainer:
         }
         prefix = prefixes.get(level, "")
         print(f"{prefix} {msg}", flush=True)
+        
+        # Also log to TUI state
+        if self.state_manager:
+            self.state_manager.add_log(msg, level)
+    
+    def _update_state(self, **kwargs):
+        """Update TUI state if available."""
+        if self.state_manager:
+            self.state_manager.update(**kwargs)
+    
+    def _check_commands(self):
+        """Check for and handle TUI commands (pause/stop)."""
+        if not self.state_manager:
+            return
+        
+        cmd = self.state_manager.get_command()
+        if not cmd:
+            return
+        
+        command = cmd.get("command", "")
+        
+        if command == "pause":
+            self._paused = True
+            self._update_state(status="paused")
+            self._log("Training paused by user", "warning")
+            
+            # Wait loop
+            while self._paused:
+                time.sleep(0.5)
+                cmd = self.state_manager.get_command()
+                if cmd and cmd.get("command") == "resume":
+                    self._paused = False
+                    self._update_state(status="running")
+                    self._log("Training resumed", "success")
+                elif cmd and cmd.get("command") == "stop":
+                    self._paused = False
+                    self._stop_requested = True
+                    break
+        
+        elif command == "stop":
+            self._stop_requested = True
+            self._update_state(status="stopping")
+            self._log("Stop requested - will finish current batch", "warning")
+        
+        elif command == "resume":
+            self._paused = False
+            self._update_state(status="running")
     
     def _load_model(self):
         """Load base model and optionally SFT adapters."""
@@ -238,6 +297,14 @@ class RAFTTrainer:
         # Plain text header (works through pipes)
         print(f"\nGeneration: {total} samples ({len(prompts)} prompts x {num_samples} samples)")
         
+        # Update TUI state
+        self._update_state(
+            phase="generate",
+            step=0,
+            total_steps=total,
+            samples_generated=len(all_samples)
+        )
+        
         # If already complete, return cached
         if len(all_samples) >= total:
             self._log(f"Generation already complete ({len(all_samples)} samples cached)", "success")
@@ -329,6 +396,18 @@ class RAFTTrainer:
                 # Update tqdm postfix with sample count
                 pbar.set_postfix(samples=len(all_samples), refresh=True)
                 
+                # Update TUI state with progress
+                self._update_state(
+                    step=len(all_samples),
+                    samples_generated=len(all_samples)
+                )
+                
+                # Check for pause/stop commands between batches
+                self._check_commands()
+                if self._stop_requested:
+                    self._log("Generation stopped by user", "warning")
+                    break
+                
             pbar.close()
                 
         finally:
@@ -360,6 +439,13 @@ class RAFTTrainer:
         # Simple header (works through pipes)
         print(f"\nVerifying {len(samples)} samples...")
         
+        # Update TUI state
+        self._update_state(
+            phase="verify",
+            step=0,
+            total_steps=len(samples)
+        )
+        
         # Extract prompts and completions for verification
         prompts = [s[0] for s in samples]
         completions = [s[1] for s in samples]
@@ -380,11 +466,28 @@ class RAFTTrainer:
             chunk_results = self.verifier.verify_batch(chunk_completions, chunk_prompts)
             results.extend(chunk_results)
             
+            # Update TUI state with progress
+            self._update_state(step=len(results))
+            
+            # Add recent samples to TUI (show last few verified)
+            if self.state_manager:
+                for j, result in enumerate(chunk_results[-5:]):  # Last 5 from chunk
+                    prompt_idx = i + len(chunk_results) - 5 + j
+                    if prompt_idx >= 0 and prompt_idx < len(prompts):
+                        self.state_manager.add_sample(
+                            prompt=prompts[prompt_idx][:100],
+                            reward=result.reward,
+                            success=result.success
+                        )
+            
             # Force garbage collection after each chunk
             gc.collect()
         
         elapsed = time.time() - start_time
         print(f"[OK] Verification completed in {elapsed:.1f}s")
+        
+        # Update TUI state to filtering phase
+        self._update_state(phase="filter")
         
         # Combine with prompts and rewards
         all_data = []
@@ -436,6 +539,12 @@ class RAFTTrainer:
         print(f"    0.7 (runs): {stats['reward_distribution']['0.7']}")
         print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
         
+        # Update TUI with filtering results
+        self._update_state(
+            compile_rate=stats['success_rate'] * 100,
+            samples_kept=stats['kept']
+        )
+        
         return filtered, stats, all_data
     
     def train_on_filtered(
@@ -454,6 +563,13 @@ class RAFTTrainer:
         
         # Plain text header (works through pipes)
         print(f"\nTraining: {len(filtered_samples)} filtered samples")
+        
+        # Update TUI state
+        self._update_state(
+            phase="train",
+            step=0,
+            total_steps=len(filtered_samples)
+        )
         
         # Prepare dataset
         texts = []
@@ -550,6 +666,9 @@ class RAFTTrainer:
         print("\n" + "=" * 70)
         print(f"RAFT CYCLE {cycle}/{self.config.num_cycles}")
         print("=" * 70)
+        
+        # Update TUI state
+        self._update_state(cycle=cycle, phase="generate")
         
         cycle_start = time.time()
         
@@ -677,6 +796,17 @@ class RAFTTrainer:
         num_cycles = num_cycles or self.config.num_cycles
         
         cfg = self.config
+        
+        # Initialize TUI state with config
+        if self.state_manager:
+            self.state_manager.set_config(
+                model_name=cfg.base_model,
+                verifier=self.verifier.__class__.__name__,
+                output_dir=str(self.output_dir),
+                total_cycles=num_cycles
+            )
+            self._update_state(status="running", total_cycles=num_cycles)
+        
         # Print banner with Rich if available (startup only), then plain text
         if self.use_rich:
             ui.print_banner()
@@ -690,11 +820,29 @@ class RAFTTrainer:
         print(f"  Samples per prompt: {cfg.samples_per_prompt}")
         
         for cycle in range(1, num_cycles + 1):
+            # Check for stop request before each cycle
+            self._check_commands()
+            if self._stop_requested:
+                self._log("Training stopped by user", "warning")
+                break
+            
             stats = self.run_cycle(prompts, cycle)
             
             if stats is None:
                 self._log(f"Cycle {cycle} failed. Stopping.", "error")
+                self._update_state(status="error")
                 break
+            
+            # Update cycle history in TUI
+            if self.state_manager and not stats.get('skipped'):
+                self.state_manager.add_cycle_stats(
+                    cycle=cycle,
+                    compile_rate=stats.get('success_rate', 0) * 100,
+                    samples_kept=stats.get('kept', 0),
+                    samples_total=stats.get('total_samples', 0),
+                    loss=stats.get('avg_reward', 0),
+                    elapsed_minutes=stats.get('elapsed_minutes', 0)
+                )
         
         # Save statistics
         self.save_statistics()
@@ -716,6 +864,9 @@ class RAFTTrainer:
         
         # Cleanup
         self.verifier.cleanup()
+        
+        # Update TUI state
+        self._update_state(status="complete", phase="idle")
         
         final_path = self.output_dir / f"cycle_{num_cycles}_final"
         self._log(f"Final model: {final_path}", "success")

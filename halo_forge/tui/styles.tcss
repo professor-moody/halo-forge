@@ -394,3 +394,206 @@ Button.primary:hover {
     text-style: bold;
 }
 
+/* =============================================================================
+   Screen Titles
+   ============================================================================= */
+
+.screen-title {
+    dock: top;
+    height: 3;
+    background: #12100e;
+    border-bottom: solid #2a2520;
+    content-align: center middle;
+    text-style: bold;
+    color: #2dd4bf;
+    padding: 1;
+}
+
+/* =============================================================================
+   Config Screen
+   ============================================================================= */
+
+#config-container {
+    padding: 1;
+}
+
+#action-buttons {
+    height: 5;
+    margin-top: 1;
+}
+
+#action-buttons Button {
+    margin-right: 1;
+}
+
+ConfigPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+}
+
+ConfigPanel > .panel-title {
+    color: #6b635a;
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+ConfigPanel > .config-row {
+    height: 3;
+    margin-bottom: 1;
+}
+
+ConfigPanel > .config-row > Label {
+    width: 20;
+    padding-top: 1;
+    color: #a8a198;
+}
+
+ConfigPanel > .config-row > Input {
+    width: 1fr;
+}
+
+Input {
+    background: #0a0908;
+    border: solid #2a2520;
+    color: #e8e4df;
+}
+
+Input:focus {
+    border: solid #2dd4bf;
+}
+
+Select {
+    background: #0a0908;
+    border: solid #2a2520;
+    color: #e8e4df;
+    width: 1fr;
+}
+
+/* =============================================================================
+   Samples Screen
+   ============================================================================= */
+
+#samples-container {
+    padding: 1;
+}
+
+#filter-bar {
+    height: 5;
+    margin-bottom: 1;
+}
+
+#filter-bar Input {
+    width: 1fr;
+}
+
+#filter-bar Button {
+    margin-left: 1;
+}
+
+#samples-content {
+    height: 1fr;
+}
+
+#samples-list {
+    width: 50%;
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+}
+
+SampleDetailPanel {
+    width: 50%;
+}
+
+TextArea {
+    background: #0a0908;
+    color: #e8e4df;
+}
+
+/* =============================================================================
+   Comparison Screen
+   ============================================================================= */
+
+#comparison-container {
+    padding: 1;
+}
+
+#run-selection {
+    height: 5;
+    margin-bottom: 1;
+}
+
+#run-selection Button {
+    margin-right: 1;
+}
+
+#comparison-panels {
+    height: 1fr;
+}
+
+RunSummaryPanel {
+    width: 50%;
+}
+
+#comparison-table-container {
+    height: auto;
+    min-height: 10;
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+}
+
+/* =============================================================================
+   Export Screen
+   ============================================================================= */
+
+#export-container {
+    padding: 1;
+}
+
+ExportPanel {
+    background: #12100e;
+    border: solid #2a2520;
+    margin: 1;
+    padding: 1;
+    height: auto;
+}
+
+ExportPanel > .panel-title {
+    color: #6b635a;
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+ExportPanel > .export-row {
+    height: 3;
+    margin-bottom: 1;
+}
+
+#preview-panel {
+    height: 1fr;
+}
+
+#export-buttons {
+    height: 5;
+    margin-top: 1;
+}
+
+#export-buttons Button {
+    margin-right: 1;
+}
+
+Checkbox {
+    background: transparent;
+    color: #e8e4df;
+}
+
+Checkbox:focus {
+    color: #2dd4bf;
+}
+

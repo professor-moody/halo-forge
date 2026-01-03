@@ -4,6 +4,7 @@ halo-forge Terminal User Interface
 A Textual-based TUI for monitoring and controlling RAFT training runs.
 """
 
+import subprocess
 from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Static
@@ -12,6 +13,7 @@ from textual.binding import Binding
 from textual import work
 
 from .state import TrainingState, StateManager, generate_demo_state
+from .gpu import GPUMonitor
 from .widgets import (
     HeaderBar,
     ProgressPanel,
@@ -20,6 +22,13 @@ from .widgets import (
     HistoryPanel,
     SamplesPanel,
     LogPanel,
+)
+from .screens import (
+    DashboardScreen,
+    ConfigScreen,
+    SamplesScreen,
+    ComparisonScreen,
+    ExportScreen,
 )
 
 
@@ -30,12 +39,23 @@ class HaloForgeApp(App):
     
     TITLE = "halo-forge"
     
+    # Register screens
+    SCREENS = {
+        "config": ConfigScreen,
+        "samples": SamplesScreen,
+        "comparison": ComparisonScreen,
+        "export": ExportScreen,
+    }
+    
     BINDINGS = [
+        Binding("c", "push_screen('config')", "Config", show=True),
+        Binding("v", "push_screen('samples')", "Samples", show=True),
+        Binding("m", "push_screen('comparison')", "Compare", show=True),
+        Binding("e", "push_screen('export')", "Export", show=True),
         Binding("p", "pause", "Pause", show=True),
-        Binding("r", "resume", "Resume", show=True),
+        Binding("r", "resume", "Resume", show=False),
         Binding("s", "stop", "Stop", show=True, priority=True),
-        Binding("v", "view_sample", "View Sample", show=True),
-        Binding("l", "toggle_log", "Toggle Log", show=True),
+        Binding("l", "toggle_log", "Toggle Log", show=False),
         Binding("q", "quit", "Quit", show=True),
         Binding("d", "toggle_demo", "Demo Mode", show=False),
     ]
@@ -44,11 +64,14 @@ class HaloForgeApp(App):
         super().__init__(**kwargs)
         self.demo_mode = demo_mode
         self.state_manager = StateManager(state_dir)
+        self.gpu_monitor = GPUMonitor(poll_interval=2.0)
         self.demo_step = 0
         self._state = TrainingState()
+        self.pending_config = None  # For config screen to pass config
+        self._training_process = None
     
     def compose(self) -> ComposeResult:
-        """Compose the app layout."""
+        """Compose the app layout (dashboard is the main screen)."""
         yield HeaderBar(id="header")
         
         with Container(id="main-body"):
@@ -79,18 +102,32 @@ class HaloForgeApp(App):
             self.demo_step += 1
         else:
             self._state = self.state_manager.read()
+            
+            # Get real GPU metrics
+            gpu = self.gpu_monitor.get_metrics()
+            if gpu.available:
+                if gpu.utilization is not None:
+                    self._state.gpu_util = gpu.utilization
+                if gpu.memory_percent is not None:
+                    self._state.gpu_mem = gpu.memory_percent
+                if gpu.temperature is not None:
+                    self._state.gpu_temp = gpu.temperature
         
         # Update header
-        header = self.query_one("#header", HeaderBar)
-        header.status = self._state.status
-        
-        # Update panels
-        self.query_one("#progress", ProgressPanel).update_from_state(self._state)
-        self.query_one("#metrics", MetricsPanel).update_from_state(self._state)
-        self.query_one("#hardware", HardwarePanel).update_from_state(self._state)
-        self.query_one("#history", HistoryPanel).update_from_state(self._state)
-        self.query_one("#samples", SamplesPanel).update_from_state(self._state)
-        self.query_one("#logs", LogPanel).update_from_state(self._state)
+        try:
+            header = self.query_one("#header", HeaderBar)
+            header.status = self._state.status
+            
+            # Update panels
+            self.query_one("#progress", ProgressPanel).update_from_state(self._state)
+            self.query_one("#metrics", MetricsPanel).update_from_state(self._state)
+            self.query_one("#hardware", HardwarePanel).update_from_state(self._state)
+            self.query_one("#history", HistoryPanel).update_from_state(self._state)
+            self.query_one("#samples", SamplesPanel).update_from_state(self._state)
+            self.query_one("#logs", LogPanel).update_from_state(self._state)
+        except Exception:
+            # Panels might not exist if on a different screen
+            pass
     
     # -------------------------------------------------------------------------
     # Actions
@@ -114,15 +151,13 @@ class HaloForgeApp(App):
             self.state_manager.send_command("stop")
         self.notify("Stop command sent - training will stop after current step", severity="warning")
     
-    def action_view_sample(self):
-        """View a sample in detail."""
-        # TODO: Implement sample detail view
-        self.notify("Sample viewer coming soon", severity="information")
-    
     def action_toggle_log(self):
         """Toggle log panel visibility."""
-        log_panel = self.query_one("#logs", LogPanel)
-        log_panel.display = not log_panel.display
+        try:
+            log_panel = self.query_one("#logs", LogPanel)
+            log_panel.display = not log_panel.display
+        except Exception:
+            pass
     
     def action_toggle_demo(self):
         """Toggle demo mode."""
@@ -130,6 +165,78 @@ class HaloForgeApp(App):
         self.demo_step = 0
         mode = "Demo" if self.demo_mode else "Live"
         self.notify(f"Switched to {mode} mode", severity="information")
+    
+    # -------------------------------------------------------------------------
+    # Training Control
+    # -------------------------------------------------------------------------
+    
+    def start_training_from_config(self):
+        """Start training using the pending config."""
+        if not self.pending_config:
+            self.notify("No config available", severity="error")
+            return
+        
+        config = self.pending_config
+        self.pending_config = None
+        
+        # Build command
+        cmd = [
+            "python3", "-m", "halo_forge.cli", "raft", "train",
+            "--model", config["model"],
+            "--prompts", config["prompts_file"],
+            "--verifier", config["verifier"],
+            "--cycles", str(config["num_cycles"]),
+            "--output", config["output_dir"],
+        ]
+        
+        # Add optional parameters
+        if config.get("reward_threshold"):
+            cmd.extend(["--reward-threshold", str(config["reward_threshold"])])
+        if config.get("keep_top_percent"):
+            cmd.extend(["--keep-percent", str(config["keep_top_percent"])])
+        
+        self.notify(f"Starting training: {' '.join(cmd[:6])}...")
+        
+        # Start training in background
+        self._start_training_process(cmd)
+    
+    @work(exclusive=True, thread=True)
+    def _start_training_process(self, cmd: list):
+        """Start the training process in background."""
+        try:
+            # Create log file
+            log_dir = Path("logs")
+            log_dir.mkdir(exist_ok=True)
+            log_file = log_dir / "tui_training.log"
+            
+            with open(log_file, "w") as f:
+                self._training_process = subprocess.Popen(
+                    cmd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    cwd=Path.cwd()
+                )
+            
+            self.call_from_thread(
+                self.notify,
+                f"Training started (PID: {self._training_process.pid})",
+                severity="success"
+            )
+            
+            # Wait for process
+            self._training_process.wait()
+            
+            self.call_from_thread(
+                self.notify,
+                "Training process completed",
+                severity="information"
+            )
+        except Exception as e:
+            self.call_from_thread(
+                self.notify,
+                f"Failed to start training: {e}",
+                severity="error"
+            )
 
 
 # Standalone CSS for when the file can't be loaded
@@ -171,6 +278,102 @@ Footer {
     dock: bottom;
     background: #12100e;
 }
+
+/* Screen titles */
+.screen-title {
+    dock: top;
+    height: 3;
+    background: #12100e;
+    border-bottom: solid #2a2520;
+    content-align: center middle;
+    text-style: bold;
+    color: #2dd4bf;
+}
+
+/* Config screen */
+#config-container {
+    padding: 1;
+}
+
+#action-buttons {
+    height: 5;
+    margin-top: 1;
+}
+
+#action-buttons Button {
+    margin-right: 1;
+}
+
+/* Samples screen */
+#samples-container {
+    padding: 1;
+}
+
+#filter-bar {
+    height: 5;
+    margin-bottom: 1;
+}
+
+#filter-bar Input {
+    width: 1fr;
+}
+
+#filter-bar Button {
+    margin-left: 1;
+}
+
+#samples-content {
+    height: 1fr;
+}
+
+#samples-list {
+    width: 50%;
+}
+
+#detail-panel {
+    width: 50%;
+}
+
+/* Comparison screen */
+#comparison-container {
+    padding: 1;
+}
+
+#run-selection {
+    height: 5;
+    margin-bottom: 1;
+}
+
+#run-selection Button {
+    margin-right: 1;
+}
+
+#comparison-panels {
+    height: 1fr;
+}
+
+#comparison-table-container {
+    height: auto;
+    min-height: 10;
+}
+
+/* Export screen */
+#export-container {
+    padding: 1;
+}
+
+#preview-panel {
+    height: 1fr;
+}
+
+#export-buttons {
+    height: 5;
+    margin-top: 1;
+}
+
+#export-buttons Button {
+    margin-right: 1;
+}
 """
 
 
@@ -184,4 +387,3 @@ if __name__ == "__main__":
     import sys
     demo = "--demo" in sys.argv
     run(demo=demo)
-
