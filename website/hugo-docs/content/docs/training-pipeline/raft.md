@@ -4,7 +4,18 @@ description: "Reward-Ranked Fine-Tuning with compiler verification"
 weight: 3
 ---
 
-RAFT (Reward-Ranked Fine-Tuning) iteratively improves the model using compiler feedback.
+RAFT (Reward-Ranked Fine-Tuning) is the core of halo-forge's RLVR approach.
+
+## The Algorithm
+
+```
+for cycle in range(num_cycles):
+    1. Generate N samples per prompt
+    2. Verify all samples with compiler
+    3. Filter to samples with reward >= threshold
+    4. Fine-tune on filtered samples
+    5. Repeat with updated model
+```
 
 ## Basic Usage
 
@@ -13,33 +24,9 @@ halo-forge raft train \
   --checkpoint models/sft/final_model \
   --prompts data/prompts.jsonl \
   --verifier gcc \
-  --cycles 5
+  --cycles 5 \
+  --output models/raft
 ```
-
-## How RAFT Works
-
-```python
-for cycle in range(num_cycles):
-    # 1. Generate multiple samples per prompt
-    samples = model.generate(prompts, n=8)
-    
-    # 2. Verify with compiler
-    results = verifier.verify_batch(samples)
-    
-    # 3. Filter by reward threshold
-    filtered = [s for s, r in zip(samples, results) 
-                if r.reward >= 0.5]
-    
-    # 4. Fine-tune on verified samples
-    model.train(filtered)
-```
-
-Each cycle:
-1. Generates N samples per prompt
-2. Verifies all samples with the compiler
-3. Filters to keep only samples above threshold
-4. Fine-tunes on the filtered set
-5. Repeats with improved model
 
 ## Configuration
 
@@ -58,6 +45,7 @@ raft:
 generation:
   max_new_tokens: 1024
   temperature: 0.7
+  top_p: 0.95
   batch_size: 4
 
 training:
@@ -65,32 +53,208 @@ training:
   batch_size: 2
   gradient_accumulation_steps: 16
   learning_rate: 5e-5
+
+verifier:
+  type: gcc
+  run_after_compile: false
 ```
 
-## Parameters
+## Key Parameters
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `num_cycles` | 5 | Number of RAFT iterations |
-| `samples_per_prompt` | 8 | Samples generated per prompt |
-| `reward_threshold` | 0.5 | Minimum reward to include |
-| `keep_top_percent` | 0.5 | Top % of samples above threshold |
-| `temperature` | 0.7 | Sampling temperature |
+### samples_per_prompt
 
-## Cycle Dynamics
+How many completions to generate for each prompt.
 
-Typical progression:
+| Value | Exploration | Compute |
+|-------|-------------|---------|
+| 4 | Low | Fast |
+| 8 | Medium | Balanced |
+| 16 | High | Slow |
 
-| Cycle | Kept Samples | Compile Rate |
-|-------|--------------|--------------|
-| 1 | 35-45% | 28% |
-| 2 | 45-55% | 35% |
-| 3 | 50-60% | 40% |
-| 4 | 55-65% | 44% |
-| 5 | 55-65% | 46% |
-| 6+ | Diminishing | May degrade |
+### reward_threshold
 
-> **Note:** Performance often peaks around cycle 5-6, then degrades. Monitor closely.
+Minimum reward to keep a sample.
+
+| Value | Effect |
+|-------|--------|
+| 0.3 | Keep samples with warnings |
+| 0.5 | Keep clean compiles |
+| 0.7 | Keep samples that run |
+| 1.0 | Only correct outputs |
+
+### temperature
+
+Controls generation diversity.
+
+| Value | Effect |
+|-------|--------|
+| 0.3 | Conservative, similar outputs |
+| 0.7 | Balanced |
+| 1.0 | Diverse, more exploration |
+
+## Sample Filtering Strategy
+
+RAFT generates many samples and filters them before training. The filtering strategy significantly impacts what the model learns.
+
+### How Filtering Works
+
+```
+1. Generate N samples per prompt (e.g., 374 prompts × 8 samples = 2,992 samples)
+2. Verify all samples → each gets a reward score (0.0 to 1.0)
+3. Filter by reward_threshold → keep samples with reward >= threshold
+4. Sort by reward (highest first)
+5. Keep top keep_top_percent of filtered samples
+6. Train on final filtered set
+```
+
+### keep_top_percent
+
+After filtering by threshold, what percentage of passing samples to keep.
+
+```bash
+# CLI usage
+halo-forge raft train --keep-percent 0.5 ...  # Keep top 50%
+```
+
+| Value | Effect | Use Case |
+|-------|--------|----------|
+| 0.2 | Very selective (top 20%) | Large datasets, want only best |
+| 0.5 | Balanced (top 50%) | Default, works well generally |
+| 0.8 | Inclusive (top 80%) | Small datasets, need more data |
+| 1.0 | Keep all passing | Very small datasets |
+
+### Filtering Examples
+
+**Example 1: Default settings (50% threshold, 50% keep)**
+```
+Generated: 2,992 samples
+Pass threshold (≥0.5): 1,200 samples (40% compile rate)
+Keep top 50%: 600 samples → Training set
+```
+
+**Example 2: Selective filtering (50% threshold, 20% keep)**
+```
+Generated: 2,992 samples
+Pass threshold (≥0.5): 1,200 samples
+Keep top 20%: 240 samples → Training on only the best
+```
+
+**Example 3: Inclusive filtering (30% threshold, 100% keep)**
+```
+Generated: 2,992 samples
+Pass threshold (≥0.3): 1,800 samples (including warnings)
+Keep top 100%: 1,800 samples → Maximum training data
+```
+
+### Choosing Your Strategy
+
+**Small dataset (< 500 prompts):**
+```bash
+--keep-percent 0.8 --reward-threshold 0.5
+```
+Keep more data since you have fewer prompts to begin with.
+
+**Large dataset (> 1000 prompts):**
+```bash
+--keep-percent 0.3 --reward-threshold 0.5
+```
+Be selective - train only on high-quality samples.
+
+**Low initial compile rate (< 20%):**
+```bash
+--keep-percent 1.0 --reward-threshold 0.3
+```
+Keep everything that compiles (even with warnings) to maximize training signal.
+
+**High initial compile rate (> 50%):**
+```bash
+--keep-percent 0.5 --reward-threshold 0.7
+```
+Be selective and only train on samples that actually execute.
+
+### CLI Reference
+
+```bash
+halo-forge raft train \
+  --model Qwen/Qwen2.5-Coder-7B \
+  --prompts data/prompts.jsonl \
+  --verifier mbpp \
+  --cycles 5 \
+  --keep-percent 0.5 \        # Keep top 50% of passing samples
+  --reward-threshold 0.5 \    # Min reward to pass
+  --output models/production
+```
+
+### Configuration File
+
+```yaml
+# configs/raft.yaml
+raft:
+  samples_per_prompt: 8
+  reward_threshold: 0.5      # Minimum reward to keep sample
+  keep_top_percent: 0.5      # Keep top 50% above threshold
+```
+
+## Cycle-by-Cycle Output
+
+```
+models/raft/
+├── cycle_1/
+│   ├── samples.jsonl      # All generated samples
+│   ├── kept.jsonl         # Filtered samples used for training
+│   ├── checkpoint/        # Model after training
+│   └── stats.json         # Verification statistics
+├── cycle_2/
+│   └── ...
+├── cycle_3_final/         # Best performing cycle
+└── training_log.json
+```
+
+## Monitoring Progress
+
+### Progress Display
+
+halo-forge provides real-time progress during generation:
+
+```
+> Generating batch 13/47 ━━━━━━━━━━ 13/47 • 28% • 1:13:10 • 0.15 it/s
+```
+
+- **13/47**: Current batch / total batches
+- **28%**: Percentage complete
+- **1:13:10**: Time elapsed
+- **0.15 it/s**: Iterations per second (batches processed)
+
+### Compile Rate Patterns
+
+Watch for these patterns:
+
+**Healthy training:**
+```
+Cycle 1: 28.4% compile rate (kept 182/640 samples)
+Cycle 2: 35.1% compile rate (kept 224/640 samples)
+Cycle 3: 39.7% compile rate (kept 254/640 samples)
+```
+
+**Plateauing:**
+```
+Cycle 4: 40.2% compile rate
+Cycle 5: 40.5% compile rate
+Cycle 6: 39.8% compile rate  # Consider stopping
+```
+
+**Degradation:**
+```
+Cycle 7: 35.2% compile rate  # Stop and use cycle 6
+```
+
+## When to Stop
+
+- **Diminishing returns**: < 2% improvement per cycle
+- **Degradation**: Performance drops
+- **Typically**: 5-6 cycles is optimal
+
+If you see degradation, consider [learning rate decay](/docs/background/learning-rates/).
 
 ## Graduated Rewards
 
@@ -132,27 +296,20 @@ for i in range(0, len(samples), chunk_size):
     gc.collect()  # Force garbage collection
 ```
 
-## Monitoring
+## Advanced: Different Verifiers per Cycle
 
-Watch for:
-
-- **Compile rate per cycle** — Should increase
-- **Average reward** — Should increase
-- **Samples kept** — Should stabilize or increase
-- **Training loss** — Should decrease within cycle
-
-```bash
-# Check statistics
-cat models/raft/raft_statistics.json | jq
+```yaml
+cycles:
+  - verifier: gcc
+    reward_threshold: 0.3
+  - verifier: gcc
+    reward_threshold: 0.5
+  - verifier: gcc
+    run_after_compile: true
+    reward_threshold: 0.7
 ```
 
-## Tips
-
-1. **Start with 5 cycles** — More isn't always better
-2. **Watch for degradation** — Stop if cycle N+1 is worse than N
-3. **Use 8 samples/prompt** — Good balance of diversity and compute
-4. **Temperature 0.7** — Enough diversity without garbage
-5. **Monitor GPU memory** — RAFT is memory-intensive
+This creates curriculum learning: easier criteria early, harder later.
 
 ## Verifier Choice
 
@@ -161,7 +318,16 @@ cat models/raft/raft_statistics.json | jq
 | `gcc` | Linux C/C++ |
 | `mingw` | Windows C/C++ (cross-compile) |
 | `clang` | Alternative to GCC |
-| `pytest` | Python with tests |
+| `humaneval` | Python with HumanEval tests |
+| `mbpp` | Python with MBPP tests |
 | `custom` | Your own verifier |
 
 See [Verifiers](/docs/verifiers/) for details.
+
+## Tips
+
+1. **Start with 5 cycles** — More isn't always better
+2. **Watch for degradation** — Stop if cycle N+1 is worse than N
+3. **Use 8 samples/prompt** — Good balance of diversity and compute
+4. **Temperature 0.7** — Enough diversity without garbage
+5. **Monitor GPU memory** — RAFT is memory-intensive

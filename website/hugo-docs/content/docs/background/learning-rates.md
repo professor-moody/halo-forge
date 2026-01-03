@@ -124,6 +124,32 @@ Constant    | 5.0e-5  | 5.0e-5  | 5.0e-5  | Baseline
 - Multiple cycles, same verification rate
 - Very small gradient norms (< 0.05)
 
+## Interaction Effects
+
+| Change | LR Adjustment |
+|--------|---------------|
+| LoRA rank ↑ | Slightly lower |
+| Batch size ↑ | Slightly higher |
+| Temperature ↑ | Can go higher |
+| Smaller dataset | Lower |
+
+## Within-Cycle Settings
+
+For short training (1 epoch on filtered samples):
+
+```yaml
+training:
+  warmup_steps: 0       # Few total steps, skip warmup
+  lr_scheduler_type: linear
+```
+
+With gradient accumulation:
+```
+500 samples / 2 batch / 16 accumulation = ~16 optimizer steps
+```
+
+With so few steps, within-cycle scheduling has minimal effect. Focus on getting base LR right.
+
 ## Recommendations
 
 1. **Start with 5e-5 constant** — Establish baseline
