@@ -173,6 +173,16 @@ def print_test_results(results: Dict[str, Any]):
     print_divider()
 
 
+class SpeedColumn(TextColumn):
+    """Custom column that shows speed, handling None gracefully."""
+    
+    def render(self, task) -> Text:
+        speed = task.speed
+        if speed is None:
+            return Text("-- it/s", style="dim")
+        return Text(f"{speed:.2f} it/s", style="dim")
+
+
 def create_progress() -> Progress:
     """Create a styled progress bar with speed display."""
     return Progress(
@@ -185,7 +195,7 @@ def create_progress() -> Progress:
         TextColumn("•"),
         TimeElapsedColumn(),
         TextColumn("•"),
-        TextColumn("[dim]{task.speed:>.2f} it/s[/dim]", style="dim"),
+        SpeedColumn(""),
         console=console,
         transient=False
     )
