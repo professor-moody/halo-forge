@@ -80,8 +80,9 @@ class HaloForgeApp(App):
         """Compose the app layout (dashboard is the main screen)."""
         yield HeaderBar(id="header")
         
-        with Container(id="main-body"):
-            with Horizontal(id="top-row"):
+        with Vertical(id="main-body"):
+            # Row 1: Progress/Metrics + History/Hardware
+            with Horizontal(id="top-row", classes="panel-row"):
                 with Vertical(id="left-column"):
                     yield ProgressPanel(id="progress")
                     yield MetricsPanel(id="metrics")
@@ -92,7 +93,8 @@ class HaloForgeApp(App):
                     yield HardwarePanel(id="hardware")
                     yield QuickActionsPanel(id="quick-actions")
             
-            with Horizontal(id="bottom-row"):
+            # Row 2: Samples + Logs
+            with Horizontal(id="bottom-row", classes="panel-row"):
                 yield SamplesPanel(id="samples")
                 yield LogPanel(id="logs")
         

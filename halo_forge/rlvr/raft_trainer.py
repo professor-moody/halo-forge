@@ -474,10 +474,16 @@ class RAFTTrainer:
                 for j, result in enumerate(chunk_results[-5:]):  # Last 5 from chunk
                     prompt_idx = i + len(chunk_results) - 5 + j
                     if prompt_idx >= 0 and prompt_idx < len(prompts):
+                        # Get error details for failed samples
+                        error_details = ""
+                        if not result.success:
+                            error_details = result.error or result.details or ""
+                        
                         self.state_manager.add_sample(
                             prompt=prompts[prompt_idx][:100],
                             reward=result.reward,
-                            success=result.success
+                            success=result.success,
+                            details=error_details
                         )
             
             # Force garbage collection after each chunk

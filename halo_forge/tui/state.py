@@ -148,12 +148,20 @@ class StateManager:
         self._state.logs = self._state.logs[-50:]
         self._write_state()
     
-    def add_sample(self, prompt: str, reward: float, success: bool):
-        """Add a sample to recent samples."""
+    def add_sample(self, prompt: str, reward: float, success: bool, details: str = ""):
+        """Add a sample to recent samples.
+        
+        Args:
+            prompt: The prompt text (truncated to 100 chars)
+            reward: Reward value (0.0-1.0)
+            success: Whether verification passed
+            details: Error details if failed (e.g., compiler error message)
+        """
         sample = {
             "prompt": prompt[:100],  # Truncate
             "reward": reward,
             "success": success,
+            "details": details[:100] if details else "",  # Truncate error message
             "timestamp": datetime.now().strftime("%H:%M:%S")
         }
         self._state.recent_samples.append(sample)

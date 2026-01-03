@@ -309,64 +309,87 @@ Footer > .footer--description {
     layout: horizontal;
 }
 
-/* Main layout structure */
+/* =============================================================================
+   Main Layout - Row-based approach for reliable alignment
+   ============================================================================= */
+
 #main-body {
-    height: 1fr;
-    layout: vertical;
-}
-
-#top-row {
-    height: 70%;
-    layout: horizontal;
-}
-
-#left-column {
-    width: 50%;
     height: 100%;
-    layout: vertical;
+    padding: 0 1 1 1;
+}
+
+/* Each row is a Horizontal with equal-height panels */
+.panel-row {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+.panel-row:last-child {
+    margin-bottom: 0;
+}
+
+/* Panels within rows take equal width */
+#left-column {
+    width: 1fr;
+    height: 100%;
+    margin-right: 1;
 }
 
 #right-column {
-    width: 50%;
+    width: 1fr;
     height: 100%;
-    layout: vertical;
 }
 
+/* Top row is taller (has more content) */
+#top-row {
+    height: 2fr;
+}
+
+/* Bottom row is shorter */
 #bottom-row {
-    height: 30%;
-    layout: horizontal;
+    height: 1fr;
 }
 
-#bottom-row > * {
-    width: 50%;
+/* All panels fill their container */
+#progress, #metrics, #reward-dist {
+    height: 1fr;
+    margin-bottom: 1;
 }
 
-/* Fixed heights for top-row panels to prevent jumping */
 #progress {
-    height: 12;
+    height: auto;
+    min-height: 10;
 }
 
 #metrics {
-    height: 18;
+    height: auto;
+    min-height: 14;
 }
 
 #reward-dist {
     height: 1fr;
 }
 
+#history, #hardware, #quick-actions {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
 #history {
-    height: 14;
+    height: auto;
+    min-height: 10;
 }
 
 #hardware {
-    height: 12;
+    height: auto;
+    min-height: 8;
 }
 
 #quick-actions {
     height: 1fr;
 }
 
-/* Bottom row panels are flexible */
+/* Bottom row panels fill available space */
 #samples {
     height: 100%;
 }
