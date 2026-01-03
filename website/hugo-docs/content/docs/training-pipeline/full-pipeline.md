@@ -6,43 +6,52 @@ weight: 1
 
 ## Overview
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    halo-forge Pipeline                       │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│   1. DATA GENERATION                                         │
-│   ┌─────────────────┐    ┌─────────────────┐                │
-│   │ Public Datasets │ or │ LLM Generation  │                │
-│   │ (CodeForces,    │    │ (DeepSeek,      │                │
-│   │  MBPP, etc.)    │    │  Claude, etc.)  │                │
-│   └────────┬────────┘    └────────┬────────┘                │
-│            └──────────┬───────────┘                          │
-│                       ▼                                      │
-│   2. SFT TRAINING                                            │
-│   ┌─────────────────────────────────────────┐               │
-│   │ LoRA Fine-tuning (BF16)                 │               │
-│   │ - Gradient checkpointing                │               │
-│   │ - Early stopping                        │               │
-│   └────────────────────┬────────────────────┘               │
-│                        ▼                                     │
-│   3. RAFT TRAINING (RLVR)                                    │
-│   ┌─────────────────────────────────────────┐               │
-│   │   ┌─────────┐  ┌─────────┐  ┌─────────┐ │               │
-│   │   │Generate │→ │ Verify  │→ │ Filter  │ │               │
-│   │   └─────────┘  └─────────┘  └────┬────┘ │               │
-│   │        ↑                         │      │               │
-│   │        └─────────────────────────┘      │               │
-│   │              Train on filtered          │               │
-│   └────────────────────┬────────────────────┘               │
-│                        ▼                                     │
-│   4. BENCHMARK                                               │
-│   ┌─────────────────────────────────────────┐               │
-│   │ pass@k Evaluation                       │               │
-│   └─────────────────────────────────────────┘               │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
+<div class="pipeline-diagram">
+  <div class="pipeline-step">
+    <div class="step-number">1</div>
+    <div class="step-content">
+      <div class="step-title">Data Generation</div>
+      <div class="step-desc">Public datasets (MBPP, CodeForces) or LLM-generated examples</div>
+    </div>
+  </div>
+  <div class="pipeline-arrow">↓</div>
+  <div class="pipeline-step">
+    <div class="step-number">2</div>
+    <div class="step-content">
+      <div class="step-title">SFT Training</div>
+      <div class="step-desc">LoRA fine-tuning to establish baseline capability (~15-25% compile rate)</div>
+    </div>
+  </div>
+  <div class="pipeline-arrow">↓</div>
+  <div class="pipeline-step raft-step">
+    <div class="step-number">3</div>
+    <div class="step-content">
+      <div class="step-title">RAFT Training</div>
+      <div class="step-desc">Generate → Verify → Filter → Train → Repeat</div>
+      <div class="raft-loop">5-6 cycles, ~2 hours each</div>
+    </div>
+  </div>
+  <div class="pipeline-arrow">↓</div>
+  <div class="pipeline-step">
+    <div class="step-number">4</div>
+    <div class="step-content">
+      <div class="step-title">Benchmark</div>
+      <div class="step-desc">pass@k evaluation (~45-55% compile rate after RAFT)</div>
+    </div>
+  </div>
+</div>
+
+<style>
+.pipeline-diagram { max-width: 500px; margin: 2rem 0; }
+.pipeline-step { display: flex; align-items: flex-start; gap: 1rem; padding: 1rem; background: var(--bg-elevated, #1a1714); border: 1px solid var(--border, #2a2520); border-radius: 8px; }
+.pipeline-step.raft-step { border-color: var(--accent, #f97316); }
+.step-number { width: 28px; height: 28px; background: var(--accent, #f97316); color: var(--bg-void, #0a0908); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.9rem; flex-shrink: 0; }
+.step-content { flex: 1; }
+.step-title { font-weight: 600; margin-bottom: 0.25rem; }
+.step-desc { font-size: 0.9rem; color: var(--text-secondary, #a8a198); }
+.raft-loop { font-size: 0.8rem; color: var(--accent, #f97316); margin-top: 0.5rem; font-style: italic; }
+.pipeline-arrow { text-align: center; font-size: 1.5rem; color: var(--text-tertiary, #6b635a); margin: 0.5rem 0; }
+</style>
 
 ## Step 1: Data Generation
 
