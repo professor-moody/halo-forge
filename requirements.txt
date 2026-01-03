@@ -30,6 +30,12 @@ matplotlib
 paramiko
 rich
 
+# Testing
+pytest
+
+# Optional: TUI (Terminal User Interface)
+# textual>=0.50.0  # Install for TUI support: pip install textual
+
 # Optional: LLM backends for data generation
 # anthropic>=0.18.0
 # openai>=1.0.0

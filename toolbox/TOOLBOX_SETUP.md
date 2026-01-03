@@ -1,10 +1,14 @@
 # Toolbox Setup Guide
 
+Complete guide for building and using the halo-forge toolbox on AMD Strix Halo.
+
 ## Prerequisites
 
-- Fedora 42+ with toolbox/podman installed
-- AMD Strix Halo hardware (gfx1151) with 128GB unified memory
-- Kernel 6.16+ recommended (eliminates need for kernel parameters)
+- **Hardware**: AMD Strix Halo with 128GB unified memory (gfx1151)
+- **OS**: Fedora 42+ with toolbox/podman installed
+- **Kernel**: 6.16+ recommended (eliminates need for kernel parameters)
+- **Disk Space**: ~25GB for build, ~50GB for models
+- **Network**: Stable internet for downloading ROCm nightlies (~5GB)
 
 ### Kernel Parameters (if kernel < 6.16)
 
@@ -20,94 +24,145 @@ sudo grub2-mkconfig -o /boot/grub2/grub.cfg
 sudo reboot
 ```
 
-## Build the Toolbox
+## Quick Start
 
 ```bash
+# 1. Build the toolbox image
 cd toolbox
-chmod +x build.sh
-./build.sh
-```
+chmod +x build.sh verify.sh
+./build.sh --no-cache
 
-This builds a container image with:
-- Fedora 42 base
-- ROCm 7 nightly from TheRock
-- PyTorch nightly from AMD gfx1151 nightlies
-- bitsandbytes built from upstream with gfx1151 target
-- Flash Attention from ROCm fork (main_perf branch)
-- All ML libraries (transformers, peft, trl, etc.)
-
-## Create and Enter
-
-```bash
-# Create the toolbox
+# 2. Create and enter toolbox
+toolbox rm -f halo-forge || true
 toolbox create halo-forge --image localhost/halo-forge:latest
-
-# Enter the toolbox
 toolbox enter halo-forge
+
+# 3. Install halo-forge package
+cd ~/projects/halo-forge
+pip install -e .
+
+# 4. Verify environment
+./toolbox/verify.sh
+
+# 5. Run smoke test
+halo-forge test --level smoke
 ```
 
-## Verify Setup
+## Build Details
 
-Inside the toolbox:
+### What Gets Installed
+
+The toolbox image includes:
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Fedora | 42 | Base image |
+| ROCm | 7.x nightly | Via TheRock tarballs |
+| PyTorch | nightly | AMD gfx1151 build |
+| bitsandbytes | upstream | Built with gfx1151 target |
+| Flash Attention | ROCm fork | main_perf branch |
+| Transformers | ≥4.46.0 | HuggingFace |
+| PEFT | ≥0.13.0 | LoRA support |
+| TRL | ≥0.12.0 | Training library |
+| GCC/Clang | system | For code verification |
+| MinGW | cross-compiler | Windows verification |
+
+### Build Options
 
 ```bash
-# Quick validation (recommended)
-halo-forge test --level smoke
+# Standard build (uses cache)
+./build.sh
 
-# Full validation with model loading
-halo-forge test --level standard
+# Clean build (no cache - recommended for release)
+./build.sh --no-cache
 
-# Or manually check PyTorch
-python3 -c "import torch; print(f'ROCm: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0)}')"
+# Custom tag
+./build.sh --tag v0.2.0
 ```
 
-Expected test output:
+### Build Time Estimates
+
+| Mode | Time | Notes |
+|------|------|-------|
+| With cache | 5-10 min | Incremental updates |
+| Without cache | 20-40 min | Full rebuild, depends on network |
+
+## Verification
+
+After entering the toolbox, run the verification script:
+
+```bash
+# Full verification
+./toolbox/verify.sh
+
+# Quick check (skip GPU test)
+./toolbox/verify.sh --quick
+
+# Include GPU memory test
+./toolbox/verify.sh --gpu
 ```
-============================================================
-halo-forge Smoke Test
-============================================================
 
-  [OK] Import modules (0.0s)
-  [OK] Compiler available (0.0s)
-  [OK] Verifier basic (0.1s)
+Expected output:
+```
+╭──────────────────────────────────────────────────────────────╮
+│   HALO-FORGE Environment Verification                       │
+╰──────────────────────────────────────────────────────────────╯
 
-============================================================
-Test Results: 3/3 passed
-============================================================
+Python Environment
+─────────────────────────────────────────────────────────────
+  ✓ Python installed: Python 3.13.x
+  ✓ Virtual environment active: /opt/venv
+
+PyTorch & ROCm
+─────────────────────────────────────────────────────────────
+  ✓ PyTorch installed: 2.x.x
+  ✓ GPU detected: AMD Radeon Graphics
+  ✓ ROCM_PATH set: /opt/rocm-7.0
+
+...
+
+═══════════════════════════════════════════════════════════════
+Summary
+═══════════════════════════════════════════════════════════════
+
+  Passed:   20
+  Warnings: 0
+  Failed:   0
+
+All checks passed! Environment is ready for training.
 ```
 
-> **Note:** PyTorch reports VRAM allocation (~25GB), not full unified memory (~128GB). Use `radeontop` to see actual GTT usage.
-
-## Persistence
-
-Your home directory is automatically mounted in the toolbox:
-- `~/` on host = `~/` in toolbox
-- Models, datasets, checkpoints all persist
-- HuggingFace cache at `~/.cache/huggingface/`
-
-## Recommended Settings
+## Training Configuration
 
 ### Use BF16 (NOT 4-bit)
 
-4-bit quantization is **2x slower** on Strix Halo due to compute-bound workload and dequantization overhead. Use BF16:
+4-bit quantization is **2x slower** on Strix Halo due to compute-bound workload. Use BF16:
 
 ```python
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,  # Optimal for Strix Halo
     device_map="auto",
-    attn_implementation="eager"  # Or flash_attention_2 with ROCm fork
+    attn_implementation="eager"  # Or flash_attention_2
 )
 ```
 
-### Dataloader Settings
+### Critical Dataloader Settings
 
-Critical for unified memory architecture:
+Required for unified memory architecture:
 
 ```yaml
 training:
   dataloader_num_workers: 0   # Required - prevents GPU hangs
   dataloader_pin_memory: false # Required - prevents GPU hangs
+```
+
+### Memory Configuration
+
+The Dockerfile sets optimal memory allocation:
+
+```bash
+PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"
 ```
 
 ### Actual Memory Usage (7B model, 2048 seq len, BF16 LoRA)
@@ -127,9 +182,35 @@ radeontop
 
 # Or use rocm-smi
 watch -n 1 rocm-smi
+
+# Check GTT usage
+rocm-smi --showmeminfo all
 ```
 
 > **Note:** PyTorch's `torch.cuda.max_memory_allocated()` reports VRAM only (~24GB), not GTT. Use `radeontop` for accurate unified memory usage.
+
+## Running Training
+
+### RAFT Training
+
+```bash
+# Quick validation run (0.5B model, 1 cycle)
+halo-forge raft train \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --prompts data/rlvr/mbpp_train_prompts.jsonl \
+  --verifier mbpp \
+  --cycles 1 \
+  --samples-per-prompt 4 \
+  --output models/validation
+
+# Production run (7B model, 5 cycles)
+halo-forge raft train \
+  --model Qwen/Qwen2.5-Coder-7B \
+  --prompts data/rlvr/mbpp_train_prompts.jsonl \
+  --verifier mbpp \
+  --cycles 5 \
+  --output models/production_7b
+```
 
 ## Troubleshooting
 
@@ -165,7 +246,39 @@ Ensure kernel parameters are set correctly. With kernel 6.16+, this should not b
 2. Check GPU is at 95%+ compute utilization
 3. Ensure only one training process running
 
-See `docs/HARDWARE_NOTES.md` for detailed optimization guidance.
+### Build fails with network timeout
+
+1. Check internet connectivity
+2. Try with VPN if ROCm servers are slow
+3. Retry - sometimes TheRock servers are busy
+
+### "Command not found: halo-forge"
+
+```bash
+cd ~/projects/halo-forge
+pip install -e .
+```
+
+## File Structure
+
+```
+toolbox/
+├── Dockerfile           # Main container definition
+├── build.sh            # Build script with options
+├── verify.sh           # Post-build verification
+├── TOOLBOX_SETUP.md    # This file
+└── scripts/
+    ├── 01-triton-env.sh       # Triton/ROCm paths
+    ├── 99-halo-forge-banner.sh # Welcome banner
+    └── zz-venv-path-fix.sh    # Ensure venv is first in PATH
+```
+
+## Persistence
+
+Your home directory is automatically mounted in the toolbox:
+- `~/` on host = `~/` in toolbox
+- Models, datasets, checkpoints all persist
+- HuggingFace cache at `~/.cache/huggingface/`
 
 ## Acknowledgments
 
