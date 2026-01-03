@@ -316,7 +316,7 @@ Footer > .footer--description {
 }
 
 #top-row {
-    height: 60%;
+    height: 70%;
     layout: horizontal;
 }
 
@@ -333,7 +333,7 @@ Footer > .footer--description {
 }
 
 #bottom-row {
-    height: 40%;
+    height: 30%;
     layout: horizontal;
 }
 
@@ -343,11 +343,11 @@ Footer > .footer--description {
 
 /* Fixed heights for top-row panels to prevent jumping */
 #progress {
-    height: 10;
+    height: 12;
 }
 
 #metrics {
-    height: 14;
+    height: 18;
 }
 
 #reward-dist {
@@ -355,11 +355,11 @@ Footer > .footer--description {
 }
 
 #history {
-    height: 12;
+    height: 14;
 }
 
 #hardware {
-    height: 8;
+    height: 12;
 }
 
 #quick-actions {
