@@ -15,5 +15,54 @@
     {{ partial "header.html" . }}
     <main>{{ block "main" . }}{{ end }}</main>
     {{ partial "footer.html" . }}
+    <script>
+    // Simple docs search
+    (function() {
+        const pages = [
+            { title: "Quick Start", section: "Getting Started", url: "/docs/getting-started/quickstart/" },
+            { title: "Toolbox Setup", section: "Getting Started", url: "/docs/getting-started/toolbox/" },
+            { title: "Hardware Notes", section: "Getting Started", url: "/docs/getting-started/hardware/" },
+            { title: "Full Pipeline", section: "Training", url: "/docs/training-pipeline/full-pipeline/" },
+            { title: "Data Generation", section: "Training", url: "/docs/training-pipeline/data-generation/" },
+            { title: "SFT Training", section: "Training", url: "/docs/training-pipeline/sft/" },
+            { title: "RAFT Training", section: "Training", url: "/docs/training-pipeline/raft/" },
+            { title: "Benchmarking", section: "Training", url: "/docs/training-pipeline/benchmarking/" },
+            { title: "Verifiers Overview", section: "Verifiers", url: "/docs/verifiers/" },
+            { title: "Compile Verifiers", section: "Verifiers", url: "/docs/verifiers/compile/" },
+            { title: "Test Verifiers", section: "Verifiers", url: "/docs/verifiers/test/" },
+            { title: "Custom Verifiers", section: "Verifiers", url: "/docs/verifiers/custom/" },
+            { title: "CLI Reference", section: "Reference", url: "/docs/reference/cli/" },
+            { title: "Configuration", section: "Reference", url: "/docs/reference/configuration/" },
+            { title: "Troubleshooting", section: "Reference", url: "/docs/reference/troubleshooting/" },
+            { title: "Theory & Research", section: "Background", url: "/docs/background/theory/" },
+            { title: "RAFT vs PPO", section: "Background", url: "/docs/background/raft-vs-ppo/" },
+            { title: "Graduated Rewards", section: "Background", url: "/docs/background/graduated-rewards/" },
+            { title: "Learning Rates", section: "Background", url: "/docs/background/learning-rates/" },
+        ];
+        
+        const input = document.getElementById('docs-search-input');
+        const results = document.getElementById('docs-search-results');
+        if (!input || !results) return;
+        
+        input.addEventListener('input', function() {
+            const q = this.value.toLowerCase().trim();
+            results.innerHTML = '';
+            if (q.length < 2) return;
+            
+            const matches = pages.filter(p => 
+                p.title.toLowerCase().includes(q) || 
+                p.section.toLowerCase().includes(q)
+            ).slice(0, 6);
+            
+            matches.forEach(p => {
+                const a = document.createElement('a');
+                a.href = p.url;
+                a.className = 'search-result';
+                a.innerHTML = '<span class="result-title">' + p.title + '</span><br><span class="result-section">' + p.section + '</span>';
+                results.appendChild(a);
+            });
+        });
+    })();
+    </script>
 </body>
 </html>
