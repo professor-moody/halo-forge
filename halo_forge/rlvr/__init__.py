@@ -1,7 +1,6 @@
 """RLVR (Reinforcement Learning from Verifier Rewards) training module."""
 
 from halo_forge.rlvr.raft_trainer import RAFTTrainer, RAFTConfig
-from halo_forge.rlvr.grpo_trainer import GRPOTrainer, GRPOConfig
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
 from halo_forge.rlvr.curriculum import CurriculumScheduler, CurriculumConfig, CurriculumStrategy
 from halo_forge.rlvr.reward_shaping import RewardShaper, RewardShapingConfig, RewardShapingStrategy
@@ -9,7 +8,6 @@ from halo_forge.rlvr.reward_shaping import RewardShaper, RewardShapingConfig, Re
 __all__ = [
     # Trainers
     "RAFTTrainer", "RAFTConfig",
-    "GRPOTrainer", "GRPOConfig",
     # Verifiers
     "Verifier", "VerifyResult",
     # Curriculum
