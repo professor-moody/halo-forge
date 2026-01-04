@@ -61,6 +61,16 @@ class RAFTConfig:
     temperature: float = 0.7
     generation_batch_size: int = 8  # Match strix-edr-training
     
+    # Temperature scheduling: start high for diversity, reduce over cycles
+    # Set to None to disable scheduling and use fixed temperature
+    temperature_start: Optional[float] = None  # e.g., 0.9 for high diversity
+    temperature_end: Optional[float] = None    # e.g., 0.5 for focused generation
+    
+    # Memory optimization
+    generation_chunk_size: int = 50  # Process prompts in chunks to reduce peak memory
+    verification_chunk_size: int = 200  # Process samples in chunks during verification
+    clear_cache_every_n_batches: int = 10  # Clear CUDA cache periodically
+    
     # Training (per cycle)
     train_epochs: int = 1
     train_batch_size: int = 2
@@ -69,6 +79,29 @@ class RAFTConfig:
     
     # System prompt for generation
     system_prompt: str = "You are an expert programmer."
+    
+    # Curriculum learning: train on easy prompts first, then harder ones
+    # Options: "none", "complexity", "progressive", "adaptive", "historical"
+    curriculum_strategy: str = "none"
+    curriculum_progressive_start: float = 0.2   # Start with easiest 20%
+    curriculum_progressive_increment: float = 0.2  # Add 20% more each cycle
+    
+    # Reward shaping: adjust thresholds over cycles
+    # Options: "fixed", "annealing", "adaptive", "warmup"
+    reward_shaping_strategy: str = "fixed"
+    reward_shaping_warmup_cycles: int = 1  # For warmup strategy
+    
+    def get_temperature_for_cycle(self, cycle: int) -> float:
+        """Get temperature for a specific cycle with optional scheduling."""
+        if self.temperature_start is None or self.temperature_end is None:
+            return self.temperature
+        
+        # Linear interpolation from start to end over num_cycles
+        if self.num_cycles <= 1:
+            return self.temperature_start
+        
+        progress = (cycle - 1) / (self.num_cycles - 1)
+        return self.temperature_start + progress * (self.temperature_end - self.temperature_start)
 
 
 class RAFTTrainer:
@@ -326,6 +359,11 @@ class RAFTTrainer:
                 if cache_file:
                     cache_file.flush()
                 
+                # Periodic CUDA cache clearing for memory optimization
+                if (batch_idx + 1) % cfg.clear_cache_every_n_batches == 0:
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                
                 # Update tqdm postfix with sample count
                 pbar.set_postfix(samples=len(all_samples), refresh=True)
                 
@@ -365,8 +403,7 @@ class RAFTTrainer:
         completions = [s[1] for s in samples]
         
         # CHUNKED verification to prevent memory exhaustion
-        # Process 200 samples at a time to avoid OOM
-        chunk_size = 200
+        chunk_size = cfg.verification_chunk_size
         results = []
         num_chunks = (len(completions) + chunk_size - 1) // chunk_size
         
@@ -564,8 +601,13 @@ class RAFTTrainer:
             self._reload_model(str(final_checkpoint))
             return {'cycle': cycle, 'skipped': True}
         
+        # Get temperature for this cycle (supports scheduling)
+        cycle_temp = self.config.get_temperature_for_cycle(cycle)
+        if self.config.temperature_start is not None:
+            self._log(f"Temperature for cycle {cycle}: {cycle_temp:.2f}", "dim")
+        
         # Generate with streaming checkpoint (handles resume automatically)
-        samples = self.generate_samples(prompts, cache_path=samples_cache)
+        samples = self.generate_samples(prompts, temperature=cycle_temp, cache_path=samples_cache)
         
         # Verify (or load from cache)
         if verified_cache.exists():
@@ -689,12 +731,82 @@ class RAFTTrainer:
         print(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
         print(f"  Samples per prompt: {cfg.samples_per_prompt}")
         
+        # Temperature scheduling info
+        if cfg.temperature_start is not None:
+            print(f"  Temperature: {cfg.temperature_start:.2f} → {cfg.temperature_end:.2f} (scheduled)")
+        else:
+            print(f"  Temperature: {cfg.temperature:.2f} (fixed)")
+        
+        # Curriculum learning setup
+        curriculum_scheduler = None
+        if cfg.curriculum_strategy != "none":
+            from halo_forge.rlvr.curriculum import CurriculumScheduler, CurriculumConfig, CurriculumStrategy
+            
+            curriculum_config = CurriculumConfig(
+                strategy=CurriculumStrategy(cfg.curriculum_strategy),
+                progressive_start=cfg.curriculum_progressive_start,
+                progressive_increment=cfg.curriculum_progressive_increment,
+            )
+            curriculum_scheduler = CurriculumScheduler(prompts, curriculum_config)
+            print(f"  Curriculum: {cfg.curriculum_strategy}")
+        
+        # Reward shaping setup
+        reward_shaper = None
+        if cfg.reward_shaping_strategy != "fixed":
+            from halo_forge.rlvr.reward_shaping import RewardShaper, RewardShapingConfig, RewardShapingStrategy
+            
+            shaping_config = RewardShapingConfig(
+                strategy=RewardShapingStrategy(cfg.reward_shaping_strategy),
+                base_reward_threshold=cfg.reward_threshold,
+                base_keep_percent=cfg.keep_top_percent,
+                warmup_cycles=cfg.reward_shaping_warmup_cycles,
+            )
+            reward_shaper = RewardShaper(shaping_config)
+            print(f"  Reward shaping: {cfg.reward_shaping_strategy}")
+        
         for cycle in range(1, num_cycles + 1):
-            stats = self.run_cycle(prompts, cycle)
+            # Get prompts for this cycle (curriculum learning)
+            if curriculum_scheduler:
+                cycle_prompts = curriculum_scheduler.get_prompts_for_cycle(cycle, num_cycles)
+                info = curriculum_scheduler.get_curriculum_info(cycle, num_cycles)
+                self._log(f"Curriculum: {len(cycle_prompts)}/{len(prompts)} prompts (avg complexity: {info['avg_complexity']:.2f})", "dim")
+            else:
+                cycle_prompts = prompts
+            
+            # Get thresholds for this cycle (reward shaping)
+            if reward_shaper:
+                threshold, keep_pct = reward_shaper.get_thresholds(cycle, num_cycles)
+                self._log(f"Reward shaping: threshold={threshold:.2f}, keep={keep_pct:.0%}", "dim")
+                # Temporarily override config for this cycle
+                orig_threshold = cfg.reward_threshold
+                orig_keep = cfg.keep_top_percent
+                cfg.reward_threshold = threshold
+                cfg.keep_top_percent = keep_pct
+            
+            stats = self.run_cycle(cycle_prompts, cycle)
+            
+            # Restore original config
+            if reward_shaper:
+                cfg.reward_threshold = orig_threshold
+                cfg.keep_top_percent = orig_keep
             
             if stats is None:
                 self._log(f"Cycle {cycle} failed. Stopping.", "error")
                 break
+            
+            # Update curriculum with performance
+            if curriculum_scheduler and stats:
+                success_rate = stats.get('success_rate', 0)
+                curriculum_scheduler.update_performance(cycle, success_rate)
+            
+            # Update reward shaper with stats
+            if reward_shaper and stats:
+                reward_shaper.update_stats(
+                    cycle,
+                    pass_rate=stats.get('success_rate', 0),
+                    samples_kept=stats.get('kept', 0),
+                    total_samples=stats.get('total_samples', 0)
+                )
         
         # Save statistics
         self.save_statistics()

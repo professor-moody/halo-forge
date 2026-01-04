@@ -130,14 +130,25 @@ def cmd_raft_train(args):
     elif verifier_type == 'mbpp':
         dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/mbpp_train_full.jsonl')
         verifier = MBPPVerifier(dataset_path)
+    elif verifier_type == 'rust' or verifier_type == 'cargo':
+        from halo_forge.rlvr.verifiers import RustVerifier
+        run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
+        verifier = RustVerifier(run_after_compile=run_after)
+    elif verifier_type == 'go':
+        from halo_forge.rlvr.verifiers import GoVerifier
+        run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
+        verifier = GoVerifier(run_after_compile=run_after)
     else:
         print(f"Unknown verifier: {verifier_type}")
-        print("Available: gcc, mingw, msvc, humaneval, mbpp")
+        print("Available: gcc, mingw, msvc, humaneval, mbpp, rust, go")
         sys.exit(1)
     
     # Create config
     keep_percent = getattr(args, 'keep_percent', None) or cfg_dict.get('keep_top_percent', 0.5)
     reward_threshold = getattr(args, 'reward_threshold', None) or cfg_dict.get('reward_threshold', 0.5)
+    
+    curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
+    reward_shaping = getattr(args, 'reward_shaping', None) or cfg_dict.get('reward_shaping_strategy', 'fixed')
     
     config = RAFTConfig(
         base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
@@ -145,7 +156,9 @@ def cmd_raft_train(args):
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
         num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
         keep_top_percent=keep_percent,
-        reward_threshold=reward_threshold
+        reward_threshold=reward_threshold,
+        curriculum_strategy=curriculum,
+        reward_shaping_strategy=reward_shaping
     )
     
     # Load prompts
@@ -803,6 +816,12 @@ def main():
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
                                    help='Minimum reward to consider sample passing (default: 0.5)')
+    raft_train_parser.add_argument('--curriculum', default='none',
+                                   choices=['none', 'complexity', 'progressive', 'adaptive'],
+                                   help='Curriculum learning strategy (default: none)')
+    raft_train_parser.add_argument('--reward-shaping', default='fixed',
+                                   choices=['fixed', 'annealing', 'adaptive', 'warmup'],
+                                   help='Reward shaping strategy (default: fixed)')
     
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')

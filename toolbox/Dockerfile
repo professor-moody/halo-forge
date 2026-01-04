@@ -21,6 +21,7 @@ RUN dnf -y --nodocs --setopt=install_weak_deps=False install \
        python python3-devel pip aria2c jq \
        openssh-clients pciutils numactl numactl-devel libdrm mesa-libGL \
        mingw64-gcc-c++ wine \
+       rust cargo golang \
     && dnf clean all && rm -rf /var/cache/dnf/*
 
 # --- fetch and unpack ROCm TheRock ---

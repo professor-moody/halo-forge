@@ -10,6 +10,8 @@ from halo_forge.rlvr.verifiers.pytest_verifier import (
     HumanEvalVerifier,
     MBPPVerifier,
 )
+from halo_forge.rlvr.verifiers.rust_verifier import RustVerifier, CargoVerifier
+from halo_forge.rlvr.verifiers.go_verifier import GoVerifier
 
 __all__ = [
     # Base
@@ -17,10 +19,15 @@ __all__ = [
     "VerifyResult",
     "ChainedVerifier",
     "RewardLevel",
-    # Compile
+    # Compile - C/C++
     "GCCVerifier",
     "MinGWVerifier",
     "ClangVerifier",
+    # Compile - Rust
+    "RustVerifier",
+    "CargoVerifier",  # Alias for RustVerifier
+    # Compile - Go
+    "GoVerifier",
     # Remote
     "RemoteMSVCVerifier",
     "RemoteConfig",
