@@ -61,6 +61,15 @@ class RAFTConfig:
     temperature: float = 0.7
     generation_batch_size: int = 8  # Match strix-edr-training
     
+    # Temperature scheduling: start high for diversity, reduce over cycles
+    # Set to None to disable scheduling and use fixed temperature
+    temperature_start: Optional[float] = None  # e.g., 0.9 for high diversity
+    temperature_end: Optional[float] = None    # e.g., 0.5 for focused generation
+    
+    # Memory optimization
+    generation_chunk_size: int = 50  # Process prompts in chunks to reduce peak memory
+    clear_cache_every_n_batches: int = 10  # Clear CUDA cache periodically
+    
     # Training (per cycle)
     train_epochs: int = 1
     train_batch_size: int = 2
@@ -69,6 +78,18 @@ class RAFTConfig:
     
     # System prompt for generation
     system_prompt: str = "You are an expert programmer."
+    
+    def get_temperature_for_cycle(self, cycle: int) -> float:
+        """Get temperature for a specific cycle with optional scheduling."""
+        if self.temperature_start is None or self.temperature_end is None:
+            return self.temperature
+        
+        # Linear interpolation from start to end over num_cycles
+        if self.num_cycles <= 1:
+            return self.temperature_start
+        
+        progress = (cycle - 1) / (self.num_cycles - 1)
+        return self.temperature_start + progress * (self.temperature_end - self.temperature_start)
 
 
 class RAFTTrainer:
@@ -326,6 +347,11 @@ class RAFTTrainer:
                 if cache_file:
                     cache_file.flush()
                 
+                # Periodic CUDA cache clearing for memory optimization
+                if (batch_idx + 1) % cfg.clear_cache_every_n_batches == 0:
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                
                 # Update tqdm postfix with sample count
                 pbar.set_postfix(samples=len(all_samples), refresh=True)
                 
@@ -564,8 +590,13 @@ class RAFTTrainer:
             self._reload_model(str(final_checkpoint))
             return {'cycle': cycle, 'skipped': True}
         
+        # Get temperature for this cycle (supports scheduling)
+        cycle_temp = self.config.get_temperature_for_cycle(cycle)
+        if self.config.temperature_start is not None:
+            self._log(f"Temperature for cycle {cycle}: {cycle_temp:.2f}", "dim")
+        
         # Generate with streaming checkpoint (handles resume automatically)
-        samples = self.generate_samples(prompts, cache_path=samples_cache)
+        samples = self.generate_samples(prompts, temperature=cycle_temp, cache_path=samples_cache)
         
         # Verify (or load from cache)
         if verified_cache.exists():
@@ -688,6 +719,12 @@ class RAFTTrainer:
         print(f"  Reward threshold: {cfg.reward_threshold}")
         print(f"  Keep top: {cfg.keep_top_percent*100:.0f}% of passing samples")
         print(f"  Samples per prompt: {cfg.samples_per_prompt}")
+        
+        # Temperature scheduling info
+        if cfg.temperature_start is not None:
+            print(f"  Temperature: {cfg.temperature_start:.2f} → {cfg.temperature_end:.2f} (scheduled)")
+        else:
+            print(f"  Temperature: {cfg.temperature:.2f} (fixed)")
         
         for cycle in range(1, num_cycles + 1):
             stats = self.run_cycle(prompts, cycle)
