@@ -85,6 +85,11 @@ class RAFTConfig:
     curriculum_progressive_start: float = 0.2   # Start with easiest 20%
     curriculum_progressive_increment: float = 0.2  # Add 20% more each cycle
     
+    # Reward shaping: adjust thresholds over cycles
+    # Options: "fixed", "annealing", "adaptive", "warmup"
+    reward_shaping_strategy: str = "fixed"
+    reward_shaping_warmup_cycles: int = 1  # For warmup strategy
+    
     def get_temperature_for_cycle(self, cycle: int) -> float:
         """Get temperature for a specific cycle with optional scheduling."""
         if self.temperature_start is None or self.temperature_end is None:
@@ -745,6 +750,20 @@ class RAFTTrainer:
             curriculum_scheduler = CurriculumScheduler(prompts, curriculum_config)
             print(f"  Curriculum: {cfg.curriculum_strategy}")
         
+        # Reward shaping setup
+        reward_shaper = None
+        if cfg.reward_shaping_strategy != "fixed":
+            from halo_forge.rlvr.reward_shaping import RewardShaper, RewardShapingConfig, RewardShapingStrategy
+            
+            shaping_config = RewardShapingConfig(
+                strategy=RewardShapingStrategy(cfg.reward_shaping_strategy),
+                base_reward_threshold=cfg.reward_threshold,
+                base_keep_percent=cfg.keep_top_percent,
+                warmup_cycles=cfg.reward_shaping_warmup_cycles,
+            )
+            reward_shaper = RewardShaper(shaping_config)
+            print(f"  Reward shaping: {cfg.reward_shaping_strategy}")
+        
         for cycle in range(1, num_cycles + 1):
             # Get prompts for this cycle (curriculum learning)
             if curriculum_scheduler:
@@ -754,7 +773,22 @@ class RAFTTrainer:
             else:
                 cycle_prompts = prompts
             
+            # Get thresholds for this cycle (reward shaping)
+            if reward_shaper:
+                threshold, keep_pct = reward_shaper.get_thresholds(cycle, num_cycles)
+                self._log(f"Reward shaping: threshold={threshold:.2f}, keep={keep_pct:.0%}", "dim")
+                # Temporarily override config for this cycle
+                orig_threshold = cfg.reward_threshold
+                orig_keep = cfg.keep_top_percent
+                cfg.reward_threshold = threshold
+                cfg.keep_top_percent = keep_pct
+            
             stats = self.run_cycle(cycle_prompts, cycle)
+            
+            # Restore original config
+            if reward_shaper:
+                cfg.reward_threshold = orig_threshold
+                cfg.keep_top_percent = orig_keep
             
             if stats is None:
                 self._log(f"Cycle {cycle} failed. Stopping.", "error")
@@ -764,6 +798,15 @@ class RAFTTrainer:
             if curriculum_scheduler and stats:
                 success_rate = stats.get('success_rate', 0)
                 curriculum_scheduler.update_performance(cycle, success_rate)
+            
+            # Update reward shaper with stats
+            if reward_shaper and stats:
+                reward_shaper.update_stats(
+                    cycle,
+                    pass_rate=stats.get('success_rate', 0),
+                    samples_kept=stats.get('kept', 0),
+                    total_samples=stats.get('total_samples', 0)
+                )
         
         # Save statistics
         self.save_statistics()

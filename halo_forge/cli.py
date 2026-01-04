@@ -148,6 +148,7 @@ def cmd_raft_train(args):
     reward_threshold = getattr(args, 'reward_threshold', None) or cfg_dict.get('reward_threshold', 0.5)
     
     curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
+    reward_shaping = getattr(args, 'reward_shaping', None) or cfg_dict.get('reward_shaping_strategy', 'fixed')
     
     config = RAFTConfig(
         base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
@@ -156,7 +157,8 @@ def cmd_raft_train(args):
         num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
         keep_top_percent=keep_percent,
         reward_threshold=reward_threshold,
-        curriculum_strategy=curriculum
+        curriculum_strategy=curriculum,
+        reward_shaping_strategy=reward_shaping
     )
     
     # Load prompts
@@ -817,6 +819,9 @@ def main():
     raft_train_parser.add_argument('--curriculum', default='none',
                                    choices=['none', 'complexity', 'progressive', 'adaptive'],
                                    help='Curriculum learning strategy (default: none)')
+    raft_train_parser.add_argument('--reward-shaping', default='fixed',
+                                   choices=['fixed', 'annealing', 'adaptive', 'warmup'],
+                                   help='Reward shaping strategy (default: fixed)')
     
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
