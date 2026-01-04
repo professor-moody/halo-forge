@@ -79,6 +79,12 @@ class RAFTConfig:
     # System prompt for generation
     system_prompt: str = "You are an expert programmer."
     
+    # Curriculum learning: train on easy prompts first, then harder ones
+    # Options: "none", "complexity", "progressive", "adaptive", "historical"
+    curriculum_strategy: str = "none"
+    curriculum_progressive_start: float = 0.2   # Start with easiest 20%
+    curriculum_progressive_increment: float = 0.2  # Add 20% more each cycle
+    
     def get_temperature_for_cycle(self, cycle: int) -> float:
         """Get temperature for a specific cycle with optional scheduling."""
         if self.temperature_start is None or self.temperature_end is None:
@@ -726,12 +732,38 @@ class RAFTTrainer:
         else:
             print(f"  Temperature: {cfg.temperature:.2f} (fixed)")
         
+        # Curriculum learning setup
+        curriculum_scheduler = None
+        if cfg.curriculum_strategy != "none":
+            from halo_forge.rlvr.curriculum import CurriculumScheduler, CurriculumConfig, CurriculumStrategy
+            
+            curriculum_config = CurriculumConfig(
+                strategy=CurriculumStrategy(cfg.curriculum_strategy),
+                progressive_start=cfg.curriculum_progressive_start,
+                progressive_increment=cfg.curriculum_progressive_increment,
+            )
+            curriculum_scheduler = CurriculumScheduler(prompts, curriculum_config)
+            print(f"  Curriculum: {cfg.curriculum_strategy}")
+        
         for cycle in range(1, num_cycles + 1):
-            stats = self.run_cycle(prompts, cycle)
+            # Get prompts for this cycle (curriculum learning)
+            if curriculum_scheduler:
+                cycle_prompts = curriculum_scheduler.get_prompts_for_cycle(cycle, num_cycles)
+                info = curriculum_scheduler.get_curriculum_info(cycle, num_cycles)
+                self._log(f"Curriculum: {len(cycle_prompts)}/{len(prompts)} prompts (avg complexity: {info['avg_complexity']:.2f})", "dim")
+            else:
+                cycle_prompts = prompts
+            
+            stats = self.run_cycle(cycle_prompts, cycle)
             
             if stats is None:
                 self._log(f"Cycle {cycle} failed. Stopping.", "error")
                 break
+            
+            # Update curriculum with performance
+            if curriculum_scheduler and stats:
+                success_rate = stats.get('success_rate', 0)
+                curriculum_scheduler.update_performance(cycle, success_rate)
         
         # Save statistics
         self.save_statistics()

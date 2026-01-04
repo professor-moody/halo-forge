@@ -147,13 +147,16 @@ def cmd_raft_train(args):
     keep_percent = getattr(args, 'keep_percent', None) or cfg_dict.get('keep_top_percent', 0.5)
     reward_threshold = getattr(args, 'reward_threshold', None) or cfg_dict.get('reward_threshold', 0.5)
     
+    curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
+    
     config = RAFTConfig(
         base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
         sft_checkpoint=args.checkpoint or cfg_dict.get('sft_checkpoint', 'models/sft/final_model'),
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
         num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
         keep_top_percent=keep_percent,
-        reward_threshold=reward_threshold
+        reward_threshold=reward_threshold,
+        curriculum_strategy=curriculum
     )
     
     # Load prompts
@@ -811,6 +814,9 @@ def main():
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
                                    help='Minimum reward to consider sample passing (default: 0.5)')
+    raft_train_parser.add_argument('--curriculum', default='none',
+                                   choices=['none', 'complexity', 'progressive', 'adaptive'],
+                                   help='Curriculum learning strategy (default: none)')
     
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
