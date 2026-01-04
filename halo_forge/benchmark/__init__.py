@@ -10,6 +10,14 @@ from halo_forge.benchmark.runner import (
     DEFAULT_MODELS,
     BENCHMARK_PROMPTS,
 )
+from halo_forge.benchmark.prompts import (
+    CPP_PROMPTS,
+    RUST_PROMPTS,
+    GO_PROMPTS,
+    get_prompts_for_language,
+    get_all_prompts,
+    ALL_LANGUAGES,
+)
 
 __all__ = [
     # Legacy pass@k benchmark
@@ -23,5 +31,12 @@ __all__ = [
     "run_benchmark_suite",
     "DEFAULT_MODELS",
     "BENCHMARK_PROMPTS",
+    # Language-specific prompts
+    "CPP_PROMPTS",
+    "RUST_PROMPTS",
+    "GO_PROMPTS",
+    "get_prompts_for_language",
+    "get_all_prompts",
+    "ALL_LANGUAGES",
 ]
 

@@ -130,9 +130,17 @@ def cmd_raft_train(args):
     elif verifier_type == 'mbpp':
         dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/mbpp_train_full.jsonl')
         verifier = MBPPVerifier(dataset_path)
+    elif verifier_type == 'rust' or verifier_type == 'cargo':
+        from halo_forge.rlvr.verifiers import RustVerifier
+        run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
+        verifier = RustVerifier(run_after_compile=run_after)
+    elif verifier_type == 'go':
+        from halo_forge.rlvr.verifiers import GoVerifier
+        run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
+        verifier = GoVerifier(run_after_compile=run_after)
     else:
         print(f"Unknown verifier: {verifier_type}")
-        print("Available: gcc, mingw, msvc, humaneval, mbpp")
+        print("Available: gcc, mingw, msvc, humaneval, mbpp, rust, go")
         sys.exit(1)
     
     # Create config
