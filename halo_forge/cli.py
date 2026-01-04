@@ -180,6 +180,67 @@ def cmd_raft_train(args):
     trainer.run(prompts, num_cycles=config.num_cycles)
 
 
+def cmd_grpo_train(args):
+    """Run GRPO training (DPO-style alternative to RAFT)."""
+    import json
+    from halo_forge.rlvr.grpo_trainer import GRPOTrainer, GRPOConfig
+    from halo_forge.rlvr.verifiers import (
+        GCCVerifier, MinGWVerifier, RemoteMSVCVerifier,
+        HumanEvalVerifier, MBPPVerifier, RustVerifier, GoVerifier
+    )
+    
+    # Setup verifier
+    verifier_type = args.verifier.lower()
+    if verifier_type == 'gcc':
+        verifier = GCCVerifier()
+    elif verifier_type == 'mingw':
+        verifier = MinGWVerifier()
+    elif verifier_type == 'humaneval':
+        verifier = HumanEvalVerifier()
+    elif verifier_type == 'mbpp':
+        verifier = MBPPVerifier()
+    elif verifier_type == 'rust':
+        verifier = RustVerifier()
+    elif verifier_type == 'go':
+        verifier = GoVerifier()
+    else:
+        print(f"Unknown verifier: {verifier_type}")
+        print("Available: gcc, mingw, humaneval, mbpp, rust, go")
+        sys.exit(1)
+    
+    # Load prompts
+    prompts = []
+    if args.prompts:
+        prompts_path = Path(args.prompts)
+        if prompts_path.exists():
+            with open(prompts_path) as f:
+                for line in f:
+                    data = json.loads(line.strip())
+                    if 'prompt' in data:
+                        prompts.append(data['prompt'])
+                    elif 'text' in data:
+                        prompts.append(data['text'])
+    
+    if not prompts:
+        print("No prompts loaded!")
+        print("Use --prompts with a JSONL file")
+        sys.exit(1)
+    
+    # Build config
+    config = GRPOConfig(
+        base_model=args.model,
+        sft_checkpoint=args.checkpoint,
+        output_dir=args.output,
+        num_cycles=args.cycles,
+        beta=args.beta,
+        reward_margin=args.reward_margin,
+    )
+    
+    # Run
+    trainer = GRPOTrainer(verifier=verifier, config=config)
+    trainer.run(prompts, num_cycles=config.num_cycles)
+
+
 def cmd_benchmark(args):
     """Run benchmark."""
     from halo_forge.benchmark.pass_at_k import Benchmark
@@ -823,6 +884,21 @@ def main():
                                    choices=['fixed', 'annealing', 'adaptive', 'warmup'],
                                    help='Reward shaping strategy (default: fixed)')
     
+    # grpo command (alternative to RAFT)
+    grpo_parser = subparsers.add_parser('grpo', help='GRPO training (DPO-style alternative to RAFT)')
+    grpo_subparsers = grpo_parser.add_subparsers(dest='grpo_command', required=True)
+    
+    grpo_train_parser = grpo_subparsers.add_parser('train', help='Run GRPO training')
+    grpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-3B', help='Base model')
+    grpo_train_parser.add_argument('--checkpoint', help='SFT checkpoint path (optional)')
+    grpo_train_parser.add_argument('--prompts', '-p', required=True, help='Prompts file')
+    grpo_train_parser.add_argument('--output', '-o', default='models/grpo', help='Output directory')
+    grpo_train_parser.add_argument('--cycles', type=int, default=3, help='Number of GRPO cycles')
+    grpo_train_parser.add_argument('--verifier', default='gcc', help='Verifier type')
+    grpo_train_parser.add_argument('--beta', type=float, default=0.1, help='KL divergence weight (default: 0.1)')
+    grpo_train_parser.add_argument('--reward-margin', type=float, default=0.3,
+                                   help='Minimum reward gap between chosen/rejected (default: 0.3)')
+    
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
     bench_subparsers = bench_parser.add_subparsers(dest='bench_command', required=True)
@@ -879,6 +955,9 @@ def main():
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
+    elif args.command == 'grpo':
+        if args.grpo_command == 'train':
+            cmd_grpo_train(args)
     elif args.command == 'benchmark':
         if args.bench_command == 'run':
             cmd_benchmark(args)
