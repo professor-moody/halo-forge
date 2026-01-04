@@ -177,6 +177,22 @@ test_verifiers() {
         warn "MinGW not found (Windows verification disabled)"
     fi
     
+    # Check Rust/Cargo
+    if command -v cargo &>/dev/null; then
+        rust_ver=$(rustc --version 2>/dev/null | cut -d' ' -f2 || echo "unknown")
+        pass "Rust/Cargo available: ${rust_ver}"
+    else
+        warn "Rust not found (Rust verification disabled)"
+    fi
+    
+    # Check Go
+    if command -v go &>/dev/null; then
+        go_ver=$(go version 2>/dev/null | cut -d' ' -f3 || echo "unknown")
+        pass "Go available: ${go_ver}"
+    else
+        warn "Go not found (Go verification disabled)"
+    fi
+    
     # Check pytest
     if python3 -c "import pytest" 2>/dev/null; then
         pass "Pytest available"
