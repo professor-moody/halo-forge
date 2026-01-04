@@ -68,6 +68,7 @@ class RAFTConfig:
     
     # Memory optimization
     generation_chunk_size: int = 50  # Process prompts in chunks to reduce peak memory
+    verification_chunk_size: int = 200  # Process samples in chunks during verification
     clear_cache_every_n_batches: int = 10  # Clear CUDA cache periodically
     
     # Training (per cycle)
@@ -402,8 +403,7 @@ class RAFTTrainer:
         completions = [s[1] for s in samples]
         
         # CHUNKED verification to prevent memory exhaustion
-        # Process 200 samples at a time to avoid OOM
-        chunk_size = 200
+        chunk_size = cfg.verification_chunk_size
         results = []
         num_chunks = (len(completions) + chunk_size - 1) // chunk_size
         
