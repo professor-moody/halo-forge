@@ -144,18 +144,31 @@ Test Results: 6/6 passed
 
 ## Part 2: Data Preparation
 
-### Option A: Use Built-in Datasets
+### Option A: Use Built-in Sample Data (Quick Start)
 
-halo-forge includes pre-formatted datasets for immediate use:
+halo-forge includes ready-to-use sample datasets for immediate testing. No download required:
+
+| Dataset | File | Examples | Language | Use For |
+|---------|------|----------|----------|---------|
+| **MBPP Training** | `data/rlvr/mbpp_train_prompts.jsonl` | 374 | Python | RAFT training |
+| **MBPP Full** | `data/rlvr/mbpp_train_full.jsonl` | 374 | Python | SFT training |
+| **MBPP Validation** | `data/rlvr/mbpp_validation.jsonl` | 50 | Python | Benchmarking |
+| **HumanEval** | `data/rlvr/humaneval_full.jsonl` | 164 | Python | Evaluation |
+| **HumanEval Prompts** | `data/rlvr/humaneval_prompts.jsonl` | 164 | Python | RAFT training |
+
+**Quick test with included data:**
 
 ```bash
-# List available datasets
+# Verify data exists
 ls data/rlvr/
 
-# Available:
-# - humaneval_full.jsonl     (164 problems with tests)
-# - mbpp_train_full.jsonl    (374 problems with tests)
-# - mbpp_train_prompts.jsonl (prompts only for RAFT)
+# Start training immediately with MBPP
+halo-forge raft train \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --prompts data/rlvr/mbpp_train_prompts.jsonl \
+  --verifier mbpp \
+  --cycles 2 \
+  --output models/quick_test
 ```
 
 ### Option B: Download Public Datasets
@@ -354,6 +367,28 @@ Saving checkpoint to models/raft/cycle_1_final/
 - **Pass rate**: Higher is better - indicates model improvement
 - **Loss decrease**: Should trend downward across cycles
 - **Kept samples**: More samples = more training signal
+
+### TensorBoard Monitoring
+
+Training automatically logs to TensorBoard. View training curves in real-time:
+
+```bash
+# In a separate terminal (inside toolbox)
+tensorboard --logdir models/raft --port 6006
+
+# If remote, forward the port
+ssh -L 6006:localhost:6006 user@your-host
+```
+
+Open http://localhost:6006 in your browser to see:
+
+- **Loss curves** — Training loss per step
+- **Learning rate** — LR schedule over time
+- **GPU metrics** — Memory and utilization (if available)
+
+TensorBoard logs are saved to:
+- SFT: `models/sft/logs/`
+- RAFT: `models/raft/cycle_N/logs/`
 
 ### When to Stop
 
