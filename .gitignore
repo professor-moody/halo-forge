@@ -47,13 +47,13 @@ models/
 checkpoints/
 runs/
 logs/
+results/
 *.pt
 *.pth
 *.safetensors
 
 # Data (ignore downloaded/generated data, keep samples)
 data/
-*.jsonl
 
 # But keep sample data that ships with repo
 !data/rlvr/
@@ -61,6 +61,13 @@ data/
 !data/rlvr/*.json
 !data/samples/
 !data/samples/*.jsonl
+
+# Datasets - ignore tmp, keep curriculum
+datasets/tmp/
+!datasets/windows_curriculum/
+!datasets/windows_curriculum/*.jsonl
+!datasets/windows_curriculum/*.json
+!datasets/windows_curriculum/*.py
 
 # OS
 .DS_Store

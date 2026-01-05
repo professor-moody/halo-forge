@@ -1,0 +1,63 @@
+{
+  "total": 361,
+  "tiers": {
+    "tier_1": {
+      "count": 84,
+      "categories": {
+        "console": 2,
+        "environment": 4,
+        "error": 2,
+        "file": 19,
+        "memory": 13,
+        "misc": 15,
+        "process": 7,
+        "registry": 3,
+        "string": 4,
+        "sysinfo": 10,
+        "time": 5
+      }
+    },
+    "tier_2": {
+      "count": 128,
+      "categories": {
+        "console": 3,
+        "dll": 10,
+        "file": 5,
+        "ipc": 5,
+        "memory": 26,
+        "process": 23,
+        "registry": 12,
+        "security": 3,
+        "sync": 17,
+        "thread": 20,
+        "threading": 4
+      }
+    },
+    "tier_3": {
+      "count": 72,
+      "categories": {
+        "dll": 3,
+        "exception": 1,
+        "ipc": 2,
+        "memory": 3,
+        "native": 1,
+        "pe": 27,
+        "security": 25,
+        "services": 2,
+        "threading": 8
+      }
+    },
+    "tier_4": {
+      "count": 77,
+      "categories": {
+        "evasion": 16,
+        "exception": 1,
+        "internals": 17,
+        "native": 26,
+        "pe": 2,
+        "syscall": 10,
+        "threading": 5
+      }
+    }
+  }
+}

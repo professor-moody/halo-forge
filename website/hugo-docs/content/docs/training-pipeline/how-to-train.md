@@ -165,6 +165,22 @@ halo-forge includes ready-to-use sample datasets for immediate testing. No downl
 | **CodeForces SFT** | `data/samples/codeforces_cpp_500_sft.jsonl` | 500 | SFT training |
 | **CodeForces Prompts** | `data/samples/codeforces_cpp_500_prompts.jsonl` | 500 | RAFT training |
 
+**Windows Systems Programming (Curriculum Learning):**
+
+| Dataset | File | Examples | Use For |
+|---------|------|----------|---------|
+| **Full RLVR** | `datasets/windows_curriculum/windows_systems_full_rlvr.jsonl` | 361 | RAFT with MSVC |
+| **Full SFT** | `datasets/windows_curriculum/windows_systems_full_sft.jsonl` | 361 | SFT training |
+| **Tier Order** | `datasets/windows_curriculum/curriculum_order_full.json` | - | Curriculum scheduling |
+
+This dataset covers Windows API programming across 4 difficulty tiers:
+- Tier 1 (84): Foundations - basic APIs, file I/O, registry
+- Tier 2 (128): Core APIs - processes, threads, memory, IPC
+- Tier 3 (72): Intermediate - PE parsing, security, services
+- Tier 4 (77): Advanced - native APIs, internals, evasion
+
+Requires Windows build server with MSVC for verification.
+
 **Quick test - Python with MBPP:**
 
 ```bash
