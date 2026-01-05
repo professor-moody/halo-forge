@@ -239,6 +239,87 @@ Or create manually:
 
 SFT (Supervised Fine-Tuning) creates a baseline before RAFT. While optional if using a pre-trained coder model, SFT is highly recommended for domain-specific training. It helps the model learn your specific code style, patterns, and requirements before RAFT refinement.
 
+### Example: Complete SFT Run with CodeForces
+
+Here's a complete example using CodeForces C++ data — a real competitive programming dataset:
+
+```bash
+# Step 1: Download CodeForces C++ dataset (~4000 examples)
+halo-forge data prepare \
+  --dataset codeforces_cpp \
+  --output data/codeforces_cpp.jsonl
+
+# Step 2: Run SFT training
+halo-forge sft train \
+  --data data/codeforces_cpp.jsonl \
+  --model Qwen/Qwen2.5-Coder-7B \
+  --output models/sft_codeforces \
+  --epochs 2
+
+# Step 3: Extract prompts for RAFT
+cat data/codeforces_cpp.jsonl | python3 -c "
+import json, sys
+for line in sys.stdin:
+    d = json.loads(line)
+    if 'prompt' in d:
+        print(json.dumps({'prompt': d['prompt'][:2000]}))
+" > data/codeforces_prompts.jsonl
+
+# Step 4: Run RAFT with GCC verification
+halo-forge raft train \
+  --checkpoint models/sft_codeforces/final_model \
+  --prompts data/codeforces_prompts.jsonl \
+  --verifier gcc \
+  --cycles 5 \
+  --output models/raft_codeforces
+```
+
+### Available Public Datasets
+
+| Dataset | Command | Language | Examples | Description |
+|---------|---------|----------|----------|-------------|
+| `codeforces_cpp` | `--dataset codeforces_cpp` | C++ | ~4000 | Competitive programming |
+| `codeforces_python` | `--dataset codeforces_python` | Python | ~1000 | Competitive programming |
+| `codeforces_rust` | `--dataset codeforces_rust` | Rust | ~500 | Competitive programming |
+| `mbpp` | `--dataset mbpp` | Python | ~500 | Basic programming |
+| `humaneval` | `--dataset humaneval` | Python | 164 | Evaluation benchmark |
+
+### Generate Custom Data with LLM
+
+For domain-specific training, generate examples using LLMs:
+
+```bash
+# Available topics
+halo-forge data generate --list
+
+# Generate Rust async examples (requires DEEPSEEK_API_KEY)
+export DEEPSEEK_API_KEY=your_key
+halo-forge data generate \
+  --topic rust_async \
+  --backend deepseek \
+  --output data/rust_async.jsonl
+
+# Generate C++ algorithms
+halo-forge data generate \
+  --topic cpp_algorithms \
+  --backend deepseek \
+  --output data/cpp_algo.jsonl
+
+# Generate with local Ollama (free, no API key)
+halo-forge data generate \
+  --topic python_testing \
+  --backend ollama \
+  --model codellama:13b \
+  --output data/python_tests.jsonl
+```
+
+| Topic | Language | What It Generates |
+|-------|----------|-------------------|
+| `rust_async` | Rust | Async/await with tokio |
+| `python_testing` | Python | pytest examples |
+| `cpp_algorithms` | C++ | Algorithm implementations |
+| `go_concurrency` | Go | Goroutines, channels |
+
 ### Basic SFT
 
 ```bash
