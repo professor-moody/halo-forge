@@ -1,0 +1,67 @@
+# =============================================================================
+# Production RAFT Configuration: Qwen2.5-Coder-3B
+# =============================================================================
+# Full production training configuration for demonstrating halo-forge capabilities.
+# Optimized for AMD Strix Halo (gfx1151) with 128GB unified memory.
+#
+# Estimated time: ~3 hours (6 cycles × ~25 min each)
+#
+# Usage:
+#   halo-forge raft train --config configs/production_3b.yaml
+# =============================================================================
+
+# Model configuration
+model:
+  name: Qwen/Qwen2.5-Coder-3B
+  trust_remote_code: true
+
+# Output configuration
+output_dir: models/production_3b_raft
+
+# Training prompts - using MBPP for Python code generation
+prompts: data/rlvr/mbpp_train_prompts.jsonl
+
+# RAFT parameters
+raft:
+  num_cycles: 6
+  samples_per_prompt: 8
+  reward_threshold: 0.5
+  keep_top_percent: 0.5
+
+# Generation settings
+generation:
+  max_new_tokens: 1024
+  temperature: 0.7
+  top_p: 0.95
+  batch_size: 8  # Higher batch for smaller model
+
+# Training settings (per cycle)
+training:
+  epochs: 1
+  batch_size: 4  # Can use larger batch for 3B
+  gradient_accumulation_steps: 8
+  learning_rate: 5e-5
+  warmup_steps: 10
+  max_seq_length: 2048
+  
+  # CRITICAL for Strix Halo
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# Hardware settings
+hardware:
+  bf16: true  # NOT 4-bit (was slower in our testing on Strix Halo)
+  gradient_checkpointing: true
+  attn_implementation: eager
+
+# Verifier: MBPP test-based verification
+verifier:
+  type: mbpp
+  timeout: 30
+
+# Logging
+logging:
+  log_level: INFO
+  save_every_cycle: true
+  benchmark_after_cycle: true
+

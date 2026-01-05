@@ -13,7 +13,7 @@ weight: 1
 | Problem | RLHF | RLVR |
 |---------|------|------|
 | Signal source | Human annotators | Compilers, tests, APIs |
-| Consistency | Varies by annotator | Perfectly consistent |
+| Consistency | Varies by annotator | Deterministic |
 | Scale | Expensive to scale | Unlimited |
 | Gaming | Can be manipulated | Cannot be fooled |
 | Latency | Days to weeks | Milliseconds |
@@ -56,16 +56,16 @@ For each cycle:
 3. **Stable training** — No reward hacking, no mode collapse
 4. **Memory efficient** — 1x model memory vs 2-4x for PPO
 
-### RAFT vs PPO vs GRPO
+### Algorithm Comparison
 
-| Method | Memory | Stability | Complexity | Quality |
-|--------|--------|-----------|------------|---------|
-| RAFT | 1x | High | Low | Good |
-| PPO | 4x | Medium | High | Good |
-| GRPO | 2x | Medium | Medium | Good |
-| DPO | 1x | High | Low | Medium |
+| Method | Memory | Stability | Complexity |
+|--------|--------|-----------|------------|
+| RAFT | 1x | Tends to be stable | Lower |
+| PPO | 4x | Requires tuning | Higher |
+| GRPO | 2x | Moderate | Moderate |
+| DPO | 1x | Tends to be stable | Lower |
 
-RAFT is ~10x faster than online RL methods on limited hardware.
+RAFT uses offline training (generate-verify-filter-train) rather than online RL updates.
 
 ## Graduated Rewards
 
@@ -87,7 +87,7 @@ elif not runs:
 elif wrong_output:
     reward = 0.7      # Runs but incorrect
 else:
-    reward = 1.0      # Perfect
+    reward = 1.0      # Full reward
 ```
 
 This helps training because:
@@ -147,9 +147,9 @@ Empirical observations:
 
 ## Open Questions
 
-1. **Optimal cycle count** — When to stop? Current heuristic: monitor for degradation
+1. **Cycle count** — When to stop? Current heuristic: monitor for degradation
 2. **Prompt diversity** — How much variation needed to prevent overfitting?
-3. **Reward shaping** — Best reward function for different domains?
+3. **Reward shaping** — Suitable reward function for different domains?
 4. **Transfer** — Do RAFT improvements transfer across tasks?
 
 ## Contributions

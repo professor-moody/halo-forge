@@ -72,6 +72,7 @@ website/.backup/
 # Experimental/internal docs
 experimental/
 .experimental/
+.internal_docs/
 
 # Build logs
 toolbox/*.log

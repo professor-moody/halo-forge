@@ -50,8 +50,8 @@ data:
 # LoRA (Low-Rank Adaptation) enables memory-efficient fine-tuning
 # by training small adapter weights instead of full model weights.
 #
-# IMPORTANT: BF16 LoRA is optimal for Strix Halo.
-# 4-bit quantization (QLoRA) is 2x SLOWER due to:
+# IMPORTANT: BF16 LoRA is recommended for Strix Halo.
+# 4-bit quantization (QLoRA) was slower in our testing due to:
 #   - Compute-bound workload (GPU at 96-99% utilization)
 #   - Dequantization overhead with no memory benefit
 #   - 128GB unified memory means you're never VRAM-limited
@@ -135,11 +135,11 @@ training:
   
   # Gradient checkpointing: Trade compute for memory
   # Recomputes activations during backward pass instead of storing them
-  # Essential for 7B+ models
+  # Recommended for 7B+ models
   gradient_checkpointing: true
   
   # Use BF16 precision (16-bit brain floating point)
-  # Optimal for Strix Halo - do NOT use 4-bit quantization
+  # Recommended for Strix Halo - do NOT use 4-bit quantization
   bf16: true
   
   # -----------------------------------------------------------------------------

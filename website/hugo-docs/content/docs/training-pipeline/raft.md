@@ -94,7 +94,7 @@ Controls generation diversity.
 
 ## Sample Filtering Strategy
 
-RAFT generates many samples and filters them before training. The filtering strategy significantly impacts what the model learns.
+RAFT generates many samples and filters them before training. The filtering strategy affects what the model learns.
 
 ### How Filtering Works
 
@@ -118,7 +118,7 @@ halo-forge raft train --keep-percent 0.5 ...  # Keep top 50%
 
 | Value | Effect | Use Case |
 |-------|--------|----------|
-| 0.2 | Very selective (top 20%) | Large datasets, want only best |
+| 0.2 | Very selective (top 20%) | Large datasets, selective filtering |
 | 0.5 | Balanced (top 50%) | Default, works well generally |
 | 0.8 | Inclusive (top 80%) | Small datasets, need more data |
 | 1.0 | Keep all passing | Very small datasets |
@@ -136,7 +136,7 @@ Keep top 50%: 600 samples → Training set
 ```
 Generated: 2,992 samples
 Pass threshold (≥0.5): 1,200 samples
-Keep top 20%: 240 samples → Training on only the best
+Keep top 20%: 240 samples → Training on top performers
 ```
 
 **Example 3: Inclusive filtering (30% threshold, 100% keep)**
@@ -206,7 +206,7 @@ models/raft/
 │   └── stats.json         # Verification statistics
 ├── cycle_2/
 │   └── ...
-├── cycle_3_final/         # Best performing cycle
+├── cycle_3_final/         # Cycle 3 checkpoint
 └── training_log.json
 ```
 
@@ -252,7 +252,7 @@ Cycle 7: 35.2% compile rate  # Stop and use cycle 6
 
 - **Diminishing returns**: < 2% improvement per cycle
 - **Degradation**: Performance drops
-- **Typically**: 5-6 cycles is optimal
+- **Observation**: In our testing, 5-6 cycles often worked well
 
 If you see degradation, consider [learning rate decay](/docs/background/learning-rates/).
 

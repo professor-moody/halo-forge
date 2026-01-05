@@ -5,10 +5,19 @@ Complete guide for building and using the halo-forge toolbox on AMD Strix Halo.
 ## Prerequisites
 
 - **Hardware**: AMD Strix Halo with 128GB unified memory (gfx1151)
-- **OS**: Fedora 42+ with toolbox/podman installed
+- **OS**: Fedora 42+ with toolbox/podman, **OR** Ubuntu 22.04+ with Docker
 - **Kernel**: 6.16+ recommended (eliminates need for kernel parameters)
 - **Disk Space**: ~25GB for build, ~50GB for models
 - **Network**: Stable internet for downloading ROCm nightlies (~5GB)
+
+## Choose Your Platform
+
+| Platform | Container | Build Script | Status |
+|----------|-----------|--------------|--------|
+| **Fedora** | podman toolbox | `build.sh` | **Primary supported platform** |
+| Ubuntu | Docker | `build-ubuntu.sh` | Experimental |
+
+> **Note**: Ubuntu/Docker support is experimental and less tested than Fedora. Use the Fedora toolbox for production training runs. Reference: [kyuz0/amd-strix-halo-llm-finetuning](https://github.com/kyuz0/amd-strix-halo-llm-finetuning)
 
 ### Kernel Parameters (if kernel < 6.16)
 
@@ -24,7 +33,7 @@ sudo grub2-mkconfig -o /boot/grub2/grub.cfg
 sudo reboot
 ```
 
-## Quick Start
+## Quick Start (Fedora/podman)
 
 ```bash
 # 1. Build the toolbox image
@@ -46,6 +55,72 @@ pip install -e .
 
 # 5. Run smoke test
 halo-forge test --level smoke
+```
+
+## Quick Start (Ubuntu/Docker) — EXPERIMENTAL
+
+> **Warning**: Ubuntu/Docker support is experimental. Use Fedora toolbox for production.
+
+```bash
+# 1. Build the Docker image
+cd toolbox
+chmod +x build-ubuntu.sh
+./build-ubuntu.sh --no-cache
+
+# 2. (If GPU not visible) Add udev rules first
+sudo tee /etc/udev/rules.d/99-amd-kfd.rules >/dev/null <<'EOF'
+SUBSYSTEM=="kfd", GROUP="render", MODE="0666"
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", GROUP="render", MODE="0666"
+EOF
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# 3. Run the container with GPU access
+docker run -it --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  -v ~/projects:/workspace \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  halo-forge:ubuntu
+
+# 4. Inside container: Install halo-forge package
+cd /workspace/halo-forge
+pip install -e .
+
+# 5. Run smoke test
+halo-forge test --level smoke
+```
+
+### Docker Run Options
+
+```bash
+# Basic run with GPU
+docker run -it --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  -v ~/projects:/workspace \
+  halo-forge:ubuntu
+
+# With user mapping (avoids root file ownership)
+docker run -it --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  -v ~/projects:/workspace \
+  -u $(id -u):$(id -g) \
+  halo-forge:ubuntu
+
+# With HuggingFace cache persistence
+docker run -it --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  -v ~/projects:/workspace \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  halo-forge:ubuntu
+
+# Named container (can stop/start later)
+docker run -it --name halo-forge-dev \
+  --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  -v ~/projects:/workspace \
+  halo-forge:ubuntu
+
+# Resume named container
+docker start -ai halo-forge-dev
 ```
 
 ## Build Details
@@ -141,7 +216,7 @@ All checks passed! Environment is ready for training.
 ```python
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.bfloat16,  # Optimal for Strix Halo
+    torch_dtype=torch.bfloat16,  # Recommended for Strix Halo
     device_map="auto",
     attn_implementation="eager"  # Or flash_attention_2
 )
@@ -159,7 +234,7 @@ training:
 
 ### Memory Configuration
 
-The Dockerfile sets optimal memory allocation:
+The Dockerfile sets recommended memory allocation:
 
 ```bash
 PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"
@@ -263,8 +338,10 @@ pip install -e .
 
 ```
 toolbox/
-├── Dockerfile           # Main container definition
-├── build.sh            # Build script with options
+├── Dockerfile           # Fedora container definition (for podman toolbox)
+├── Dockerfile.ubuntu    # Ubuntu container definition (for Docker)
+├── build.sh            # Fedora/podman build script
+├── build-ubuntu.sh     # Ubuntu/Docker build script
 ├── verify.sh           # Post-build verification
 ├── TOOLBOX_SETUP.md    # This file
 └── scripts/

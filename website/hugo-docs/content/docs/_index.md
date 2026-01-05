@@ -15,9 +15,9 @@ halo-forge is an **RLVR (Reinforcement Learning from Verifiable Rewards)** frame
 | RLHF | Expensive human labeling, inconsistent judgments |
 | Self-evaluation | Models hallucinate correctness, signals can be gamed |
 
-### The Solution
+### The Approach
 
-A compiler provides a **perfect reward signal** — unambiguous, deterministic feedback about code correctness that cannot be gamed.
+A compiler provides **deterministic feedback** — objective, reproducible results about code correctness.
 
 ## Architecture
 
@@ -32,18 +32,18 @@ A compiler provides a **perfect reward signal** — unambiguous, deterministic f
 3. **RAFT** — Iterative verification loop: generate → verify → filter → train
 4. **Benchmark** — Evaluate with pass@k metrics
 
-## Results
+## Example Results
 
-Production training on Qwen2.5-Coder-7B with 569 C/C++ prompts:
+Results from test runs on Qwen2.5-Coder-7B with 569 C/C++ prompts. Your results will vary based on model, dataset, hardware, and configuration.
 
 | Stage | Compile Rate | pass@1 |
 |-------|-------------|--------|
 | SFT Baseline | 15.2% | 18.7% |
 | Cycle 1 | 28.4% | 35.2% |
 | Cycle 3 | 39.7% | 48.2% |
-| Cycle 6 (Peak) | 46.7% | 55.3% |
+| Cycle 6 | 46.7% | 55.3% |
 
-**3x improvement** over 6 RAFT cycles.
+Improvements were observed over 6 RAFT cycles in our testing.
 
 ## Quick Navigation
 
@@ -53,6 +53,7 @@ Production training on Qwen2.5-Coder-7B with 569 C/C++ prompts:
 - [Hardware Notes](/docs/getting-started/hardware/) — Strix Halo configuration
 
 ### Training Pipeline
+- **[How to Train](/docs/training-pipeline/how-to-train/)** — Complete step-by-step guide (start here!)
 - [Full Pipeline](/docs/training-pipeline/full-pipeline/) — Complete training workflow
 - [Data Generation](/docs/training-pipeline/data-generation/) — Prepare training data
 - [SFT Training](/docs/training-pipeline/sft/) — Supervised fine-tuning
@@ -72,7 +73,6 @@ Production training on Qwen2.5-Coder-7B with 569 C/C++ prompts:
 
 ### Background
 - [Theory & Research](/docs/background/theory/) — Research foundations
-- [RAFT vs PPO vs GRPO](/docs/background/raft-vs-ppo/) — Algorithm comparison
 - [Graduated Rewards](/docs/background/graduated-rewards/) — Partial credit system
 - [Learning Rate Strategies](/docs/background/learning-rates/) — LR recommendations
 

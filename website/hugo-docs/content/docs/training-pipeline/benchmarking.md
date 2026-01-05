@@ -108,7 +108,7 @@ Quick validation benchmarks (16 prompts, 2 cycles):
 | 1.5B | 67.2% | 67.2% | 52 min |
 | 3B | 97.7% | 99.2% | 79 min |
 
-> **Note**: Demo benchmarks validate the pipeline works, not RAFT's full potential. Production training shows 2-3x improvements.
+> **Note**: Demo benchmarks validate the pipeline works. Results from extended training runs will vary based on model, dataset, and configuration.
 
 ## HumanEval Validation
 

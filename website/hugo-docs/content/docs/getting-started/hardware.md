@@ -14,7 +14,7 @@ These settings are **required** for stable training:
 training:
   dataloader_num_workers: 0    # MUST be 0
   dataloader_pin_memory: false # MUST be false
-  bf16: true                   # Optimal precision
+  bf16: true                   # Recommended precision
 ```
 
 ### Why These Matter
@@ -26,7 +26,7 @@ Strix Halo uses unified memory where CPU and GPU share the same RAM. Standard Py
 
 ## Use BF16, Not 4-bit
 
-**BF16 is optimal.** 4-bit quantization is actually **2x slower** on Strix Halo due to compute-bound workload and dequantization overhead.
+**BF16 is recommended.** In our testing, 4-bit quantization was slower on Strix Halo due to compute-bound workload and dequantization overhead.
 
 ```yaml
 bf16: true

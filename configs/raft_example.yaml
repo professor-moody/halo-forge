@@ -119,11 +119,11 @@ training:
 # -----------------------------------------------------------------------------
 hardware:
   # Use BF16 precision
-  # Optimal for Strix Halo - do NOT use 4-bit quantization
+  # Recommended for Strix Halo - do NOT use 4-bit quantization
   bf16: true
   
   # Enable gradient checkpointing
-  # Essential for 7B+ models
+  # Recommended for 7B+ models
   gradient_checkpointing: true
   
   # Attention implementation
