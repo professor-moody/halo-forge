@@ -51,9 +51,16 @@ logs/
 *.pth
 *.safetensors
 
-# Data
+# Data (ignore downloaded/generated data, keep samples)
 data/
 *.jsonl
+
+# But keep sample data that ships with repo
+!data/rlvr/
+!data/rlvr/*.jsonl
+!data/rlvr/*.json
+!data/samples/
+!data/samples/*.jsonl
 
 # OS
 .DS_Store

@@ -14,6 +14,7 @@ Complete reference for all halo-forge CLI commands and options.
 | `halo-forge info` | Show system information |
 | `halo-forge data prepare` | Download public datasets |
 | `halo-forge data generate` | Generate data with LLM |
+| `halo-forge data validate` | Validate dataset format |
 | `halo-forge sft train` | Run supervised fine-tuning |
 | `halo-forge raft train` | Run RAFT training |
 | `halo-forge benchmark run` | Evaluate model performance |
@@ -219,6 +220,72 @@ halo-forge data generate \
   --backend anthropic \
   --model claude-sonnet-4-20250514 \
   --output data/cpp.jsonl
+```
+
+---
+
+## halo-forge data validate
+
+Validate dataset format and get statistics before training.
+
+```bash
+halo-forge data validate <file> [OPTIONS]
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `file` | path | Required | Path to JSONL file to validate |
+| `--preview`, `-p` | flag | false | Show preview of examples |
+
+### Supported Formats
+
+| Format | Fields | Use Case |
+|--------|--------|----------|
+| `sft` | `{"text": "..."}` | SFT training (pre-formatted) |
+| `prompt_response` | `{"prompt": "...", "response": "..."}` | Raw data for formatting |
+| `prompts_only` | `{"prompt": "..."}` | RAFT training prompts |
+| `messages` | `{"messages": [...]}` | Chat format |
+
+### Examples
+
+```bash
+# Basic validation
+halo-forge data validate data/train.jsonl
+
+# With preview of first 3 examples
+halo-forge data validate data/train.jsonl --preview
+```
+
+### Sample Output
+
+```
+============================================================
+DATASET VALIDATION REPORT
+============================================================
+
+Status: ✓ VALID
+Format: sft
+
+Examples:
+  Total:   500
+  Valid:   500
+  Invalid: 0
+
+Fields Found:
+  text:     500
+  prompt:   0
+  response: 0
+  messages: 0
+
+Length Statistics:
+  Avg prompt:   1550 chars
+  Avg response: 1446 chars
+  Max prompt:   3602 chars
+  Max response: 6653 chars
+
+============================================================
 ```
 
 ---

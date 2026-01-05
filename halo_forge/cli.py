@@ -24,6 +24,16 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 
+def cmd_data_validate(args):
+    """Validate dataset format."""
+    from halo_forge.data.validator import validate_dataset
+    
+    result = validate_dataset(args.file, preview=args.preview)
+    
+    if not result.valid:
+        sys.exit(1)
+
+
 def cmd_data_prepare(args):
     """Prepare dataset from public sources."""
     from halo_forge.data.public_datasets import (
@@ -787,6 +797,11 @@ def main():
     generate_parser.add_argument('--template', default='qwen', help='Chat template')
     generate_parser.add_argument('--list', action='store_true', help='List available topics')
     
+    # data validate
+    validate_parser = data_subparsers.add_parser('validate', help='Validate dataset format')
+    validate_parser.add_argument('file', help='Path to JSONL file to validate')
+    validate_parser.add_argument('--preview', '-p', action='store_true', help='Show preview of examples')
+    
     # sft command
     sft_parser = subparsers.add_parser('sft', help='SFT training')
     sft_subparsers = sft_parser.add_subparsers(dest='sft_command', required=True)
@@ -873,6 +888,8 @@ def main():
             cmd_data_prepare(args)
         elif args.data_command == 'generate':
             cmd_data_generate(args)
+        elif args.data_command == 'validate':
+            cmd_data_validate(args)
     elif args.command == 'sft':
         if args.sft_command == 'train':
             cmd_sft_train(args)

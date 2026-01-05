@@ -1,0 +1,374 @@
+{"task_id": 601, "prompt": "Write a function to find the longest chain which can be formed from the given set of pairs.", "entry_point": "max_chain_length"}
+{"task_id": 602, "prompt": "Write a python function to find the first repeated character in a given string.", "entry_point": "first_repeated_char"}
+{"task_id": 603, "prompt": "Write a function to get a lucid number smaller than or equal to n.", "entry_point": "get_ludic"}
+{"task_id": 604, "prompt": "Write a function to reverse words in a given string.", "entry_point": "reverse_words"}
+{"task_id": 605, "prompt": "Write a function to check if the given integer is a prime number.", "entry_point": "prime_num"}
+{"task_id": 606, "prompt": "Write a function to convert degrees to radians.", "entry_point": "radian_degree"}
+{"task_id": 607, "prompt": "Write a function to search a literals string in a string and also find the location within the original string where the pattern occurs by using regex.", "entry_point": "find_literals"}
+{"task_id": 608, "prompt": "Write a python function to find nth bell number.", "entry_point": "bell_Number"}
+{"task_id": 609, "prompt": "Write a python function to find minimum possible value for the given periodic function.", "entry_point": "floor_Min"}
+{"task_id": 610, "prompt": "Write a python function to remove the k'th element from a given list.", "entry_point": "remove_kth_element"}
+{"task_id": 611, "prompt": "Write a function to find the maximum of nth column from the given tuple list.", "entry_point": "max_of_nth"}
+{"task_id": 612, "prompt": "Write a python function to merge the first and last elements separately in a list of lists.", "entry_point": "merge"}
+{"task_id": 613, "prompt": "Write a function to find the maximum value in record list as tuple attribute in the given tuple list.", "entry_point": "maximum_value"}
+{"task_id": 614, "prompt": "Write a function to find the cumulative sum of all the values that are present in the given tuple list.", "entry_point": "cummulative_sum"}
+{"task_id": 615, "prompt": "Write a function to find average value of the numbers in a given tuple of tuples.", "entry_point": "average_tuple"}
+{"task_id": 616, "prompt": "Write a function to perfom the modulo of tuple elements in the given two tuples.", "entry_point": "tuple_modulo"}
+{"task_id": 617, "prompt": "Write a function to check for the number of jumps required of given length to reach a point of form (d, 0) from origin in a 2d plane.", "entry_point": "min_Jumps"}
+{"task_id": 618, "prompt": "Write a function to divide two lists using map and lambda function.", "entry_point": "div_list"}
+{"task_id": 619, "prompt": "Write a function to move all the numbers in it to the given string.", "entry_point": "move_num"}
+{"task_id": 620, "prompt": "Write a function to find the largest subset where each pair is divisible.", "entry_point": "largest_subset"}
+{"task_id": 621, "prompt": "Write a function to increment the numeric values in the given strings by k.", "entry_point": "increment_numerics"}
+{"task_id": 622, "prompt": "Write a function to find the median of two sorted arrays of same size.", "entry_point": "get_median"}
+{"task_id": 623, "prompt": "Write a function to find the n-th power of individual elements in a list using lambda function.", "entry_point": "nth_nums"}
+{"task_id": 624, "prompt": "Write a python function to convert the given string to upper case.", "entry_point": "is_upper"}
+{"task_id": 625, "prompt": "Write a python function to interchange first and last elements in a given list.", "entry_point": "swap_List"}
+{"task_id": 626, "prompt": "Write a python function to find the largest triangle that can be inscribed in the semicircle.", "entry_point": "triangle_area"}
+{"task_id": 627, "prompt": "Write a python function to find the smallest missing number from the given array.", "entry_point": "find_First_Missing"}
+{"task_id": 628, "prompt": "Write a function to replace all spaces in the given string with character * list item * list item * list item * list item '%20'.", "entry_point": "replace_spaces"}
+{"task_id": 629, "prompt": "Write a python function to find even numbers from a mixed list.", "entry_point": "Split"}
+{"task_id": 630, "prompt": "Write a function to extract all the adjacent coordinates of the given coordinate tuple.", "entry_point": "adjac"}
+{"task_id": 631, "prompt": "Write a function to replace whitespaces with an underscore and vice versa in a given string by using regex.", "entry_point": "replace_spaces"}
+{"task_id": 632, "prompt": "Write a python function to move all zeroes to the end of the given list.", "entry_point": "move_zero"}
+{"task_id": 633, "prompt": "Write a python function to find the sum of xor of all pairs of numbers in the given array.", "entry_point": "pair_OR_Sum"}
+{"task_id": 634, "prompt": "Write a python function to find the sum of fourth power of first n even natural numbers.", "entry_point": "even_Power_Sum"}
+{"task_id": 635, "prompt": "Write a function to push all values into a heap and then pop off the smallest values one at a time.", "entry_point": "heap_sort"}
+{"task_id": 636, "prompt": "Write a python function to check if roots of a quadratic equation are reciprocal of each other or not.", "entry_point": "Check_Solution"}
+{"task_id": 637, "prompt": "Write a function to check whether the given amount has no profit and no loss", "entry_point": "noprofit_noloss"}
+{"task_id": 638, "prompt": "Write a function to calculate wind chill index.", "entry_point": "wind_chill"}
+{"task_id": 639, "prompt": "Write a function to sum the length of the names of a given list of names after removing the names that start with a lowercase letter.", "entry_point": "sample_nam"}
+{"task_id": 640, "prompt": "Write a function to remove the parenthesis area in a string.", "entry_point": "remove_parenthesis"}
+{"task_id": 641, "prompt": "Write a function to find the nth nonagonal number.", "entry_point": "is_nonagonal"}
+{"task_id": 642, "prompt": "Write a function to remove similar rows from the given tuple matrix.", "entry_point": "remove_similar_row"}
+{"task_id": 643, "prompt": "Write a function that matches a word containing 'z', not at the start or end of the word.", "entry_point": "text_match_wordz_middle"}
+{"task_id": 644, "prompt": "Write a python function to reverse an array upto a given position.", "entry_point": "reverse_Array_Upto_K"}
+{"task_id": 645, "prompt": "Write a function to find the product of it\u2019s kth index in the given tuples.", "entry_point": "get_product"}
+{"task_id": 646, "prompt": "Write a python function to count number of cubes of size k in a cube of size n.", "entry_point": "No_of_cubes"}
+{"task_id": 647, "prompt": "Write a function to split a string at uppercase letters.", "entry_point": "split_upperstring"}
+{"task_id": 648, "prompt": "Write a function to exchange the position of every n-th value with (n+1)th value and (n+1)th value with n-th value in a given list.", "entry_point": "exchange_elements"}
+{"task_id": 649, "prompt": "Write a python function to calculate the sum of the numbers in a list between the indices of a specified range.", "entry_point": "sum_Range_list"}
+{"task_id": 650, "prompt": "Write a python function to check whether the given two arrays are equal or not.", "entry_point": "are_Equal"}
+{"task_id": 651, "prompt": "Write a function to check if one tuple is a subset of another tuple.", "entry_point": "check_subset"}
+{"task_id": 652, "prompt": "Write a function to flatten the given tuple matrix into the tuple list with each tuple representing each column.", "entry_point": "matrix_to_list"}
+{"task_id": 653, "prompt": "Write a function to group a sequence of key-value pairs into a dictionary of lists using collections module.", "entry_point": "grouping_dictionary"}
+{"task_id": 654, "prompt": "Write a function to find the perimeter of a rectangle.", "entry_point": "rectangle_perimeter"}
+{"task_id": 655, "prompt": "Write a python function to find the sum of fifth power of n natural numbers.", "entry_point": "fifth_Power_Sum"}
+{"task_id": 656, "prompt": "Write a python function to find the minimum sum of absolute differences of two arrays.", "entry_point": "find_Min_Sum"}
+{"task_id": 657, "prompt": "Write a python function to find the first digit in factorial of a given number.", "entry_point": "first_Digit"}
+{"task_id": 658, "prompt": "Write a function to find the item with maximum occurrences in a given list.", "entry_point": "max_occurrences"}
+{"task_id": 659, "prompt": "Write a python function to print duplicants from a list of integers.", "entry_point": "Repeat"}
+{"task_id": 660, "prompt": "Write a python function to choose points from two ranges such that no point lies in both the ranges.", "entry_point": "find_Points"}
+{"task_id": 661, "prompt": "Write a function to find the maximum sum that can be formed which has no three consecutive elements present.", "entry_point": "max_sum_of_three_consecutive"}
+{"task_id": 662, "prompt": "Write a function to sort a list in a dictionary.", "entry_point": "sorted_dict"}
+{"task_id": 663, "prompt": "Write a function to find the largest possible value of k such that k modulo x is y.", "entry_point": "find_max_val"}
+{"task_id": 664, "prompt": "Write a python function to find the average of even numbers till a given even number.", "entry_point": "average_Even"}
+{"task_id": 665, "prompt": "Write a python function to shift first element to the end of given list.", "entry_point": "move_last"}
+{"task_id": 666, "prompt": "Write a function to count occurrence of a character in a string.", "entry_point": "count_char"}
+{"task_id": 667, "prompt": "Write a python function to count number of vowels in the string.", "entry_point": "Check_Vow"}
+{"task_id": 668, "prompt": "Write a python function to replace multiple occurence of character by single.", "entry_point": "replace"}
+{"task_id": 669, "prompt": "Write a function to check whether the given ip address is valid or not using regex.", "entry_point": "check_IP"}
+{"task_id": 670, "prompt": "Write a python function to check whether a sequence of numbers has a decreasing trend or not.", "entry_point": "decreasing_trend"}
+{"task_id": 671, "prompt": "Write a python function to set the right most unset bit.", "entry_point": "get_Pos_Of_Right_most_Set_Bit"}
+{"task_id": 672, "prompt": "Write a function to find maximum of three numbers.", "entry_point": "max_of_three"}
+{"task_id": 673, "prompt": "Write a python function to convert a list of multiple integers into a single integer.", "entry_point": "convert"}
+{"task_id": 674, "prompt": "Write a function to remove duplicate words from a given string using collections module.", "entry_point": "remove_duplicate"}
+{"task_id": 675, "prompt": "Write a function to add two integers. however, if the sum is between the given range it will return 20.", "entry_point": "sum_nums"}
+{"task_id": 676, "prompt": "Write a function to remove everything except alphanumeric characters from the given string by using regex.", "entry_point": "remove_extra_char"}
+{"task_id": 677, "prompt": "Write a function to check if the triangle is valid or not.", "entry_point": "validity_triangle"}
+{"task_id": 678, "prompt": "Write a python function to remove spaces from a given string.", "entry_point": "remove_spaces"}
+{"task_id": 679, "prompt": "Write a function to access dictionary key\u2019s element by index.", "entry_point": "access_key"}
+{"task_id": 680, "prompt": "Write a python function to check whether a sequence of numbers has an increasing trend or not.", "entry_point": "increasing_trend"}
+{"task_id": 681, "prompt": "Write a python function to find the smallest prime divisor of a number.", "entry_point": "smallest_Divisor"}
+{"task_id": 682, "prompt": "Write a function to multiply two lists using map and lambda function.", "entry_point": "mul_list"}
+{"task_id": 683, "prompt": "Write a python function to check whether the given number can be represented by sum of two squares or not.", "entry_point": "sum_Square"}
+{"task_id": 684, "prompt": "Write a python function to count occurences of a character in a repeated string.", "entry_point": "count_Char"}
+{"task_id": 685, "prompt": "Write a python function to find sum of prime numbers between 1 to n.", "entry_point": "sum_Of_Primes"}
+{"task_id": 686, "prompt": "Write a function to find the frequency of each element in the given list.", "entry_point": "freq_element"}
+{"task_id": 687, "prompt": "Write a function to find the greatest common divisor (gcd) of two integers by using recursion.", "entry_point": "recur_gcd"}
+{"task_id": 688, "prompt": "Write a function to get the length of a complex number.", "entry_point": "len_complex"}
+{"task_id": 689, "prompt": "## write a function to find the minimum number of jumps to reach the end of the array for the given array of integers where each element represents the max number of steps that can be made forward from that element. > indented block > indented block", "entry_point": "min_jumps"}
+{"task_id": 690, "prompt": "Write a function to multiply consecutive numbers of a given list.", "entry_point": "mul_consecutive_nums"}
+{"task_id": 691, "prompt": "Write a function to group the 1st elements on the basis of 2nd elements in the given tuple list.", "entry_point": "group_element"}
+{"task_id": 692, "prompt": "Write a python function to find the last two digits in factorial of a given number.", "entry_point": "last_Two_Digits"}
+{"task_id": 693, "prompt": "Write a function to remove multiple spaces in a string by using regex.", "entry_point": "remove_multiple_spaces"}
+{"task_id": 694, "prompt": "Write a function to extract unique values from the given dictionary values.", "entry_point": "extract_unique"}
+{"task_id": 695, "prompt": "Write a function to check if each element of the second tuple is greater than its corresponding index in the first tuple.", "entry_point": "check_greater"}
+{"task_id": 696, "prompt": "Write a function to zip two given lists of lists.", "entry_point": "zip_list"}
+{"task_id": 697, "prompt": "Write a function to find number of even elements in the given list using lambda function.", "entry_point": "count_even"}
+{"task_id": 698, "prompt": "Write a function to sort dictionary items by tuple product of keys for the given dictionary with tuple keys.", "entry_point": "sort_dict_item"}
+{"task_id": 699, "prompt": "Write a python function to find the minimum number of swaps required to convert one binary string to another.", "entry_point": "min_Swaps"}
+{"task_id": 700, "prompt": "Write a function to count the number of elements in a list which are within a specific range.", "entry_point": "count_range_in_list"}
+{"task_id": 701, "prompt": "Write a function to find the equilibrium index of the given array.", "entry_point": "equilibrium_index"}
+{"task_id": 702, "prompt": "Write a function to find the minimum number of elements that should be removed such that amax-amin<=k.", "entry_point": "find_ind"}
+{"task_id": 703, "prompt": "Write a function to check whether the given key is present in the dictionary or not.", "entry_point": "is_key_present"}
+{"task_id": 704, "prompt": "Write a function to calculate the harmonic sum of n-1.", "entry_point": "harmonic_sum"}
+{"task_id": 705, "prompt": "Write a function to sort a list of lists by length and value.", "entry_point": "sort_sublists"}
+{"task_id": 706, "prompt": "Write a function to find whether an array is subset of another array.", "entry_point": "is_subset"}
+{"task_id": 707, "prompt": "Write a python function to count the total set bits from 1 to n.", "entry_point": "count_Set_Bits"}
+{"task_id": 708, "prompt": "Write a python function to convert a string to a list.", "entry_point": "Convert"}
+{"task_id": 709, "prompt": "Write a function to count unique keys for each value present in the tuple.", "entry_point": "get_unique"}
+{"task_id": 710, "prompt": "Write a function to access the initial and last data of the given tuple record.", "entry_point": "front_and_rear"}
+{"task_id": 711, "prompt": "Write a python function to check whether the product of digits of a number at even and odd places is equal or not.", "entry_point": "product_Equal"}
+{"task_id": 712, "prompt": "Write a function to remove duplicates from a list of lists.", "entry_point": "remove_duplicate"}
+{"task_id": 713, "prompt": "Write a function to check if the given tuple contains all valid values or not.", "entry_point": "check_valid"}
+{"task_id": 714, "prompt": "Write a python function to count the number of distinct power of prime factor of given number.", "entry_point": "count_Fac"}
+{"task_id": 715, "prompt": "Write a function to convert the given string of integers into a tuple.", "entry_point": "str_to_tuple"}
+{"task_id": 716, "prompt": "Write a function to find the perimeter of a rombus.", "entry_point": "rombus_perimeter"}
+{"task_id": 717, "prompt": "Write a function to calculate the standard deviation.", "entry_point": "sd_calc"}
+{"task_id": 718, "prompt": "Write a function to create a list taking alternate elements from another given list.", "entry_point": "alternate_elements"}
+{"task_id": 719, "prompt": "Write a function that matches a string that has an a followed by zero or more b's.", "entry_point": "text_match"}
+{"task_id": 720, "prompt": "Write a function to add a dictionary to the tuple.", "entry_point": "add_dict_to_tuple"}
+{"task_id": 721, "prompt": "Write a function to find a path with the maximum average over all existing paths for the given square matrix of size n*n.", "entry_point": "maxAverageOfPath"}
+{"task_id": 722, "prompt": "Write a function to filter the height and width of students which are stored in a dictionary.", "entry_point": "filter_data"}
+{"task_id": 723, "prompt": "Write a function to count the same pair in two given lists using map function.", "entry_point": "count_same_pair"}
+{"task_id": 724, "prompt": "Write a function to calculate the sum of all digits of the base to the specified power.", "entry_point": "power_base_sum"}
+{"task_id": 725, "prompt": "Write a function to extract values between quotation marks of the given string by using regex.", "entry_point": "extract_quotation"}
+{"task_id": 726, "prompt": "Write a function to multiply the adjacent elements of the given tuple.", "entry_point": "multiply_elements"}
+{"task_id": 727, "prompt": "Write a function to remove all characters except letters and numbers using regex", "entry_point": "remove_char"}
+{"task_id": 728, "prompt": "Write a function to sum elements in two lists.", "entry_point": "sum_list"}
+{"task_id": 729, "prompt": "Write a function to add two lists using map and lambda function.", "entry_point": "add_list"}
+{"task_id": 730, "prompt": "Write a function to remove consecutive duplicates of a given list.", "entry_point": "consecutive_duplicates"}
+{"task_id": 731, "prompt": "Write a function to find the lateral surface area of a cone.", "entry_point": "lateralsurface_cone"}
+{"task_id": 732, "prompt": "Write a function to replace all occurrences of spaces, commas, or dots with a colon.", "entry_point": "replace_specialchar"}
+{"task_id": 733, "prompt": "Write a function to find the index of the first occurrence of a given number in a sorted array.", "entry_point": "find_first_occurrence"}
+{"task_id": 734, "prompt": "Write a python function to find sum of products of all possible subarrays.", "entry_point": "sum_Of_Subarray_Prod"}
+{"task_id": 735, "prompt": "Write a python function to toggle bits of the number except the first and the last bit.", "entry_point": "set_middle_bits"}
+{"task_id": 736, "prompt": "Write a function to locate the left insertion point for a specified value in sorted order.", "entry_point": "left_insertion"}
+{"task_id": 737, "prompt": "Write a function to check whether the given string is starting with a vowel or not using regex.", "entry_point": "check_str"}
+{"task_id": 738, "prompt": "Write a function to calculate the geometric sum of n-1.", "entry_point": "geometric_sum"}
+{"task_id": 739, "prompt": "Write a python function to find the index of smallest triangular number with n digits.", "entry_point": "find_Index"}
+{"task_id": 740, "prompt": "Write a function to convert the given tuple to a key-value dictionary using adjacent elements.", "entry_point": "tuple_to_dict"}
+{"task_id": 741, "prompt": "Write a python function to check whether all the characters are same or not.", "entry_point": "all_Characters_Same"}
+{"task_id": 742, "prompt": "Write a function to caluclate the area of a tetrahedron.", "entry_point": "area_tetrahedron"}
+{"task_id": 743, "prompt": "Write a function to rotate a given list by specified number of items to the right direction.", "entry_point": "rotate_right"}
+{"task_id": 744, "prompt": "Write a function to check if the given tuple has any none value or not.", "entry_point": "check_none"}
+{"task_id": 745, "prompt": "Write a function to find numbers within a given range where every number is divisible by every digit it contains.", "entry_point": "divisible_by_digits"}
+{"task_id": 746, "prompt": "Write a function to find area of a sector.", "entry_point": "sector_area"}
+{"task_id": 747, "prompt": "Write a function to find the longest common subsequence for the given three string sequence.", "entry_point": "lcs_of_three"}
+{"task_id": 748, "prompt": "Write a function to put spaces between words starting with capital letters in a given string by using regex.", "entry_point": "capital_words_spaces"}
+{"task_id": 749, "prompt": "Write a function to sort a given list of strings of numbers numerically.", "entry_point": "sort_numeric_strings"}
+{"task_id": 750, "prompt": "Write a function to add the given tuple to the given list.", "entry_point": "add_tuple"}
+{"task_id": 751, "prompt": "Write a function to check if the given array represents min heap or not.", "entry_point": "check_min_heap"}
+{"task_id": 752, "prompt": "Write a function to find the nth jacobsthal number.", "entry_point": "jacobsthal_num"}
+{"task_id": 753, "prompt": "Write a function to find minimum k records from tuple list.", "entry_point": "min_k"}
+{"task_id": 754, "prompt": "Write a function to find common index elements from three lists.", "entry_point": "extract_index_list"}
+{"task_id": 755, "prompt": "Write a function to find the second smallest number in a list.", "entry_point": "second_smallest"}
+{"task_id": 756, "prompt": "Write a function that matches a string that has an a followed by zero or one 'b'.", "entry_point": "text_match_zero_one"}
+{"task_id": 757, "prompt": "Write a function to count the pairs of reverse strings in the given string list.", "entry_point": "count_reverse_pairs"}
+{"task_id": 758, "prompt": "Write a function to count number of unique lists within a list.", "entry_point": "unique_sublists"}
+{"task_id": 759, "prompt": "Write a function to check a decimal with a precision of 2.", "entry_point": "is_decimal"}
+{"task_id": 760, "prompt": "Write a python function to check whether an array contains only one distinct element or not.", "entry_point": "unique_Element"}
+{"task_id": 761, "prompt": "Write a function to caluclate arc length of an angle.", "entry_point": "arc_length"}
+{"task_id": 762, "prompt": "Write a function to check whether the given month number contains 30 days or not.", "entry_point": "check_monthnumber_number"}
+{"task_id": 763, "prompt": "Write a python function to find the minimum difference between any two elements in a given array.", "entry_point": "find_Min_Diff"}
+{"task_id": 764, "prompt": "Write a python function to count numeric values in a given string.", "entry_point": "number_ctr"}
+{"task_id": 765, "prompt": "Write a function to find nth polite number.", "entry_point": "is_polite"}
+{"task_id": 766, "prompt": "Write a function to iterate over all pairs of consecutive items in a given list.", "entry_point": "pair_wise"}
+{"task_id": 767, "prompt": "Write a python function to count the number of pairs whose sum is equal to \u2018sum\u2019.", "entry_point": "get_Pairs_Count"}
+{"task_id": 768, "prompt": "Write a python function to check for odd parity of a given number.", "entry_point": "check_Odd_Parity"}
+{"task_id": 769, "prompt": "Write a python function to get the difference between two lists.", "entry_point": "Diff"}
+{"task_id": 770, "prompt": "Write a python function to find the sum of fourth power of first n odd natural numbers.", "entry_point": "odd_Num_Sum"}
+{"task_id": 771, "prompt": "Write a function to check if the given expression is balanced or not.", "entry_point": "check_expression"}
+{"task_id": 772, "prompt": "Write a function to remove all the words with k length in the given string.", "entry_point": "remove_length"}
+{"task_id": 773, "prompt": "Write a function to find the occurrence and position of the substrings within a string.", "entry_point": "occurance_substring"}
+{"task_id": 774, "prompt": "Write a function to check if the string is a valid email address or not using regex.", "entry_point": "check_email"}
+{"task_id": 775, "prompt": "Write a python function to check whether every odd index contains odd numbers of a given list.", "entry_point": "odd_position"}
+{"task_id": 776, "prompt": "Write a function to count those characters which have vowels as their neighbors in the given string.", "entry_point": "count_vowels"}
+{"task_id": 777, "prompt": "Write a python function to find the sum of non-repeated elements in a given array.", "entry_point": "find_Sum"}
+{"task_id": 778, "prompt": "Write a function to pack consecutive duplicates of a given list elements into sublists.", "entry_point": "pack_consecutive_duplicates"}
+{"task_id": 779, "prompt": "Write a function to count the number of unique lists within a list.", "entry_point": "unique_sublists"}
+{"task_id": 780, "prompt": "Write a function to find the combinations of sums with tuples in the given tuple list.", "entry_point": "find_combinations"}
+{"task_id": 781, "prompt": "Write a python function to check whether the count of divisors is even or odd.", "entry_point": "count_Divisors"}
+{"task_id": 782, "prompt": "Write a python function to find the sum of all odd length subarrays.", "entry_point": "Odd_Length_Sum"}
+{"task_id": 783, "prompt": "Write a function to convert rgb color to hsv color.", "entry_point": "rgb_to_hsv"}
+{"task_id": 784, "prompt": "Write a function to find the product of first even and odd number of a given list.", "entry_point": "mul_even_odd"}
+{"task_id": 785, "prompt": "Write a function to convert tuple string to integer tuple.", "entry_point": "tuple_str_int"}
+{"task_id": 786, "prompt": "Write a function to locate the right insertion point for a specified value in sorted order.", "entry_point": "right_insertion"}
+{"task_id": 787, "prompt": "Write a function that matches a string that has an a followed by three 'b'.", "entry_point": "text_match_three"}
+{"task_id": 788, "prompt": "Write a function to create a new tuple from the given string and list.", "entry_point": "new_tuple"}
+{"task_id": 789, "prompt": "Write a function to calculate the perimeter of a regular polygon.", "entry_point": "perimeter_polygon"}
+{"task_id": 790, "prompt": "Write a python function to check whether every even index contains even numbers of a given list.", "entry_point": "even_position"}
+{"task_id": 791, "prompt": "Write a function to remove the nested record from the given tuple.", "entry_point": "remove_nested"}
+{"task_id": 792, "prompt": "Write a python function to count the number of lists in a given number of lists.", "entry_point": "count_list"}
+{"task_id": 793, "prompt": "Write a python function to find the last position of an element in a sorted array.", "entry_point": "last"}
+{"task_id": 794, "prompt": "Write a function that matches a string that has an 'a' followed by anything, ending in 'b'.", "entry_point": "text_starta_endb"}
+{"task_id": 795, "prompt": "Write a function to find the n - cheap price items from a given dataset using heap queue algorithm.", "entry_point": "cheap_items"}
+{"task_id": 796, "prompt": "Write function to find the sum of all items in the given dictionary.", "entry_point": "return_sum"}
+{"task_id": 797, "prompt": "Write a python function to find the sum of all odd natural numbers within the range l and r.", "entry_point": "sum_Odd"}
+{"task_id": 798, "prompt": "Write a python function to find the sum of an array.", "entry_point": "_sum"}
+{"task_id": 799, "prompt": "Write a python function to left rotate the bits of a given number.", "entry_point": "left_Rotate"}
+{"task_id": 800, "prompt": "Write a function to remove all whitespaces from a string.", "entry_point": "remove_all_spaces"}
+{"task_id": 801, "prompt": "Write a python function to count the number of equal numbers from three given integers.", "entry_point": "test_three_equal"}
+{"task_id": 802, "prompt": "Write a python function to count the number of rotations required to generate a sorted array.", "entry_point": "count_Rotation"}
+{"task_id": 803, "prompt": "Write a python function to check whether the given number is a perfect square or not.", "entry_point": "is_Perfect_Square"}
+{"task_id": 804, "prompt": "Write a python function to check whether the product of numbers is even or not.", "entry_point": "is_Product_Even"}
+{"task_id": 805, "prompt": "Write a function to find the list in a list of lists whose sum of elements is the highest.", "entry_point": "max_sum_list"}
+{"task_id": 806, "prompt": "Write a function to find maximum run of uppercase characters in the given string.", "entry_point": "max_run_uppercase"}
+{"task_id": 807, "prompt": "Write a python function to find the first odd number in a given list of numbers.", "entry_point": "first_odd"}
+{"task_id": 808, "prompt": "Write a function to check if the given tuples contain the k or not.", "entry_point": "check_K"}
+{"task_id": 809, "prompt": "Write a function to check if each element of second tuple is smaller than its corresponding index in first tuple.", "entry_point": "check_smaller"}
+{"task_id": 810, "prompt": "Write a function to iterate over elements repeating each as many times as its count.", "entry_point": "count_variable"}
+{"task_id": 811, "prompt": "Write a function to check if two lists of tuples are identical or not.", "entry_point": "check_identical"}
+{"task_id": 812, "prompt": "Write a function to abbreviate 'road' as 'rd.' in a given string.", "entry_point": "road_rd"}
+{"task_id": 813, "prompt": "Write a function to find length of the string.", "entry_point": "string_length"}
+{"task_id": 814, "prompt": "Write a function to find the area of a rombus.", "entry_point": "rombus_area"}
+{"task_id": 815, "prompt": "Write a function to sort the given array without using any sorting algorithm. the given array consists of only 0, 1, and 2.", "entry_point": "sort_by_dnf"}
+{"task_id": 816, "prompt": "Write a function to clear the values of the given tuples.", "entry_point": "clear_tuple"}
+{"task_id": 817, "prompt": "Write a function to find numbers divisible by m or n from a list of numbers using lambda function.", "entry_point": "div_of_nums"}
+{"task_id": 818, "prompt": "Write a python function to count lower case letters in a given string.", "entry_point": "lower_ctr"}
+{"task_id": 819, "prompt": "Write a function to count the frequency of consecutive duplicate elements in a given list of numbers.", "entry_point": "count_duplic"}
+{"task_id": 820, "prompt": "Write a function to check whether the given month number contains 28 days or not.", "entry_point": "check_monthnum_number"}
+{"task_id": 821, "prompt": "Write a function to merge two dictionaries into a single expression.", "entry_point": "merge_dictionaries"}
+{"task_id": 822, "prompt": "Write a function to return true if the password is valid.", "entry_point": "pass_validity"}
+{"task_id": 823, "prompt": "Write a function to check if the given string starts with a substring using regex.", "entry_point": "check_substring"}
+{"task_id": 824, "prompt": "Write a python function to remove even numbers from a given list.", "entry_point": "remove_even"}
+{"task_id": 825, "prompt": "Write a python function to access multiple elements of specified index from a given list.", "entry_point": "access_elements"}
+{"task_id": 826, "prompt": "Write a python function to find the type of triangle from the given sides.", "entry_point": "check_Type_Of_Triangle"}
+{"task_id": 827, "prompt": "Write a function to sum a specific column of a list in a given list of lists.", "entry_point": "sum_column"}
+{"task_id": 828, "prompt": "Write a function to count alphabets,digits and special charactes in a given string.", "entry_point": "count_alpha_dig_spl"}
+{"task_id": 829, "prompt": "Write a function to find out the second most repeated (or frequent) string in the given sequence.", "entry_point": "second_frequent"}
+{"task_id": 830, "prompt": "Write a function to round up a number to specific digits.", "entry_point": "round_up"}
+{"task_id": 831, "prompt": "Write a python function to count equal element pairs from the given array.", "entry_point": "count_Pairs"}
+{"task_id": 832, "prompt": "Write a function to extract the maximum numeric value from a string by using regex.", "entry_point": "extract_max"}
+{"task_id": 833, "prompt": "Write a function to get dictionary keys as a list.", "entry_point": "get_key"}
+{"task_id": 834, "prompt": "Write a function to generate a square matrix filled with elements from 1 to n raised to the power of 2 in spiral order.", "entry_point": "generate_matrix"}
+{"task_id": 835, "prompt": "Write a python function to find the slope of a line.", "entry_point": "slope"}
+{"task_id": 836, "prompt": "Write a function to find length of the subarray having maximum sum.", "entry_point": "max_sub_array_sum"}
+{"task_id": 837, "prompt": "Write a python function to find the cube sum of first n odd natural numbers.", "entry_point": "cube_Sum"}
+{"task_id": 838, "prompt": "Write a python function to find minimum number swaps required to make two binary strings equal.", "entry_point": "min_Swaps"}
+{"task_id": 839, "prompt": "Write a function to sort the tuples alphabetically by the first item of each tuple.", "entry_point": "sort_tuple"}
+{"task_id": 840, "prompt": "Write a python function to check whether the roots of a quadratic equation are numerically equal but opposite in sign or not.", "entry_point": "Check_Solution"}
+{"task_id": 841, "prompt": "Write a function to count the number of inversions in the given array.", "entry_point": "get_inv_count"}
+{"task_id": 842, "prompt": "Write a function to find the number which occurs for odd number of times in the given array.", "entry_point": "get_odd_occurence"}
+{"task_id": 843, "prompt": "Write a function to find the nth super ugly number from a given prime list of size k using heap queue algorithm.", "entry_point": "nth_super_ugly_number"}
+{"task_id": 844, "prompt": "Write a python function to find the kth element in an array containing odd elements first and then even elements.", "entry_point": "get_Number"}
+{"task_id": 845, "prompt": "Write a python function to count the number of digits in factorial of a given number.", "entry_point": "find_Digits"}
+{"task_id": 846, "prompt": "Write a function to find the minimum number of platforms required for a railway/bus station.", "entry_point": "find_platform"}
+{"task_id": 847, "prompt": "Write a python function to copy a list from a singleton tuple.", "entry_point": "lcopy"}
+{"task_id": 848, "prompt": "Write a function to find the area of a trapezium.", "entry_point": "area_trapezium"}
+{"task_id": 849, "prompt": "Write a python function to find sum of all prime divisors of a given number.", "entry_point": "Sum"}
+{"task_id": 850, "prompt": "Write a function to check if a triangle of positive area is possible with the given angles.", "entry_point": "is_triangleexists"}
+{"task_id": 851, "prompt": "Write a python function to find sum of inverse of divisors.", "entry_point": "Sum_of_Inverse_Divisors"}
+{"task_id": 852, "prompt": "Write a python function to remove negative numbers from a list.", "entry_point": "remove_negs"}
+{"task_id": 853, "prompt": "Write a python function to find sum of odd factors of a number.", "entry_point": "sum_of_odd_Factors"}
+{"task_id": 854, "prompt": "Write a function which accepts an arbitrary list and converts it to a heap using heap queue algorithm.", "entry_point": "raw_heap"}
+{"task_id": 855, "prompt": "Write a python function to check for even parity of a given number.", "entry_point": "check_Even_Parity"}
+{"task_id": 856, "prompt": "Write a python function to find minimum adjacent swaps required to sort binary array.", "entry_point": "find_Min_Swaps"}
+{"task_id": 857, "prompt": "Write a function to list out the list of given strings individually using map function.", "entry_point": "listify_list"}
+{"task_id": 858, "prompt": "Write a function to count number of lists in a given list of lists and square the count.", "entry_point": "count_list"}
+{"task_id": 859, "prompt": "Write a function to generate all sublists of a given list.", "entry_point": "sub_lists"}
+{"task_id": 860, "prompt": "Write a function to check whether the given string is ending with only alphanumeric characters or not using regex.", "entry_point": "check_alphanumeric"}
+{"task_id": 861, "prompt": "Write a function to find all anagrams of a string in a given list of strings using lambda function.", "entry_point": "anagram_lambda"}
+{"task_id": 862, "prompt": "Write a function to find the occurrences of n most common words in a given text.", "entry_point": "n_common_words"}
+{"task_id": 863, "prompt": "Write a function to find the length of the longest sub-sequence such that elements in the subsequences are consecutive integers.", "entry_point": "find_longest_conseq_subseq"}
+{"task_id": 864, "prompt": "Write a function to find palindromes in a given list of strings using lambda function.", "entry_point": "palindrome_lambda"}
+{"task_id": 865, "prompt": "Write a function to print n-times a list using map function.", "entry_point": "ntimes_list"}
+{"task_id": 866, "prompt": "Write a function to check whether the given month name contains 31 days or not.", "entry_point": "check_monthnumb"}
+{"task_id": 867, "prompt": "Write a python function to add a minimum number such that the sum of array becomes even.", "entry_point": "min_Num"}
+{"task_id": 868, "prompt": "Write a python function to find the length of the last word in a given string.", "entry_point": "length_Of_Last_Word"}
+{"task_id": 869, "prompt": "Write a function to remove sublists from a given list of lists, which are outside a given range.", "entry_point": "remove_list_range"}
+{"task_id": 870, "prompt": "Write a function to calculate the sum of the positive numbers of a given list of numbers using lambda function.", "entry_point": "sum_positivenum"}
+{"task_id": 871, "prompt": "Write a python function to check whether the given strings are rotations of each other or not.", "entry_point": "are_Rotations"}
+{"task_id": 872, "prompt": "Write a function to check if a nested list is a subset of another nested list.", "entry_point": "check_subset"}
+{"task_id": 873, "prompt": "Write a function to solve the fibonacci sequence using recursion.", "entry_point": "fibonacci"}
+{"task_id": 874, "prompt": "Write a python function to check if the string is a concatenation of another string.", "entry_point": "check_Concat"}
+{"task_id": 875, "prompt": "Write a function to find the minimum difference in the tuple pairs of given tuples.", "entry_point": "min_difference"}
+{"task_id": 876, "prompt": "Write a python function to find lcm of two positive integers.", "entry_point": "lcm"}
+{"task_id": 877, "prompt": "Write a python function to sort the given string.", "entry_point": "sort_String"}
+{"task_id": 878, "prompt": "Write a function to check if the given tuple contains only k elements.", "entry_point": "check_tuples"}
+{"task_id": 879, "prompt": "Write a function that matches a string that has an 'a' followed by anything, ending in 'b' by using regex.", "entry_point": "text_match"}
+{"task_id": 880, "prompt": "Write a python function to find number of solutions in quadratic equation.", "entry_point": "Check_Solution"}
+{"task_id": 881, "prompt": "Write a function to find the sum of first even and odd number of a given list.", "entry_point": "sum_even_odd"}
+{"task_id": 882, "prompt": "Write a function to caluclate perimeter of a parallelogram.", "entry_point": "parallelogram_perimeter"}
+{"task_id": 883, "prompt": "Write a function to find numbers divisible by m and n from a list of numbers using lambda function.", "entry_point": "div_of_nums"}
+{"task_id": 884, "prompt": "Write a python function to check whether all the bits are within a given range or not.", "entry_point": "all_Bits_Set_In_The_Given_Range"}
+{"task_id": 885, "prompt": "Write a python function to check whether the two given strings are isomorphic to each other or not.", "entry_point": "is_Isomorphic"}
+{"task_id": 886, "prompt": "Write a function to add all the numbers in a list and divide it with the length of the list.", "entry_point": "sum_num"}
+{"task_id": 887, "prompt": "Write a python function to check whether the given number is odd or not using bitwise operator.", "entry_point": "is_odd"}
+{"task_id": 888, "prompt": "Write a function to substract the elements of the given nested tuples.", "entry_point": "substract_elements"}
+{"task_id": 889, "prompt": "Write a function to reverse each list in a given list of lists.", "entry_point": "reverse_list_lists"}
+{"task_id": 890, "prompt": "Write a python function to find the index of an extra element present in one sorted array.", "entry_point": "find_Extra"}
+{"task_id": 891, "prompt": "Write a python function to check whether the given two numbers have same number of digits or not.", "entry_point": "same_Length"}
+{"task_id": 892, "prompt": "Write a function to remove multiple spaces in a string.", "entry_point": "remove_spaces"}
+{"task_id": 893, "prompt": "Write a python function to get the last element of each sublist.", "entry_point": "Extract"}
+{"task_id": 894, "prompt": "Write a function to convert the given string of float type into tuple.", "entry_point": "float_to_tuple"}
+{"task_id": 895, "prompt": "Write a function to find the maximum sum of subsequences of given array with no adjacent elements.", "entry_point": "max_sum_subseq"}
+{"task_id": 896, "prompt": "Write a function to sort a list in increasing order by the last element in each tuple from a given list of non-empty tuples.", "entry_point": "last"}
+{"task_id": 897, "prompt": "Write a python function to check whether the word is present in a given sentence or not.", "entry_point": "is_Word_Present"}
+{"task_id": 898, "prompt": "Write a function to extract specified number of elements from a given list, which follow each other continuously.", "entry_point": "extract_elements"}
+{"task_id": 899, "prompt": "Write a python function to check whether an array can be sorted or not by picking only the corner elements.", "entry_point": "check"}
+{"task_id": 900, "prompt": "Write a function where a string will start with a specific number.", "entry_point": "match_num"}
+{"task_id": 901, "prompt": "Write a function to find the smallest multiple of the first n numbers.", "entry_point": "smallest_multiple"}
+{"task_id": 902, "prompt": "Write a function to combine two dictionaries by adding values for common keys.", "entry_point": "add_dict"}
+{"task_id": 903, "prompt": "Write a python function to count the total unset bits from 1 to n.", "entry_point": "count_Unset_Bits"}
+{"task_id": 904, "prompt": "Write a function to return true if the given number is even else return false.", "entry_point": "even_num"}
+{"task_id": 905, "prompt": "Write a python function to find the sum of squares of binomial co-efficients.", "entry_point": "factorial"}
+{"task_id": 906, "prompt": "Write a function to extract year, month and date from a url by using regex.", "entry_point": "extract_date"}
+{"task_id": 907, "prompt": "Write a function to print the first n lucky numbers.", "entry_point": "lucky_num"}
+{"task_id": 908, "prompt": "Write a function to find the fixed point in the given array.", "entry_point": "find_fixed_point"}
+{"task_id": 909, "prompt": "Write a function to find the previous palindrome of a specified number.", "entry_point": "previous_palindrome"}
+{"task_id": 910, "prompt": "Write a function to validate a gregorian date.", "entry_point": "check_date"}
+{"task_id": 911, "prompt": "Write a function to compute maximum product of three numbers of a given array of integers using heap queue algorithm.", "entry_point": "maximum_product"}
+{"task_id": 912, "prompt": "Write a function to find ln, m lobb number.", "entry_point": "binomial_coeff"}
+{"task_id": 913, "prompt": "Write a function to check for a number at the end of a string.", "entry_point": "end_num"}
+{"task_id": 914, "prompt": "Write a python function to check whether the given string is made up of two alternating characters or not.", "entry_point": "is_Two_Alter"}
+{"task_id": 915, "prompt": "Write a function to rearrange positive and negative numbers in a given array using lambda function.", "entry_point": "rearrange_numbs"}
+{"task_id": 916, "prompt": "Write a function to find if there is a triplet in the array whose sum is equal to a given value.", "entry_point": "find_triplet_array"}
+{"task_id": 917, "prompt": "Write a function to find the sequences of one upper case letter followed by lower case letters.", "entry_point": "text_uppercase_lowercase"}
+{"task_id": 918, "prompt": "Write a function to count coin change.", "entry_point": "coin_change"}
+{"task_id": 919, "prompt": "Write a python function to multiply all items in the list.", "entry_point": "multiply_list"}
+{"task_id": 920, "prompt": "Write a function to remove all tuples with all none values in the given tuple list.", "entry_point": "remove_tuple"}
+{"task_id": 921, "prompt": "Write a function to perform chunking of tuples each of size n.", "entry_point": "chunk_tuples"}
+{"task_id": 922, "prompt": "Write a function to find a pair with the highest product from a given array of integers.", "entry_point": "max_product"}
+{"task_id": 923, "prompt": "Write a function to find the length of the shortest string that has both str1 and str2 as subsequences.", "entry_point": "super_seq"}
+{"task_id": 924, "prompt": "Write a function to find maximum of two numbers.", "entry_point": "max_of_two"}
+{"task_id": 925, "prompt": "Write a python function to calculate the product of all the numbers of a given tuple.", "entry_point": "mutiple_tuple"}
+{"task_id": 926, "prompt": "Write a function to find n-th rencontres number.", "entry_point": "binomial_coeffi"}
+{"task_id": 927, "prompt": "Write a function to calculate the height of the given binary tree.", "entry_point": "max_height"}
+{"task_id": 928, "prompt": "Write a function to convert a date of yyyy-mm-dd format to dd-mm-yyyy format.", "entry_point": "change_date_format"}
+{"task_id": 929, "prompt": "Write a function to count repeated items of a tuple.", "entry_point": "count_tuplex"}
+{"task_id": 930, "prompt": "Write a function that matches a string that has an a followed by zero or more b's by using regex.", "entry_point": "text_match"}
+{"task_id": 931, "prompt": "Write a function to calculate the sum of series 1\u00b3+2\u00b3+3\u00b3+\u2026.+n\u00b3.", "entry_point": "sum_series"}
+{"task_id": 932, "prompt": "Write a function to remove duplicate words from a given list of strings.", "entry_point": "remove_duplic_list"}
+{"task_id": 933, "prompt": "Write a function to convert camel case string to snake case string by using regex.", "entry_point": "camel_to_snake"}
+{"task_id": 934, "prompt": "Write a function to find the nth delannoy number.", "entry_point": "dealnnoy_num"}
+{"task_id": 935, "prompt": "Write a function to calculate the sum of series 1\u00b2+2\u00b2+3\u00b2+\u2026.+n\u00b2.", "entry_point": "series_sum"}
+{"task_id": 936, "prompt": "Write a function to re-arrange the given tuples based on the given ordered list.", "entry_point": "re_arrange_tuples"}
+{"task_id": 937, "prompt": "Write a function to count the most common character in a given string.", "entry_point": "max_char"}
+{"task_id": 938, "prompt": "Write a function to find three closest elements from three sorted arrays.", "entry_point": "find_closet"}
+{"task_id": 939, "prompt": "Write a function to sort a list of dictionaries using lambda function.", "entry_point": "sorted_models"}
+{"task_id": 940, "prompt": "Write a function to sort the given array by using heap sort.", "entry_point": "heap_sort"}
+{"task_id": 941, "prompt": "Write a function to count the elements in a list until an element is a tuple.", "entry_point": "count_elim"}
+{"task_id": 942, "prompt": "Write a function to check if any list element is present in the given list.", "entry_point": "check_element"}
+{"task_id": 943, "prompt": "Write a function to combine two given sorted lists using heapq module.", "entry_point": "combine_lists"}
+{"task_id": 944, "prompt": "Write a function to separate and print the numbers and their position of a given string.", "entry_point": "num_position"}
+{"task_id": 945, "prompt": "Write a function to convert the given tuples into set.", "entry_point": "tuple_to_set"}
+{"task_id": 946, "prompt": "Write a function to find the most common elements and their counts of a specified text.", "entry_point": "most_common_elem"}
+{"task_id": 947, "prompt": "Write a python function to find the length of the shortest word.", "entry_point": "len_log"}
+{"task_id": 948, "prompt": "Write a function to get an item of a tuple.", "entry_point": "get_item"}
+{"task_id": 949, "prompt": "Write a function to sort the given tuple list basis the total digits in tuple.", "entry_point": "count_digs"}
+{"task_id": 950, "prompt": "Write a function to display sign of the chinese zodiac for given year.", "entry_point": "chinese_zodiac"}
+{"task_id": 951, "prompt": "Write a function to find the maximum of similar indices in two lists of tuples.", "entry_point": "max_similar_indices"}
+{"task_id": 952, "prompt": "Write a function to compute the value of ncr mod p.", "entry_point": "nCr_mod_p"}
+{"task_id": 953, "prompt": "Write a python function to find the minimun number of subsets with distinct elements.", "entry_point": "subset"}
+{"task_id": 954, "prompt": "Write a function that gives profit amount if the given amount has profit else return none.", "entry_point": "profit_amount"}
+{"task_id": 955, "prompt": "Write a function to find out, if the given number is abundant.", "entry_point": "is_abundant"}
+{"task_id": 956, "prompt": "Write a function to split the given string at uppercase letters by using regex.", "entry_point": "split_list"}
+{"task_id": 957, "prompt": "Write a python function to get the position of rightmost set bit.", "entry_point": "get_First_Set_Bit_Pos"}
+{"task_id": 958, "prompt": "Write a function to convert an integer into a roman numeral.", "entry_point": "int_to_roman"}
+{"task_id": 959, "prompt": "Write a python function to find the average of a list.", "entry_point": "Average"}
+{"task_id": 960, "prompt": "Write a function to solve tiling problem.", "entry_point": "get_noOfways"}
+{"task_id": 961, "prompt": "Write a function to convert a roman numeral to an integer.", "entry_point": "roman_to_int"}
+{"task_id": 962, "prompt": "Write a python function to find the sum of all even natural numbers within the range l and r.", "entry_point": "sum_Natural"}
+{"task_id": 963, "prompt": "Write a function to calculate the discriminant value.", "entry_point": "discriminant_value"}
+{"task_id": 964, "prompt": "Write a python function to check whether the length of the word is even or not.", "entry_point": "word_len"}
+{"task_id": 965, "prompt": "Write a function to convert camel case string to snake case string.", "entry_point": "camel_to_snake"}
+{"task_id": 966, "prompt": "Write a function to remove an empty tuple from a list of tuples.", "entry_point": "remove_empty"}
+{"task_id": 967, "prompt": "Write a python function to accept the strings which contains all vowels.", "entry_point": "check"}
+{"task_id": 968, "prompt": "Write a python function to find maximum possible value for the given periodic function.", "entry_point": "floor_Max"}
+{"task_id": 969, "prompt": "Write a function to join the tuples if they have similar initial elements.", "entry_point": "join_tuples"}
+{"task_id": 970, "prompt": "Write a function to find minimum of two numbers.", "entry_point": "min_of_two"}
+{"task_id": 971, "prompt": "Write a function to find the maximum number of segments of lengths a, b and c that can be formed from n.", "entry_point": "maximum_segments"}
+{"task_id": 972, "prompt": "Write a function to concatenate the given two tuples to a nested tuple.", "entry_point": "concatenate_nested"}
+{"task_id": 973, "prompt": "Write a python function to left rotate the string.", "entry_point": "left_rotate"}
+{"task_id": 974, "prompt": "Write a function to find the minimum total path sum in the given triangle.", "entry_point": "min_sum_path"}

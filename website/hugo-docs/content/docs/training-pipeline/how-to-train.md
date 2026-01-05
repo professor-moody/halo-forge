@@ -148,27 +148,80 @@ Test Results: 6/6 passed
 
 halo-forge includes ready-to-use sample datasets for immediate testing. No download required:
 
-| Dataset | File | Examples | Language | Use For |
-|---------|------|----------|----------|---------|
-| **MBPP Training** | `data/rlvr/mbpp_train_prompts.jsonl` | 374 | Python | RAFT training |
-| **MBPP Full** | `data/rlvr/mbpp_train_full.jsonl` | 374 | Python | SFT training |
-| **MBPP Validation** | `data/rlvr/mbpp_validation.jsonl` | 50 | Python | Benchmarking |
-| **HumanEval** | `data/rlvr/humaneval_full.jsonl` | 164 | Python | Evaluation |
-| **HumanEval Prompts** | `data/rlvr/humaneval_prompts.jsonl` | 164 | Python | RAFT training |
+**Python Datasets (RLVR):**
 
-**Quick test with included data:**
+| Dataset | File | Examples | Use For |
+|---------|------|----------|---------|
+| **MBPP Training** | `data/rlvr/mbpp_train_prompts.jsonl` | 374 | RAFT training |
+| **MBPP Full** | `data/rlvr/mbpp_train_full.jsonl` | 374 | SFT training |
+| **MBPP Validation** | `data/rlvr/mbpp_validation.jsonl` | 50 | Benchmarking |
+| **HumanEval** | `data/rlvr/humaneval_full.jsonl` | 164 | Evaluation |
+
+**C++ Datasets (Competitive Programming):**
+
+| Dataset | File | Examples | Use For |
+|---------|------|----------|---------|
+| **CodeForces C++** | `data/samples/codeforces_cpp_500.jsonl` | 500 | Raw prompt/response |
+| **CodeForces SFT** | `data/samples/codeforces_cpp_500_sft.jsonl` | 500 | SFT training |
+| **CodeForces Prompts** | `data/samples/codeforces_cpp_500_prompts.jsonl` | 500 | RAFT training |
+
+**Quick test - Python with MBPP:**
 
 ```bash
-# Verify data exists
-ls data/rlvr/
-
-# Start training immediately with MBPP
+# Start RAFT training immediately
 halo-forge raft train \
   --model Qwen/Qwen2.5-Coder-0.5B \
   --prompts data/rlvr/mbpp_train_prompts.jsonl \
   --verifier mbpp \
   --cycles 2 \
-  --output models/quick_test
+  --output models/quick_test_python
+```
+
+**Quick test - C++ with CodeForces:**
+
+```bash
+# SFT on CodeForces C++
+halo-forge sft train \
+  --data data/samples/codeforces_cpp_500_sft.jsonl \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --output models/quick_sft_cpp \
+  --epochs 1
+
+# Then RAFT with GCC verification
+halo-forge raft train \
+  --checkpoint models/quick_sft_cpp/final_model \
+  --prompts data/samples/codeforces_cpp_500_prompts.jsonl \
+  --verifier gcc \
+  --cycles 2 \
+  --output models/quick_raft_cpp
+```
+
+### Validate Your Data
+
+Before training, validate your dataset format:
+
+```bash
+# Check format and get statistics
+halo-forge data validate data/samples/codeforces_cpp_500_sft.jsonl
+
+# With preview of examples
+halo-forge data validate data/my_dataset.jsonl --preview
+```
+
+Expected output:
+```
+============================================================
+DATASET VALIDATION REPORT
+============================================================
+
+Status: ✓ VALID
+Format: sft
+
+Examples:
+  Total:   500
+  Valid:   500
+  Invalid: 0
+...
 ```
 
 ### Option B: Download Public Datasets

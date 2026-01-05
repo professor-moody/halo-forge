@@ -1,0 +1,22 @@
+{
+  "humaneval": {
+    "dataset": "humaneval",
+    "count": 164,
+    "prompts_file": "data/rlvr/humaneval_prompts.jsonl",
+    "full_file": "data/rlvr/humaneval_full.jsonl",
+    "solutions_file": "data/rlvr/humaneval_solutions.jsonl"
+  },
+  "mbpp": {
+    "dataset": "mbpp",
+    "split": "train",
+    "count": 374,
+    "prompts_file": "data/rlvr/mbpp_train_prompts.jsonl",
+    "full_file": "data/rlvr/mbpp_train_full.jsonl",
+    "solutions_file": "data/rlvr/mbpp_train_solutions.jsonl",
+    "sanitized": {
+      "count": 257,
+      "prompts_file": "data/rlvr/mbpp_sanitized_prompts.jsonl",
+      "full_file": "data/rlvr/mbpp_sanitized_full.jsonl"
+    }
+  }
+}
