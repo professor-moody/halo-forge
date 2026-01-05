@@ -222,9 +222,9 @@ Or create manually:
 
 ---
 
-## Part 3: SFT Training (Optional)
+## Part 3: SFT Training (Optional but Recommended)
 
-SFT (Supervised Fine-Tuning) creates a baseline before RAFT. Skip this if using a pre-trained coder model.
+SFT (Supervised Fine-Tuning) creates a baseline before RAFT. While optional if using a pre-trained coder model, SFT is highly recommended for domain-specific training. It helps the model learn your specific code style, patterns, and requirements before RAFT refinement.
 
 ### Basic SFT
 
