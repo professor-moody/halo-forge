@@ -12,7 +12,7 @@ A comprehensive dataset for training code models on Windows systems programming,
 | Tier 3 (Intermediate) | 72 |
 | Tier 4 (Advanced) | 77 |
 | Categories | 24 |
-| MSVC Compile Rate | ~88% |
+| MSVC Compile Rate | **100%** |
 
 ## Dataset Files
 
@@ -113,11 +113,13 @@ For best results with curriculum learning, train in tier order:
 
 Use the `curriculum_order_full.json` file to programmatically access tier-based batching.
 
-## Generation Scripts
+## Scripts
 
 - `generate_curriculum_dataset.py` - Generates new tiered problems
 - `merge_datasets.py` - Merges with existing problems and adds tier metadata
 - `validate_dataset.py` - Validates format and MSVC compilation
+- `fix_tmp_dataset.py` - Auto-fix missing lib pragmas in older problems
+- `get_errors.py` - Compile test utility with error reporting
 
 ## License
 
