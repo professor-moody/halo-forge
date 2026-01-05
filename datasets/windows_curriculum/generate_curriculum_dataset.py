@@ -249,27 +249,13 @@ r'''#include <windows.h>
 #include <stdio.h>
 
 typedef LONG NTSTATUS;
-typedef struct _OSVERSIONINFOEXW {
-    ULONG dwOSVersionInfoSize;
-    ULONG dwMajorVersion;
-    ULONG dwMinorVersion;
-    ULONG dwBuildNumber;
-    ULONG dwPlatformId;
-    WCHAR szCSDVersion[128];
-    USHORT wServicePackMajor;
-    USHORT wServicePackMinor;
-    USHORT wSuiteMask;
-    UCHAR wProductType;
-    UCHAR wReserved;
-} RTL_OSVERSIONINFOEXW;
-
-typedef NTSTATUS (NTAPI *pRtlGetVersion)(RTL_OSVERSIONINFOEXW*);
+typedef NTSTATUS (NTAPI *pRtlGetVersion)(OSVERSIONINFOEXW*);
 
 int main() {
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     pRtlGetVersion RtlGetVersion = (pRtlGetVersion)GetProcAddress(ntdll, "RtlGetVersion");
     
-    RTL_OSVERSIONINFOEXW ver = {sizeof(ver)};
+    OSVERSIONINFOEXW ver = {sizeof(ver)};
     RtlGetVersion(&ver);
     
     printf("Windows Version (RtlGetVersion)\n\n");
@@ -299,6 +285,7 @@ add(1, "sysinfo", "computer", "GetComputerName", "beginner",
 r'''#include <windows.h>
 #include <stdio.h>
 #pragma comment(lib, "netapi32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     char compName[MAX_COMPUTERNAME_LENGTH + 1];
@@ -478,6 +465,7 @@ add(1, "string", "format", "wsprintfA", "beginner",
 r'''#include <windows.h>
 #include <stdio.h>
 #include <strsafe.h>
+#pragma comment(lib, "user32.lib")
 
 int main() {
     printf("String Formatting Demo\n\n");
@@ -693,6 +681,7 @@ add(1, "registry", "read", "RegQueryValueEx", "beginner",
 "Write a C++ program that reads Windows version from the registry.",
 r'''#include <windows.h>
 #include <stdio.h>
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     printf("Registry Reader\n\n");
@@ -736,6 +725,7 @@ add(1, "registry", "enum", "RegEnumKeyEx", "beginner",
 "Write a C++ program that enumerates registry subkeys.",
 r'''#include <windows.h>
 #include <stdio.h>
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     printf("Registry Subkey Enumeration\n\n");
@@ -1772,32 +1762,22 @@ r'''#include <windows.h>
 #include <stdio.h>
 #include <intrin.h>
 
-typedef struct _CLIENT_ID { HANDLE Process; HANDLE Thread; } CLIENT_ID;
+typedef struct _MY_CLIENT_ID { HANDLE Process; HANDLE Thread; } MY_CLIENT_ID;
 
-typedef struct _NT_TIB {
-    struct _EXCEPTION_REGISTRATION_RECORD* ExceptionList;
-    PVOID StackBase;
-    PVOID StackLimit;
-    PVOID SubSystemTib;
-    PVOID FiberData;
-    PVOID ArbitraryUserPointer;
-    struct _NT_TIB* Self;
-} NT_TIB;
-
-typedef struct _TEB {
-    NT_TIB NtTib;
+typedef struct _MY_TEB {
+    NT_TIB NtTib;  // Use the SDK's NT_TIB
     PVOID EnvironmentPointer;
-    CLIENT_ID ClientId;
+    MY_CLIENT_ID ClientId;
     PVOID ActiveRpcHandle;
     PVOID ThreadLocalStoragePointer;
     PVOID ProcessEnvironmentBlock;
     DWORD LastErrorValue;
-} TEB;
+} MY_TEB;
 
 int main() {
     printf("TEB Access Demo\n\n");
     
-    TEB* teb = (TEB*)__readgsqword(0x30);
+    MY_TEB* teb = (MY_TEB*)__readgsqword(0x30);
     
     printf("TEB @ 0x%p\n\n", teb);
     
@@ -2153,6 +2133,7 @@ add(1, "registry", "write", "RegSetValueEx", "beginner",
 "Write a C++ program that writes and reads a registry value.",
 r'''#include <windows.h>
 #include <stdio.h>
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     printf("Registry Write Demo\n\n");
@@ -2989,6 +2970,7 @@ add(4, "evasion", "sandbox", "SandboxChecks", "advanced",
 r'''#include <windows.h>
 #include <stdio.h>
 #include <intrin.h>
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     printf("Sandbox Detection Demo\n\n");
@@ -3955,6 +3937,7 @@ add(2, "registry", "notify", "RegNotifyChangeKeyValue", "intermediate",
 "Write a C++ program that watches for registry changes.",
 r'''#include <windows.h>
 #include <stdio.h>
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     printf("Registry Watch Demo\n\n");
@@ -4140,7 +4123,7 @@ typedef struct _OBJECT_ATTRIBUTES {
     ULONG Attributes;
     void* SecurityDescriptor;
     void* SecurityQualityOfService;
-} OBJECT_ATTRIBUTES;
+} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
 #define InitializeObjectAttributes(p, n, a, r, s) { \
     (p)->Length = sizeof(OBJECT_ATTRIBUTES); \
@@ -4914,7 +4897,7 @@ int main() {
         DWORD compSize = GetCompressedFileSizeA(files[i], &highComp);
         
         if (compSize != INVALID_FILE_SIZE) {
-            char* fname = strrchr(files[i], '\\') + 1;
+            const char* fname = strrchr(files[i], '\\') + 1;
             printf("%-40s %12lu %12lu\n", fname, size, compSize);
         }
     }
@@ -5426,18 +5409,18 @@ r'''#include <windows.h>
 #include <stdio.h>
 
 typedef LONG NTSTATUS;
-typedef struct _OBJECT_ATTRIBUTES {
+typedef struct _MY_OBJECT_ATTRIBUTES {
     ULONG Length;
     HANDLE RootDirectory;
     void* ObjectName;
     ULONG Attributes;
     void* SecurityDescriptor;
     void* SecurityQualityOfService;
-} OBJECT_ATTRIBUTES;
+} MY_OBJECT_ATTRIBUTES, *PMY_OBJECT_ATTRIBUTES;
 
-typedef struct _CLIENT_ID { HANDLE Process; HANDLE Thread; } CLIENT_ID;
+typedef struct _MY_CLIENT_ID2 { HANDLE Process; HANDLE Thread; } MY_CLIENT_ID2;
 
-typedef NTSTATUS (NTAPI *pNtOpenProcess)(PHANDLE, ULONG, POBJECT_ATTRIBUTES, CLIENT_ID*);
+typedef NTSTATUS (NTAPI *pNtOpenProcess)(PHANDLE, ULONG, PMY_OBJECT_ATTRIBUTES, MY_CLIENT_ID2*);
 
 int main() {
     printf("NtOpenProcess Demo\n\n");
@@ -5445,8 +5428,8 @@ int main() {
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     pNtOpenProcess NtOpenProcess = (pNtOpenProcess)GetProcAddress(ntdll, "NtOpenProcess");
     
-    OBJECT_ATTRIBUTES oa = {sizeof(OBJECT_ATTRIBUTES)};
-    CLIENT_ID cid = {0};
+    MY_OBJECT_ATTRIBUTES oa = {sizeof(MY_OBJECT_ATTRIBUTES)};
+    MY_CLIENT_ID2 cid = {0};
     cid.Process = (HANDLE)(ULONG_PTR)GetCurrentProcessId();
     
     HANDLE hProc;
@@ -5474,12 +5457,16 @@ add(4, "internals", "environment", "RtlQueryEnvironmentVariable", "advanced",
 r'''#include <windows.h>
 #include <stdio.h>
 
-typedef struct _UNICODE_STRING { USHORT Length, MaxLength; PWSTR Buffer; } UNICODE_STRING;
+typedef struct _MY_UNICODE_STRING { 
+    USHORT Length; 
+    USHORT MaxLength; 
+    PWSTR Buffer; 
+} MY_UNICODE_STRING, *PMY_UNICODE_STRING;
 
 typedef LONG NTSTATUS;
 typedef NTSTATUS (NTAPI *pRtlQueryEnvironmentVariable_U)(
-    PWSTR, PUNICODE_STRING, PUNICODE_STRING);
-typedef VOID (NTAPI *pRtlInitUnicodeString)(PUNICODE_STRING, PCWSTR);
+    PWSTR, PMY_UNICODE_STRING, PMY_UNICODE_STRING);
+typedef VOID (NTAPI *pRtlInitUnicodeString)(PMY_UNICODE_STRING, PCWSTR);
 
 int main() {
     printf("Rtl Environment Demo\n\n");
@@ -5490,11 +5477,11 @@ int main() {
     pRtlInitUnicodeString RtlInitUs = 
         (pRtlInitUnicodeString)GetProcAddress(ntdll, "RtlInitUnicodeString");
     
-    UNICODE_STRING varName;
+    MY_UNICODE_STRING varName;
     RtlInitUs(&varName, L"COMPUTERNAME");
     
     wchar_t buffer[256];
-    UNICODE_STRING value = {0, sizeof(buffer), buffer};
+    MY_UNICODE_STRING value = {0, sizeof(buffer), buffer};
     
     NTSTATUS status = RtlQueryEnv(NULL, &varName, &value);
     
@@ -5732,6 +5719,7 @@ add(1, "string", "case", "CharUpper", "beginner",
 "Write a C++ program demonstrating case conversion.",
 r'''#include <windows.h>
 #include <stdio.h>
+#pragma comment(lib, "user32.lib")
 
 int main() {
     printf("Case Conversion Demo\n\n");
@@ -5997,7 +5985,7 @@ int main() {
             SID_NAME_USE use;
             
             if (LookupAccountSidA(NULL, pOwner, name, &nameLen, domain, &domLen, &use)) {
-                char* fname = strrchr(files[i], '\\') + 1;
+                const char* fname = strrchr(files[i], '\\') + 1;
                 printf("%-15s Owner: %s\\%s\n", fname, domain, name);
             }
             
@@ -6142,6 +6130,7 @@ add(2, "registry", "transact", "RegOpenKeyTransacted", "intermediate",
 "Write a C++ program demonstrating registry value types.",
 r'''#include <windows.h>
 #include <stdio.h>
+#pragma comment(lib, "advapi32.lib")
 
 int main() {
     printf("Registry Value Types Demo\n\n");
@@ -6435,8 +6424,8 @@ int main() {
 
 add(3, "ipc", "socket", "WSAStartup", "intermediate",
 "Write a C++ program demonstrating Winsock initialization.",
-r'''#include <windows.h>
-#include <winsock2.h>
+r'''#include <winsock2.h>
+#include <windows.h>
 #include <stdio.h>
 #pragma comment(lib, "ws2_32.lib")
 
@@ -6783,8 +6772,11 @@ int main() {
 add(4, "evasion", "env_checks", "EnvironmentChecks", "advanced",
 "Write a C++ program demonstrating environment fingerprinting.",
 r'''#include <windows.h>
+#include <psapi.h>
 #include <stdio.h>
 #include <intrin.h>
+#pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "user32.lib")
 
 int main() {
     printf("Environment Fingerprinting Demo\n\n");
