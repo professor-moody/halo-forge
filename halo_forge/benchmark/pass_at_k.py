@@ -72,6 +72,7 @@ class BenchmarkResult:
     
     def save(self, path: str):
         """Save results to JSON file."""
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, 'w') as f:
             json.dump(self.to_dict(), f, indent=2)
 

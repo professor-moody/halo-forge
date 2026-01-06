@@ -23,6 +23,9 @@ LABEL version="0.2.0"
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Note: SHELL directive not supported by podman in OCI format.
+# Use explicit bash -c for commands requiring bash features.
+
 # --- base toolchain ---
 # Includes: compilers, build tools, Python, system utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,6 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lld \
     clang \
     libclang-dev \
+    libclang-rt-dev \
     libcurl4-openssl-dev \
     git \
     vim \
@@ -57,20 +61,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cargo \
     golang-go \
     ca-certificates \
+    libatomic1 \
+    radeontop \
     && rm -rf /var/lib/apt/lists/*
 
 # --- fetch and unpack ROCm TheRock ---
 WORKDIR /tmp
 ARG ROCM_MAJOR_VER=7
 ARG GFX=gfx1151
-RUN set -euo pipefail; \
+RUN bash -c 'set -euo pipefail; \
     BASE="https://therock-nightly-tarball.s3.amazonaws.com"; \
-    PREFIX="therock-dist-linux-${GFX}-${ROCM_MAJOR_VER}"; \
+    PREFIX="therock-dist-linux-gfx1151-7"; \
     KEY="$(curl -s "${BASE}?list-type=2&prefix=${PREFIX}" \
-      | grep -o "therock-dist-linux-${GFX}-${ROCM_MAJOR_VER}\.[0-9]\+\.[0-9]\+rc[0-9]\{8\}\.tar\.gz" \
+      | grep -o "therock-dist-linux-gfx1151-7\.[0-9]\+\.[0-9]\+rc[0-9]\{8\}\.tar\.gz" \
       | sort | tail -n1)"; \
     echo "Latest tarball: ${KEY}"; \
-    aria2c -x 16 -s 16 -j 16 --file-allocation=none "${BASE}/${KEY}" -o therock.tar.gz
+    aria2c -x 16 -s 16 -j 16 --file-allocation=none "${BASE}/${KEY}" -o therock.tar.gz'
 RUN mkdir -p /opt/rocm-7.0 && \
     tar xzf therock.tar.gz -C /opt/rocm-7.0 --strip-components=1 && \
     rm -f therock.tar.gz
