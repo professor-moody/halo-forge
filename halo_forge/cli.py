@@ -139,10 +139,26 @@ def cmd_raft_train(args):
     elif verifier_type == 'mingw':
         verifier = MinGWVerifier()
     elif verifier_type == 'msvc':
+        msvc_host = cfg_dict.get('verifier', {}).get('host')
+        msvc_user = cfg_dict.get('verifier', {}).get('user')
+        msvc_key = cfg_dict.get('verifier', {}).get('ssh_key')
+        
+        if not msvc_host or not msvc_user or not msvc_key:
+            print("Error: MSVC verifier requires host, user, and ssh_key in config file.")
+            print("\nExample config (configs/raft_windows_msvc.yaml):")
+            print("  verifier:")
+            print("    type: msvc")
+            print("    host: 10.0.0.152")
+            print("    user: keys")
+            print("    ssh_key: ~/.ssh/win")
+            print("\nOr use MinGW for local cross-compilation (no Windows needed):")
+            print("  halo-forge raft train --verifier mingw ...")
+            sys.exit(1)
+        
         verifier = RemoteMSVCVerifier(
-            host=cfg_dict.get('verifier', {}).get('host', 'localhost'),
-            user=cfg_dict.get('verifier', {}).get('user', 'user'),
-            ssh_key=cfg_dict.get('verifier', {}).get('ssh_key', '~/.ssh/id_rsa')
+            host=msvc_host,
+            user=msvc_user,
+            ssh_key=msvc_key
         )
     elif verifier_type == 'humaneval':
         dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/humaneval_full.jsonl')
@@ -211,6 +227,26 @@ def cmd_benchmark(args):
     elif args.verifier == 'mingw':
         verifier = MinGWVerifier()
     elif args.verifier == 'msvc':
+        # Validate required MSVC parameters
+        missing = []
+        if not args.host:
+            missing.append('--host')
+        if not args.user:
+            missing.append('--user')
+        if not args.ssh_key:
+            missing.append('--ssh-key')
+        
+        if missing:
+            print(f"Error: MSVC verifier requires: {', '.join(missing)}")
+            print("\nExample:")
+            print("  halo-forge benchmark run --verifier msvc \\")
+            print("    --host 10.0.0.152 --user keys --ssh-key ~/.ssh/win \\")
+            print("    --model Qwen/Qwen2.5-Coder-0.5B \\")
+            print("    --prompts data/prompts.jsonl")
+            print("\nOr use MinGW for local cross-compilation (no Windows needed):")
+            print("  halo-forge benchmark run --verifier mingw ...")
+            sys.exit(1)
+        
         verifier = RemoteMSVCVerifier(
             host=args.host,
             user=args.user,
