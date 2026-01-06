@@ -3,6 +3,8 @@ Rust Verifier
 
 Verify Rust code using cargo build with graduated rewards.
 
+Supports both native compilation and Windows cross-compilation.
+
 Graduated Rewards:
 - 0.0: Does not compile
 - 0.3: Compiles with warnings
@@ -16,6 +18,7 @@ import tempfile
 import shutil
 import os
 import resource
+import uuid
 from pathlib import Path
 from typing import Optional, List
 import re
@@ -30,8 +33,10 @@ class RustVerifier(Verifier):
     Creates a temporary Cargo project, writes code to src/main.rs,
     and compiles using `cargo build --release`.
     
+    Supports Windows cross-compilation using the `x86_64-pc-windows-gnu` target.
+    
     Example:
-        # Compile only
+        # Compile only (native)
         verifier = RustVerifier()
         result = verifier.verify(rust_code)
         
@@ -43,7 +48,20 @@ class RustVerifier(Verifier):
             run_after_compile=True,
             expected_output="Hello, World!"
         )
+        
+        # Windows cross-compilation
+        verifier = RustVerifier(cross_compile=True)
+        
+        # With binary caching
+        verifier = RustVerifier(binary_cache_dir="binaries/rust")
+    
+    Note:
+        For Windows cross-compilation, you need:
+        - rustup target add x86_64-pc-windows-gnu
+        - mingw-w64 installed (for the linker)
     """
+    
+    WINDOWS_TARGET = "x86_64-pc-windows-gnu"
     
     def __init__(
         self,
@@ -55,7 +73,9 @@ class RustVerifier(Verifier):
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
         warn_as_error: bool = False,
-        edition: str = "2021"
+        edition: str = "2021",
+        cross_compile: bool = False,
+        binary_cache_dir: Optional[str] = None
     ):
         """
         Initialize Rust verifier.
@@ -63,23 +83,31 @@ class RustVerifier(Verifier):
         Args:
             timeout: Cargo build timeout in seconds
             max_workers: Max parallel verifications
-            run_after_compile: If True, run the compiled binary
+            run_after_compile: If True, run the compiled binary (native only)
             run_timeout: Execution timeout in seconds
             expected_output: If provided, compare output to this string
             stdin_input: Input to provide to stdin when running
             memory_limit_mb: Memory limit for execution
             warn_as_error: If True, warnings reduce reward
             edition: Rust edition (2018, 2021)
+            cross_compile: If True, compile for Windows (x86_64-pc-windows-gnu)
+            binary_cache_dir: Directory to cache compiled binaries
         """
         super().__init__(max_workers=max_workers)
         self.timeout = timeout
-        self.run_after_compile = run_after_compile
+        self.run_after_compile = run_after_compile and not cross_compile  # Can't run Windows binaries
         self.run_timeout = run_timeout
         self.expected_output = expected_output
         self.stdin_input = stdin_input
         self.memory_limit_mb = memory_limit_mb
         self.warn_as_error = warn_as_error
         self.edition = edition
+        self.cross_compile = cross_compile
+        self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        
+        # Create cache directory if needed
+        if self.binary_cache_dir:
+            self.binary_cache_dir.mkdir(parents=True, exist_ok=True)
     
     def verify(self, code: str) -> VerifyResult:
         """
@@ -125,12 +153,22 @@ opt-level = 2
                     error=compile_result['error'],
                     metadata={
                         "compiler": "rustc (cargo)",
+                        "target": self.WINDOWS_TARGET if self.cross_compile else "native",
                         "stage": "compile"
                     }
                 )
             
             # Check for warnings
             has_warnings = bool(compile_result.get('warnings'))
+            
+            # Cache binary if configured
+            cached_path = None
+            binary_path = compile_result.get('binary_path')
+            if self.binary_cache_dir and binary_path and Path(binary_path).exists():
+                suffix = ".exe" if self.cross_compile else ""
+                cache_name = f"{uuid.uuid4().hex[:12]}{suffix}"
+                cached_path = self.binary_cache_dir / cache_name
+                shutil.copy2(binary_path, cached_path)
             
             # If not running after compile, return compile result
             if not self.run_after_compile:
@@ -141,8 +179,10 @@ opt-level = 2
                         details="Compiled with warnings",
                         metadata={
                             "compiler": "rustc (cargo)",
+                            "target": self.WINDOWS_TARGET if self.cross_compile else "native",
                             "warnings": compile_result.get('warnings'),
-                            "stage": "compile"
+                            "stage": "compile",
+                            "binary_path": str(cached_path) if cached_path else binary_path
                         }
                     )
                 return VerifyResult(
@@ -151,13 +191,15 @@ opt-level = 2
                     details="Compilation successful",
                     metadata={
                         "compiler": "rustc (cargo)",
-                        "stage": "compile"
+                        "target": self.WINDOWS_TARGET if self.cross_compile else "native",
+                        "stage": "compile",
+                        "binary_path": str(cached_path) if cached_path else binary_path
                     }
                 )
             
-            # Step 2: Run the binary
-            binary_path = Path(project_dir) / "target" / "release" / "verify_code"
-            run_result = self._run(str(binary_path))
+            # Step 2: Run the binary (only for native compilation)
+            run_binary_path = binary_path if binary_path else str(Path(project_dir) / "target" / "release" / "verify_code")
+            run_result = self._run(run_binary_path)
             
             if not run_result['success']:
                 return VerifyResult(
@@ -244,9 +286,13 @@ opt-level = 2
         Compile Rust project with cargo.
         
         Returns:
-            dict with 'success', 'error', 'warnings' keys
+            dict with 'success', 'error', 'warnings', 'binary_path' keys
         """
         cmd = ["cargo", "build", "--release"]
+        
+        # Add target for cross-compilation
+        if self.cross_compile:
+            cmd.extend(["--target", self.WINDOWS_TARGET])
         
         # Suppress color output for cleaner parsing
         env = os.environ.copy()
@@ -268,9 +314,17 @@ opt-level = 2
                 warning_match = re.search(r'warning:', result.stderr)
                 if warning_match:
                     warnings = result.stderr.strip()
+            
+            # Determine binary path
+            if self.cross_compile:
+                binary_path = Path(project_dir) / "target" / self.WINDOWS_TARGET / "release" / "verify_code.exe"
+            else:
+                binary_path = Path(project_dir) / "target" / "release" / "verify_code"
+            
             return {
                 'success': True,
-                'warnings': warnings
+                'warnings': warnings,
+                'binary_path': str(binary_path) if binary_path.exists() else None
             }
         else:
             # Extract error message

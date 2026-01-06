@@ -140,7 +140,10 @@ The toolbox image includes:
 | PEFT | ≥0.13.0 | LoRA support |
 | TRL | ≥0.12.0 | Training library |
 | GCC/Clang | system | For code verification |
-| MinGW | cross-compiler | Windows verification |
+| MinGW | cross-compiler | Windows C++ verification |
+| Rust | system + x86_64-pc-windows-gnu | Native + Windows cross-compile |
+| Go | system | Native + Windows cross-compile |
+| .NET SDK | 8.0 | C# Windows cross-compilation |
 
 ### Build Options
 

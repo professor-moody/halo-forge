@@ -15,14 +15,21 @@ LABEL version="0.2.0"
 
 # --- base toolchain ---
 # Includes: compilers, build tools, Python, system utilities
+# Multi-language support: MinGW (C++), Rust, Go, .NET
 RUN dnf -y --nodocs --setopt=install_weak_deps=False install \
        make gcc gcc-c++ cmake lld clang clang-devel compiler-rt libcurl-devel \
        radeontop git vim patch curl ninja-build tar libatomic xz \
        python python3-devel pip aria2c jq \
        openssh-clients pciutils numactl numactl-devel libdrm mesa-libGL \
        mingw64-gcc-c++ wine \
-       rust cargo golang \
+       rust-toolset golang \
+       dotnet-sdk-8.0 \
+       sshpass \
     && dnf clean all && rm -rf /var/cache/dnf/*
+
+# --- Rust Windows cross-compilation target ---
+# Required for compiling Rust to Windows PE executables
+RUN rustup target add x86_64-pc-windows-gnu || true
 
 # --- fetch and unpack ROCm TheRock ---
 WORKDIR /tmp
@@ -128,6 +135,7 @@ RUN python -m pip install --no-cache-dir \
     seaborn \
     pyyaml>=6.0 \
     requests>=2.31.0 \
+    httpx \
     jsonlines \
     paramiko \
     pytest \

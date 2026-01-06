@@ -3,6 +3,8 @@ Go Verifier
 
 Verify Go code using `go build` with graduated rewards.
 
+Supports both native compilation and Windows cross-compilation.
+
 Graduated Rewards:
 - 0.0: Does not compile
 - 0.3: Compiles with warnings (Go rarely has warnings, uses errors)
@@ -16,6 +18,7 @@ import tempfile
 import shutil
 import os
 import resource
+import uuid
 from pathlib import Path
 from typing import Optional, List
 import re
@@ -30,8 +33,10 @@ class GoVerifier(Verifier):
     Creates a temporary Go module, writes code to main.go,
     and compiles using `go build`.
     
+    Supports Windows cross-compilation using GOOS=windows GOARCH=amd64.
+    
     Example:
-        # Compile only
+        # Compile only (native)
         verifier = GoVerifier()
         result = verifier.verify(go_code)
         
@@ -43,6 +48,12 @@ class GoVerifier(Verifier):
             run_after_compile=True,
             expected_output="Hello, World!"
         )
+        
+        # Windows cross-compilation
+        verifier = GoVerifier(cross_compile=True)
+        
+        # With binary caching
+        verifier = GoVerifier(binary_cache_dir="binaries/go")
     """
     
     def __init__(
@@ -53,7 +64,9 @@ class GoVerifier(Verifier):
         run_timeout: int = 5,
         expected_output: Optional[str] = None,
         stdin_input: Optional[str] = None,
-        memory_limit_mb: int = 256
+        memory_limit_mb: int = 256,
+        cross_compile: bool = False,
+        binary_cache_dir: Optional[str] = None
     ):
         """
         Initialize Go verifier.
@@ -61,19 +74,27 @@ class GoVerifier(Verifier):
         Args:
             timeout: go build timeout in seconds
             max_workers: Max parallel verifications
-            run_after_compile: If True, run the compiled binary
+            run_after_compile: If True, run the compiled binary (native only)
             run_timeout: Execution timeout in seconds
             expected_output: If provided, compare output to this string
             stdin_input: Input to provide to stdin when running
             memory_limit_mb: Memory limit for execution
+            cross_compile: If True, compile for Windows (GOOS=windows GOARCH=amd64)
+            binary_cache_dir: Directory to cache compiled binaries
         """
         super().__init__(max_workers=max_workers)
         self.timeout = timeout
-        self.run_after_compile = run_after_compile
+        self.run_after_compile = run_after_compile and not cross_compile  # Can't run Windows binaries
         self.run_timeout = run_timeout
         self.expected_output = expected_output
         self.stdin_input = stdin_input
         self.memory_limit_mb = memory_limit_mb
+        self.cross_compile = cross_compile
+        self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        
+        # Create cache directory if needed
+        if self.binary_cache_dir:
+            self.binary_cache_dir.mkdir(parents=True, exist_ok=True)
     
     def verify(self, code: str) -> VerifyResult:
         """
@@ -109,9 +130,19 @@ class GoVerifier(Verifier):
                     error=compile_result['error'],
                     metadata={
                         "compiler": "go build",
+                        "target": "windows/amd64" if self.cross_compile else "native",
                         "stage": "compile"
                     }
                 )
+            
+            # Cache binary if configured
+            cached_path = None
+            binary_path = compile_result.get('binary_path')
+            if self.binary_cache_dir and binary_path and Path(binary_path).exists():
+                suffix = ".exe" if self.cross_compile else ""
+                cache_name = f"{uuid.uuid4().hex[:12]}{suffix}"
+                cached_path = self.binary_cache_dir / cache_name
+                shutil.copy2(binary_path, cached_path)
             
             # Go doesn't have warnings (it treats them as errors)
             # So compilation success means clean compile
@@ -122,13 +153,15 @@ class GoVerifier(Verifier):
                     details="Compilation successful",
                     metadata={
                         "compiler": "go build",
-                        "stage": "compile"
+                        "target": "windows/amd64" if self.cross_compile else "native",
+                        "stage": "compile",
+                        "binary_path": str(cached_path) if cached_path else binary_path
                     }
                 )
             
-            # Step 2: Run the binary
-            binary_path = Path(project_dir) / "verify_code"
-            run_result = self._run(str(binary_path))
+            # Step 2: Run the binary (only for native compilation)
+            run_binary_path = binary_path if binary_path else str(Path(project_dir) / "verify_code")
+            run_result = self._run(run_binary_path)
             
             if not run_result['success']:
                 return VerifyResult(
@@ -227,20 +260,33 @@ class GoVerifier(Verifier):
         Compile Go code.
         
         Returns:
-            dict with 'success', 'error' keys
+            dict with 'success', 'error', 'binary_path' keys
         """
-        cmd = ["go", "build", "-o", "verify_code", "."]
+        # Determine output name based on target
+        output_name = "verify_code.exe" if self.cross_compile else "verify_code"
+        cmd = ["go", "build", "-o", output_name, "."]
+        
+        # Set up environment for cross-compilation
+        env = os.environ.copy()
+        if self.cross_compile:
+            env["GOOS"] = "windows"
+            env["GOARCH"] = "amd64"
         
         result = subprocess.run(
             cmd,
             cwd=project_dir,
             capture_output=True,
             text=True,
-            timeout=self.timeout
+            timeout=self.timeout,
+            env=env
         )
         
         if result.returncode == 0:
-            return {'success': True}
+            binary_path = Path(project_dir) / output_name
+            return {
+                'success': True,
+                'binary_path': str(binary_path) if binary_path.exists() else None
+            }
         else:
             # Extract error message
             error_lines = result.stderr.strip().split('\n')[:10]

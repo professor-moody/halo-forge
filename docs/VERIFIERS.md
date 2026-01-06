@@ -119,6 +119,9 @@ verifier = GCCVerifier(
 
 # Treat warnings as partial failure
 verifier = GCCVerifier(warn_as_error=True)
+
+# Save compiled binaries for later analysis
+verifier = GCCVerifier(binary_cache_dir="binaries/gcc")
 ```
 
 ### ClangVerifier
@@ -144,22 +147,159 @@ from halo_forge.rlvr.verifiers import MinGWVerifier
 verifier = MinGWVerifier(
     flags=['-static', '-lntdll'],
     timeout=30,
-    warn_as_error=True
+    warn_as_error=True,
+    binary_cache_dir="binaries/mingw"  # Save .exe files
 )
 ```
 
+### RustVerifier
+
+Compiles Rust code using Cargo. Supports compile-only or compile+run verification.
+
+```python
+from halo_forge.rlvr.verifiers import RustVerifier
+
+# Compile only
+verifier = RustVerifier(
+    timeout=60,           # Rust compiles are slower
+    edition="2021"
+)
+
+# Compile and run
+verifier = RustVerifier(
+    run_after_compile=True,
+    expected_output="Hello, World!"
+)
+
+# Windows cross-compilation
+verifier = RustVerifier(cross_compile=True)
+
+# With binary caching
+verifier = RustVerifier(binary_cache_dir="binaries/rust")
+```
+
+**Requirements (for Windows cross-compilation):**
+- `rustup target add x86_64-pc-windows-gnu`
+- MinGW linker (`mingw-w64`)
+
+### GoVerifier
+
+Compiles Go code using `go build`. Supports compile-only or compile+run verification.
+
+```python
+from halo_forge.rlvr.verifiers import GoVerifier
+
+# Compile only
+verifier = GoVerifier(timeout=30)
+
+# Compile and run
+verifier = GoVerifier(
+    run_after_compile=True,
+    expected_output="42"
+)
+
+# Windows cross-compilation
+verifier = GoVerifier(cross_compile=True)
+
+# With binary caching
+verifier = GoVerifier(binary_cache_dir="binaries/go")
+```
+
+### DotNetVerifier
+
+Compiles C# code using `dotnet publish`. Cross-compiles to Windows PE from Linux.
+
+```python
+from halo_forge.rlvr.verifiers import DotNetVerifier
+
+# Compile to Windows executable
+verifier = DotNetVerifier(
+    timeout=120,
+    target_framework="net8.0"
+)
+
+# Self-contained single file executable
+verifier = DotNetVerifier(
+    self_contained=True,
+    single_file=True
+)
+
+# With binary caching
+verifier = DotNetVerifier(binary_cache_dir="binaries/dotnet")
+```
+
+**Requirements:**
+- .NET SDK (`dnf install dotnet-sdk-8.0` on Fedora)
+
+### PowerShellVerifier
+
+Validates PowerShell script syntax. Can use local `pwsh` or remote Windows validation.
+
+```python
+from halo_forge.rlvr.verifiers import PowerShellVerifier
+
+# Local validation (requires pwsh installed)
+verifier = PowerShellVerifier(validation_mode="local")
+
+# Remote validation (via Windows SSH)
+verifier = PowerShellVerifier(
+    validation_mode="remote",
+    win_host="192.168.1.100",
+    win_user="admin",
+    win_key="~/.ssh/win"
+)
+
+# Auto-detect (tries remote, then local, then skip)
+verifier = PowerShellVerifier(validation_mode="auto")
+
+# With script caching
+verifier = PowerShellVerifier(binary_cache_dir="scripts/ps1")
+```
+
+**Requirements (local mode):**
+- PowerShell Core (`pwsh`)
+
 ### RemoteMSVCVerifier
 
-Compiles with MSVC on a remote Windows machine via SSH.
+Compiles with MSVC on a remote Windows machine via SSH. Supports compile-only or full compile+run+output verification.
 
 ```python
 from halo_forge.rlvr.verifiers import RemoteMSVCVerifier
 
+# Compile only (default)
 verifier = RemoteMSVCVerifier(
     host="192.168.1.100",
     user="developer",
     ssh_key="/home/user/.ssh/win",
     timeout=60
+)
+
+# Compile and run on Windows
+verifier = RemoteMSVCVerifier(
+    host="192.168.1.100",
+    user="developer",
+    ssh_key="/home/user/.ssh/win",
+    run_after_compile=True,
+    run_timeout=10
+)
+
+# Compile, run, and check output
+verifier = RemoteMSVCVerifier(
+    host="192.168.1.100",
+    user="developer",
+    ssh_key="/home/user/.ssh/win",
+    run_after_compile=True,
+    expected_output="Hello from MSVC!",
+    stdin_input="test input"
+)
+
+# With binary caching (downloads .exe via SCP)
+verifier = RemoteMSVCVerifier(
+    host="192.168.1.100",
+    user="developer",
+    ssh_key="/home/user/.ssh/win",
+    binary_cache_dir="binaries/msvc",
+    keep_remote_binary=False  # Delete .exe on Windows after download
 )
 
 # Test connection before training
@@ -171,6 +311,8 @@ print(verifier.test_msvc())
 - OpenSSH Server running
 - Visual Studio with MSVC
 - `C:\Binaries\input` and `C:\Binaries\output` directories
+
+See [docs/WINDOWS_SETUP.md](WINDOWS_SETUP.md) for complete setup instructions.
 
 ### PytestVerifier
 
@@ -475,13 +617,23 @@ halo-forge verifiers can be extended to domains beyond code compilation.
 ### Verifier Architecture
 
 ```
-                    Verifier (base class)
-                           |
-        +------------------+------------------+
-        |                  |                  |
-  CompileVerifier    TestVerifier      CustomVerifier
-        |                  |
-   +---------+      +----------+
-   |         |      |          |
-  GCC     MinGW   Pytest   Unittest
+                              Verifier (base class)
+                                     |
+        +----------------------------+----------------------------+
+        |                            |                            |
+  CompileVerifier               TestVerifier               ScriptVerifier
+        |                            |                            |
+   +----+----+----+----+----+   +----+----+              +--------+
+   |    |    |    |    |    |   |         |              |        |
+  GCC Clang MinGW Rust Go DotNet Pytest Unittest    PowerShell  ...
+                       |
+                   RemoteMSVC
 ```
+
+**Compile Verifiers:**
+- GCC, Clang: Linux native compilation
+- MinGW, Rust (cross), Go (cross), DotNet: Windows PE cross-compilation
+- RemoteMSVC: Remote Windows compilation via SSH
+
+**Script Verifiers:**
+- PowerShell: Syntax validation (local pwsh or remote Windows)

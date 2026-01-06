@@ -169,7 +169,7 @@ halo-forge includes ready-to-use sample datasets for immediate testing. No downl
 
 | Dataset | File | Examples | Use For |
 |---------|------|----------|---------|
-| **Full RLVR** | `datasets/windows_curriculum/windows_systems_full_rlvr.jsonl` | 361 | RAFT with MSVC |
+| **Full RLVR** | `datasets/windows_curriculum/windows_systems_full_rlvr.jsonl` | 361 | RAFT with MinGW/MSVC |
 | **Full SFT** | `datasets/windows_curriculum/windows_systems_full_sft.jsonl` | 361 | SFT training |
 | **Tier Order** | `datasets/windows_curriculum/curriculum_order_full.json` | - | Curriculum scheduling |
 
@@ -179,7 +179,31 @@ This dataset covers Windows API programming across 4 difficulty tiers:
 - Tier 3 (72): Intermediate - PE parsing, security, services
 - Tier 4 (77): Advanced - native APIs, internals, evasion
 
-Requires Windows build server with MSVC for verification.
+**Quick test - Windows with MinGW (no Windows machine needed):**
+
+```bash
+# Install MinGW cross-compiler
+sudo dnf install mingw64-gcc-c++  # Fedora
+# or: sudo apt install mingw-w64  # Ubuntu
+
+# Benchmark with MinGW
+halo-forge benchmark run \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --prompts datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
+  --verifier mingw \
+  --samples 10 \
+  --output results/windows/baseline.json
+
+# RAFT training with MinGW
+halo-forge raft train \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --prompts datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
+  --verifier mingw \
+  --cycles 3 \
+  --output models/windows_raft
+```
+
+> **Note**: MinGW can only verify compilation, not execution. For full verification (compile + run + output check), use MSVC with a Windows build server. See [docs/WINDOWS_SETUP.md](/docs/reference/windows-setup/) for setup.
 
 **Quick test - Python with MBPP:**
 
@@ -482,14 +506,18 @@ halo-forge raft train \
 
 ### Choosing a Verifier
 
-| Verifier | Language | Use Case |
-|----------|----------|----------|
-| `gcc` | C/C++ | Linux compilation |
-| `mingw` | C/C++ | Windows cross-compile |
-| `rust` | Rust | Rust compilation |
-| `go` | Go | Go compilation |
-| `humaneval` | Python | HumanEval benchmark |
-| `mbpp` | Python | MBPP benchmark |
+| Verifier | Language | Target | Compile | Run | Requires |
+|----------|----------|--------|---------|-----|----------|
+| `gcc` | C/C++ | Linux ELF | Yes | Yes | gcc/g++ |
+| `clang` | C/C++ | Linux ELF | Yes | Yes | clang/clang++ |
+| `mingw` | C/C++ | Windows PE | Yes | No | mingw-w64 |
+| `msvc` | C/C++ | Windows PE | Yes | Yes | Windows build server |
+| `rust` | Rust | Native | Yes | Yes | cargo |
+| `go` | Go | Native | Yes | Yes | go |
+| `humaneval` | Python | N/A | N/A | Yes | (built-in) |
+| `mbpp` | Python | N/A | N/A | Yes | (built-in) |
+
+All compilation verifiers support `binary_cache_dir` to save compiled binaries for later analysis.
 
 ### Monitoring Progress
 

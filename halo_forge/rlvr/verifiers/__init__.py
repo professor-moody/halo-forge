@@ -12,6 +12,8 @@ from halo_forge.rlvr.verifiers.pytest_verifier import (
 )
 from halo_forge.rlvr.verifiers.rust_verifier import RustVerifier, CargoVerifier
 from halo_forge.rlvr.verifiers.go_verifier import GoVerifier
+from halo_forge.rlvr.verifiers.dotnet_verifier import DotNetVerifier, CSharpVerifier
+from halo_forge.rlvr.verifiers.powershell_verifier import PowerShellVerifier, PS1Verifier
 
 __all__ = [
     # Base
@@ -28,6 +30,12 @@ __all__ = [
     "CargoVerifier",  # Alias for RustVerifier
     # Compile - Go
     "GoVerifier",
+    # Compile - .NET/C#
+    "DotNetVerifier",
+    "CSharpVerifier",  # Alias for DotNetVerifier
+    # Script - PowerShell
+    "PowerShellVerifier",
+    "PS1Verifier",  # Alias for PowerShellVerifier
     # Remote
     "RemoteMSVCVerifier",
     "RemoteConfig",

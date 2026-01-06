@@ -16,6 +16,8 @@ import subprocess
 import tempfile
 import os
 import resource
+import shutil
+import uuid
 from pathlib import Path
 from typing import Optional, List, Tuple
 
@@ -45,7 +47,8 @@ class CompileVerifier(Verifier):
         expected_output: Optional[str] = None,
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
-        warn_as_error: bool = False
+        warn_as_error: bool = False,
+        binary_cache_dir: Optional[str] = None
     ):
         """
         Initialize compile verifier.
@@ -61,6 +64,7 @@ class CompileVerifier(Verifier):
             stdin_input: Input to provide to stdin when running
             memory_limit_mb: Memory limit for execution in MB
             warn_as_error: If True, warnings reduce reward
+            binary_cache_dir: If provided, save compiled binaries to this directory
         """
         super().__init__(max_workers=max_workers)
         self.compiler = compiler
@@ -72,6 +76,11 @@ class CompileVerifier(Verifier):
         self.stdin_input = stdin_input
         self.memory_limit_mb = memory_limit_mb
         self.warn_as_error = warn_as_error
+        self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        
+        # Create cache directory if needed
+        if self.binary_cache_dir:
+            self.binary_cache_dir.mkdir(parents=True, exist_ok=True)
     
     def verify(self, code: str) -> VerifyResult:
         """
@@ -97,6 +106,10 @@ class CompileVerifier(Verifier):
         is_cpp = self._is_cpp(extracted)
         suffix = '.cpp' if is_cpp else '.c'
         
+        # Determine output extension (Windows cross-compilers produce .exe)
+        is_windows_target = 'mingw' in self.compiler.lower()
+        output_ext = '.exe' if is_windows_target else '.out'
+        
         # Write to temp file
         with tempfile.NamedTemporaryFile(
             mode='w',
@@ -107,7 +120,8 @@ class CompileVerifier(Verifier):
             f.write(extracted)
             source_file = f.name
         
-        output_file = source_file.replace(suffix, '.out')
+        output_file = source_file.replace(suffix, output_ext)
+        cached_path = None  # Track cached binary path for metadata
         
         try:
             # Step 1: Compile
@@ -128,6 +142,10 @@ class CompileVerifier(Verifier):
             # Check for warnings
             has_warnings = bool(compile_result.get('warnings'))
             
+            # Step 1.5: Cache binary if requested
+            if self.binary_cache_dir and os.path.exists(output_file):
+                cached_path = self._cache_binary(output_file)
+            
             # If not running after compile, return compile result
             if not self.run_after_compile:
                 if has_warnings and self.warn_as_error:
@@ -138,7 +156,8 @@ class CompileVerifier(Verifier):
                         metadata={
                             "compiler": self.compiler,
                             "warnings": compile_result.get('warnings'),
-                            "stage": "compile"
+                            "stage": "compile",
+                            "binary_path": str(cached_path) if cached_path else None
                         }
                     )
                 return VerifyResult(
@@ -147,7 +166,8 @@ class CompileVerifier(Verifier):
                     details=f"Compilation successful: {self.compiler}",
                     metadata={
                         "compiler": self.compiler,
-                        "stage": "compile"
+                        "stage": "compile",
+                        "binary_path": str(cached_path) if cached_path else None
                     }
                 )
             
@@ -163,7 +183,8 @@ class CompileVerifier(Verifier):
                     metadata={
                         "compiler": self.compiler,
                         "stage": "run",
-                        "exit_code": run_result.get('exit_code')
+                        "exit_code": run_result.get('exit_code'),
+                        "binary_path": str(cached_path) if cached_path else None
                     }
                 )
             
@@ -180,7 +201,8 @@ class CompileVerifier(Verifier):
                         metadata={
                             "compiler": self.compiler,
                             "stage": "output_check",
-                            "output": actual_output
+                            "output": actual_output,
+                            "binary_path": str(cached_path) if cached_path else None
                         }
                     )
                 else:
@@ -193,7 +215,8 @@ class CompileVerifier(Verifier):
                             "compiler": self.compiler,
                             "stage": "output_check",
                             "expected": expected,
-                            "actual": actual_output
+                            "actual": actual_output,
+                            "binary_path": str(cached_path) if cached_path else None
                         }
                     )
             
@@ -205,7 +228,8 @@ class CompileVerifier(Verifier):
                 metadata={
                     "compiler": self.compiler,
                     "stage": "run",
-                    "stdout": run_result['stdout'][:500]
+                    "stdout": run_result['stdout'][:500],
+                    "binary_path": str(cached_path) if cached_path else None
                 }
             )
                 
@@ -326,6 +350,36 @@ class CompileVerifier(Verifier):
                 'exit_code': -1
             }
     
+    def _cache_binary(self, output_file: str) -> Optional[Path]:
+        """
+        Cache compiled binary for later analysis.
+        
+        Args:
+            output_file: Path to compiled binary
+            
+        Returns:
+            Path to cached binary, or None if caching failed
+        """
+        if not self.binary_cache_dir:
+            return None
+        
+        try:
+            # Determine suffix based on output file
+            suffix = '.exe' if output_file.endswith('.exe') else ''
+            if not suffix and os.name != 'nt':
+                # Check if it's a MinGW binary (compiled for Windows)
+                if 'mingw' in self.compiler:
+                    suffix = '.exe'
+            
+            # Generate unique name
+            cache_name = f"{uuid.uuid4().hex[:12]}{suffix}"
+            cache_path = self.binary_cache_dir / cache_name
+            
+            shutil.copy2(output_file, cache_path)
+            return cache_path
+        except Exception:
+            return None
+    
     def _is_cpp(self, code: str) -> bool:
         """Detect if code is C++ (vs C)."""
         cpp_indicators = [
@@ -355,6 +409,9 @@ class GCCVerifier(CompileVerifier):
             expected_output="Hello, World!",
             stdin_input="test input"
         )
+        
+        # Save compiled binaries for later analysis
+        verifier = GCCVerifier(binary_cache_dir="binaries/gcc")
     """
     
     def __init__(
@@ -367,7 +424,8 @@ class GCCVerifier(CompileVerifier):
         expected_output: Optional[str] = None,
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
-        warn_as_error: bool = False
+        warn_as_error: bool = False,
+        binary_cache_dir: Optional[str] = None
     ):
         """
         Initialize GCC verifier.
@@ -382,6 +440,7 @@ class GCCVerifier(CompileVerifier):
             stdin_input: Input to provide to stdin when running
             memory_limit_mb: Memory limit for execution
             warn_as_error: If True, warnings reduce reward to 0.3
+            binary_cache_dir: If provided, save compiled binaries to this directory
         """
         default_flags = ['-w', '-O2']
         super().__init__(
@@ -394,7 +453,8 @@ class GCCVerifier(CompileVerifier):
             expected_output=expected_output,
             stdin_input=stdin_input,
             memory_limit_mb=memory_limit_mb,
-            warn_as_error=warn_as_error
+            warn_as_error=warn_as_error,
+            binary_cache_dir=binary_cache_dir
         )
 
 
@@ -411,6 +471,9 @@ class MinGWVerifier(CompileVerifier):
     Example:
         verifier = MinGWVerifier()
         result = verifier.verify(windows_api_code)
+        
+        # Save compiled binaries for later analysis
+        verifier = MinGWVerifier(binary_cache_dir="binaries/mingw")
     """
     
     def __init__(
@@ -418,7 +481,8 @@ class MinGWVerifier(CompileVerifier):
         flags: Optional[List[str]] = None,
         timeout: int = 30,
         max_workers: int = 8,
-        warn_as_error: bool = False
+        warn_as_error: bool = False,
+        binary_cache_dir: Optional[str] = None
     ):
         """
         Initialize MinGW verifier.
@@ -428,6 +492,7 @@ class MinGWVerifier(CompileVerifier):
             timeout: Compilation timeout
             max_workers: Max parallel compilations
             warn_as_error: If True, warnings reduce reward to 0.3
+            binary_cache_dir: If provided, save compiled .exe files to this directory
         """
         default_flags = [
             '-static',
@@ -442,7 +507,8 @@ class MinGWVerifier(CompileVerifier):
             timeout=timeout,
             max_workers=max_workers,
             run_after_compile=False,  # Cannot run Windows binaries on Linux
-            warn_as_error=warn_as_error
+            warn_as_error=warn_as_error,
+            binary_cache_dir=binary_cache_dir
         )
 
 
@@ -452,6 +518,10 @@ class ClangVerifier(CompileVerifier):
     
     Alternative to GCC with different error messages.
     Supports the same options as GCCVerifier.
+    
+    Example:
+        # Save compiled binaries for later analysis
+        verifier = ClangVerifier(binary_cache_dir="binaries/clang")
     """
     
     def __init__(
@@ -464,7 +534,8 @@ class ClangVerifier(CompileVerifier):
         expected_output: Optional[str] = None,
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
-        warn_as_error: bool = False
+        warn_as_error: bool = False,
+        binary_cache_dir: Optional[str] = None
     ):
         default_flags = ['-w', '-O2']
         super().__init__(
@@ -477,5 +548,6 @@ class ClangVerifier(CompileVerifier):
             expected_output=expected_output,
             stdin_input=stdin_input,
             memory_limit_mb=memory_limit_mb,
-            warn_as_error=warn_as_error
+            warn_as_error=warn_as_error,
+            binary_cache_dir=binary_cache_dir
         )

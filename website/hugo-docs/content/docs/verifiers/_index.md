@@ -7,12 +7,27 @@ Verifiers are the heart of RLVR — they provide the reward signal that guides t
 
 ## Built-in Verifiers
 
+### Compilation Verifiers
+
+| Verifier | Language | Target | Compile | Run | Cross-Compile |
+|----------|----------|--------|---------|-----|---------------|
+| `GCCVerifier` | C/C++ | Linux ELF | Yes | Yes | - |
+| `ClangVerifier` | C/C++ | Linux ELF | Yes | Yes | - |
+| `MinGWVerifier` | C/C++ | Windows PE | Yes | No | - |
+| `RemoteMSVCVerifier` | C/C++ | Windows PE | Yes | Yes | Requires Windows server |
+| `RustVerifier` | Rust | Native/Windows | Yes | Yes | x86_64-pc-windows-gnu |
+| `GoVerifier` | Go | Native/Windows | Yes | Yes | GOOS=windows |
+| `DotNetVerifier` | C# | Windows PE | Yes | No | win-x64 |
+| `PowerShellVerifier` | PowerShell | Script | Syntax | No | - |
+
+### Test Verifiers
+
 | Verifier | Language | Use Case |
 |----------|----------|----------|
-| `GCCVerifier` | C/C++ | Linux code |
-| `MinGWVerifier` | C/C++ | Windows code (cross-compile) |
-| `ClangVerifier` | C/C++ | Alternative to GCC |
 | `PytestVerifier` | Python | Code with tests |
+| `UnittestVerifier` | Python | unittest format |
+| `HumanEvalVerifier` | Python | HumanEval benchmark |
+| `MBPPVerifier` | Python | MBPP benchmark |
 | `SubprocessVerifier` | Any | Custom commands |
 
 ## Basic Usage
@@ -89,15 +104,19 @@ trainer.run(prompts, num_cycles=5)
 ## Verifier Architecture
 
 ```
-                    Verifier (base class)
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-  CompileVerifier    TestVerifier      CustomVerifier
-        │                  │
-   ┌────┴────┐      ┌──────┴──────┐
-   │    │    │      │             │
-  GCC MinGW Clang Pytest     Unittest
+                         Verifier (base class)
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        │                       │                       │
+  CompileVerifier          TestVerifier           CustomVerifier
+        │                       │
+   ┌────┼────┬────┬────┐   ┌────┴────┐
+   │    │    │    │    │   │         │
+  GCC MinGW Clang Rust Go Pytest  Unittest
+              │
+         RemoteMSVC
+         DotNet
+         PowerShell
 ```
 
 ## Chaining Verifiers

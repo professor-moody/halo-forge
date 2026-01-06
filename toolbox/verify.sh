@@ -181,6 +181,13 @@ test_verifiers() {
     if command -v cargo &>/dev/null; then
         rust_ver=$(rustc --version 2>/dev/null | cut -d' ' -f2 || echo "unknown")
         pass "Rust/Cargo available: ${rust_ver}"
+        
+        # Check for Windows target
+        if rustup target list --installed 2>/dev/null | grep -q "x86_64-pc-windows-gnu"; then
+            pass "Rust Windows target: x86_64-pc-windows-gnu"
+        else
+            warn "Rust Windows target not installed (run: rustup target add x86_64-pc-windows-gnu)"
+        fi
     else
         warn "Rust not found (Rust verification disabled)"
     fi
@@ -191,6 +198,22 @@ test_verifiers() {
         pass "Go available: ${go_ver}"
     else
         warn "Go not found (Go verification disabled)"
+    fi
+    
+    # Check .NET SDK
+    if command -v dotnet &>/dev/null; then
+        dotnet_ver=$(dotnet --version 2>/dev/null || echo "unknown")
+        pass ".NET SDK: ${dotnet_ver}"
+    else
+        warn ".NET SDK not found (C# verification disabled)"
+    fi
+    
+    # Check PowerShell Core (optional for local syntax checking)
+    if command -v pwsh &>/dev/null; then
+        pwsh_ver=$(pwsh --version 2>/dev/null | head -1 || echo "unknown")
+        pass "PowerShell Core: ${pwsh_ver}"
+    else
+        warn "PowerShell Core not found (optional for local PS1 validation)"
     fi
     
     # Check pytest
@@ -265,6 +288,23 @@ test_halo_forge_modules() {
             pass "${module}.${cls}"
         else
             warn "${module}.${cls} not importable (run: pip install -e .)"
+        fi
+    done
+    
+    # Multi-language verifiers
+    local verifiers=(
+        "MinGWVerifier"
+        "RustVerifier"
+        "GoVerifier"
+        "DotNetVerifier"
+        "PowerShellVerifier"
+    )
+    
+    for verifier in "${verifiers[@]}"; do
+        if python3 -c "from halo_forge.rlvr.verifiers import ${verifier}" 2>/dev/null; then
+            pass "Verifier: ${verifier}"
+        else
+            warn "Verifier not importable: ${verifier}"
         fi
     done
 }
