@@ -7,8 +7,8 @@ Unified command-line interface for the halo-forge framework.
 Usage:
     halo-forge data prepare --dataset codeforces_cpp --output data/train.jsonl
     halo-forge data generate --topic rust_async --backend deepseek --output data/rust.jsonl
-    halo-forge sft train --config configs/sft.yaml
-    halo-forge raft train --config configs/raft.yaml
+    halo-forge sft train --model Qwen/Qwen2.5-Coder-0.5B --data data/train.jsonl
+    halo-forge raft train --model Qwen/Qwen2.5-Coder-0.5B --prompts data/prompts.jsonl
     halo-forge benchmark run --model models/raft/cycle_3 --prompts data/test.jsonl
     halo-forge test --level standard  # Validate pipeline
     halo-forge info  # Show hardware info
@@ -94,8 +94,18 @@ def cmd_sft_train(args):
     
     if args.config:
         config = SFTConfig.from_yaml(args.config)
+        # CLI args override config file
+        if args.model:
+            config.model_name = args.model
+        if args.data:
+            config.train_file = args.data
+        if args.output:
+            config.output_dir = args.output
+        if args.epochs:
+            config.num_epochs = args.epochs
     else:
         config = SFTConfig(
+            model_name=args.model or "Qwen/Qwen2.5-Coder-7B",
             train_file=args.data,
             output_dir=args.output,
             num_epochs=args.epochs
@@ -809,6 +819,7 @@ def main():
     # sft train
     sft_train_parser = sft_subparsers.add_parser('train', help='Run SFT training')
     sft_train_parser.add_argument('--config', '-c', help='Config file path')
+    sft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
     sft_train_parser.add_argument('--data', help='Training data file')
     sft_train_parser.add_argument('--output', '-o', default='models/sft', help='Output directory')
     sft_train_parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')

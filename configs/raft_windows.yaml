@@ -1,0 +1,63 @@
+# =============================================================================
+# RAFT Configuration for Windows Systems Programming
+# =============================================================================
+# Optimized for AMD Strix Halo with remote MSVC verification on Windows server.
+#
+# Usage:
+#   halo-forge raft train --config configs/raft_windows.yaml \
+#     --prompts datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
+#     --model Qwen/Qwen2.5-Coder-0.5B \
+#     --output models/windows_raft_0.5b
+#
+# =============================================================================
+
+# Base model (can be overridden with --model)
+base_model: Qwen/Qwen2.5-Coder-0.5B
+
+# SFT checkpoint to start from (can be overridden with --checkpoint)
+# Leave empty to start from base model
+sft_checkpoint: ""
+
+# Output directory (can be overridden with --output)
+output_dir: models/raft
+
+# Number of RAFT cycles (can be overridden with --cycles)
+num_cycles: 6
+
+# -----------------------------------------------------------------------------
+# Verifier Configuration
+# -----------------------------------------------------------------------------
+# MSVC verifier for Windows C++ code compilation
+verifier:
+  type: msvc
+  host: 10.0.0.152       # Windows build server
+  user: keys             # SSH username
+  ssh_key: ~/.ssh/win    # SSH key path
+
+# -----------------------------------------------------------------------------
+# RAFT Training Parameters
+# -----------------------------------------------------------------------------
+
+# Percentage of top-performing samples to keep for training (0.0 to 1.0)
+# Higher = more selective, potentially slower learning but higher quality
+keep_top_percent: 0.5
+
+# Minimum reward threshold for samples to be considered (0.0 to 1.0)
+# Samples below this are rejected even if in the top X%
+reward_threshold: 0.5
+
+# Curriculum learning strategy
+# Options: none, complexity, progressive, adaptive
+# - none: No curriculum, all prompts weighted equally
+# - complexity: Start with simpler prompts (Tier 1-2), add harder ones (Tier 3-4) over cycles
+# - progressive: Gradually increase difficulty based on model performance
+# - adaptive: Dynamically adjust based on per-prompt success rate
+curriculum_strategy: progressive
+
+# Reward shaping strategy
+# Options: fixed, annealing, adaptive, warmup
+# - fixed: Constant reward scale throughout training
+# - annealing: Decrease reward scale over cycles (exploration -> exploitation)
+# - adaptive: Adjust rewards based on pass rate
+# - warmup: Start with lenient rewards, become stricter
+reward_shaping_strategy: warmup
