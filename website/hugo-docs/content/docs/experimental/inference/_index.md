@@ -3,9 +3,7 @@ title: "Inference Optimization"
 weight: 20
 ---
 
-{{% hint type="warning" %}}
-**Experimental Feature**: Inference optimization is under active development. APIs may change.
-{{% /hint %}}
+> **⚠️ Experimental Feature**: Inference optimization is under active development. APIs may change.
 
 # Inference Optimization
 

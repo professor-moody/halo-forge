@@ -3,9 +3,7 @@ title: "VLM Training"
 weight: 10
 ---
 
-{{% hint type="warning" %}}
-**Experimental Feature**: VLM training is under active development. APIs may change.
-{{% /hint %}}
+> **⚠️ Experimental Feature**: VLM training is under active development. APIs may change.
 
 # Vision-Language Model Training
 
