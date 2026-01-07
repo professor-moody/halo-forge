@@ -813,11 +813,11 @@ class MyDomainVerifier(Verifier):
 
 ### Roadmap
 
-- **v0.3.0** (Current): Multi-language support, execution verifier, LR decay, metrics tracking
-- **v0.4.0** (Q2 2026): Inference optimization mode, GGUF/ONNX export, QAT training
-- **v0.5.0** (Q3 2026): Vision-language training (VLM RLVR)
-- **v0.6.0** (Q4 2026): Audio-language training (ASR/TTS)
-- **v1.0.0** (2027): Cross-platform GUI, full multi-modal support
+- **v0.3.0**: Multi-language support, execution verifier, LR decay, metrics tracking
+- **v0.4.0**: Inference optimization mode, GGUF/ONNX export, QAT training
+- **v0.5.0** (Current): Vision-language training (VLM RLVR)
+- **v0.6.0** (Planned): Audio-language training (ASR/TTS)
+- **v1.0.0** (Planned): Cross-platform GUI, full multi-modal support
 
 ---
 

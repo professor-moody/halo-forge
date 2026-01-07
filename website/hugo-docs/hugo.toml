@@ -6,7 +6,7 @@ enableRobotsTXT = true
 [params]
   description = "RLVR Training Framework for AMD Strix Halo"
   github = "https://github.com/professor-moody/halo-forge"
-  version = "0.2.0"
+  version = "0.5.0"
 
 [markup]
   [markup.highlight]
