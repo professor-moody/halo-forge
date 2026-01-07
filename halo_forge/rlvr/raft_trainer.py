@@ -77,6 +77,10 @@ class RAFTConfig:
     gradient_accumulation_steps: int = 16
     learning_rate: float = 5e-5
     
+    # Learning rate decay across cycles (prevents degradation at cycles 7-8)
+    lr_decay_per_cycle: float = 0.85  # Multiply LR by this each cycle
+    min_lr: float = 1e-6              # Floor for learning rate
+    
     # System prompt for generation (matches Windows curriculum SFT data)
     system_prompt: str = "You are an expert Windows systems programmer."
     
@@ -102,6 +106,40 @@ class RAFTConfig:
         
         progress = (cycle - 1) / (self.num_cycles - 1)
         return self.temperature_start + progress * (self.temperature_end - self.temperature_start)
+    
+    def get_learning_rate_for_cycle(self, cycle: int) -> float:
+        """
+        Get learning rate for a specific cycle with exponential decay.
+        
+        Prevents training degradation at later cycles (7-8) by reducing
+        learning rate as training progresses.
+        
+        Formula: lr_n = lr_0 * decay^(n-1)
+        
+        Args:
+            cycle: Current cycle number (1-indexed)
+            
+        Returns:
+            Learning rate for this cycle, floored at min_lr
+        """
+        lr = self.learning_rate * (self.lr_decay_per_cycle ** (cycle - 1))
+        return max(lr, self.min_lr)
+    
+    def get_learning_rate_for_cycle(self, cycle: int) -> float:
+        """
+        Get learning rate for a specific cycle with exponential decay.
+        
+        Prevents training degradation at cycles 7-8 by reducing LR over time.
+        Formula: lr_n = lr_0 * decay^(n-1)
+        
+        Args:
+            cycle: Current cycle number (1-indexed)
+            
+        Returns:
+            Learning rate for this cycle
+        """
+        lr = self.learning_rate * (self.lr_decay_per_cycle ** (cycle - 1))
+        return max(lr, self.min_lr)
 
 
 class RAFTTrainer:
@@ -524,13 +562,17 @@ class RAFTTrainer:
             remove_columns=['text']
         )
         
+        # Get cycle-specific learning rate (exponential decay prevents late-cycle degradation)
+        cycle_lr = cfg.get_learning_rate_for_cycle(cycle)
+        self._log(f"Cycle {cycle} learning rate: {cycle_lr:.2e}", "dim")
+        
         # Training args - optimized for Strix Halo
         training_args = TrainingArguments(
             output_dir=str(self.output_dir / f"cycle_{cycle}"),
             num_train_epochs=cfg.train_epochs,
             per_device_train_batch_size=cfg.train_batch_size,
             gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-            learning_rate=cfg.learning_rate,
+            learning_rate=cycle_lr,
             warmup_steps=0,  # No warmup - prevents LR=0 with few training steps
             bf16=True,
             gradient_checkpointing=True,
@@ -751,6 +793,13 @@ class RAFTTrainer:
             print(f"  Temperature: {cfg.temperature_start:.2f} → {cfg.temperature_end:.2f} (scheduled)")
         else:
             print(f"  Temperature: {cfg.temperature:.2f} (fixed)")
+        
+        # Learning rate decay info
+        if cfg.lr_decay_per_cycle < 1.0:
+            final_lr = cfg.get_learning_rate_for_cycle(cfg.num_cycles)
+            print(f"  Learning rate: {cfg.learning_rate:.2e} → {final_lr:.2e} (decay={cfg.lr_decay_per_cycle})")
+        else:
+            print(f"  Learning rate: {cfg.learning_rate:.2e} (fixed)")
         
         # Curriculum learning setup
         curriculum_scheduler = None

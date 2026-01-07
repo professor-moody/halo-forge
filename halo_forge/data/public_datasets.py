@@ -121,6 +121,31 @@ register_dataset(DatasetSpec(
     include_reasoning=False
 ))
 
+# HumanEval+ (Extended test cases)
+register_dataset(DatasetSpec(
+    name="humaneval_plus",
+    hf_path="evalplus/humanevalplus",
+    hf_split="test",
+    prompt_field="prompt",
+    response_field="canonical_solution",
+    max_examples=164,
+    system_prompt=get_system_prompt("code_python"),
+    include_reasoning=False
+))
+
+# LiveCodeBench (Contamination-free benchmark)
+register_dataset(DatasetSpec(
+    name="livecodebench",
+    hf_path="livecodebench/code_generation_lite",
+    hf_split="test",
+    prompt_field="question_content",
+    response_field="canonical_solution",
+    difficulty_field="difficulty",
+    max_examples=500,
+    system_prompt=get_system_prompt("competitive"),
+    include_reasoning=False
+))
+
 
 class DatasetPreparer:
     """

@@ -34,6 +34,107 @@ def cmd_data_validate(args):
         sys.exit(1)
 
 
+def cmd_config_validate(args):
+    """Validate training config file."""
+    import yaml
+    from pathlib import Path
+    
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"Error: Config file not found: {config_path}")
+        sys.exit(1)
+    
+    errors = []
+    warnings = []
+    
+    try:
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"Error: Invalid YAML syntax: {e}")
+        sys.exit(1)
+    
+    print(f"Validating config: {config_path}")
+    print("=" * 50)
+    
+    # Required fields based on config type
+    config_type = args.type
+    if not config_type:
+        if 'raft' in str(config_path).lower():
+            config_type = 'raft'
+        elif 'sft' in str(config_path).lower():
+            config_type = 'sft'
+        else:
+            config_type = 'auto'
+    
+    if config_type == 'raft':
+        required = ['base_model', 'output_dir']
+    elif config_type == 'sft':
+        required = ['model', 'data_path', 'output_dir']
+    else:
+        required = []
+    
+    # Check required fields
+    for field in required:
+        if field not in config:
+            errors.append(f"Missing required field: {field}")
+    
+    # Validate specific fields
+    if 'learning_rate' in config:
+        lr = config['learning_rate']
+        if not isinstance(lr, (int, float)) or lr <= 0:
+            errors.append(f"Invalid learning_rate: {lr} (must be positive number)")
+        elif lr > 1e-3:
+            warnings.append(f"learning_rate={lr} seems high (typical: 1e-5 to 5e-5)")
+    
+    if 'lr_decay_per_cycle' in config:
+        decay = config['lr_decay_per_cycle']
+        if not 0 < decay <= 1:
+            errors.append(f"Invalid lr_decay_per_cycle: {decay} (must be 0 < x <= 1)")
+    
+    if 'num_cycles' in config:
+        cycles = config['num_cycles']
+        if not isinstance(cycles, int) or cycles < 1:
+            errors.append(f"Invalid num_cycles: {cycles} (must be positive integer)")
+        elif cycles > 10:
+            warnings.append(f"num_cycles={cycles} is high (typical: 3-6)")
+    
+    if 'temperature' in config:
+        temp = config['temperature']
+        if not 0 < temp <= 2:
+            errors.append(f"Invalid temperature: {temp} (must be 0 < x <= 2)")
+    
+    if 'reward_threshold' in config:
+        threshold = config['reward_threshold']
+        if not 0 <= threshold <= 1:
+            errors.append(f"Invalid reward_threshold: {threshold} (must be 0 <= x <= 1)")
+    
+    # Print results
+    if errors:
+        print("\nErrors:")
+        for e in errors:
+            print(f"  ✗ {e}")
+    
+    if warnings:
+        print("\nWarnings:")
+        for w in warnings:
+            print(f"  ⚠ {w}")
+    
+    if not errors and not warnings:
+        print("✓ Config is valid")
+    elif not errors:
+        print(f"\n✓ Config is valid ({len(warnings)} warnings)")
+    
+    # Print config summary
+    if args.verbose:
+        print("\nConfig contents:")
+        for key, value in config.items():
+            print(f"  {key}: {value}")
+    
+    if errors:
+        sys.exit(1)
+
+
 def cmd_data_prepare(args):
     """Prepare dataset from public sources."""
     from halo_forge.data.public_datasets import (
@@ -179,6 +280,22 @@ def cmd_raft_train(args):
         from halo_forge.rlvr.verifiers import GoVerifier
         run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
         verifier = GoVerifier(run_after_compile=run_after)
+    elif verifier_type == 'auto':
+        from halo_forge.rlvr.verifiers import MultiLanguageVerifier
+        run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
+        binary_cache = cfg_dict.get('verifier', {}).get('binary_cache_dir')
+        verifier = MultiLanguageVerifier(
+            run_after_compile=run_after,
+            binary_cache_dir=binary_cache
+        )
+    elif verifier_type == 'execution':
+        from halo_forge.rlvr.verifiers import ExecutionVerifier
+        test_cases = cfg_dict.get('verifier', {}).get('test_cases', [])
+        match_mode = cfg_dict.get('verifier', {}).get('match_mode', 'exact')
+        verifier = ExecutionVerifier(
+            test_cases=test_cases,
+            match_mode=match_mode
+        )
     else:
         print(f"Unknown verifier: {verifier_type}")
         print("Available: gcc, mingw, msvc, humaneval, mbpp, rust, go")
@@ -191,6 +308,8 @@ def cmd_raft_train(args):
     curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
     reward_shaping = getattr(args, 'reward_shaping', None) or cfg_dict.get('reward_shaping_strategy', 'fixed')
     system_prompt = getattr(args, 'system_prompt', None) or cfg_dict.get('system_prompt', 'You are an expert Windows systems programmer.')
+    lr_decay = getattr(args, 'lr_decay', None) or cfg_dict.get('lr_decay_per_cycle', 0.85)
+    min_lr = getattr(args, 'min_lr', None) or cfg_dict.get('min_lr', 1e-6)
     
     config = RAFTConfig(
         base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
@@ -201,7 +320,9 @@ def cmd_raft_train(args):
         reward_threshold=reward_threshold,
         curriculum_strategy=curriculum,
         reward_shaping_strategy=reward_shaping,
-        system_prompt=system_prompt
+        system_prompt=system_prompt,
+        lr_decay_per_cycle=lr_decay,
+        min_lr=min_lr
     )
     
     # Load prompts
@@ -226,13 +347,30 @@ def cmd_raft_train(args):
 def cmd_benchmark(args):
     """Run benchmark."""
     from halo_forge.benchmark.pass_at_k import Benchmark
-    from halo_forge.rlvr.verifiers import GCCVerifier, MinGWVerifier, RemoteMSVCVerifier
+    from halo_forge.rlvr.verifiers import (
+        GCCVerifier, MinGWVerifier, RemoteMSVCVerifier,
+        RustVerifier, GoVerifier, DotNetVerifier, PowerShellVerifier,
+        MultiLanguageVerifier, AutoVerifier
+    )
     
     # Setup verifier
     if args.verifier == 'gcc':
         verifier = GCCVerifier()
     elif args.verifier == 'mingw':
         verifier = MinGWVerifier()
+    elif args.verifier == 'rust':
+        verifier = RustVerifier(cross_compile=getattr(args, 'cross_compile', False))
+    elif args.verifier == 'go':
+        verifier = GoVerifier(cross_compile=getattr(args, 'cross_compile', False))
+    elif args.verifier == 'dotnet':
+        verifier = DotNetVerifier()
+    elif args.verifier == 'powershell':
+        verifier = PowerShellVerifier()
+    elif args.verifier in ('auto', 'multi'):
+        # Auto-detect language from code
+        verifier = MultiLanguageVerifier(
+            run_after_compile=getattr(args, 'run_after_compile', False)
+        )
     elif args.verifier == 'msvc':
         # Validate required MSVC parameters
         missing = []
@@ -261,6 +399,7 @@ def cmd_benchmark(args):
         )
     else:
         print(f"Unknown verifier: {args.verifier}")
+        print("Available verifiers: gcc, mingw, msvc, rust, go, dotnet, powershell, auto")
         sys.exit(1)
     
     # Create benchmark
@@ -829,6 +968,17 @@ def main():
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
     
+    # config command
+    config_parser = subparsers.add_parser('config', help='Configuration utilities')
+    config_subparsers = config_parser.add_subparsers(dest='config_command', required=True)
+    
+    # config validate
+    config_validate_parser = config_subparsers.add_parser('validate', help='Validate config file')
+    config_validate_parser.add_argument('config', help='Path to config file')
+    config_validate_parser.add_argument('--type', '-t', choices=['raft', 'sft', 'auto'], default='auto',
+                                        help='Config type (auto-detected from filename if not specified)')
+    config_validate_parser.add_argument('--verbose', '-v', action='store_true', help='Show config contents')
+    
     # data command
     data_parser = subparsers.add_parser('data', help='Data preparation')
     data_subparsers = data_parser.add_subparsers(dest='data_command', required=True)
@@ -880,7 +1030,9 @@ def main():
     raft_train_parser.add_argument('--prompts', '-p', help='Prompts file')
     raft_train_parser.add_argument('--output', '-o', default='models/raft', help='Output directory')
     raft_train_parser.add_argument('--cycles', type=int, help='Number of RAFT cycles')
-    raft_train_parser.add_argument('--verifier', default='gcc', help='Verifier type')
+    raft_train_parser.add_argument('--verifier', default='gcc',
+                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto'],
+                                   help='Verifier type (auto=multi-language)')
     raft_train_parser.add_argument('--keep-percent', type=float, default=0.5, 
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
@@ -891,6 +1043,10 @@ def main():
     raft_train_parser.add_argument('--reward-shaping', default='fixed',
                                    choices=['fixed', 'annealing', 'adaptive', 'warmup'],
                                    help='Reward shaping strategy (default: fixed)')
+    raft_train_parser.add_argument('--lr-decay', type=float, default=0.85,
+                                   help='Learning rate decay per cycle (default: 0.85)')
+    raft_train_parser.add_argument('--min-lr', type=float, default=1e-6,
+                                   help='Minimum learning rate floor (default: 1e-6)')
     raft_train_parser.add_argument('--system-prompt', 
                                    default='You are an expert Windows systems programmer.',
                                    help='System prompt for generation')
@@ -910,12 +1066,16 @@ def main():
     bench_run_parser.add_argument('--samples', type=int, default=10, help='Samples per prompt')
     bench_run_parser.add_argument('--k', default='1,5,10', help='k values (comma-separated)')
     bench_run_parser.add_argument('--max-prompts', type=int, help='Max prompts to evaluate')
-    bench_run_parser.add_argument('--verifier', default='gcc', help='Verifier type')
+    bench_run_parser.add_argument('--verifier', default='gcc', 
+                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto'],
+                                   help='Verifier type (auto=multi-language)')
     bench_run_parser.add_argument('--base-model', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
     bench_run_parser.add_argument('--system-prompt', default='You are an expert Windows systems programmer.', help='System prompt')
     bench_run_parser.add_argument('--host', help='MSVC host')
     bench_run_parser.add_argument('--user', help='MSVC user')
     bench_run_parser.add_argument('--ssh-key', help='MSVC SSH key')
+    bench_run_parser.add_argument('--cross-compile', action='store_true', help='Enable Windows cross-compilation for rust/go')
+    bench_run_parser.add_argument('--run-after-compile', action='store_true', help='Run compiled code after compile')
     
     # benchmark full (comprehensive RAFT benchmark with hardware metrics)
     bench_full_parser = bench_subparsers.add_parser('full', help='Run comprehensive RAFT benchmark')
@@ -943,7 +1103,10 @@ def main():
     args = parser.parse_args()
     
     # Route to handler
-    if args.command == 'data':
+    if args.command == 'config':
+        if args.config_command == 'validate':
+            cmd_config_validate(args)
+    elif args.command == 'data':
         if args.data_command == 'prepare':
             cmd_data_prepare(args)
         elif args.data_command == 'generate':
