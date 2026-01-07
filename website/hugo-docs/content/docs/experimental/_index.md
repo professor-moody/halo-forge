@@ -53,6 +53,38 @@ halo-forge inference export --model models/trained --format gguf --output model.
 
 ---
 
+### Liquid AI LFM2.5 Models
+
+Liquid AI's [LFM2.5 family](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) is now experimentally supported for RAFT training. These models feature a hybrid convolutional architecture optimized for edge deployment.
+
+| Model | Parameters | Status | Notes |
+|-------|------------|--------|-------|
+| LiquidAI/LFM2.5-1.2B-Base | 1.2B | Beta | For custom fine-tuning |
+| LiquidAI/LFM2.5-1.2B-Instruct | 1.2B | Beta | General instruction following |
+| LiquidAI/LFM2.5-VL-1.6B | 1.6B | Alpha | Vision-language (untested) |
+
+**Quick test:**
+```bash
+halo-forge benchmark run \
+  --model LiquidAI/LFM2.5-1.2B-Instruct \
+  --prompts data/prompts.jsonl \
+  --verifier mingw \
+  --samples 5
+```
+
+**Initial results** (5 Windows API prompts, 3 samples each):
+- pass@1: 33%
+- Compile rate: 40-60%
+- PEFT/LoRA: ✅ Compatible
+- Generation speed: ~47s per batch of 4
+
+**Why LFM2.5?**
+- Efficient 1.2B parameter size = fast iteration cycles
+- AMD partnership suggests good ROCm compatibility
+- Strong instruction following benchmarks
+
+---
+
 ## Stability Levels
 
 | Level | Meaning |

@@ -225,7 +225,8 @@ class RAFTTrainer:
             cfg.base_model,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            attn_implementation="eager"
+            attn_implementation="eager",
+            trust_remote_code=True
         )
         
         # Check if SFT checkpoint has PEFT adapters
@@ -750,7 +751,8 @@ class RAFTTrainer:
             cfg.base_model,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            attn_implementation="eager"
+            attn_implementation="eager",
+            trust_remote_code=True
         )
         
         # Load PEFT adapters onto fresh base

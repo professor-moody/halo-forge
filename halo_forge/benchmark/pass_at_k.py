@@ -163,23 +163,33 @@ class Benchmark:
         adapter_config = Path(self.model_path) / "adapter_config.json"
         
         if adapter_config.exists():
-            # LoRA checkpoint
+            # LoRA checkpoint - use base_model for tokenizer (already loaded above)
             print("Loading as LoRA checkpoint...")
             base = AutoModelForCausalLM.from_pretrained(
                 self.base_model,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
-                attn_implementation="eager"
+                attn_implementation="eager",
+                trust_remote_code=True
             )
             self.model = PeftModel.from_pretrained(base, self.model_path)
         else:
-            # Full model
+            # Full model - reload tokenizer from model_path (not base_model)
             print("Loading as full model...")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_path,
+                trust_remote_code=True,
+                padding_side='left'
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
-                attn_implementation="eager"
+                attn_implementation="eager",
+                trust_remote_code=True
             )
         
         self.model.eval()

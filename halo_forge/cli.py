@@ -14,8 +14,14 @@ Usage:
     halo-forge info  # Show hardware info
 """
 
-import argparse
+# Pre-parse for --experimental-attention BEFORE any torch imports
+# This must happen before any imports that could trigger torch loading
 import sys
+import os
+if '--experimental-attention' in sys.argv:
+    os.environ['TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL'] = '1'
+
+import argparse
 import json
 import time
 import shutil
@@ -218,6 +224,8 @@ def cmd_sft_train(args):
 
 def cmd_raft_train(args):
     """Run RAFT training."""
+    # Note: --experimental-attention is handled at script startup (before imports)
+    
     import yaml
     from halo_forge.rlvr.raft_trainer import RAFTTrainer, RAFTConfig
     from halo_forge.rlvr.verifiers import (
@@ -346,6 +354,8 @@ def cmd_raft_train(args):
 
 def cmd_benchmark(args):
     """Run benchmark."""
+    # Note: --experimental-attention is handled at script startup (before imports)
+    
     from halo_forge.benchmark.pass_at_k import Benchmark
     from halo_forge.rlvr.verifiers import (
         GCCVerifier, MinGWVerifier, RemoteMSVCVerifier,
@@ -1403,6 +1413,8 @@ def main():
                                    help='Learning rate decay per cycle (default: 0.85)')
     raft_train_parser.add_argument('--min-lr', type=float, default=1e-6,
                                    help='Minimum learning rate floor (default: 1e-6)')
+    raft_train_parser.add_argument('--experimental-attention', action='store_true',
+                                   help='Enable experimental ROCm attention (needed for LFM2.5, etc.)')
     raft_train_parser.add_argument('--system-prompt', 
                                    default='You are an expert Windows systems programmer.',
                                    help='System prompt for generation')
@@ -1432,6 +1444,8 @@ def main():
     bench_run_parser.add_argument('--ssh-key', help='MSVC SSH key')
     bench_run_parser.add_argument('--cross-compile', action='store_true', help='Enable Windows cross-compilation for rust/go')
     bench_run_parser.add_argument('--run-after-compile', action='store_true', help='Run compiled code after compile')
+    bench_run_parser.add_argument('--experimental-attention', action='store_true',
+                                  help='Enable experimental ROCm attention (needed for LFM2.5, etc.)')
     
     # benchmark full (comprehensive RAFT benchmark with hardware metrics)
     bench_full_parser = bench_subparsers.add_parser('full', help='Run comprehensive RAFT benchmark')
