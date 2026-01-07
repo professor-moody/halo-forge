@@ -33,6 +33,11 @@ rich
 # Testing
 pytest
 
+# Audio (Phase 4)
+torchaudio>=2.0.0
+librosa>=0.10.0
+jiwer>=3.0.0  # WER calculation
+
 # Optional: TUI (Terminal User Interface)
 # textual>=0.50.0  # Install for TUI support: pip install textual
 

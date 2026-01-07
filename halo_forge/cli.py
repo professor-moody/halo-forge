@@ -1409,6 +1409,146 @@ def cmd_vlm_datasets(args):
     for name in datasets:
         desc = dataset_info.get(name, 'Vision-language dataset')
         print(f"  {name:15} - {desc}")
+
+
+# =============================================================================
+# Audio Commands
+# =============================================================================
+
+def cmd_audio_datasets(args):
+    """List available audio datasets."""
+    from halo_forge.audio.data import list_audio_datasets
+    
+    print("Available Audio Datasets")
+    print("=" * 60)
+    
+    dataset_info = {
+        'librispeech': ('ASR', 'Clean audiobook speech (960h)'),
+        'common_voice': ('ASR', 'Crowdsourced multilingual (2000h+)'),
+        'audioset': ('Classification', 'Sound event detection (5M clips)'),
+        'speech_commands': ('Classification', 'Keyword spotting (105k)'),
+    }
+    
+    datasets = list_audio_datasets()
+    
+    for name in datasets:
+        task, desc = dataset_info.get(name, ('Unknown', 'Audio dataset'))
+        print(f"  {name:18} [{task:14}] - {desc}")
+    
+    print()
+    print("Usage:")
+    print("  halo-forge audio benchmark --model openai/whisper-small --dataset librispeech")
+    print("  halo-forge audio train --model openai/whisper-small --dataset librispeech")
+
+
+def cmd_audio_benchmark(args):
+    """Benchmark audio model."""
+    from halo_forge.audio import AudioRAFTTrainer, AudioRAFTConfig
+    
+    print_banner()
+    
+    print(f"\n{GREEN}Audio Benchmark{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Task: {args.task}")
+    print(f"Limit: {args.limit}")
+    
+    # Check dependencies
+    try:
+        from halo_forge.audio.data.processors import check_audio_dependencies
+        deps = check_audio_dependencies()
+        
+        if not deps.get('torchaudio'):
+            print(f"\n{YELLOW}Warning: torchaudio not installed{NC}")
+            print("Install with: pip install torchaudio")
+    except ImportError as e:
+        print(f"\n{RED}Error: {e}{NC}")
+        sys.exit(1)
+    
+    # Create config
+    config = AudioRAFTConfig(
+        model_name=args.model,
+        task=args.task,
+        wer_threshold=0.3,
+    )
+    
+    # Run benchmark
+    trainer = AudioRAFTTrainer(config)
+    results = trainer.benchmark(args.dataset, limit=args.limit)
+    
+    print(f"\n{GREEN}Results:{NC}")
+    print(f"  Samples: {results['samples']}")
+    print(f"  Success rate: {results['success_rate']:.1%}")
+    print(f"  Average reward: {results['average_reward']:.3f}")
+    
+    if args.task == 'asr':
+        print(f"  Average WER: {results.get('average_wer', 'N/A'):.1%}")
+    
+    # Save results
+    if args.output:
+        import json
+        with open(args.output, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"\nResults saved to {args.output}")
+
+
+def cmd_audio_train(args):
+    """Train audio model with RAFT."""
+    from halo_forge.audio import AudioRAFTTrainer, AudioRAFTConfig
+    
+    print_banner()
+    
+    print(f"\n{GREEN}Audio RAFT Training{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Task: {args.task}")
+    print(f"Cycles: {args.cycles}")
+    print(f"Output: {args.output}")
+    
+    if args.dry_run:
+        print(f"\n{YELLOW}Dry run mode - validating configuration only{NC}")
+        
+        # Check dependencies
+        try:
+            from halo_forge.audio.data.processors import check_audio_dependencies
+            deps = check_audio_dependencies()
+            
+            print(f"\nDependencies:")
+            for dep, installed in deps.items():
+                status = f"{GREEN}✓{NC}" if installed else f"{RED}✗{NC}"
+                print(f"  {status} {dep}")
+            
+            # Try loading dataset info
+            from halo_forge.audio.data import list_audio_datasets
+            if args.dataset in list_audio_datasets():
+                print(f"\n{GREEN}✓{NC} Dataset: {args.dataset}")
+            else:
+                print(f"\n{YELLOW}⚠{NC} Dataset: {args.dataset} (custom path)")
+            
+            print(f"\n{GREEN}Configuration validated successfully.{NC}")
+        except Exception as e:
+            print(f"\n{RED}Validation error: {e}{NC}")
+            sys.exit(1)
+        return
+    
+    # Create config
+    config = AudioRAFTConfig(
+        model_name=args.model,
+        task=args.task,
+        num_cycles=args.cycles,
+        learning_rate=args.lr,
+        lr_decay_per_cycle=args.lr_decay,
+        output_dir=args.output,
+    )
+    
+    # Run training
+    trainer = AudioRAFTTrainer(config)
+    results = trainer.train(args.dataset)
+    
+    print(f"\n{GREEN}Training complete!{NC}")
+    print(f"Final model saved to: {args.output}")
     
     print("\nUsage:")
     print("  halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct")
@@ -1620,6 +1760,46 @@ def main():
     # vlm datasets
     vlm_datasets_parser = vlm_subparsers.add_parser('datasets', help='List available VLM datasets')
     
+    # audio command
+    audio_parser = subparsers.add_parser('audio', help='Audio-language training')
+    audio_subparsers = audio_parser.add_subparsers(dest='audio_command', required=True)
+    
+    # audio datasets
+    audio_datasets_parser = audio_subparsers.add_parser('datasets', help='List available audio datasets')
+    
+    # audio benchmark
+    audio_bench_parser = audio_subparsers.add_parser('benchmark', help='Benchmark audio model')
+    audio_bench_parser.add_argument('--model', '-m', default='openai/whisper-small',
+                                    help='Audio model (default: openai/whisper-small)')
+    audio_bench_parser.add_argument('--dataset', '-d', default='librispeech',
+                                    help='Dataset name (default: librispeech)')
+    audio_bench_parser.add_argument('--task', '-t', default='asr',
+                                    choices=['asr', 'tts', 'classification'],
+                                    help='Task type (default: asr)')
+    audio_bench_parser.add_argument('--limit', type=int, default=100,
+                                    help='Limit samples (default: 100)')
+    audio_bench_parser.add_argument('--output', '-o', help='Output file for results')
+    
+    # audio train
+    audio_train_parser = audio_subparsers.add_parser('train', help='Train audio model with RAFT')
+    audio_train_parser.add_argument('--model', '-m', default='openai/whisper-small',
+                                    help='Audio model (default: openai/whisper-small)')
+    audio_train_parser.add_argument('--dataset', '-d', default='librispeech',
+                                    help='Dataset name or path (default: librispeech)')
+    audio_train_parser.add_argument('--task', '-t', default='asr',
+                                    choices=['asr', 'tts', 'classification'],
+                                    help='Task type (default: asr)')
+    audio_train_parser.add_argument('--cycles', type=int, default=6,
+                                    help='Number of RAFT cycles (default: 6)')
+    audio_train_parser.add_argument('--lr', type=float, default=5e-5,
+                                    help='Initial learning rate (default: 5e-5)')
+    audio_train_parser.add_argument('--lr-decay', type=float, default=0.85,
+                                    help='Learning rate decay per cycle (default: 0.85)')
+    audio_train_parser.add_argument('--output', '-o', default='models/audio_raft',
+                                    help='Output directory (default: models/audio_raft)')
+    audio_train_parser.add_argument('--dry-run', action='store_true',
+                                    help='Validate config without running training')
+    
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
     
@@ -1678,6 +1858,13 @@ def main():
             cmd_vlm_benchmark(args)
         elif args.vlm_command == 'datasets':
             cmd_vlm_datasets(args)
+    elif args.command == 'audio':
+        if args.audio_command == 'datasets':
+            cmd_audio_datasets(args)
+        elif args.audio_command == 'benchmark':
+            cmd_audio_benchmark(args)
+        elif args.audio_command == 'train':
+            cmd_audio_train(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'test':

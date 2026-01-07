@@ -5,240 +5,369 @@ weight: 20
 
 # VLM Datasets
 
-Dataset loaders for vision-language model training.
+Guide to obtaining and using datasets for Vision-Language Model training.
 
 ## Available Datasets
 
-| Dataset | Task | Source | Samples |
-|---------|------|--------|---------|
-| TextVQA | Text reading | HuggingFace | 45K train |
-| DocVQA | Document QA | HuggingFace | 50K train |
-| ChartQA | Chart QA | HuggingFace | 28K train |
-| RealWorldQA | Reasoning | HuggingFace | 700 test |
-| MathVista | Math + Vision | HuggingFace | 6K+ test |
-
-## Loading Datasets
-
-### Using CLI
+List available VLM datasets:
 
 ```bash
-# List available datasets
 halo-forge vlm datasets
-
-# Train on dataset
-halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct
-
-# Benchmark on dataset
-halo-forge vlm benchmark --dataset docvqa --limit 100
 ```
 
-### Using Python API
+| Dataset | HuggingFace Path | Task | Size |
+|---------|------------------|------|------|
+| `textvqa` | `textvqa` | Text reading in images | 45K train |
+| `docvqa` | `lmms-lab/DocVQA` | Document understanding | 50K train |
+| `chartqa` | `HuggingFaceM4/ChartQA` | Chart interpretation | 28K train |
+| `realworldqa` | `lmms-lab/RealWorldQA` | Real-world reasoning | 700 test |
+| `mathvista` | `AI4Math/MathVista` | Mathematical reasoning | 6K+ test |
+
+---
+
+## Using Built-in Loaders
+
+### Load from CLI
+
+```bash
+# Benchmark on TextVQA
+halo-forge vlm benchmark \
+  --model Qwen/Qwen2-VL-2B-Instruct \
+  --dataset textvqa \
+  --limit 100
+
+# Train on DocVQA
+halo-forge vlm train \
+  --model Qwen/Qwen2-VL-2B-Instruct \
+  --dataset docvqa \
+  --cycles 4 \
+  --output models/vlm_raft
+```
+
+### Load Programmatically
 
 ```python
 from halo_forge.vlm.data import load_vlm_dataset, list_vlm_datasets
 
-# List available
+# List available datasets
 print(list_vlm_datasets())
 # ['textvqa', 'docvqa', 'chartqa', 'realworldqa', 'mathvista']
 
-# Load dataset
+# Load TextVQA
 dataset = load_vlm_dataset("textvqa", split="train", limit=1000)
 
+# Iterate samples
 for sample in dataset:
     print(f"Prompt: {sample.prompt}")
     print(f"Ground truth: {sample.ground_truth}")
     image = sample.load_image()  # PIL Image
 ```
 
-## Dataset Format
+---
 
-### VLMSample
+## VLMSample Format
 
 Each sample contains:
 
 ```python
 @dataclass
 class VLMSample:
-    image: Union[Image.Image, str]  # Image or path/URL
-    prompt: str                      # Question/instruction
-    ground_truth: Optional[str]      # Expected answer
-    alternatives: Optional[List[str]] # Alternative answers
-    metadata: Optional[Dict]         # Additional info
+    prompt: str           # Question/instruction
+    image: str | Image    # Path, URL, or PIL Image
+    ground_truth: str     # Expected answer
+    metadata: Dict        # Additional info
 ```
 
-### Loading Images
+### Example Sample
 
 ```python
-sample = dataset[0]
-
-# Image might be PIL Image or path
-if isinstance(sample.image, str):
-    from PIL import Image
-    img = Image.open(sample.image)
-else:
-    img = sample.image
-
-# Or use the helper method
-img = sample.load_image()
+sample = VLMSample(
+    prompt="What text is shown on the sign?",
+    image="path/to/image.jpg",
+    ground_truth="STOP",
+    metadata={"source": "textvqa", "difficulty": "easy"}
+)
 ```
 
-## TextVQA
+---
 
-Text reading and reasoning in natural images.
+## Dataset Loaders
+
+### TextVQA
+
+Text reading in natural images (signs, labels, documents).
 
 ```python
-from halo_forge.vlm.data import TextVQALoader
+from halo_forge.vlm.data.loaders import TextVQALoader
 
-loader = TextVQALoader(split="train", limit=1000)
+loader = TextVQALoader(split="train", limit=500)
 samples = loader.load()
 
-print(f"Loaded {len(samples)} TextVQA samples")
+# Sample prompt: "What does the sign say?"
+# Sample answer: "EXIT"
 ```
 
-**Sample format:**
-- Image: Natural scene with text
-- Prompt: Question about text in image
-- Ground truth: Text answer
-- Alternatives: Multiple valid answers
-
-## DocVQA
+### DocVQA
 
 Document understanding and information extraction.
 
 ```python
-from halo_forge.vlm.data import DocVQALoader
+from halo_forge.vlm.data.loaders import DocVQALoader
 
-loader = DocVQALoader(split="train", limit=1000)
+loader = DocVQALoader(split="train", limit=500)
 samples = loader.load()
+
+# Sample prompt: "What is the total amount due?"
+# Sample answer: "$1,234.56"
 ```
 
-**Sample format:**
-- Image: Document image (forms, receipts, etc.)
-- Prompt: Question about document content
-- Ground truth: Extracted information
+### ChartQA
 
-## ChartQA
-
-Chart interpretation and data extraction.
+Chart and graph interpretation.
 
 ```python
-from halo_forge.vlm.data import ChartQALoader
+from halo_forge.vlm.data.loaders import ChartQALoader
 
-loader = ChartQALoader(split="train", limit=1000)
+loader = ChartQALoader(split="train", limit=500)
 samples = loader.load()
+
+# Sample prompt: "What is the value for Q3?"
+# Sample answer: "150"
 ```
 
-**Sample format:**
-- Image: Chart (bar, line, pie, etc.)
-- Prompt: Question about data
-- Ground truth: Numerical or descriptive answer
-- Metadata: `type` (human or augmented)
+### RealWorldQA
 
-## RealWorldQA
-
-Real-world visual reasoning.
+Real-world reasoning from images.
 
 ```python
-from halo_forge.vlm.data import RealWorldQALoader
+from halo_forge.vlm.data.loaders import RealWorldQALoader
 
-loader = RealWorldQALoader()  # Only test split available
+loader = RealWorldQALoader(limit=200)
 samples = loader.load()
+
+# Sample prompt: "How many people are in the image?"
+# Sample answer: "3"
 ```
 
-**Sample format:**
-- Image: Real-world scene
-- Prompt: Multiple choice question with options
-- Ground truth: Correct choice (A/B/C/D)
-- Metadata: `choices` list
-
-## MathVista
+### MathVista
 
 Mathematical reasoning with visual context.
 
 ```python
-from halo_forge.vlm.data import MathVistaLoader
+from halo_forge.vlm.data.loaders import MathVistaLoader
 
-loader = MathVistaLoader(split="testmini", limit=500)
+loader = MathVistaLoader(split="test", limit=100)
 samples = loader.load()
+
+# Sample prompt: "What is the area of the shaded region?"
+# Sample answer: "25 square units"
 ```
 
-**Sample format:**
-- Image: Math diagram, chart, or problem
-- Prompt: Math question (may include choices)
-- Ground truth: Answer
-- Metadata: `question_type`, `grade`, `source`
+---
 
-## Exporting Datasets
+## Export Formats
 
-### To RLVR Format
+### Export to RLVR Format
 
 ```python
 dataset = load_vlm_dataset("textvqa", limit=1000)
-dataset.to_rlvr_format("data/textvqa_rlvr.jsonl")
+
+# Export to JSONL
+dataset.to_rlvr_format("vlm_rlvr.jsonl")
 ```
 
 Output format:
+
 ```json
-{"prompt": "...", "image": "/path/to/image.jpg", "ground_truth": "...", "metadata": {}}
+{
+  "prompt": "What text is shown on the sign?",
+  "image": "/path/to/image.jpg",
+  "ground_truth": "STOP",
+  "metadata": {"source": "textvqa"}
+}
 ```
 
-### To SFT Format
+### Export to SFT Format
 
 ```python
-dataset = load_vlm_dataset("textvqa", limit=1000)
-dataset.to_sft_format("data/textvqa_sft.jsonl", template="qwen")
+dataset = load_vlm_dataset("docvqa", limit=1000)
+
+# Export with Qwen template
+dataset.to_sft_format("vlm_sft.jsonl", template="qwen")
 ```
 
 Output format:
+
 ```json
-{"text": "<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n...<|im_end|>", "image": "..."}
+{
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "<image>\nWhat is the total amount?"},
+    {"role": "assistant", "content": "The total amount is $1,234.56"}
+  ],
+  "images": ["/path/to/image.jpg"]
+}
 ```
 
-## Custom Datasets
+---
 
-### From JSONL
+## Creating Custom VLM Datasets
+
+### From Local Images
 
 ```python
-# Load custom dataset
-trainer.train("path/to/custom_vlm.jsonl")
-```
+from halo_forge.vlm.data import VLMSample, VLMDataset
+from pathlib import Path
+import json
 
-JSONL format:
-```json
-{"prompt": "What is in this image?", "image": "/path/to/img.jpg", "ground_truth": "A cat"}
-{"prompt": "Read the text", "image": "/path/to/img2.jpg", "ground_truth": "Hello World"}
-```
-
-### Custom Loader
-
-```python
-from halo_forge.vlm.data.loaders import VLMDataset, VLMSample
-
-class MyDataset(VLMDataset):
+class CustomVLMDataset(VLMDataset):
     @property
     def name(self) -> str:
-        return "mydataset"
+        return "custom"
     
     def load(self):
-        samples = []
-        # Load your data
-        for item in my_data:
-            samples.append(VLMSample(
-                image=item['image_path'],
-                prompt=item['question'],
-                ground_truth=item['answer']
-            ))
-        self.samples = samples
-        return samples
+        # Load from annotation file
+        with open("annotations.json") as f:
+            data = json.load(f)
+        
+        self.samples = [
+            VLMSample(
+                prompt=item["question"],
+                image=f"images/{item['image_id']}.jpg",
+                ground_truth=item["answer"],
+                metadata={"id": item["id"]}
+            )
+            for item in data
+        ]
+        return self.samples
+
+# Use
+dataset = CustomVLMDataset()
+dataset.load()
+dataset.to_rlvr_format("custom_vlm.jsonl")
 ```
 
-## Dependencies
+### From HuggingFace
 
-```bash
-pip install datasets pillow
+```python
+from datasets import load_dataset
+from halo_forge.vlm.data import VLMSample
+import json
+
+# Load any VQA dataset
+hf_dataset = load_dataset("flaviagiammarino/vqa-rad", split="train")
+
+# Convert to VLMSample format
+samples = []
+for item in hf_dataset:
+    samples.append({
+        "prompt": item["question"],
+        "image": item["image"],  # PIL Image
+        "ground_truth": item["answer"],
+        "metadata": {"source": "vqa-rad"}
+    })
+
+# Save
+with open("vqa_rad.jsonl", "w") as f:
+    for s in samples:
+        # Note: images need to be saved separately
+        f.write(json.dumps({
+            "prompt": s["prompt"],
+            "ground_truth": s["ground_truth"],
+            "metadata": s["metadata"]
+        }) + "\n")
 ```
 
-For image URLs:
-```bash
-pip install requests
+---
+
+## HuggingFace Sources
+
+### Recommended VLM Datasets
+
+| Dataset | HuggingFace Path | Description |
+|---------|------------------|-------------|
+| TextVQA | `textvqa` | Text reading in images |
+| DocVQA | `lmms-lab/DocVQA` | Document QA |
+| ChartQA | `HuggingFaceM4/ChartQA` | Chart understanding |
+| VQA v2 | `HuggingFaceM4/VQAv2` | General visual QA |
+| OK-VQA | `Multimodal-Fatima/OK-VQA_train` | Knowledge-based VQA |
+| GQA | `lmms-lab/GQA` | Compositional reasoning |
+| AI2D | `lmms-lab/ai2d` | Science diagrams |
+| InfoVQA | `lmms-lab/infographicvqa` | Infographic QA |
+
+### Loading Directly
+
+```python
+from datasets import load_dataset
+
+# Load VQA v2
+vqa = load_dataset("HuggingFaceM4/VQAv2", split="train")
+
+# Access samples
+for item in vqa:
+    question = item["question"]
+    image = item["image"]  # PIL Image
+    answers = item["answers"]
 ```
+
+---
+
+## Image Preprocessing
+
+### VLMPreprocessor
+
+```python
+from halo_forge.vlm.data import VLMPreprocessor
+
+processor = VLMPreprocessor(
+    target_size=(224, 224),
+    normalize=True
+)
+
+# Process image
+result = processor.process("image.jpg")
+pixel_values = result.pixel_values  # Tensor
+```
+
+### Custom Preprocessing
+
+```python
+from PIL import Image
+import torchvision.transforms as T
+
+transform = T.Compose([
+    T.Resize((224, 224)),
+    T.ToTensor(),
+    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+image = Image.open("image.jpg")
+tensor = transform(image)
+```
+
+---
+
+## Memory Considerations
+
+VLM datasets can be memory-intensive:
+
+| Dataset | Images | Typical Memory |
+|---------|--------|----------------|
+| TextVQA | 45K | ~20 GB disk |
+| DocVQA | 50K | ~30 GB disk |
+| ChartQA | 28K | ~15 GB disk |
+
+### Tips
+
+1. Use `limit` parameter for testing
+2. Stream images instead of loading all at once
+3. Use smaller image sizes for development
+4. Clear cache: `rm -rf ~/.cache/halo_forge/vlm`
+
+---
+
+## Next Steps
+
+- [VLM Training](./) - Train VLM models
+- [VLM Testing](./testing.md) - Test VLM features
+- [Code Datasets](../../training-pipeline/datasets-code/) - Code generation data
