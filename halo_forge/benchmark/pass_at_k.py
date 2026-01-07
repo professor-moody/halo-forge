@@ -221,7 +221,12 @@ class Benchmark:
             for prompt in batch:
                 if isinstance(prompt, dict):
                     text = prompt.get('prompt', prompt.get('text', ''))
-                    metadata = prompt.get('metadata', {})
+                    # Preserve metadata, but also capture root-level fields
+                    metadata = prompt.get('metadata', {}).copy()
+                    # Copy common fields from root level if not in metadata
+                    for field in ['category', 'tier', 'difficulty', 'id', 'subcategory', 'api']:
+                        if field not in metadata and field in prompt:
+                            metadata[field] = prompt[field]
                 else:
                     text = prompt
                     metadata = {}
@@ -356,8 +361,11 @@ class Benchmark:
             if n_correct > 0:
                 passed += 1
             
-            # By category
-            category = sample.get('metadata', {}).get('category', 'unknown')
+            # By category - check both metadata.category and root-level category
+            category = (
+                sample.get('metadata', {}).get('category') or 
+                sample.get('category', 'unknown')
+            )
             by_category[category]['total'] += 1
             if n_correct > 0:
                 by_category[category]['passed'] += 1
