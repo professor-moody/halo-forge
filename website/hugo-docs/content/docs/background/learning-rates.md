@@ -10,11 +10,11 @@ weight: 4
 
 During production training, we observed **degradation after cycle 6** using constant LR:
 
-| Cycle | Compile Rate | LR Used | Result |
-|-------|--------------|---------|--------|
-| 1-6 | Improving → 46.7% | 5e-5 | Peak performance |
-| 7 | 29.3% | 5e-5 | Degradation begins |
-| 8 | 23.0% | 5e-5 | Further degradation |
+| Cycle | Observation | LR Used | Result |
+|-------|-------------|---------|--------|
+| 1-6 | Improving | 5e-5 | Peak performance |
+| 7 | Declining | 5e-5 | Degradation begins |
+| 8 | Declining | 5e-5 | Further degradation |
 
 **Hypothesis**: Decreasing LR across cycles might prevent late-cycle degradation.
 

@@ -229,23 +229,23 @@ halo-forge provides real-time progress during generation:
 
 Watch for these patterns:
 
-**Healthy training:**
+**Healthy training (example):**
 ```
-Cycle 1: 28.4% compile rate (kept 182/640 samples)
-Cycle 2: 35.1% compile rate (kept 224/640 samples)
-Cycle 3: 39.7% compile rate (kept 254/640 samples)
-```
-
-**Plateauing:**
-```
-Cycle 4: 40.2% compile rate
-Cycle 5: 40.5% compile rate
-Cycle 6: 39.8% compile rate  # Consider stopping
+Cycle 1: 25% compile rate (kept 160/640 samples)
+Cycle 2: 32% compile rate (kept 205/640 samples)
+Cycle 3: 38% compile rate (kept 243/640 samples)
 ```
 
-**Degradation:**
+**Plateauing (example):**
 ```
-Cycle 7: 35.2% compile rate  # Stop and use cycle 6
+Cycle 4: 40% compile rate
+Cycle 5: 41% compile rate
+Cycle 6: 40% compile rate  # Consider stopping
+```
+
+**Degradation (example):**
+```
+Cycle 7: 35% compile rate  # Stop and use cycle 6
 ```
 
 ## When to Stop

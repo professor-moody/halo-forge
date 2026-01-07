@@ -32,18 +32,18 @@ A compiler provides **deterministic feedback** — objective, reproducible resul
 3. **RAFT** — Iterative verification loop: generate → verify → filter → train
 4. **Benchmark** — Evaluate with pass@k metrics
 
-## Example Results
+## What to Expect
 
-Results from test runs on Qwen2.5-Coder-7B with 569 C/C++ prompts. Your results will vary based on model, dataset, hardware, and configuration.
+RAFT training typically shows:
 
-| Stage | Compile Rate | pass@1 |
-|-------|-------------|--------|
-| SFT Baseline | 15.2% | 18.7% |
-| Cycle 1 | 28.4% | 35.2% |
-| Cycle 3 | 39.7% | 48.2% |
-| Cycle 6 | 46.7% | 55.3% |
+| Cycle | What Happens |
+|-------|-------------|
+| 1-2 | Largest gains as model learns basic patterns |
+| 3-4 | Continued improvement at slower rate |
+| 5-6 | Diminishing returns; monitor for plateau |
+| 7+ | May see degradation; consider stopping earlier |
 
-Improvements were observed over 6 RAFT cycles in our testing.
+Results vary significantly based on model, dataset, hardware, and domain. Run benchmarks to measure improvement on your specific use case.
 
 ## Quick Navigation
 

@@ -5,8 +5,8 @@
 ## Why This Matters
 
 We observed **degradation after cycle 6** using constant LR (5e-5) on Strix Halo:
-- Cycles 1-6: Improving → Peak 46.7%
-- Cycles 7-8: Degrading → 29.3% → 23%
+- Cycles 1-6: Improving → Peak
+- Cycles 7-8: Degrading (with constant LR)
 
 This research explores whether **decaying LR** prevents late-cycle degradation.
 

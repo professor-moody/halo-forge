@@ -73,41 +73,41 @@
 
 <section class="section">
     <div class="container">
-        <h2>Results</h2>
-        <p class="section-intro">Production training on Qwen2.5-Coder-7B with 569 C/C++ prompts:</p>
+        <h2>How It Works</h2>
+        <p class="section-intro">RAFT iteratively improves code generation through verified feedback:</p>
 
         <div class="results-grid">
             <div class="result-card">
-                <div class="result-value">46.7%</div>
-                <div class="result-label">Peak compile rate</div>
-                <div class="result-context">Cycle 6</div>
+                <div class="result-value">Generate</div>
+                <div class="result-label">Multiple solutions</div>
+                <div class="result-context">Per prompt</div>
             </div>
             <div class="result-card">
-                <div class="result-value">3×</div>
-                <div class="result-label">Improvement</div>
-                <div class="result-context">vs SFT baseline</div>
+                <div class="result-value">Verify</div>
+                <div class="result-label">Compile & test</div>
+                <div class="result-context">Real feedback</div>
             </div>
             <div class="result-card">
-                <div class="result-value">55.3%</div>
-                <div class="result-label">pass@1</div>
-                <div class="result-context">Cycle 6</div>
+                <div class="result-value">Filter</div>
+                <div class="result-label">Keep best samples</div>
+                <div class="result-context">By reward</div>
             </div>
             <div class="result-card">
-                <div class="result-value">15.2%</div>
-                <div class="result-label">SFT baseline</div>
-                <div class="result-context">Before RAFT</div>
+                <div class="result-value">Train</div>
+                <div class="result-label">On verified code</div>
+                <div class="result-context">Repeat cycles</div>
             </div>
         </div>
 
         <table>
-            <thead><tr><th>Stage</th><th>Compile Rate</th><th>pass@1</th></tr></thead>
+            <thead><tr><th>Cycle</th><th>What Happens</th><th>Expected</th></tr></thead>
             <tbody>
-                <tr><td>SFT Baseline</td><td>15.2%</td><td>18.7%</td></tr>
-                <tr><td>Cycle 1</td><td>28.4%</td><td>35.2%</td></tr>
-                <tr><td>Cycle 3</td><td>39.7%</td><td>48.2%</td></tr>
-                <tr class="highlight"><td>Cycle 6 (Peak)</td><td>46.7%</td><td>55.3%</td></tr>
+                <tr><td>1-2</td><td>Model learns basic patterns</td><td>Largest gains</td></tr>
+                <tr><td>3-4</td><td>Refinement continues</td><td>Moderate gains</td></tr>
+                <tr class="highlight"><td>5-6</td><td>Approach plateau</td><td>Monitor for stopping</td></tr>
             </tbody>
         </table>
+        <p style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.8;">Results vary by model, dataset, and domain. Run your own benchmarks to measure improvement.</p>
     </div>
 </section>
 

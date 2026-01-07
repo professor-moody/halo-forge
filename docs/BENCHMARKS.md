@@ -26,10 +26,10 @@ halo-forge benchmark full --suite all
 | Aspect | Demo Benchmark | Production Training |
 |--------|----------------|---------------------|
 | **Purpose** | Validate pipeline works | Train production model |
-| **Prompts** | 16 built-in | 500+ domain-specific |
-| **Cycles** | 2 | 5-8 |
+| **Prompts** | 16 built-in | 200+ domain-specific |
+| **Cycles** | 2 | 5-6 |
 | **Time** | 40-150 min | 6-24 hours |
-| **Expected improvement** | 0-10% | 100-300% |
+| **Expected improvement** | 0-10% (normal) | Varies by domain |
 | **Starting point** | Raw base model | SFT checkpoint |
 
 **Demo benchmarks are for validation**, not performance demonstration. They confirm:
@@ -38,10 +38,11 @@ halo-forge benchmark full --suite all
 - Verification functions properly
 - Training loop executes without errors
 
-**Production training shows actual RAFT effectiveness** with:
+**Production training** involves:
 - Larger, curated datasets
-- More training cycles
+- More training cycles with monitoring
 - SFT foundation before RAFT
+- Results vary by model, dataset, and domain
 - Full hardware utilization
 
 ### Why Demo Results Seem Modest
@@ -264,12 +265,15 @@ halo-forge raft train \
   --cycles 6
 ```
 
-Expected production results:
+Production training guidance:
 
-| Metric | Baseline | After 6 Cycles | Improvement |
-|--------|----------|----------------|-------------|
-| Compile Rate | 15-25% | 45-55% | 2-3x |
-| pass@1 | 10-20% | 40-55% | 3-4x |
+| Aspect | Recommendation |
+|--------|----------------|
+| Dataset size | 200+ diverse prompts |
+| Cycles | Start with 5-6, monitor for degradation |
+| Stopping criteria | Stop when improvement < 2% per cycle |
+
+Results vary significantly based on model, dataset, and domain. Monitor your metrics each cycle and stop when improvement plateaus.
 
 ---
 

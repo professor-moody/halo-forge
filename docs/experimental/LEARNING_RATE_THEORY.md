@@ -16,9 +16,9 @@ During production RAFT training on **AMD Strix Halo** (128GB unified memory, gfx
 |-------|--------------|---------|-------------|
 | 1 | Baseline | 5e-5 | Learning established |
 | 2-5 | Improving | 5e-5 | Consistent gains |
-| 6 | **46.7%** (Peak) | 5e-5 | Best performance |
-| 7 | 29.3% | 5e-5 | Degradation begins |
-| 8 | 23.0% | 5e-5 | Further degradation |
+| 6 | Peak | 5e-5 | Best performance |
+| 7 | Declining | 5e-5 | Degradation begins |
+| 8 | Declining | 5e-5 | Further degradation |
 
 **Key finding**: Using **constant learning rate (5e-5)** across all cycles led to degradation after cycle 6.
 

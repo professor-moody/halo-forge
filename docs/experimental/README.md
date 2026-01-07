@@ -16,11 +16,11 @@ This section contains experimental research, theoretical frameworks, and unteste
 
 ## Motivation
 
-During our production RAFT training runs on AMD Strix Halo, we observed:
+During our RAFT training experiments on AMD Strix Halo, we observed:
 
 - **Cycles 1-6**: Consistent improvement in verification rate
-- **Cycle 6**: Peak performance (46.7% compile rate)
-- **Cycles 7-8**: Degradation (29.3% → 23%)
+- **Cycle 6**: Peak performance
+- **Cycles 7-8**: Performance degradation when using constant LR
 
 We used **constant learning rate (5e-5)** throughout all 8 cycles.
 

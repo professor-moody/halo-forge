@@ -621,24 +621,21 @@ Cache files per cycle:
 
 ## Benchmark Results
 
-### Production Training Results
+### Training Results
 
-Full RAFT training on Qwen2.5-Coder-7B with 569 C/C++ prompts:
+Results will vary based on model, dataset, hardware, and configuration. RAFT training typically shows:
 
-| Stage | Compile Rate | pass@1 | Notes |
-|-------|-------------|--------|-------|
-| SFT Baseline | 15.2% | 18.7% | Before RAFT |
-| Cycle 1 | 28.4% | 35.2% | +87% improvement |
-| Cycle 2 | 35.1% | 43.8% | Continued gains |
-| Cycle 3 | 39.7% | 48.2% | Steady improvement |
-| Cycle 4 | 43.2% | 51.6% | Nearing plateau |
-| Cycle 5 | 45.8% | 54.1% | Strong performance |
-| **Cycle 6** | **46.7%** | **55.3%** | **Peak performance** |
+| Observation | Notes |
+|-------------|-------|
+| **Early cycles (1-3)** | Largest gains as model learns basic patterns |
+| **Mid cycles (4-5)** | Continued improvement, slower rate |
+| **Late cycles (6+)** | Diminishing returns; monitor for degradation |
 
-**Key findings:**
-- 3x improvement in compile rate over 6 RAFT cycles
-- Diminishing returns after cycle 6 suggest stopping point
+**Training tips:**
+- Monitor compile/pass rate each cycle
+- Stop when improvement plateaus or reverses
 - BF16 precision is optimal for Strix Halo (4-bit is slower due to dequantization overhead)
+- In our testing, 5-6 cycles often worked well before diminishing returns
 
 ### Demo Benchmark Results
 
@@ -650,7 +647,7 @@ Quick validation benchmarks on built-in prompts (16 prompts, 2 cycles):
 | Qwen2.5-Coder-1.5B | 67.2% | 67.2% | 56 min |
 | Qwen2.5-Coder-3B | TBD | TBD | ~150 min |
 
-Demo benchmarks use a small prompt set to quickly validate the pipeline works on your hardware. Production training with larger datasets shows more significant improvements.
+Demo benchmarks use a small prompt set (16 prompts, 2 cycles) to quickly validate the pipeline works on your hardware. With such small datasets, minimal or no improvement is expected and normal.
 
 ### Running Your Own Benchmark
 
@@ -831,7 +828,7 @@ Demo benchmarks on AMD Strix Halo (128GB unified memory) with 16 prompts, 2 cycl
 | Qwen2.5-Coder-1.5B | 67.2% | 67.2% | +0.0% | 52 min |
 | Qwen2.5-Coder-3B | 97.7% | 99.2% | **+1.6%** | 79 min |
 
-**Note**: Demo benchmarks validate the pipeline works. Production training with 500+ prompts and 5-6 cycles shows 2-3x improvement.
+**Note**: Demo benchmarks validate the pipeline works. Larger datasets and more cycles are needed for meaningful improvement.
 
 See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for detailed methodology and results.
 
