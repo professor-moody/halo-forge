@@ -961,6 +961,362 @@ def cmd_test(args):
     sys.exit(0 if success else 1)
 
 
+def cmd_inference_optimize(args):
+    """Optimize model for inference."""
+    from halo_forge.inference import InferenceOptimizer, OptimizationConfig
+    
+    print(f"Optimizing model: {args.model}")
+    print(f"Target precision: {args.target_precision}")
+    print(f"Target latency: {args.target_latency}ms")
+    
+    config = OptimizationConfig(
+        target_precision=args.target_precision,
+        target_latency_ms=args.target_latency,
+        output_dir=args.output
+    )
+    
+    optimizer = InferenceOptimizer(config)
+    
+    # Simple eval prompts for verification
+    eval_prompts = [
+        "Write a function to sort a list.",
+        "Implement a binary search.",
+        "Create a linked list class."
+    ]
+    
+    result = optimizer.optimize(
+        model_path=args.model,
+        calibration_data=args.calibration_data,
+        eval_prompts=eval_prompts
+    )
+    
+    print("\n" + "=" * 50)
+    print("OPTIMIZATION COMPLETE")
+    print("=" * 50)
+    print(f"Success: {result['success']}")
+    if result.get('verification'):
+        metrics = result['verification']['metrics']
+        print(f"Latency: {metrics.get('avg_latency_ms', 0):.1f}ms")
+        print(f"Quality: {metrics.get('quality_score', 0):.2%}")
+    print(f"Output: {args.output}")
+
+
+def cmd_inference_export(args):
+    """Export model to deployment format."""
+    print(f"Exporting model: {args.model}")
+    print(f"Format: {args.format}")
+    print(f"Output: {args.output}")
+    
+    if args.format == 'gguf':
+        from halo_forge.inference.export import GGUFExporter
+        
+        print(f"Quantization: {args.quantization}")
+        
+        # Load model
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        
+        print("Loading model...")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            trust_remote_code=True,
+            device_map="cpu"  # Export on CPU
+        )
+        tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+        
+        exporter = GGUFExporter()
+        output_path = exporter.export(
+            model,
+            args.output,
+            tokenizer=tokenizer,
+            quantization=args.quantization
+        )
+        
+        print(f"\nExported to: {output_path}")
+        
+    elif args.format == 'onnx':
+        from halo_forge.inference.export import ONNXExporter
+        
+        # Load model
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        
+        print("Loading model...")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            trust_remote_code=True,
+            device_map="cpu"
+        )
+        tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+        
+        exporter = ONNXExporter()
+        output_path = exporter.export(
+            model,
+            args.output,
+            tokenizer=tokenizer
+        )
+        
+        print(f"\nExported to: {output_path}")
+
+
+def cmd_inference_benchmark(args):
+    """Benchmark inference latency."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import time
+    
+    print(f"Benchmarking: {args.model}")
+    print(f"Max tokens: {args.max_tokens}")
+    print(f"Warmup iterations: {args.warmup}")
+    
+    # Load model
+    print("\nLoading model...")
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=True
+    )
+    
+    # Get test prompts
+    if args.prompts:
+        with open(args.prompts) as f:
+            prompts = [json.loads(line).get('prompt', '') for line in f][:args.num_prompts]
+    else:
+        prompts = [
+            "Write a function to calculate fibonacci numbers.",
+            "Implement a binary search tree.",
+            "Create a simple HTTP server.",
+            "Write a sorting algorithm.",
+            "Implement a stack data structure."
+        ][:args.num_prompts]
+    
+    print(f"Testing with {len(prompts)} prompts...\n")
+    
+    # Warmup
+    print("Warmup...")
+    for i, prompt in enumerate(prompts[:args.warmup]):
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            _ = model.generate(**inputs, max_new_tokens=args.max_tokens, do_sample=False)
+    
+    # Benchmark
+    print("Benchmarking...")
+    latencies = []
+    tokens_generated = []
+    
+    for prompt in prompts:
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        
+        start = time.perf_counter()
+        with torch.no_grad():
+            outputs = model.generate(**inputs, max_new_tokens=args.max_tokens, do_sample=False)
+        
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        
+        end = time.perf_counter()
+        
+        latency_ms = (end - start) * 1000
+        num_tokens = outputs.shape[1] - inputs['input_ids'].shape[1]
+        
+        latencies.append(latency_ms)
+        tokens_generated.append(num_tokens)
+    
+    # Calculate metrics
+    avg_latency = sum(latencies) / len(latencies)
+    min_latency = min(latencies)
+    max_latency = max(latencies)
+    total_tokens = sum(tokens_generated)
+    total_time = sum(latencies) / 1000
+    tokens_per_second = total_tokens / total_time if total_time > 0 else 0
+    
+    print("\n" + "=" * 50)
+    print("BENCHMARK RESULTS")
+    print("=" * 50)
+    print(f"Prompts tested: {len(prompts)}")
+    print(f"Avg latency:    {avg_latency:.1f}ms")
+    print(f"Min latency:    {min_latency:.1f}ms")
+    print(f"Max latency:    {max_latency:.1f}ms")
+    print(f"Tokens/second:  {tokens_per_second:.1f}")
+    
+    if args.measure_memory and torch.cuda.is_available():
+        memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+        print(f"Peak memory:    {memory_mb:.0f}MB")
+
+
+def cmd_vlm_train(args):
+    """Train VLM with RAFT."""
+    from halo_forge.vlm import VLMRAFTTrainer
+    from halo_forge.vlm.trainer import VLMRAFTConfig
+    from halo_forge.vlm.data import load_vlm_dataset, list_vlm_datasets
+    
+    print_banner()
+    
+    print(f"VLM RAFT Training")
+    print("=" * 60)
+    print(f"Model:       {args.model}")
+    print(f"Dataset:     {args.dataset}")
+    print(f"Output:      {args.output}")
+    print(f"Cycles:      {args.cycles}")
+    print("=" * 60)
+    
+    # Create config
+    config = VLMRAFTConfig(
+        model_name=args.model,
+        output_dir=args.output,
+        num_cycles=args.cycles,
+        samples_per_prompt=args.samples_per_prompt,
+        perception_weight=args.perception_weight,
+        reasoning_weight=args.reasoning_weight,
+        output_weight=args.output_weight,
+        lr_decay_per_cycle=args.lr_decay,
+        temperature=args.temperature,
+    )
+    
+    # Load dataset
+    if args.dataset.endswith('.jsonl'):
+        dataset_path = args.dataset
+    else:
+        available = list_vlm_datasets()
+        if args.dataset not in available:
+            print(f"{RED}Error: Unknown dataset '{args.dataset}'{NC}")
+            print(f"Available: {', '.join(available)}")
+            sys.exit(1)
+        dataset_path = args.dataset
+    
+    # Create trainer and run
+    trainer = VLMRAFTTrainer(config)
+    
+    try:
+        trainer.train(dataset_path)
+    finally:
+        trainer.cleanup()
+    
+    print(f"\n{GREEN}Training complete!{NC}")
+    print(f"Output: {args.output}")
+
+
+def cmd_vlm_benchmark(args):
+    """Benchmark VLM on dataset."""
+    from halo_forge.vlm.data import load_vlm_dataset
+    from halo_forge.vlm.models import get_vlm_adapter
+    from halo_forge.vlm.verifiers import VisionVerifier
+    
+    print_banner()
+    
+    print(f"VLM Benchmark")
+    print("=" * 60)
+    print(f"Model:   {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Split:   {args.split}")
+    print(f"Limit:   {args.limit}")
+    print("=" * 60)
+    
+    # Load dataset
+    print("\nLoading dataset...")
+    dataset = load_vlm_dataset(args.dataset, split=args.split, limit=args.limit)
+    
+    # Load model
+    print("\nLoading model...")
+    adapter = get_vlm_adapter(args.model)
+    adapter.load()
+    
+    # Initialize verifier
+    verifier = VisionVerifier()
+    
+    # Run benchmark
+    print(f"\nBenchmarking {len(dataset)} samples...")
+    results = []
+    correct = 0
+    total_reward = 0.0
+    
+    from tqdm import tqdm
+    for sample in tqdm(dataset, desc="Evaluating"):
+        # Generate
+        output = adapter.generate(
+            image=sample.load_image(),
+            prompt=sample.prompt,
+            max_new_tokens=256,
+            temperature=0.0,
+            do_sample=False
+        )
+        
+        # Verify
+        result = verifier.verify(
+            image=sample.load_image(),
+            prompt=sample.prompt,
+            completion=output.text,
+            ground_truth=sample.ground_truth
+        )
+        
+        results.append({
+            'prompt': sample.prompt[:100],
+            'ground_truth': sample.ground_truth,
+            'completion': output.text[:200],
+            'reward': result.reward,
+            'success': result.success
+        })
+        
+        if result.success:
+            correct += 1
+        total_reward += result.reward
+    
+    # Print results
+    print("\n" + "=" * 60)
+    print("VLM BENCHMARK RESULTS")
+    print("=" * 60)
+    print(f"Total samples:  {len(results)}")
+    print(f"Correct:        {correct} ({correct/len(results)*100:.1f}%)")
+    print(f"Avg reward:     {total_reward/len(results):.3f}")
+    
+    # Save results if output specified
+    if args.output:
+        import json
+        with open(args.output, 'w') as f:
+            json.dump({
+                'model': args.model,
+                'dataset': args.dataset,
+                'split': args.split,
+                'accuracy': correct / len(results),
+                'avg_reward': total_reward / len(results),
+                'results': results
+            }, f, indent=2)
+        print(f"\nResults saved to: {args.output}")
+    
+    # Cleanup
+    adapter.cleanup()
+    verifier.cleanup()
+
+
+def cmd_vlm_datasets(args):
+    """List available VLM datasets."""
+    from halo_forge.vlm.data import list_vlm_datasets
+    
+    print("Available VLM Datasets")
+    print("=" * 60)
+    
+    datasets = list_vlm_datasets()
+    
+    dataset_info = {
+        'textvqa': 'Text reading in natural images',
+        'docvqa': 'Document understanding',
+        'chartqa': 'Chart interpretation',
+        'realworldqa': 'Real-world visual reasoning',
+        'mathvista': 'Mathematical reasoning with visuals',
+    }
+    
+    for name in datasets:
+        desc = dataset_info.get(name, 'Vision-language dataset')
+        print(f"  {name:15} - {desc}")
+    
+    print("\nUsage:")
+    print("  halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct")
+    print("  halo-forge vlm benchmark --dataset docvqa --model path/to/model")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog='halo-forge',
@@ -1086,6 +1442,78 @@ def main():
     bench_full_parser.add_argument('--output', '-o', default='results/benchmarks', help='Output directory')
     bench_full_parser.add_argument('--quiet', '-q', action='store_true', help='Minimal output')
     
+    # inference command
+    inference_parser = subparsers.add_parser('inference', help='Inference optimization')
+    inference_subparsers = inference_parser.add_subparsers(dest='inference_command', required=True)
+    
+    # inference optimize
+    inf_optimize_parser = inference_subparsers.add_parser('optimize', help='Optimize model for inference')
+    inf_optimize_parser.add_argument('--model', '-m', required=True, help='Model path')
+    inf_optimize_parser.add_argument('--target-precision', default='int4',
+                                     choices=['int4', 'int8', 'fp16'],
+                                     help='Target precision (default: int4)')
+    inf_optimize_parser.add_argument('--target-latency', type=float, default=50.0,
+                                     help='Target latency in ms (default: 50)')
+    inf_optimize_parser.add_argument('--calibration-data', help='Path to calibration data JSONL')
+    inf_optimize_parser.add_argument('--output', '-o', default='models/optimized', help='Output directory')
+    
+    # inference export
+    inf_export_parser = inference_subparsers.add_parser('export', help='Export model to deployment format')
+    inf_export_parser.add_argument('--model', '-m', required=True, help='Model path')
+    inf_export_parser.add_argument('--format', '-f', required=True,
+                                   choices=['gguf', 'onnx'],
+                                   help='Export format')
+    inf_export_parser.add_argument('--quantization', '-q', default='Q4_K_M',
+                                   help='GGUF quantization type (default: Q4_K_M)')
+    inf_export_parser.add_argument('--output', '-o', required=True, help='Output path')
+    
+    # inference benchmark
+    inf_bench_parser = inference_subparsers.add_parser('benchmark', help='Benchmark inference latency')
+    inf_bench_parser.add_argument('--model', '-m', required=True, help='Model path')
+    inf_bench_parser.add_argument('--prompts', '-p', help='Test prompts JSONL')
+    inf_bench_parser.add_argument('--num-prompts', type=int, default=10, help='Number of prompts to test')
+    inf_bench_parser.add_argument('--max-tokens', type=int, default=100, help='Max tokens to generate')
+    inf_bench_parser.add_argument('--warmup', type=int, default=3, help='Warmup iterations')
+    inf_bench_parser.add_argument('--measure-memory', action='store_true', help='Measure memory usage')
+    
+    # vlm command
+    vlm_parser = subparsers.add_parser('vlm', help='Vision-Language Model training')
+    vlm_subparsers = vlm_parser.add_subparsers(dest='vlm_command', required=True)
+    
+    # vlm train
+    vlm_train_parser = vlm_subparsers.add_parser('train', help='Train VLM with RAFT')
+    vlm_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2-VL-7B-Instruct',
+                                  help='VLM model name')
+    vlm_train_parser.add_argument('--dataset', '-d', required=True,
+                                  help='Dataset name (textvqa, docvqa, chartqa) or JSONL path')
+    vlm_train_parser.add_argument('--output', '-o', default='models/vlm_raft', help='Output directory')
+    vlm_train_parser.add_argument('--cycles', type=int, default=6, help='Number of RAFT cycles')
+    vlm_train_parser.add_argument('--samples-per-prompt', type=int, default=4,
+                                  help='Samples per prompt (default: 4)')
+    vlm_train_parser.add_argument('--perception-weight', type=float, default=0.3,
+                                  help='Weight for perception verification (default: 0.3)')
+    vlm_train_parser.add_argument('--reasoning-weight', type=float, default=0.4,
+                                  help='Weight for reasoning verification (default: 0.4)')
+    vlm_train_parser.add_argument('--output-weight', type=float, default=0.3,
+                                  help='Weight for output verification (default: 0.3)')
+    vlm_train_parser.add_argument('--lr-decay', type=float, default=0.85,
+                                  help='Learning rate decay per cycle (default: 0.85)')
+    vlm_train_parser.add_argument('--temperature', type=float, default=0.7,
+                                  help='Generation temperature (default: 0.7)')
+    vlm_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    
+    # vlm benchmark
+    vlm_bench_parser = vlm_subparsers.add_parser('benchmark', help='Benchmark VLM')
+    vlm_bench_parser.add_argument('--model', '-m', required=True, help='VLM model path')
+    vlm_bench_parser.add_argument('--dataset', '-d', default='textvqa',
+                                  help='Dataset name (default: textvqa)')
+    vlm_bench_parser.add_argument('--split', default='validation', help='Dataset split')
+    vlm_bench_parser.add_argument('--limit', type=int, default=100, help='Limit samples (default: 100)')
+    vlm_bench_parser.add_argument('--output', '-o', help='Output file for results')
+    
+    # vlm datasets
+    vlm_datasets_parser = vlm_subparsers.add_parser('datasets', help='List available VLM datasets')
+    
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
     
@@ -1130,6 +1558,20 @@ def main():
                 print("  halo-forge benchmark full --suite all")
                 sys.exit(1)
             cmd_benchmark_full(args)
+    elif args.command == 'inference':
+        if args.inference_command == 'optimize':
+            cmd_inference_optimize(args)
+        elif args.inference_command == 'export':
+            cmd_inference_export(args)
+        elif args.inference_command == 'benchmark':
+            cmd_inference_benchmark(args)
+    elif args.command == 'vlm':
+        if args.vlm_command == 'train':
+            cmd_vlm_train(args)
+        elif args.vlm_command == 'benchmark':
+            cmd_vlm_benchmark(args)
+        elif args.vlm_command == 'datasets':
+            cmd_vlm_datasets(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'test':

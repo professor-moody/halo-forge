@@ -43,7 +43,7 @@ ENV/
 htmlcov/
 
 # Training outputs
-models/
+/models/
 checkpoints/
 runs/
 logs/
@@ -53,7 +53,7 @@ results/
 *.safetensors
 
 # Data (ignore downloaded/generated data, keep samples)
-data/
+/data/
 
 # But keep sample data that ships with repo
 !data/rlvr/
@@ -84,7 +84,6 @@ website/hugo-docs/.hugo_build.lock
 website/.backup/
 
 # Experimental/internal docs
-experimental/
 .experimental/
 .internal_docs/
 

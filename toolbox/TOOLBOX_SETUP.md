@@ -144,6 +144,8 @@ The toolbox image includes:
 | Rust | system + x86_64-pc-windows-gnu | Native + Windows cross-compile |
 | Go | system | Native + Windows cross-compile |
 | .NET SDK | 8.0 | C# Windows cross-compilation |
+| Ultralytics | latest | YOLOv8 for VLM perception |
+| EasyOCR | latest | OCR for VLM text extraction |
 
 ### Build Options
 
@@ -155,7 +157,7 @@ The toolbox image includes:
 ./build.sh --no-cache
 
 # Custom tag
-./build.sh --tag v0.2.0
+./build.sh --tag v0.3.0
 ```
 
 ### Build Time Estimates

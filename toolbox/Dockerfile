@@ -11,25 +11,21 @@ FROM registry.fedoraproject.org/fedora:42 AS builder
 
 LABEL maintainer="halo-forge community"
 LABEL description="halo-forge: RLVR Training Framework for Strix Halo"
-LABEL version="0.2.0"
+LABEL version="0.3.0"
 
 # --- base toolchain ---
 # Includes: compilers, build tools, Python, system utilities
 # Multi-language support: MinGW (C++), Rust, Go, .NET
 RUN dnf -y --nodocs --setopt=install_weak_deps=False install \
        make gcc gcc-c++ cmake lld clang clang-devel compiler-rt libcurl-devel \
-       radeontop git vim patch curl ninja-build tar libatomic xz \
+       radeontop git vim patch ninja-build libatomic \
        python python3-devel pip aria2c jq \
        openssh-clients pciutils numactl numactl-devel libdrm mesa-libGL \
        mingw64-gcc-c++ wine \
-       rust-toolset golang \
+       rust cargo golang \
        dotnet-sdk-8.0 \
        sshpass \
     && dnf clean all && rm -rf /var/cache/dnf/*
-
-# --- Rust Windows cross-compilation target ---
-# Required for compiling Rust to Windows PE executables
-RUN rustup target add x86_64-pc-windows-gnu || true
 
 # --- fetch and unpack ROCm TheRock ---
 WORKDIR /tmp
@@ -140,6 +136,15 @@ RUN python -m pip install --no-cache-dir \
     paramiko \
     pytest \
     rich
+
+# --- VLM dependencies (Phase 3: Vision-Language) ---
+# ultralytics: YOLOv8 for perception verification
+# easyocr: Text extraction from images
+# pillow: Image processing (usually installed, but ensuring)
+RUN python -m pip install --no-cache-dir \
+    ultralytics \
+    easyocr \
+    pillow
 
 # --- PyTorch memory optimization for Strix Halo (128GB unified memory) ---
 ENV PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"

@@ -309,6 +309,38 @@ test_halo_forge_modules() {
     done
 }
 
+test_vlm_deps() {
+    section "VLM Dependencies (Phase 3)"
+    
+    # YOLOv8 for object detection
+    if python3 -c "from ultralytics import YOLO" 2>/dev/null; then
+        ver=$(python3 -c "import ultralytics; print(ultralytics.__version__)" 2>/dev/null || echo "installed")
+        pass "Ultralytics (YOLOv8): ${ver}"
+    else
+        warn "Ultralytics not installed (VLM perception verification disabled)"
+    fi
+    
+    # EasyOCR for text extraction
+    if python3 -c "import easyocr" 2>/dev/null; then
+        pass "EasyOCR installed"
+    else
+        warn "EasyOCR not installed (VLM text verification disabled)"
+    fi
+    
+    # VLM modules
+    if python3 -c "from halo_forge.vlm import VLMRAFTTrainer" 2>/dev/null; then
+        pass "halo_forge.vlm.VLMRAFTTrainer"
+    else
+        warn "VLM module not importable (run: pip install -e .)"
+    fi
+    
+    if python3 -c "from halo_forge.vlm.verifiers import VisionVerifier" 2>/dev/null; then
+        pass "halo_forge.vlm.verifiers.VisionVerifier"
+    else
+        warn "VisionVerifier not importable"
+    fi
+}
+
 print_summary() {
     echo ""
     echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
@@ -370,6 +402,7 @@ test_flash_attention
 
 if [[ "$QUICK" != "true" ]]; then
     test_halo_forge_modules
+    test_vlm_deps
 fi
 
 if [[ "$GPU_TEST" == "true" ]]; then

@@ -18,7 +18,7 @@ FROM ubuntu:24.04 AS builder
 
 LABEL maintainer="halo-forge community"
 LABEL description="halo-forge: RLVR Training Framework for Strix Halo (Ubuntu) - EXPERIMENTAL"
-LABEL version="0.2.0"
+LABEL version="0.3.0"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -192,6 +192,15 @@ RUN python -m pip install --no-cache-dir \
     paramiko \
     pytest \
     rich
+
+# --- VLM dependencies (Phase 3: Vision-Language) ---
+# ultralytics: YOLOv8 for perception verification
+# easyocr: Text extraction from images
+# pillow: Image processing (usually installed, but ensuring)
+RUN python -m pip install --no-cache-dir \
+    ultralytics \
+    easyocr \
+    pillow
 
 # --- PyTorch memory optimization for Strix Halo (128GB unified memory) ---
 ENV PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"

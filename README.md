@@ -32,6 +32,45 @@
 
 ---
 
+## What's New in v0.5.0
+
+### Vision-Language Model Training (Phase 3)
+
+| Feature | Description | CLI Command |
+|---------|-------------|-------------|
+| **VLM RAFT Training** | Train VLMs with perception-aware verification | `halo-forge vlm train` |
+| **VisionVerifier** | Multi-stage verification (perception + reasoning + output) | Built-in |
+| **Perception Checker** | YOLOv8 object detection + EasyOCR text extraction | Built-in |
+| **VLM Datasets** | TextVQA, DocVQA, ChartQA, RealWorldQA, MathVista | `halo-forge vlm datasets` |
+| **Model Adapters** | Qwen-VL, LLaVA, and generic VLM support | Auto-detected |
+
+```bash
+# Train VLM on TextVQA
+halo-forge vlm train \
+  --model Qwen/Qwen2-VL-7B-Instruct \
+  --dataset textvqa \
+  --cycles 6 \
+  --output models/vlm_raft
+
+# Benchmark VLM
+halo-forge vlm benchmark \
+  --model models/vlm_raft/cycle_6 \
+  --dataset docvqa
+```
+
+### Previous Release (v0.3.0)
+
+| Feature | Description | CLI Flag |
+|---------|-------------|----------|
+| **LR Decay** | Prevents training degradation at cycles 7-8 | `--lr-decay 0.85` |
+| **Execution Verifier** | Run code with test cases for graduated rewards | `--verifier execution` |
+| **Multi-Language** | Auto-detect language from code (C++, Python, Rust, Go, C#, PowerShell) | `--verifier auto` |
+| **Metrics Tracking** | TensorBoard integration + JSON logs | Automatic |
+| **HumanEval+** | Extended test cases for better evaluation | Dataset loader |
+| **LiveCodeBench** | Contamination-free benchmark | Dataset loader |
+
+---
+
 ## What is halo-forge
 
 halo-forge implements **RAFT (Reward-Ranked Fine-Tuning)**, a technique for improving code generation models by training on verified outputs rather than relying solely on human preferences or model self-evaluation.
@@ -356,12 +395,18 @@ Verifiers are the core of RLVR training. They provide the reward signal that gui
 
 | Verifier | Language | Use Case | Reward Model |
 |----------|----------|----------|--------------|
-| `GCCVerifier` | C/C++ | Linux compilation | 1.0 if compiles, 0.0 otherwise |
-| `ClangVerifier` | C/C++ | Alternative compiler | 1.0 if compiles, 0.0 otherwise |
-| `MinGWVerifier` | C/C++ | Cross-compile to Windows | 1.0 if compiles, 0.0 otherwise |
-| `RemoteMSVCVerifier` | C/C++ | Remote Windows MSVC | 1.0 if compiles, 0.0 otherwise |
-| `PytestVerifier` | Python | Test-driven development | Partial credit for some tests passing |
-| `UnittestVerifier` | Python | Built-in unittest | 1.0 if all pass, 0.0 otherwise |
+| `GCCVerifier` | C/C++ | Linux compilation | Graduated: 0.0→0.5→0.7→1.0 |
+| `ClangVerifier` | C/C++ | Alternative compiler | Graduated: 0.0→0.5→0.7→1.0 |
+| `MinGWVerifier` | C/C++ | Cross-compile to Windows | Graduated: 0.0→0.5→0.7→1.0 |
+| `RemoteMSVCVerifier` | C/C++ | Remote Windows MSVC | Graduated: 0.0→0.5→0.7→1.0 |
+| `ExecutionVerifier` | C/C++ | **NEW** Test cases with I/O | 0.5 + 0.5 × pass_rate |
+| `MultiLanguageVerifier` | Multi | **NEW** Auto-detect language | Delegates to language verifier |
+| `RustVerifier` | Rust | Rust compilation | Graduated rewards |
+| `GoVerifier` | Go | Go compilation | Graduated rewards |
+| `DotNetVerifier` | C# | .NET compilation | Graduated rewards |
+| `PowerShellVerifier` | PS1 | PowerShell syntax | Syntax check |
+| `PytestVerifier` | Python | Test-driven development | Partial credit for tests |
+| `UnittestVerifier` | Python | Built-in unittest | 1.0 if all pass |
 | `ChainedVerifier` | Any | Multi-stage | Weighted sum of stages |
 | `SubprocessVerifier` | Any | Custom CLI tool | Based on return code |
 
@@ -370,9 +415,14 @@ Verifiers are the core of RLVR training. They provide the reward signal that gui
 ```
 Use Case                           Recommended Verifier
 -----------------------------------------------------------------
-C++ competitive programming   -->  GCCVerifier
+C++ competitive programming   -->  GCCVerifier or ExecutionVerifier
 Windows API development       -->  MinGWVerifier or RemoteMSVCVerifier
 Python with tests             -->  PytestVerifier
+Rust code                     -->  RustVerifier
+Go code                       -->  GoVerifier
+C#/.NET code                  -->  DotNetVerifier
+PowerShell scripts            -->  PowerShellVerifier
+Mixed language dataset        -->  MultiLanguageVerifier (--verifier auto)
 Multi-stage (compile + test)  -->  ChainedVerifier
 Custom domain                 -->  SubprocessVerifier or custom class
 ```
@@ -763,9 +813,11 @@ class MyDomainVerifier(Verifier):
 
 ### Roadmap
 
-- **Current**: Code generation with compile verification
-- **Planned**: Execution-based verification with output comparison
-- **Future**: Generic RLVR framework for any domain with deterministic verification
+- **v0.3.0** (Current): Multi-language support, execution verifier, LR decay, metrics tracking
+- **v0.4.0** (Q2 2026): Inference optimization mode, GGUF/ONNX export, QAT training
+- **v0.5.0** (Q3 2026): Vision-language training (VLM RLVR)
+- **v0.6.0** (Q4 2026): Audio-language training (ASR/TTS)
+- **v1.0.0** (2027): Cross-platform GUI, full multi-modal support
 
 ---
 

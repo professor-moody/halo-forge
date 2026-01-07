@@ -59,22 +59,32 @@ Improvements were observed over 6 RAFT cycles in our testing.
 - [SFT Training](/docs/training-pipeline/sft/) — Supervised fine-tuning
 - [RAFT Training](/docs/training-pipeline/raft/) — Reward-ranked fine-tuning
 - [Benchmarking](/docs/training-pipeline/benchmarking/) — Evaluate with pass@k
+- [Production Runs](/docs/training-pipeline/production-runs/) — Production training commands
 
 ### Verifiers
 - [Verifier Overview](/docs/verifiers/) — Choose your verification strategy
 - [Compile Verifiers](/docs/verifiers/compile/) — GCC, Clang, MinGW, MSVC
 - [Test Verifiers](/docs/verifiers/test/) — pytest, unittest
+- [Execution Verifiers](/docs/verifiers/execution/) — Test case verification
+- [Multi-Language](/docs/verifiers/multi-language/) — Auto-detect language
 - [Custom Verifiers](/docs/verifiers/custom/) — Build your own
 
 ### Reference
-- [Configuration](/docs/reference/configuration/) — Complete config reference
-- [CLI Reference](/docs/reference/cli/) — Command-line interface
+- **[Command Index](/docs/reference/command-index/)** — Every command and flag
+- [Configuration](/docs/reference/configuration/) — Config file reference
+- [Windows Setup](/docs/reference/windows-setup/) — MSVC build server
 - [Troubleshooting](/docs/reference/troubleshooting/) — Common issues
 
 ### Background
 - [Theory & Research](/docs/background/theory/) — Research foundations
 - [Graduated Rewards](/docs/background/graduated-rewards/) — Partial credit system
 - [Learning Rate Strategies](/docs/background/learning-rates/) — LR recommendations
+
+### Experimental
+Features under active development and testing:
+- [Experimental Overview](/docs/experimental/) — What's being tested
+- [VLM Training](/docs/experimental/vlm/) — Vision-language models
+- [Inference Optimization](/docs/experimental/inference/) — Model export/quantization
 
 ### Meta
 - [Changelog](/docs/changelog/) — Version history

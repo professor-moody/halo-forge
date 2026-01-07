@@ -3,6 +3,135 @@ title: "Changelog"
 description: "All notable changes to halo-forge"
 ---
 
+## [0.5.0] - 2026-01-07
+
+### Added
+
+#### Vision-Language Model Training (Phase 3)
+- New `halo_forge/vlm/` module for VLM RLVR training
+- `VLMRAFTTrainer` for RAFT training on VLMs
+- Multi-stage verification pipeline for VLM outputs
+
+#### VLM Verifiers
+- `VisionVerifier` combining perception, reasoning, and output verification
+- `PerceptionChecker` with YOLOv8 object detection and EasyOCR
+- `ReasoningChecker` for chain-of-thought validation
+- `OutputChecker` for answer matching (exact, fuzzy, semantic)
+- Specialized verifiers: `VQAVerifier`, `DocVQAVerifier`, `ChartQAVerifier`
+
+#### VLM Model Adapters
+- `QwenVLAdapter` for Qwen-VL and Qwen2-VL models
+- `LLaVAAdapter` for LLaVA model family
+- `GenericVLMAdapter` for other HuggingFace VLMs
+- Auto-detection of appropriate adapter from model name
+
+#### VLM Dataset Loaders
+- `TextVQALoader` - Text reading in natural images
+- `DocVQALoader` - Document understanding
+- `ChartQALoader` - Chart interpretation
+- `RealWorldQALoader` - Real-world reasoning
+- `MathVistaLoader` - Mathematical reasoning with visuals
+- Export to RLVR and SFT formats
+
+#### Image Processing
+- `VLMPreprocessor` for generic image preprocessing
+- `QwenVLProcessor` for Qwen-VL models
+- `LLaVAProcessor` for LLaVA models
+
+#### CLI Commands
+- `halo-forge vlm train` - Train VLM with RAFT
+- `halo-forge vlm benchmark` - Benchmark VLM on datasets
+- `halo-forge vlm datasets` - List available VLM datasets
+
+### Changed
+- Updated changelog with Phase 3 features
+- Added VLM documentation pages to website
+
+---
+
+## [0.4.0] - 2026-01-06
+
+### Added
+
+#### Inference Optimization Mode
+- New `halo_forge/inference/` module for model optimization
+- `InferenceOptimizationVerifier` for quality verification
+- `InferenceOptimizer` for end-to-end optimization pipeline
+- `QATTrainer` for quantization-aware training
+
+#### Model Export
+- `GGUFExporter` for llama.cpp/Ollama deployment
+- `ONNXExporter` for cross-platform inference
+- Support for Q4_K_M, Q8_0, F16 quantization types
+
+#### CLI Commands
+- `halo-forge inference optimize` - Optimize for deployment
+- `halo-forge inference export` - Export to GGUF/ONNX
+- `halo-forge inference benchmark` - Measure latency
+
+#### Calibration
+- `CalibrationDataset` for calibration data handling
+- Support for synthetic calibration data generation
+
+### Changed
+- Updated CLI reference with inference commands
+- Added inference section to website documentation
+
+---
+
+## [0.3.0] - 2026-01-06
+
+### Added
+
+#### Learning Rate Decay
+- `--lr-decay` flag for exponential LR decay across RAFT cycles (default: 0.85)
+- `--min-lr` flag to set learning rate floor (default: 1e-6)
+- Prevents training degradation at cycles 7-8
+
+#### Execution Verifier
+- New `ExecutionVerifier` for test case-based verification
+- Supports multiple test cases with input/output pairs
+- Graduated rewards: 0.5 + 0.5 × pass_rate
+- Match modes: exact, contains, regex, numeric
+- Pre-configured variants: `GCCExecutionVerifier`, `ClangExecutionVerifier`, `MinGWExecutionVerifier`
+
+#### Multi-Language Support
+- New `MultiLanguageVerifier` with auto-detection
+- Detects: C++, C, Python, Rust, Go, C#, PowerShell
+- Use `--verifier auto` for automatic language detection
+- `AutoVerifier` alias for CLI convenience
+
+#### New Verifiers
+- `RustVerifier` with Windows cross-compilation support
+- `GoVerifier` with Windows cross-compilation support
+- `DotNetVerifier` for C# compilation to Windows PE
+- `PowerShellVerifier` for script syntax validation
+
+#### Metrics Tracking
+- `MetricsTracker` with TensorBoard integration
+- JSON logging for all cycle metrics
+- `TrainingMonitor` for early stopping detection
+- Automatic `metrics.jsonl` generation
+
+#### Dataset Loaders
+- `HumanEvalPlusLoader` - 80x more test cases per problem
+- `LiveCodeBenchLoader` - Contamination-free benchmark
+
+#### CLI Enhancements
+- `halo-forge config validate` command
+- `--system-prompt` flag for custom prompts
+- MSVC verifier validation with helpful error messages
+
+### Changed
+- Default system prompt updated to "You are an expert Windows systems programmer"
+- Improved PEFT adapter handling to prevent stacking
+- Category tracking now supports root-level fields in datasets
+
+### Fixed
+- PEFT adapter stacking bug in `_reload_model()`
+- "Unknown" category issue in benchmark results
+- MSVC verifier parameter validation
+
 ## [0.2.0] - 2025-01-01
 
 ### Added
