@@ -5,11 +5,161 @@ High-level interface for model optimization and export.
 """
 
 import gc
-from dataclasses import dataclass
+import warnings
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 import torch
+
+
+# Valid precision options
+VALID_PRECISIONS = {"int4", "int8", "fp16", "fp32"}
+
+# Valid export formats
+VALID_EXPORT_FORMATS = {"gguf", "onnx", "mlx", None}
+
+
+class InferenceError(Exception):
+    """Base exception for inference optimization errors."""
+    pass
+
+
+class DependencyError(InferenceError):
+    """Raised when a required dependency is missing."""
+    pass
+
+
+class ValidationError(InferenceError):
+    """Raised when configuration validation fails."""
+    pass
+
+
+class ModelNotLoadedError(InferenceError):
+    """Raised when trying to use optimizer before loading a model."""
+    pass
+
+
+def check_dependencies() -> Dict[str, bool]:
+    """
+    Check which inference dependencies are available.
+    
+    Returns:
+        Dictionary mapping dependency name to availability status
+    """
+    deps = {
+        "bitsandbytes": False,
+        "transformers": False,
+        "onnx": False,
+        "onnxruntime": False,
+        "optimum": False,
+        "llama_cpp": False,
+    }
+    
+    try:
+        import bitsandbytes
+        deps["bitsandbytes"] = True
+    except (ImportError, RuntimeError, Exception):
+        # May fail on Python 3.14+ due to torch.compile incompatibility
+        pass
+    
+    try:
+        import transformers
+        deps["transformers"] = True
+    except (ImportError, RuntimeError, Exception):
+        pass
+    
+    try:
+        import onnx
+        deps["onnx"] = True
+    except (ImportError, RuntimeError, Exception):
+        pass
+    
+    try:
+        import onnxruntime
+        deps["onnxruntime"] = True
+    except (ImportError, RuntimeError, Exception):
+        pass
+    
+    try:
+        import optimum
+        deps["optimum"] = True
+    except (ImportError, RuntimeError, Exception):
+        pass
+    
+    try:
+        import llama_cpp
+        deps["llama_cpp"] = True
+    except (ImportError, RuntimeError, Exception):
+        pass
+    
+    return deps
+
+
+def validate_config(config: "OptimizationConfig") -> List[str]:
+    """
+    Validate optimization configuration.
+    
+    Args:
+        config: Configuration to validate
+        
+    Returns:
+        List of warning messages (empty if valid)
+        
+    Raises:
+        ValidationError: If configuration is invalid
+    """
+    warnings_list = []
+    
+    # Validate precision
+    if config.target_precision not in VALID_PRECISIONS:
+        raise ValidationError(
+            f"Invalid precision '{config.target_precision}'. "
+            f"Valid options: {VALID_PRECISIONS}"
+        )
+    
+    # Validate export format
+    if config.export_format not in VALID_EXPORT_FORMATS:
+        raise ValidationError(
+            f"Invalid export format '{config.export_format}'. "
+            f"Valid options: {VALID_EXPORT_FORMATS - {None}}"
+        )
+    
+    # Validate target latency
+    if config.target_latency_ms <= 0:
+        raise ValidationError("target_latency_ms must be positive")
+    
+    # Validate quality threshold
+    if not 0 <= config.quality_threshold <= 1:
+        raise ValidationError("quality_threshold must be between 0 and 1")
+    
+    # Check for dependency issues
+    deps = check_dependencies()
+    
+    if not deps["transformers"]:
+        raise DependencyError(
+            "transformers is required. Install with: pip install transformers"
+        )
+    
+    if config.target_precision in ("int4", "int8") and not deps["bitsandbytes"]:
+        warnings_list.append(
+            f"bitsandbytes not installed. {config.target_precision} quantization "
+            "may not work. Install with: pip install bitsandbytes"
+        )
+    
+    if config.export_format == "gguf" and not deps["llama_cpp"]:
+        warnings_list.append(
+            "llama-cpp-python not installed. GGUF export requires llama.cpp. "
+            "Install with: pip install llama-cpp-python"
+        )
+    
+    if config.export_format == "onnx" and not deps["onnx"]:
+        warnings_list.append(
+            "onnx not installed. ONNX export may fail. "
+            "Install with: pip install onnx onnxruntime"
+        )
+    
+    return warnings_list
 
 
 @dataclass
@@ -21,6 +171,18 @@ class OptimizationConfig:
     calibration_samples: int = 512
     export_format: Optional[str] = None  # gguf, onnx, mlx
     output_dir: str = "models/optimized"
+    
+    def __post_init__(self):
+        """Validate configuration on creation."""
+        # Only warn, don't fail - allows partial configs
+        try:
+            warnings_list = validate_config(self)
+            for w in warnings_list:
+                warnings.warn(w)
+        except (ValidationError, DependencyError, RuntimeError, Exception):
+            # Will be caught when optimizer is used
+            # Also catches Python 3.14+ torch.compile issues
+            pass
 
 
 class InferenceOptimizer:
@@ -47,15 +209,65 @@ class InferenceOptimizer:
         
         Args:
             config: Optimization configuration
+            
+        Raises:
+            ValidationError: If configuration is invalid
+            DependencyError: If required dependencies are missing
         """
         self.config = config or OptimizationConfig()
         self.model = None
         self.tokenizer = None
         self.baseline_model = None
+        self._validated = False
+        
+        # Validate on init
+        self._validate()
+    
+    def _validate(self):
+        """Validate configuration and check dependencies."""
+        if self._validated:
+            return
+        
+        warnings_list = validate_config(self.config)
+        for w in warnings_list:
+            warnings.warn(w)
+        
+        self._validated = True
+    
+    def _ensure_model_loaded(self):
+        """Ensure a model is loaded before operations."""
+        if self.model is None:
+            raise ModelNotLoadedError(
+                "No model loaded. Call load_model() first."
+            )
     
     def load_model(self, model_path: str):
-        """Load model for optimization."""
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        """
+        Load model for optimization.
+        
+        Args:
+            model_path: Path to model or HuggingFace model ID
+            
+        Returns:
+            Loaded model
+            
+        Raises:
+            FileNotFoundError: If local model path doesn't exist
+            DependencyError: If transformers is not installed
+        """
+        try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError:
+            raise DependencyError(
+                "transformers is required. Install with: pip install transformers"
+            )
+        
+        # Check if local path exists
+        model_path_obj = Path(model_path)
+        if model_path_obj.exists() and not model_path_obj.is_dir():
+            raise ValidationError(
+                f"Model path {model_path} exists but is not a directory"
+            )
         
         print(f"Loading model from {model_path}...")
         

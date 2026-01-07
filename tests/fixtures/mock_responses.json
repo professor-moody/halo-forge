@@ -1,0 +1,35 @@
+{
+  "valid_cpp_hello_world": {
+    "prompt": "Write a C++ program that prints Hello World",
+    "completion": "```cpp\n#include <iostream>\n\nint main() {\n    std::cout << \"Hello, World!\" << std::endl;\n    return 0;\n}\n```",
+    "expected_reward": 0.5,
+    "expected_success": true
+  },
+  "invalid_cpp_syntax_error": {
+    "prompt": "Write a C++ program that prints Hello World",
+    "completion": "```cpp\n#include <iostream>\n\nint main() {\n    std::cout << \"Hello, World!\" << std::endl\n    return 0;\n}\n```",
+    "expected_reward": 0.0,
+    "expected_success": false
+  },
+  "vlm_correct_answer": {
+    "prompt": "What is in the image?",
+    "completion": "Looking at the image, I can see a cat sitting on a table. The cat appears to be orange colored. Therefore, the answer is a cat.",
+    "ground_truth": "cat",
+    "expected_reward": 1.0,
+    "expected_success": true
+  },
+  "vlm_with_reasoning": {
+    "prompt": "How many dogs are in the image?",
+    "completion": "Step 1: I observe the image shows a park scene.\nStep 2: Looking carefully, I can count three dogs.\nStep 3: One is a golden retriever, one is a poodle, and one is a bulldog.\nTherefore, the answer is 3.",
+    "ground_truth": "3",
+    "expected_reward": 1.0,
+    "expected_success": true
+  },
+  "vlm_no_reasoning": {
+    "prompt": "Is this a cat or dog?",
+    "completion": "Dog.",
+    "ground_truth": "dog",
+    "expected_reward": 0.7,
+    "expected_success": true
+  }
+}

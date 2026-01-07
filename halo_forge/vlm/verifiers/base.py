@@ -5,6 +5,7 @@ Multi-stage verification for vision-language model outputs.
 Combines perception, reasoning, and output verification.
 """
 
+import warnings
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List, Union
 from pathlib import Path
@@ -15,6 +16,49 @@ from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
 from halo_forge.vlm.verifiers.perception import PerceptionChecker, PerceptionResult
 from halo_forge.vlm.verifiers.reasoning import ReasoningChecker, ReasoningResult
 from halo_forge.vlm.verifiers.output import OutputChecker, OutputResult
+
+
+class VLMVerificationError(Exception):
+    """Base exception for VLM verification errors."""
+    pass
+
+
+class ImageLoadError(VLMVerificationError):
+    """Raised when image loading fails."""
+    pass
+
+
+class DependencyWarning(UserWarning):
+    """Warning for missing optional dependencies."""
+    pass
+
+
+def check_vlm_dependencies() -> Dict[str, bool]:
+    """
+    Check which VLM dependencies are available.
+    
+    Returns:
+        Dictionary mapping dependency name to availability status
+    """
+    deps = {
+        "ultralytics": False,  # YOLOv8
+        "easyocr": False,
+        "pillow": True,  # Always available (required)
+    }
+    
+    try:
+        from ultralytics import YOLO
+        deps["ultralytics"] = True
+    except ImportError:
+        pass
+    
+    try:
+        import easyocr
+        deps["easyocr"] = True
+    except ImportError:
+        pass
+    
+    return deps
 
 
 @dataclass
@@ -106,10 +150,41 @@ class VisionVerifier(Verifier):
             
         Returns:
             VerifyResult with combined reward
+            
+        Raises:
+            ImageLoadError: If image cannot be loaded
+            VLMVerificationError: If verification fails critically
         """
+        # Validate inputs
+        if not prompt:
+            warnings.warn("Empty prompt provided", DependencyWarning)
+        
+        if not completion:
+            return VerifyResult(
+                success=False,
+                reward=0.0,
+                details="Empty completion provided",
+                error="No completion to verify"
+            )
+        
         # Load image if needed
-        if isinstance(image, (str, Path)):
-            image = Image.open(image)
+        try:
+            if isinstance(image, (str, Path)):
+                image_path = Path(image)
+                if str(image).startswith(('http://', 'https://')):
+                    import requests
+                    from io import BytesIO
+                    response = requests.get(str(image), timeout=30)
+                    response.raise_for_status()
+                    image = Image.open(BytesIO(response.content))
+                elif image_path.exists():
+                    image = Image.open(image_path)
+                else:
+                    raise ImageLoadError(f"Image not found: {image}")
+        except Exception as e:
+            if isinstance(e, ImageLoadError):
+                raise
+            raise ImageLoadError(f"Failed to load image: {e}") from e
         
         # 1. Perception verification
         perception_result = self.perception_checker.verify(image, completion)

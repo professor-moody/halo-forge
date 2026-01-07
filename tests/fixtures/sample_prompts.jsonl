@@ -1,0 +1,5 @@
+{"prompt": "Write a C++ function that prints 'Hello, World!' to stdout.", "category": "hello_world", "difficulty": "easy"}
+{"prompt": "Write a C++ function that reads a file and returns its contents as a string.", "category": "file_io", "difficulty": "medium"}
+{"prompt": "Write a C++ function that calculates the factorial of a number.", "category": "math", "difficulty": "easy"}
+{"prompt": "Write a C++ program that lists all files in a directory using Windows API.", "category": "windows_api", "difficulty": "medium"}
+{"prompt": "Write a C++ function that creates a TCP socket and connects to a server.", "category": "networking", "difficulty": "hard"}

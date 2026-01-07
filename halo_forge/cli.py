@@ -973,7 +973,10 @@ def cmd_test(args):
 
 def cmd_inference_optimize(args):
     """Optimize model for inference."""
-    from halo_forge.inference import InferenceOptimizer, OptimizationConfig
+    from halo_forge.inference import (
+        InferenceOptimizer, OptimizationConfig,
+        check_dependencies, validate_config
+    )
     
     print(f"Optimizing model: {args.model}")
     print(f"Target precision: {args.target_precision}")
@@ -984,6 +987,41 @@ def cmd_inference_optimize(args):
         target_latency_ms=args.target_latency,
         output_dir=args.output
     )
+    
+    # Handle --dry-run
+    if getattr(args, 'dry_run', False):
+        print("\n[DRY RUN] Validating configuration and dependencies...")
+        
+        # Check dependencies
+        deps = check_dependencies()
+        print("\nDependencies:")
+        for dep, available in deps.items():
+            status = f"{GREEN}✓{NC}" if available else f"{RED}✗{NC}"
+            print(f"  {status} {dep}")
+        
+        # Validate config
+        try:
+            warnings = validate_config(config)
+            if warnings:
+                print("\nWarnings:")
+                for w in warnings:
+                    print(f"  {YELLOW}⚠{NC} {w}")
+            else:
+                print(f"\n{GREEN}Configuration valid!{NC}")
+        except Exception as e:
+            print(f"\n{RED}Configuration error: {e}{NC}")
+            sys.exit(1)
+        
+        # Check model path
+        from pathlib import Path
+        model_path = Path(args.model)
+        if model_path.exists():
+            print(f"\n{GREEN}✓{NC} Model path exists: {args.model}")
+        else:
+            print(f"\n{YELLOW}⚠{NC} Model path not found locally (may be HuggingFace ID)")
+        
+        print(f"\n{GREEN}[DRY RUN] All checks passed!{NC}")
+        return
     
     optimizer = InferenceOptimizer(config)
     
@@ -1162,6 +1200,7 @@ def cmd_vlm_train(args):
     from halo_forge.vlm import VLMRAFTTrainer
     from halo_forge.vlm.trainer import VLMRAFTConfig
     from halo_forge.vlm.data import load_vlm_dataset, list_vlm_datasets
+    from halo_forge.vlm.verifiers import check_vlm_dependencies
     
     print_banner()
     
@@ -1172,6 +1211,55 @@ def cmd_vlm_train(args):
     print(f"Output:      {args.output}")
     print(f"Cycles:      {args.cycles}")
     print("=" * 60)
+    
+    # Handle --dry-run
+    if getattr(args, 'dry_run', False):
+        print("\n[DRY RUN] Validating configuration and dependencies...")
+        
+        # Check VLM dependencies
+        deps = check_vlm_dependencies()
+        print("\nVLM Dependencies:")
+        for dep, available in deps.items():
+            status = f"{GREEN}✓{NC}" if available else f"{YELLOW}⚠{NC}"
+            print(f"  {status} {dep}")
+        
+        # Check dataset
+        if args.dataset.endswith('.jsonl'):
+            from pathlib import Path
+            dataset_path = Path(args.dataset)
+            if dataset_path.exists():
+                # Count samples
+                with open(dataset_path) as f:
+                    count = sum(1 for _ in f)
+                print(f"\n{GREEN}✓{NC} Dataset: {args.dataset} ({count} samples)")
+            else:
+                print(f"\n{RED}✗{NC} Dataset not found: {args.dataset}")
+                sys.exit(1)
+        else:
+            available = list_vlm_datasets()
+            if args.dataset in available:
+                print(f"\n{GREEN}✓{NC} Dataset: {args.dataset} (HuggingFace)")
+            else:
+                print(f"\n{RED}✗{NC} Unknown dataset: {args.dataset}")
+                print(f"  Available: {', '.join(available)}")
+                sys.exit(1)
+        
+        # Validate config values
+        print("\nConfiguration:")
+        print(f"  Cycles: {args.cycles}")
+        print(f"  Samples/prompt: {args.samples_per_prompt}")
+        print(f"  Perception weight: {args.perception_weight}")
+        print(f"  Reasoning weight: {args.reasoning_weight}")
+        print(f"  Output weight: {args.output_weight}")
+        print(f"  LR decay: {args.lr_decay}")
+        print(f"  Temperature: {args.temperature}")
+        
+        # Check model (just print - can't validate without loading)
+        print(f"\nModel: {args.model}")
+        print(f"  (Model will be loaded at training start)")
+        
+        print(f"\n{GREEN}[DRY RUN] All checks passed!{NC}")
+        return
     
     # Create config
     config = VLMRAFTConfig(
@@ -1470,6 +1558,8 @@ def main():
                                      help='Target latency in ms (default: 50)')
     inf_optimize_parser.add_argument('--calibration-data', help='Path to calibration data JSONL')
     inf_optimize_parser.add_argument('--output', '-o', default='models/optimized', help='Output directory')
+    inf_optimize_parser.add_argument('--dry-run', action='store_true',
+                                     help='Validate config and dependencies without running optimization')
     
     # inference export
     inf_export_parser = inference_subparsers.add_parser('export', help='Export model to deployment format')
@@ -1515,6 +1605,8 @@ def main():
     vlm_train_parser.add_argument('--temperature', type=float, default=0.7,
                                   help='Generation temperature (default: 0.7)')
     vlm_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    vlm_train_parser.add_argument('--dry-run', action='store_true',
+                                  help='Validate config and datasets without running training')
     
     # vlm benchmark
     vlm_bench_parser = vlm_subparsers.add_parser('benchmark', help='Benchmark VLM')

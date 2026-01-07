@@ -1,0 +1,5 @@
+{"prompt": "What is the main object in this image?", "ground_truth": "cat", "image": "test_image_1.jpg", "task": "object_recognition"}
+{"prompt": "What color is the car?", "ground_truth": "red", "image": "test_image_2.jpg", "task": "color_recognition"}
+{"prompt": "How many people are in the image?", "ground_truth": "3", "image": "test_image_3.jpg", "task": "counting"}
+{"prompt": "What text is written on the sign?", "ground_truth": "STOP", "image": "test_image_4.jpg", "task": "text_reading"}
+{"prompt": "Is the dog on the left or right of the person?", "ground_truth": "left", "image": "test_image_5.jpg", "task": "spatial_reasoning"}
