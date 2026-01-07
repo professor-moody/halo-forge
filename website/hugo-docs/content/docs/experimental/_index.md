@@ -24,8 +24,16 @@ Train vision-language models using RLVR with perception-aware verification.
 | PerceptionChecker | Beta | YOLOv8 + EasyOCR |
 | Dataset Loaders | Beta | TextVQA, DocVQA, ChartQA |
 
+**New in v0.5.1:**
+- `--dry-run` flag for validating config without training
+- Improved error handling and dependency checking
+- Better error messages for missing dependencies
+
 ```bash
-# Quick start
+# Validate configuration first
+halo-forge vlm train --model Qwen/Qwen2-VL-7B-Instruct --dataset textvqa --dry-run
+
+# Then run training
 halo-forge vlm train --model Qwen/Qwen2-VL-7B-Instruct --dataset textvqa
 ```
 
@@ -39,13 +47,22 @@ Optimize trained models for deployment without full retraining.
 
 | Component | Status | Description |
 |-----------|--------|-------------|
-| InferenceOptimizer | Alpha | End-to-end optimization |
+| InferenceOptimizer | Beta | End-to-end optimization |
 | QATTrainer | Alpha | Quantization-aware training |
-| GGUFExporter | Alpha | Export for llama.cpp |
+| GGUFExporter | Beta | Export for llama.cpp |
 | ONNXExporter | Alpha | Cross-platform export |
 
+**New in v0.5.1:**
+- `--dry-run` flag for validating config and dependencies
+- Comprehensive error handling with helpful messages
+- Dependency checking: `check_dependencies()` utility function
+- Custom exception classes for better error handling
+
 ```bash
-# Quick start
+# Check dependencies and validate config
+halo-forge inference optimize --model models/trained --dry-run
+
+# Export to GGUF
 halo-forge inference export --model models/trained --format gguf --output model.gguf
 ```
 

@@ -95,8 +95,26 @@ halo-forge inference optimize \
   --target-precision int4
 ```
 
+## Standalone GGUF Export Script
+
+For a simpler workflow, use the standalone export script:
+
+```bash
+# Install llama-cpp-python (one-time)
+pip install llama-cpp-python
+
+# Convert directly from trained model to GGUF
+python scripts/export_gguf.py \
+  --model models/windows_raft_1.5b/final_model \
+  --output windows_coder.Q4_K_M.gguf \
+  --quantization Q4_K_M
+```
+
+See the [GGUF Export Guide](./gguf-export.md) for full documentation.
+
 ## Next Steps
 
+- [GGUF Export](./gguf-export.md) - Standalone export script
 - [Quantization Guide](./quantization.md) - Detailed quantization options
 - [Export Formats](./export.md) - Format-specific documentation
 - [Benchmarking](./benchmarking.md) - Measure and compare performance
