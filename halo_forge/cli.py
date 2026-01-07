@@ -139,13 +139,18 @@ def cmd_raft_train(args):
     elif verifier_type == 'mingw':
         verifier = MinGWVerifier()
     elif verifier_type == 'msvc':
-        msvc_host = cfg_dict.get('verifier', {}).get('host')
-        msvc_user = cfg_dict.get('verifier', {}).get('user')
-        msvc_key = cfg_dict.get('verifier', {}).get('ssh_key')
+        # CLI args take precedence over config file
+        msvc_host = getattr(args, 'host', None) or cfg_dict.get('verifier', {}).get('host')
+        msvc_user = getattr(args, 'user', None) or cfg_dict.get('verifier', {}).get('user')
+        msvc_key = getattr(args, 'ssh_key', None) or cfg_dict.get('verifier', {}).get('ssh_key')
         
         if not msvc_host or not msvc_user or not msvc_key:
-            print("Error: MSVC verifier requires host, user, and ssh_key in config file.")
-            print("\nExample config (configs/raft_windows_msvc.yaml):")
+            print("Error: MSVC verifier requires --host, --user, and --ssh-key.")
+            print("\nExample:")
+            print("  halo-forge raft train --verifier msvc \\")
+            print("    --host 10.0.0.152 --user keys --ssh-key ~/.ssh/win \\")
+            print("    --prompts data/prompts.jsonl")
+            print("\nOr in config file (configs/raft_windows_msvc.yaml):")
             print("  verifier:")
             print("    type: msvc")
             print("    host: 10.0.0.152")
@@ -185,6 +190,7 @@ def cmd_raft_train(args):
     
     curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
     reward_shaping = getattr(args, 'reward_shaping', None) or cfg_dict.get('reward_shaping_strategy', 'fixed')
+    system_prompt = getattr(args, 'system_prompt', None) or cfg_dict.get('system_prompt', 'You are an expert Windows systems programmer.')
     
     config = RAFTConfig(
         base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
@@ -194,7 +200,8 @@ def cmd_raft_train(args):
         keep_top_percent=keep_percent,
         reward_threshold=reward_threshold,
         curriculum_strategy=curriculum,
-        reward_shaping_strategy=reward_shaping
+        reward_shaping_strategy=reward_shaping,
+        system_prompt=system_prompt
     )
     
     # Load prompts
@@ -884,6 +891,12 @@ def main():
     raft_train_parser.add_argument('--reward-shaping', default='fixed',
                                    choices=['fixed', 'annealing', 'adaptive', 'warmup'],
                                    help='Reward shaping strategy (default: fixed)')
+    raft_train_parser.add_argument('--system-prompt', 
+                                   default='You are an expert Windows systems programmer.',
+                                   help='System prompt for generation')
+    raft_train_parser.add_argument('--host', help='MSVC verifier host')
+    raft_train_parser.add_argument('--user', help='MSVC verifier user')
+    raft_train_parser.add_argument('--ssh-key', help='MSVC verifier SSH key')
     
     # benchmark command
     bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
@@ -899,7 +912,7 @@ def main():
     bench_run_parser.add_argument('--max-prompts', type=int, help='Max prompts to evaluate')
     bench_run_parser.add_argument('--verifier', default='gcc', help='Verifier type')
     bench_run_parser.add_argument('--base-model', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
-    bench_run_parser.add_argument('--system-prompt', default='You are an expert programmer.', help='System prompt')
+    bench_run_parser.add_argument('--system-prompt', default='You are an expert Windows systems programmer.', help='System prompt')
     bench_run_parser.add_argument('--host', help='MSVC host')
     bench_run_parser.add_argument('--user', help='MSVC user')
     bench_run_parser.add_argument('--ssh-key', help='MSVC SSH key')

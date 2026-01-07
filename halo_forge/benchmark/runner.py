@@ -339,7 +339,7 @@ class BenchmarkRunner:
             formatted = []
             for prompt_data in batch_prompts:
                 messages = [
-                    {"role": "system", "content": "You are an expert programmer."},
+                    {"role": "system", "content": "You are an expert Windows systems programmer."},
                     {"role": "user", "content": prompt_data["prompt"]}
                 ]
                 formatted_prompt = self.tokenizer.apply_chat_template(
@@ -582,7 +582,7 @@ class BenchmarkRunner:
         texts = []
         for s in samples:
             messages = [
-                {"role": "system", "content": "You are an expert programmer."},
+                {"role": "system", "content": "You are an expert Windows systems programmer."},
                 {"role": "user", "content": s["prompt"]},
                 {"role": "assistant", "content": s["code"]},
             ]

@@ -91,3 +91,6 @@ experimental/
 # Build logs
 toolbox/*.log
 
+
+# Large combined datasets (generated from strix-edr-training)
+datasets/combined_*.jsonl

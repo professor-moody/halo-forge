@@ -123,7 +123,7 @@ class Benchmark:
         model_path: str,
         verifier: Verifier,
         base_model: str = "Qwen/Qwen2.5-Coder-7B",
-        system_prompt: str = "You are an expert programmer."
+        system_prompt: str = "You are an expert Windows systems programmer."
     ):
         """
         Initialize benchmark.

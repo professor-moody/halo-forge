@@ -77,8 +77,8 @@ class RAFTConfig:
     gradient_accumulation_steps: int = 16
     learning_rate: float = 5e-5
     
-    # System prompt for generation
-    system_prompt: str = "You are an expert programmer."
+    # System prompt for generation (matches Windows curriculum SFT data)
+    system_prompt: str = "You are an expert Windows systems programmer."
     
     # Curriculum learning: train on easy prompts first, then harder ones
     # Options: "none", "complexity", "progressive", "adaptive", "historical"
@@ -686,17 +686,32 @@ class RAFTTrainer:
         return cycle_stats
     
     def _reload_model(self, checkpoint_path: str):
-        """Reload model from checkpoint."""
+        """Reload model from checkpoint with fresh base model.
+        
+        This prevents PEFT adapter stacking by creating a new base model
+        each time, rather than reusing one that already has peft_config attached.
+        """
         self._log(f"Reloading model from {checkpoint_path}", "step")
         
-        # Free memory
+        # Free ALL model memory (prevents adapter stacking)
         if hasattr(self, 'model'):
             del self.model
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        if hasattr(self, 'base_model'):
+            del self.base_model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
-        # Reload
+        # Reload FRESH base model (critical: prevents peft_config accumulation)
+        cfg = self.config
+        self.base_model = AutoModelForCausalLM.from_pretrained(
+            cfg.base_model,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            attn_implementation="eager"
+        )
+        
+        # Load PEFT adapters onto fresh base
         self.model = PeftModel.from_pretrained(
             self.base_model,
             checkpoint_path,
