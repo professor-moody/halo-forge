@@ -43,6 +43,10 @@ halo-forge
 │   ├── train
 │   ├── benchmark
 │   └── datasets
+├── agentic            [EXPERIMENTAL]
+│   ├── train
+│   ├── benchmark
+│   └── datasets
 ├── info
 └── test
 ```
@@ -536,6 +540,74 @@ List available math/reasoning datasets.
 
 ```bash
 halo-forge reasoning datasets
+```
+
+---
+
+## Agentic Commands (Experimental)
+
+### halo-forge agentic train
+
+Train on tool calling datasets with RAFT.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `Qwen/Qwen2.5-7B-Instruct` | Base model |
+| `--dataset` | `-d` | string | No | `xlam` | Dataset: xlam, glaive |
+| `--output` | `-o` | path | No | `models/agentic_raft` | Output directory |
+| `--cycles` | - | int | No | 5 | RAFT cycles |
+| `--lr` | - | float | No | 5e-5 | Learning rate |
+| `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
+| `--limit` | - | int | No | - | Limit dataset samples |
+| `--dry-run` | - | flag | No | false | Validate config only |
+
+```bash
+halo-forge agentic train \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --dataset xlam \
+  --cycles 5 \
+  --output models/agentic_raft
+```
+
+---
+
+### halo-forge agentic benchmark
+
+Benchmark tool calling accuracy.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `Qwen/Qwen2.5-7B-Instruct` | Model to benchmark |
+| `--dataset` | `-d` | string | No | `xlam` | Dataset: xlam, glaive |
+| `--limit` | - | int | No | 100 | Limit samples |
+| `--output` | `-o` | path | No | - | Output file |
+
+```bash
+halo-forge agentic benchmark \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --dataset xlam \
+  --limit 100 \
+  --output results/agentic_benchmark.json
+```
+
+---
+
+### halo-forge agentic datasets
+
+List available tool calling datasets.
+
+```bash
+halo-forge agentic datasets
+```
+
+Output:
+```
+Available Agentic / Tool Calling Datasets
+============================================================
+  xlam         [Tool Calling] - 60k verified, 3,673 APIs
+  glaive       [Tool Calling] - 113k samples, irrelevance
+  toolbench    [Tool Calling] - 188k samples, 16k APIs
+  hermes       [Tool Calling] - Format reference
 ```
 
 ---

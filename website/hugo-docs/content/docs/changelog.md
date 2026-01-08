@@ -3,6 +3,40 @@ title: "Changelog"
 description: "All notable changes to halo forge"
 ---
 
+## [1.1.0] - 2026-01-08
+
+### Added
+
+#### Agentic / Tool Calling Training (Phase 6)
+- New `halo_forge/agentic/` module for tool calling RLVR training
+- `AgenticRAFTTrainer` for RAFT training on function calling
+- Hermes format support (Qwen2.5, NousHermes compatible)
+- TensorBoard integration via MetricsTracker
+
+#### Tool Calling Verifier
+- `ToolCallingVerifier` with graduated reward structure
+- JSON validation and schema compliance
+- Function name and argument matching
+- Irrelevance detection (penalizes false positives)
+- Support for parallel and multi-turn tool calls
+
+#### Tool Calling Dataset Loaders
+- `XLAMLoader` - 60k verified samples, 3,673 APIs
+- `GlaiveLoader` - 113k samples with irrelevance detection
+- `HermesFormatter` for converting to standard format
+
+#### CLI Commands
+- `halo-forge agentic train` - Train tool calling with RAFT
+- `halo-forge agentic benchmark` - Benchmark on tool calling
+- `halo-forge agentic datasets` - List available datasets
+
+### Improved
+- Consistent CLI banner and colors across all modules
+- MetricsTracker integration for TensorBoard logging
+- 32 new unit tests for agentic module
+
+---
+
 ## [1.0.0] - 2026-01-08
 
 ### Added

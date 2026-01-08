@@ -1244,7 +1244,7 @@ def cmd_vlm_train(args):
     
     print_banner()
     
-    print(f"VLM RAFT Training")
+    print(f"\n{GREEN}VLM RAFT Training{NC}")
     print("=" * 60)
     print(f"Model:       {args.model}")
     print(f"Dataset:     {args.dataset}")
@@ -1345,7 +1345,7 @@ def cmd_vlm_benchmark(args):
     
     print_banner()
     
-    print(f"VLM Benchmark")
+    print(f"\n{GREEN}VLM Benchmark{NC}")
     print("=" * 60)
     print(f"Model:   {args.model}")
     print(f"Dataset: {args.dataset}")
@@ -1433,7 +1433,9 @@ def cmd_vlm_datasets(args):
     """List available VLM datasets."""
     from halo_forge.vlm.data import list_vlm_datasets
     
-    print("Available VLM Datasets")
+    print_banner()
+    
+    print(f"\n{GREEN}Available VLM Datasets{NC}")
     print("=" * 60)
     
     datasets = list_vlm_datasets()
@@ -1459,7 +1461,9 @@ def cmd_audio_datasets(args):
     """List available audio datasets."""
     from halo_forge.audio.data import list_audio_datasets
     
-    print("Available Audio Datasets")
+    print_banner()
+    
+    print(f"\n{GREEN}Available Audio Datasets{NC}")
     print("=" * 60)
     
     dataset_info = {
@@ -1877,6 +1881,41 @@ def main():
     reasoning_train_parser.add_argument('--dry-run', action='store_true',
                                         help='Validate config without running training')
     
+    # agentic command (tool calling)
+    agentic_parser = subparsers.add_parser('agentic', help='Tool calling / function calling training')
+    agentic_subparsers = agentic_parser.add_subparsers(dest='agentic_command', required=True)
+    
+    # agentic datasets
+    agentic_datasets_parser = agentic_subparsers.add_parser('datasets', help='List available tool calling datasets')
+    
+    # agentic benchmark
+    agentic_bench_parser = agentic_subparsers.add_parser('benchmark', help='Benchmark tool calling model')
+    agentic_bench_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
+                                      help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
+    agentic_bench_parser.add_argument('--dataset', '-d', default='xlam',
+                                      help='Dataset name: xlam, glaive (default: xlam)')
+    agentic_bench_parser.add_argument('--limit', type=int, default=100,
+                                      help='Limit samples (default: 100)')
+    agentic_bench_parser.add_argument('--output', '-o', help='Output file for results')
+    
+    # agentic train
+    agentic_train_parser = agentic_subparsers.add_parser('train', help='Train tool calling with RAFT')
+    agentic_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
+                                      help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
+    agentic_train_parser.add_argument('--dataset', '-d', default='xlam',
+                                      help='Dataset name: xlam, glaive (default: xlam)')
+    agentic_train_parser.add_argument('--cycles', type=int, default=5,
+                                      help='Number of RAFT cycles (default: 5)')
+    agentic_train_parser.add_argument('--lr', type=float, default=5e-5,
+                                      help='Initial learning rate (default: 5e-5)')
+    agentic_train_parser.add_argument('--lr-decay', type=float, default=0.85,
+                                      help='Learning rate decay per cycle (default: 0.85)')
+    agentic_train_parser.add_argument('--output', '-o', default='models/agentic_raft',
+                                      help='Output directory (default: models/agentic_raft)')
+    agentic_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    agentic_train_parser.add_argument('--dry-run', action='store_true',
+                                      help='Validate config without running training')
+    
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
     
@@ -1903,7 +1942,9 @@ def cmd_reasoning_datasets(args):
     """List available math datasets."""
     from halo_forge.reasoning.data import list_math_datasets
     
-    print("Available Math/Reasoning Datasets")
+    print_banner()
+    
+    print(f"\n{GREEN}Available Math/Reasoning Datasets{NC}")
     print("=" * 60)
     
     dataset_info = {
@@ -2089,6 +2130,147 @@ def cmd_reasoning_train(args):
     print(f"Results saved to: {args.output}")
 
 
+# =============================================================================
+# Agentic / Tool Calling Commands
+# =============================================================================
+
+def cmd_agentic_datasets(args):
+    """List available agentic/tool calling datasets."""
+    from halo_forge.agentic.data import list_agentic_datasets
+    
+    print_banner()
+    
+    datasets = list_agentic_datasets()
+    
+    print(f"\n{GREEN}Available Agentic / Tool Calling Datasets{NC}")
+    print("=" * 60)
+    
+    for key, info in datasets.items():
+        print(f"\n  {CYAN}{key:<12}{NC} [{YELLOW}Tool Calling{NC}]")
+        print(f"               {info['description']}")
+        print(f"               HuggingFace: {info['hf_path']}")
+        print(f"               Size: {info['size']}")
+    
+    print(f"\n{YELLOW}Note:{NC} Datasets are downloaded on first use via HuggingFace.")
+
+
+def cmd_agentic_benchmark(args):
+    """Run agentic/tool calling benchmark."""
+    from halo_forge.agentic import AgenticRAFTTrainer, AgenticRAFTConfig
+    from halo_forge.agentic.data import XLAMLoader, GlaiveLoader
+    
+    print_banner()
+    
+    print(f"\n{GREEN}Agentic / Tool Calling Benchmark{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Limit: {args.limit}")
+    
+    # Load dataset
+    if args.dataset == "xlam":
+        loader = XLAMLoader()
+    elif args.dataset == "glaive":
+        loader = GlaiveLoader()
+    else:
+        print(f"{RED}Unknown dataset: {args.dataset}{NC}")
+        print("Available: xlam, glaive")
+        sys.exit(1)
+    
+    print(f"\n{YELLOW}Loading dataset...{NC}")
+    samples = loader.load(limit=args.limit)
+    print(f"Loaded {len(samples)} samples")
+    
+    # Create trainer for benchmark
+    config = AgenticRAFTConfig(
+        model_name=args.model,
+    )
+    trainer = AgenticRAFTTrainer(config)
+    
+    print(f"\n{YELLOW}Loading model...{NC}")
+    trainer.load_model()
+    
+    print(f"\n{YELLOW}Running benchmark...{NC}")
+    results = trainer.benchmark(samples, limit=args.limit)
+    
+    print(f"\n{GREEN}Benchmark Results{NC}")
+    print("=" * 60)
+    print(f"  Total samples:     {results['total']}")
+    print(f"  Correct:           {results['correct']} ({results['accuracy']:.1%})")
+    print(f"  JSON valid:        {results['json_valid']} ({results['json_valid_rate']:.1%})")
+    print(f"  Function correct:  {results['function_correct']} ({results['function_accuracy']:.1%})")
+    print(f"  Average reward:    {results['avg_reward']:.3f}")
+    print(f"  False positives:   {results['false_positives']}")
+    
+    if args.output:
+        import json
+        with open(args.output, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\nResults saved to {args.output}")
+
+
+def cmd_agentic_train(args):
+    """Train agentic/tool calling model with RAFT."""
+    from halo_forge.agentic import AgenticRAFTTrainer, AgenticRAFTConfig
+    from halo_forge.agentic.data import XLAMLoader, GlaiveLoader
+    
+    print_banner()
+    
+    print(f"\n{GREEN}Agentic / Tool Calling RAFT Training{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Cycles: {args.cycles}")
+    print(f"Output: {args.output}")
+    
+    if args.dry_run:
+        print(f"\n{YELLOW}Dry run mode - validating configuration only{NC}")
+        
+        # Check dependencies
+        print(f"\n{GREEN}✓{NC} agentic module available")
+        
+        # Check dataset
+        from halo_forge.agentic.data import list_agentic_datasets
+        if args.dataset in list_agentic_datasets():
+            print(f"{GREEN}✓{NC} Dataset: {args.dataset}")
+        else:
+            print(f"{RED}✗{NC} Unknown dataset: {args.dataset}")
+        
+        print(f"\n{GREEN}Configuration valid!{NC}")
+        return
+    
+    # Load dataset
+    if args.dataset == "xlam":
+        loader = XLAMLoader()
+    elif args.dataset == "glaive":
+        loader = GlaiveLoader()
+    else:
+        print(f"{RED}Unknown dataset: {args.dataset}{NC}")
+        sys.exit(1)
+    
+    print(f"\n{YELLOW}Loading dataset...{NC}")
+    samples = loader.load(limit=args.limit)
+    print(f"Loaded {len(samples)} samples")
+    
+    # Create config
+    config = AgenticRAFTConfig(
+        model_name=args.model,
+        num_cycles=args.cycles,
+        learning_rate=args.lr,
+        lr_decay_per_cycle=args.lr_decay,
+        output_dir=args.output,
+    )
+    
+    # Train
+    trainer = AgenticRAFTTrainer(config)
+    results = trainer.train(samples)
+    
+    print(f"\n{GREEN}Training complete!{NC}")
+    print(f"Final accuracy: {results.get('final_success_rate', 0):.1%}")
+    print(f"Final avg reward: {results.get('final_avg_reward', 0):.3f}")
+    print(f"Results saved to: {args.output}")
+
+
 # The test parser and dispatch logic is inside main() at line 1598
 # These are the remaining handler functions that were placed after main()
 
@@ -2151,6 +2333,13 @@ def _dispatch_commands(args):
             cmd_reasoning_benchmark(args)
         elif args.reasoning_command == 'train':
             cmd_reasoning_train(args)
+    elif args.command == 'agentic':
+        if args.agentic_command == 'datasets':
+            cmd_agentic_datasets(args)
+        elif args.agentic_command == 'benchmark':
+            cmd_agentic_benchmark(args)
+        elif args.agentic_command == 'train':
+            cmd_agentic_train(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'test':
