@@ -3,6 +3,76 @@ title: "Changelog"
 description: "All notable changes to halo forge"
 ---
 
+## [1.0.0] - 2026-01-08
+
+### Added
+
+#### Audio Training (Phase 4)
+- New `halo_forge/audio/` module for audio-language RLVR training
+- `AudioRAFTTrainer` for RAFT training on audio models
+- Multi-task verification: ASR, TTS, Audio Classification
+
+#### Audio Verifiers
+- `AudioVerifier` base class inheriting from core `Verifier`
+- `ASRChecker` for speech-to-text with WER/CER metrics
+- `TTSChecker` for text-to-speech quality (UTMOS-based)
+- `AudioClassificationChecker` for sound event detection
+
+#### Audio Model Adapters
+- `WhisperAdapter` for OpenAI Whisper models
+- `Wav2VecAdapter` for wav2vec2 models
+- Automatic dtype handling and attention mask generation
+
+#### Audio Dataset Loaders
+- `LibriSpeechLoader` - 960h clean audiobook speech
+- `CommonVoiceLoader` - Multilingual crowdsourced audio
+- `AudioSetLoader` - 5M clips for classification
+- `SpeechCommandsLoader` - Keyword spotting dataset
+
+#### Math/Reasoning Training (Phase 5)
+- New `halo_forge/reasoning/` module for mathematical reasoning
+- `ReasoningRAFTTrainer` for reasoning task training
+- SymPy-based answer verification
+
+#### Reasoning Verifiers
+- `ReasoningVerifier` base class inheriting from core `Verifier`
+- `MathVerifier` with numeric and symbolic comparison
+- `AnswerExtractor` for parsing answers from completions
+- Support for `\boxed{}`, "The answer is", and numeric formats
+- Partial credit for showing reasoning steps
+
+#### Reasoning Dataset Loaders
+- `GSM8KLoader` - 8.5K grade school math problems
+- `MATHLoader` - 12.5K competition math problems
+- Support for difficulty levels and subject filtering
+
+#### CLI Commands
+- `halo-forge audio train` - Train audio models with RAFT
+- `halo-forge audio benchmark` - Benchmark on audio datasets
+- `halo-forge audio datasets` - List audio datasets
+- `halo-forge reasoning train` - Train on math datasets
+- `halo-forge reasoning benchmark` - Math benchmarking
+- `halo-forge reasoning datasets` - List reasoning datasets
+
+#### Architecture Improvements
+- All verifiers now inherit from base `Verifier` class
+- Consistent `verify() -> VerifyResult` interface across domains
+- Unified `VerifyResult` dataclass with `success`, `reward`, `error`
+
+### Changed
+- Updated all containers to v1.0.0
+- Removed `torchcodec` dependency (using torchaudio/librosa directly)
+- Improved audio loading with graceful fallback to librosa
+- Consistent CLI banner and colors across all commands
+
+### Fixed
+- CLI subcommand dispatch issue causing empty output
+- Build script argument parsing for `--tag` option
+- Whisper dtype mismatch causing float/half errors
+- VLM preprocessor returning 4D tensors instead of 3D
+
+---
+
 ## [0.5.0] - 2026-01-07
 
 ### Added

@@ -1879,6 +1879,20 @@ def main():
     
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
+    
+    # test command
+    test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
+    test_parser.add_argument('--level', '-l', default='standard',
+                             choices=['smoke', 'standard', 'full'],
+                             help='Test level: smoke (no GPU), standard (with GPU), full (with training)')
+    test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
+                             help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
+    test_parser.add_argument('--verbose', '-v', action='store_true',
+                             help='Verbose output with detailed logging')
+    
+    # Parse arguments and dispatch
+    args = parser.parse_args()
+    _dispatch_commands(args)
 
 
 # =============================================================================
@@ -2074,18 +2088,12 @@ def cmd_reasoning_train(args):
     print(f"Final accuracy: {summary.get('final_accuracy', 0):.1%}")
     print(f"Results saved to: {args.output}")
 
-    # test command
-    test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
-    test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full'],
-                             help='Test level: smoke (no GPU), standard (with GPU), full (with training)')
-    test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
-                             help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
-    test_parser.add_argument('--verbose', '-v', action='store_true',
-                             help='Verbose output with detailed logging')
-    
-    # Parse
-    args = parser.parse_args()
+
+# The test parser and dispatch logic is inside main() at line 1598
+# These are the remaining handler functions that were placed after main()
+
+def _dispatch_commands(args):
+    """Dispatch to appropriate command handler."""
     
     # Route to handler
     if args.command == 'config':

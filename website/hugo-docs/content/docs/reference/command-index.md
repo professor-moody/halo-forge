@@ -35,6 +35,14 @@ halo-forge
 │   ├── train
 │   ├── benchmark
 │   └── datasets
+├── audio              [EXPERIMENTAL]
+│   ├── train
+│   ├── benchmark
+│   └── datasets
+├── reasoning          [EXPERIMENTAL]
+│   ├── train
+│   ├── benchmark
+│   └── datasets
 ├── info
 └── test
 ```
@@ -411,6 +419,123 @@ List available VLM datasets.
 
 ```bash
 halo-forge vlm datasets
+```
+
+---
+
+### halo-forge audio train
+
+Train audio model with RAFT.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `openai/whisper-small` | Audio model |
+| `--dataset` | `-d` | string | Yes | - | Dataset name |
+| `--task` | - | string | No | `asr` | Task: `asr`, `tts`, `classification` |
+| `--output` | `-o` | path | No | `models/audio_raft` | Output directory |
+| `--cycles` | - | int | No | 4 | RAFT cycles |
+| `--lr` | - | float | No | 1e-5 | Learning rate |
+| `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
+| `--limit` | - | int | No | - | Limit dataset samples |
+
+**Dataset choices:** `librispeech`, `common_voice`, `audioset`, `speech_commands`
+
+```bash
+halo-forge audio train \
+  --model openai/whisper-small \
+  --dataset librispeech \
+  --task asr \
+  --cycles 4 \
+  --output models/audio_asr
+```
+
+---
+
+### halo-forge audio benchmark
+
+Benchmark audio model on dataset.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | path | Yes | - | Audio model path |
+| `--dataset` | `-d` | string | No | `librispeech` | Dataset name |
+| `--task` | - | string | No | `asr` | Task type |
+| `--limit` | - | int | No | 100 | Limit samples |
+| `--output` | `-o` | path | No | - | Output file |
+
+```bash
+halo-forge audio benchmark \
+  --model openai/whisper-small \
+  --dataset librispeech \
+  --limit 50 \
+  --output results/audio_benchmark.json
+```
+
+---
+
+### halo-forge audio datasets
+
+List available audio datasets.
+
+```bash
+halo-forge audio datasets
+```
+
+---
+
+### halo-forge reasoning train
+
+Train on math/reasoning datasets with RAFT.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `Qwen/Qwen2.5-7B-Instruct` | Base model |
+| `--dataset` | `-d` | string | Yes | - | Dataset name |
+| `--output` | `-o` | path | No | `models/reasoning_raft` | Output directory |
+| `--cycles` | - | int | No | 4 | RAFT cycles |
+| `--lr` | - | float | No | 1e-5 | Learning rate |
+| `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
+| `--limit` | - | int | No | - | Limit dataset samples |
+
+**Dataset choices:** `gsm8k`, `math`, `aime`
+
+```bash
+halo-forge reasoning train \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --dataset gsm8k \
+  --cycles 4 \
+  --output models/reasoning_gsm8k
+```
+
+---
+
+### halo-forge reasoning benchmark
+
+Benchmark on math/reasoning dataset.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | path | Yes | - | Model path |
+| `--dataset` | `-d` | string | No | `gsm8k` | Dataset name |
+| `--limit` | - | int | No | 100 | Limit samples |
+| `--output` | `-o` | path | No | - | Output file |
+
+```bash
+halo-forge reasoning benchmark \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --dataset gsm8k \
+  --limit 100 \
+  --output results/reasoning_benchmark.json
+```
+
+---
+
+### halo-forge reasoning datasets
+
+List available math/reasoning datasets.
+
+```bash
+halo-forge reasoning datasets
 ```
 
 ---
