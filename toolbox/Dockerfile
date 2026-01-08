@@ -11,7 +11,7 @@ FROM registry.fedoraproject.org/fedora:42 AS builder
 
 LABEL maintainer="halo-forge community"
 LABEL description="halo-forge: RLVR Training Framework for Strix Halo"
-LABEL version="1.0.0"
+LABEL version="1.1.0"
 
 # --- base toolchain ---
 # Includes: compilers, build tools, Python, system utilities
