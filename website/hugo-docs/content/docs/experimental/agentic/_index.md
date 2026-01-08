@@ -45,18 +45,34 @@ The Berkeley Function Calling Leaderboard (BFCL) is the standard benchmark.
 
 ```bash
 halo-forge agentic datasets
+halo-forge sft datasets  # SFT datasets
 ```
 
-### Run Benchmark
+### Full Pipeline (SFT → RAFT → Benchmark)
 
 ```bash
-halo-forge agentic benchmark \
+# Stage 1: SFT with xLAM
+halo-forge agentic sft \
+  --dataset xlam_sft \
   --model Qwen/Qwen2.5-7B-Instruct \
+  --max-samples 30000 \
+  --output models/agentic_sft
+
+# Stage 2: RAFT with xLAM
+halo-forge agentic train \
+  --model models/agentic_sft \
+  --dataset xlam \
+  --cycles 5 \
+  --output models/agentic_raft
+
+# Stage 3: Benchmark
+halo-forge agentic benchmark \
+  --model models/agentic_raft \
   --dataset xlam \
   --limit 100
 ```
 
-### Train with RAFT
+### Quick RAFT (Skip SFT)
 
 ```bash
 halo-forge agentic train \

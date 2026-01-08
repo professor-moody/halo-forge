@@ -43,8 +43,10 @@ class SFTConfig:
     trust_remote_code: bool = True
     attn_implementation: str = "eager"  # Required for ROCm
     
-    # Data
-    train_file: str = "data/train.jsonl"
+    # Data - supports both local files and HuggingFace datasets
+    train_file: Optional[str] = None  # Local JSONL file
+    dataset: Optional[str] = None  # HuggingFace dataset ID or short name
+    max_samples: Optional[int] = None  # Limit number of samples
     validation_split: float = 0.05
     max_seq_length: int = 2048
     
@@ -174,15 +176,13 @@ class SFTTrainer:
         
         print()
     
-    def load_dataset(self, file_path: str) -> tuple:
+    def load_dataset(self, file_path: Optional[str] = None, dataset_name: Optional[str] = None) -> tuple:
         """
-        Load dataset from JSONL file.
-        
-        Expected format:
-        {"text": "<|im_start|>system..."}
+        Load dataset from JSONL file or HuggingFace.
         
         Args:
-            file_path: Path to JSONL file
+            file_path: Path to local JSONL file
+            dataset_name: HuggingFace dataset ID or short name
             
         Returns:
             (train_dataset, val_dataset)
@@ -192,27 +192,62 @@ class SFTTrainer:
         print("=" * 70)
         print()
         
-        file_path = Path(file_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Dataset not found: {file_path}")
+        # Determine source
+        dataset_name = dataset_name or self.config.dataset
+        file_path = file_path or self.config.train_file
         
-        print(f"Loading from: {file_path}")
-        
-        examples = []
-        with jsonlines.open(file_path) as reader:
-            for obj in reader:
-                if 'text' in obj:
-                    examples.append({'text': obj['text']})
-        
-        print(f"Loaded {len(examples)} examples")
+        if dataset_name:
+            # Load from HuggingFace
+            from halo_forge.sft.datasets import load_sft_dataset, get_sft_dataset_spec
+            
+            spec = get_sft_dataset_spec(dataset_name)
+            if spec:
+                print(f"Loading HuggingFace dataset: {spec.name}")
+                print(f"  Source: {spec.huggingface_id}")
+                print(f"  Domain: {spec.domain}")
+                print(f"  Size: {spec.size_hint}")
+            else:
+                print(f"Loading HuggingFace dataset: {dataset_name}")
+            
+            dataset = load_sft_dataset(
+                dataset_name,
+                max_samples=self.config.max_samples,
+                split="train"
+            )
+            
+            print(f"Loaded {len(dataset)} examples")
+            
+        elif file_path:
+            # Load from local file
+            file_path = Path(file_path)
+            if not file_path.exists():
+                raise FileNotFoundError(f"Dataset not found: {file_path}")
+            
+            print(f"Loading from local file: {file_path}")
+            
+            examples = []
+            with jsonlines.open(file_path) as reader:
+                for obj in reader:
+                    if 'text' in obj:
+                        examples.append({'text': obj['text']})
+            
+            print(f"Loaded {len(examples)} examples")
+            
+            dataset = Dataset.from_list(examples)
+            
+            # Apply max_samples limit
+            if self.config.max_samples and len(dataset) > self.config.max_samples:
+                dataset = dataset.shuffle(seed=42).select(range(self.config.max_samples))
+                print(f"Limited to {self.config.max_samples} samples")
+        else:
+            raise ValueError("Either dataset or train_file must be specified")
         
         # Shuffle and split
-        dataset = Dataset.from_list(examples)
         dataset = dataset.shuffle(seed=42)
         
-        split_idx = int(len(examples) * (1 - self.config.validation_split))
+        split_idx = int(len(dataset) * (1 - self.config.validation_split))
         train_dataset = dataset.select(range(split_idx))
-        val_dataset = dataset.select(range(split_idx, len(examples)))
+        val_dataset = dataset.select(range(split_idx, len(dataset)))
         
         print(f"  Train: {len(train_dataset)} examples")
         print(f"  Validation: {len(val_dataset)} examples")
@@ -353,6 +388,7 @@ class SFTTrainer:
     def train(
         self,
         train_file: Optional[str] = None,
+        dataset: Optional[str] = None,
         resume_from_checkpoint: Optional[str] = None
     ):
         """
@@ -360,6 +396,7 @@ class SFTTrainer:
         
         Args:
             train_file: Path to training data (overrides config)
+            dataset: HuggingFace dataset ID or short name (overrides config)
             resume_from_checkpoint: Checkpoint to resume from
         """
         print("=" * 70)
@@ -368,13 +405,15 @@ class SFTTrainer:
         print()
         
         cfg = self.config
-        train_file = train_file or cfg.train_file
         
         # Environment check
         self.check_environment()
         
-        # Load data
-        train_dataset, val_dataset = self.load_dataset(train_file)
+        # Load data (dataset takes precedence over file)
+        train_dataset, val_dataset = self.load_dataset(
+            file_path=train_file,
+            dataset_name=dataset
+        )
         
         # Setup model
         self.setup_model()

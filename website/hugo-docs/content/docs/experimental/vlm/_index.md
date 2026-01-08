@@ -47,7 +47,31 @@ Phase 3 of halo-forge extends the RAFT training framework to support vision-lang
 
 ## Quick Start
 
-### Train on TextVQA
+### Full Pipeline (SFT → RAFT → Benchmark)
+
+```bash
+# Stage 1: SFT with LLaVA
+halo-forge vlm sft \
+    --dataset llava \
+    --model Qwen/Qwen2-VL-2B-Instruct \
+    --max-samples 50000 \
+    --output models/vlm_sft
+
+# Stage 2: RAFT with TextVQA
+halo-forge vlm train \
+    --model models/vlm_sft \
+    --dataset textvqa \
+    --cycles 6 \
+    --output models/vlm_raft
+
+# Stage 3: Benchmark
+halo-forge vlm benchmark \
+    --model models/vlm_raft \
+    --dataset docvqa \
+    --limit 100
+```
+
+### Quick RAFT (Skip SFT)
 
 ```bash
 halo-forge vlm train \
@@ -55,15 +79,6 @@ halo-forge vlm train \
     --dataset textvqa \
     --cycles 6 \
     --output models/vlm_raft
-```
-
-### Benchmark a Model
-
-```bash
-halo-forge vlm benchmark \
-    --model models/vlm_raft/cycle_6 \
-    --dataset docvqa \
-    --limit 100
 ```
 
 ### List Available Datasets

@@ -1,0 +1,353 @@
+"""
+SFT Dataset Loaders
+
+Provides unified access to HuggingFace datasets for Supervised Fine-Tuning.
+Supports short names and auto-formatting to ChatML instruction format.
+"""
+
+import logging
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Any, Callable
+from datasets import load_dataset, Dataset
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SFTDatasetSpec:
+    """Specification for an SFT dataset."""
+    name: str
+    huggingface_id: str
+    description: str
+    domain: str  # code, vlm, audio, reasoning, agentic
+    default_split: str = "train"
+    subset: Optional[str] = None
+    formatter: Optional[str] = None  # Name of formatting function
+    size_hint: str = ""  # e.g., "20K", "395K"
+
+
+# Registry of known SFT datasets
+SFT_DATASETS: Dict[str, SFTDatasetSpec] = {
+    # Code domain
+    "codealpaca": SFTDatasetSpec(
+        name="codealpaca",
+        huggingface_id="sahil2801/CodeAlpaca-20k",
+        description="20K instruction-following code examples",
+        domain="code",
+        formatter="format_alpaca",
+        size_hint="20K"
+    ),
+    "code_instructions_122k": SFTDatasetSpec(
+        name="code_instructions_122k",
+        huggingface_id="TokenBender/code_instructions_122k",
+        description="122K code instruction examples",
+        domain="code",
+        formatter="format_alpaca",
+        size_hint="122K"
+    ),
+    "python_instructions": SFTDatasetSpec(
+        name="python_instructions",
+        huggingface_id="iamtarun/python_code_instructions_18k_alpaca",
+        description="18K Python-specific instructions",
+        domain="code",
+        formatter="format_alpaca",
+        size_hint="18K"
+    ),
+    
+    # Reasoning domain
+    "metamath": SFTDatasetSpec(
+        name="metamath",
+        huggingface_id="meta-math/MetaMathQA",
+        description="395K math problems with chain-of-thought solutions",
+        domain="reasoning",
+        formatter="format_metamath",
+        size_hint="395K"
+    ),
+    "gsm8k_sft": SFTDatasetSpec(
+        name="gsm8k_sft",
+        huggingface_id="gsm8k",
+        subset="main",
+        description="8.5K grade school math for SFT",
+        domain="reasoning",
+        formatter="format_gsm8k",
+        size_hint="8.5K"
+    ),
+    
+    # VLM domain
+    "llava": SFTDatasetSpec(
+        name="llava",
+        huggingface_id="liuhaotian/LLaVA-Instruct-150K",
+        description="150K visual instruction tuning examples",
+        domain="vlm",
+        formatter="format_llava",
+        size_hint="150K"
+    ),
+    
+    # Audio domain
+    "librispeech_sft": SFTDatasetSpec(
+        name="librispeech_sft",
+        huggingface_id="librispeech_asr",
+        subset="train.clean.100",
+        description="100h clean English speech for ASR SFT",
+        domain="audio",
+        formatter="format_asr",
+        size_hint="100h"
+    ),
+    "common_voice_sft": SFTDatasetSpec(
+        name="common_voice_sft",
+        huggingface_id="mozilla-foundation/common_voice_17_0",
+        subset="en",
+        description="Crowdsourced English speech",
+        domain="audio",
+        formatter="format_asr",
+        size_hint="varies"
+    ),
+    
+    # Agentic domain
+    "xlam_sft": SFTDatasetSpec(
+        name="xlam_sft",
+        huggingface_id="Salesforce/xlam-function-calling-60k",
+        description="60K function calling examples",
+        domain="agentic",
+        formatter="format_xlam",
+        size_hint="60K"
+    ),
+    "glaive_sft": SFTDatasetSpec(
+        name="glaive_sft",
+        huggingface_id="glaiveai/glaive-function-calling-v2",
+        description="113K function calling with irrelevance detection",
+        domain="agentic",
+        formatter="format_glaive",
+        size_hint="113K"
+    ),
+}
+
+
+def format_to_chatml(
+    instruction: str,
+    input_text: str = "",
+    output: str = "",
+    system_prompt: str = "You are a helpful assistant."
+) -> str:
+    """Format to ChatML format used by Qwen and other models."""
+    text = f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+    
+    if input_text:
+        text += f"<|im_start|>user\n{instruction}\n\n{input_text}<|im_end|>\n"
+    else:
+        text += f"<|im_start|>user\n{instruction}<|im_end|>\n"
+    
+    text += f"<|im_start|>assistant\n{output}<|im_end|>"
+    
+    return text
+
+
+def format_alpaca(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format Alpaca-style datasets (instruction, input, output)."""
+    instruction = example.get("instruction", "")
+    input_text = example.get("input", "")
+    output = example.get("output", "")
+    
+    return {"text": format_to_chatml(instruction, input_text, output)}
+
+
+def format_metamath(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format MetaMathQA dataset."""
+    query = example.get("query", "")
+    response = example.get("response", "")
+    
+    system = "You are a helpful math tutor. Solve problems step by step."
+    return {"text": format_to_chatml(query, "", response, system)}
+
+
+def format_gsm8k(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format GSM8K dataset for SFT."""
+    question = example.get("question", "")
+    answer = example.get("answer", "")
+    
+    system = "You are a helpful math tutor. Solve problems step by step and put your final answer in \\boxed{}."
+    return {"text": format_to_chatml(question, "", answer, system)}
+
+
+def format_llava(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format LLaVA instruction dataset."""
+    # LLaVA has conversations format
+    conversations = example.get("conversations", [])
+    
+    if not conversations:
+        return {"text": ""}
+    
+    text = "<|im_start|>system\nYou are a helpful vision-language assistant.<|im_end|>\n"
+    
+    for conv in conversations:
+        role = "user" if conv.get("from") == "human" else "assistant"
+        content = conv.get("value", "")
+        text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+    
+    return {"text": text.strip()}
+
+
+def format_asr(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format ASR dataset for Whisper-style training."""
+    # Audio datasets have different structure - return transcript
+    text = example.get("text", example.get("sentence", ""))
+    return {"text": text}
+
+
+def format_xlam(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format xLAM function calling dataset."""
+    query = example.get("query", "")
+    tools = example.get("tools", "")
+    answer = example.get("answers", "")
+    
+    system = f"""You are a helpful assistant with access to the following tools:
+{tools}
+
+Use tools by responding with <tool_call>{{"name": "tool_name", "arguments": {{}}}}</tool_call>"""
+    
+    return {"text": format_to_chatml(query, "", str(answer), system)}
+
+
+def format_glaive(example: Dict[str, Any]) -> Dict[str, str]:
+    """Format Glaive function calling dataset."""
+    # Glaive uses system/user/assistant format
+    system = example.get("system", "You are a helpful assistant.")
+    chat = example.get("chat", "")
+    
+    # Parse the chat format
+    text = f"<|im_start|>system\n{system}<|im_end|>\n{chat}"
+    return {"text": text}
+
+
+# Formatter registry
+FORMATTERS: Dict[str, Callable] = {
+    "format_alpaca": format_alpaca,
+    "format_metamath": format_metamath,
+    "format_gsm8k": format_gsm8k,
+    "format_llava": format_llava,
+    "format_asr": format_asr,
+    "format_xlam": format_xlam,
+    "format_glaive": format_glaive,
+}
+
+
+def list_sft_datasets(domain: Optional[str] = None) -> List[SFTDatasetSpec]:
+    """List available SFT datasets, optionally filtered by domain."""
+    datasets = list(SFT_DATASETS.values())
+    if domain:
+        datasets = [d for d in datasets if d.domain == domain]
+    return datasets
+
+
+def get_sft_dataset_spec(name: str) -> Optional[SFTDatasetSpec]:
+    """Get dataset specification by name."""
+    return SFT_DATASETS.get(name)
+
+
+def is_huggingface_id(name: str) -> bool:
+    """Check if name looks like a HuggingFace dataset ID (contains /)."""
+    return "/" in name
+
+
+def load_sft_dataset(
+    name_or_id: str,
+    max_samples: Optional[int] = None,
+    split: Optional[str] = None,
+    streaming: bool = False
+) -> Dataset:
+    """
+    Load an SFT dataset by short name or HuggingFace ID.
+    
+    Args:
+        name_or_id: Short name (e.g., 'codealpaca') or HuggingFace ID
+        max_samples: Maximum number of samples to load
+        split: Dataset split to use (overrides default)
+        streaming: Whether to use streaming mode
+        
+    Returns:
+        HuggingFace Dataset with 'text' column formatted for SFT
+    """
+    spec = get_sft_dataset_spec(name_or_id)
+    
+    if spec:
+        # Known dataset with short name
+        logger.info(f"Loading SFT dataset: {spec.name} ({spec.huggingface_id})")
+        
+        load_split = split or spec.default_split
+        
+        if spec.subset:
+            ds = load_dataset(
+                spec.huggingface_id,
+                spec.subset,
+                split=load_split,
+                streaming=streaming,
+                trust_remote_code=True
+            )
+        else:
+            ds = load_dataset(
+                spec.huggingface_id,
+                split=load_split,
+                streaming=streaming,
+                trust_remote_code=True
+            )
+        
+        # Apply formatter if specified
+        if spec.formatter and spec.formatter in FORMATTERS:
+            formatter = FORMATTERS[spec.formatter]
+            logger.info(f"Applying formatter: {spec.formatter}")
+            
+            if streaming:
+                ds = ds.map(formatter)
+            else:
+                ds = ds.map(formatter, remove_columns=ds.column_names)
+        
+    elif is_huggingface_id(name_or_id):
+        # Direct HuggingFace ID
+        logger.info(f"Loading HuggingFace dataset: {name_or_id}")
+        
+        load_split = split or "train"
+        ds = load_dataset(
+            name_or_id,
+            split=load_split,
+            streaming=streaming,
+            trust_remote_code=True
+        )
+        
+        # Try to auto-detect format and apply formatter
+        if not streaming and len(ds) > 0:
+            sample = ds[0]
+            if "instruction" in sample and "output" in sample:
+                logger.info("Detected Alpaca format, applying formatter")
+                ds = ds.map(format_alpaca, remove_columns=ds.column_names)
+            elif "query" in sample and "response" in sample:
+                logger.info("Detected MetaMath format, applying formatter")
+                ds = ds.map(format_metamath, remove_columns=ds.column_names)
+            elif "question" in sample and "answer" in sample:
+                logger.info("Detected QA format, applying formatter")
+                ds = ds.map(format_gsm8k, remove_columns=ds.column_names)
+    else:
+        raise ValueError(
+            f"Unknown dataset: {name_or_id}\n"
+            f"Use a short name (e.g., 'codealpaca') or HuggingFace ID (e.g., 'sahil2801/CodeAlpaca-20k')\n"
+            f"Available short names: {list(SFT_DATASETS.keys())}"
+        )
+    
+    # Limit samples if requested
+    if max_samples and not streaming:
+        if len(ds) > max_samples:
+            logger.info(f"Limiting dataset to {max_samples} samples")
+            ds = ds.shuffle(seed=42).select(range(max_samples))
+    
+    return ds
+
+
+def get_default_sft_dataset(domain: str) -> str:
+    """Get the default SFT dataset for a domain."""
+    defaults = {
+        "code": "codealpaca",
+        "vlm": "llava",
+        "audio": "librispeech_sft",
+        "reasoning": "metamath",
+        "agentic": "xlam_sft",
+    }
+    return defaults.get(domain, "codealpaca")

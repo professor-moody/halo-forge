@@ -90,6 +90,14 @@ halo-forge data generate \
 Supervised fine-tuning establishes baseline capability:
 
 ```bash
+# Using HuggingFace dataset (recommended)
+halo-forge sft train \
+  --dataset codealpaca \
+  --model Qwen/Qwen2.5-Coder-7B \
+  --output models/sft \
+  --epochs 3
+
+# Or using local data
 halo-forge sft train \
   --data data/train.jsonl \
   --output models/sft \
@@ -159,34 +167,70 @@ halo-forge benchmark run \
 - **pass@5**: Probability at least 1 of 5 samples is correct
 - **pass@10**: Probability at least 1 of 10 samples is correct
 
-## Complete Example
+## Complete Example: Code Domain
 
 ```bash
-# 1. Prepare data
-halo-forge data prepare --dataset codeforces_cpp --output data/train.jsonl
-
-# 2. Extract prompts for RAFT
-head -200 data/train.jsonl | jq -c '{prompt: .text | split("<|im_start|>user\n")[1] | split("<|im_end|>")[0]}' > data/prompts.jsonl
-
-# 3. Run SFT
+# 1. SFT Training (using HuggingFace dataset)
 halo-forge sft train \
-  --data data/train.jsonl \
-  --output models/sft \
-  --epochs 3
+  --dataset codealpaca \
+  --model Qwen/Qwen2.5-Coder-3B \
+  --output models/code_sft \
+  --epochs 2
 
-# 4. Run RAFT
+# 2. RAFT Training
 halo-forge raft train \
-  --checkpoint models/sft/final_model \
-  --prompts data/prompts.jsonl \
+  --model models/code_sft \
+  --prompts data/rlvr/humaneval_prompts.jsonl \
   --verifier gcc \
   --cycles 5 \
-  --output models/raft
+  --output models/code_raft
 
-# 5. Benchmark
+# 3. Benchmark
 halo-forge benchmark run \
-  --model models/raft/cycle_5_final \
-  --prompts data/test.jsonl \
-  --verifier gcc
+  --model models/code_raft \
+  --prompts data/rlvr/humaneval_prompts.jsonl \
+  --verifier gcc \
+  --samples 10
+```
+
+---
+
+## Full Pipeline: All Domains
+
+### Reasoning (Math)
+
+```bash
+# SFT → RAFT → Benchmark
+halo-forge reasoning sft --dataset metamath --model Qwen/Qwen2.5-3B-Instruct --output models/reasoning_sft
+halo-forge reasoning train --model models/reasoning_sft --dataset gsm8k --cycles 5 --output models/reasoning_raft
+halo-forge reasoning benchmark --model models/reasoning_raft --dataset gsm8k
+```
+
+### Audio (ASR)
+
+```bash
+# SFT → RAFT → Benchmark
+halo-forge audio sft --dataset librispeech_sft --model openai/whisper-small --output models/audio_sft
+halo-forge audio train --model models/audio_sft --dataset librispeech --task asr --cycles 3 --output models/audio_raft
+halo-forge audio benchmark --model models/audio_raft --dataset librispeech --task asr
+```
+
+### VLM (Vision-Language)
+
+```bash
+# SFT → RAFT → Benchmark
+halo-forge vlm sft --dataset llava --model Qwen/Qwen2-VL-2B-Instruct --output models/vlm_sft
+halo-forge vlm train --model models/vlm_sft --dataset textvqa --cycles 3 --output models/vlm_raft
+halo-forge vlm benchmark --model models/vlm_raft --dataset textvqa
+```
+
+### Agentic (Tool Calling)
+
+```bash
+# SFT → RAFT → Benchmark
+halo-forge agentic sft --dataset xlam_sft --model Qwen/Qwen2.5-7B-Instruct --output models/agentic_sft
+halo-forge agentic train --model models/agentic_sft --dataset xlam --cycles 3 --output models/agentic_raft
+halo-forge agentic benchmark --model models/agentic_raft --dataset xlam
 ```
 
 ## Timeline

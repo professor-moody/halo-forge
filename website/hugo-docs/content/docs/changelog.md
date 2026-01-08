@@ -7,6 +7,34 @@ description: "All notable changes to halo forge"
 
 ### Added
 
+#### Unified SFT Pipeline
+- **`halo-forge sft train --dataset`** - Load HuggingFace datasets directly
+- **`halo-forge sft datasets`** - List all available SFT datasets
+- Domain-specific SFT commands for all modules:
+  - `halo-forge vlm sft`
+  - `halo-forge audio sft`
+  - `halo-forge reasoning sft`
+  - `halo-forge agentic sft`
+
+#### SFT Datasets Module
+- New `halo_forge/sft/datasets.py` with dataset registry
+- Short name support (e.g., `codealpaca`, `metamath`, `llava`)
+- Auto-formatting to ChatML for HuggingFace datasets
+- `--max-samples` flag to limit dataset size
+- `--dry-run` for validation
+
+#### Supported SFT Datasets
+| Domain | Dataset | HuggingFace ID | Size |
+|--------|---------|----------------|------|
+| Code | `codealpaca` | sahil2801/CodeAlpaca-20k | 20K |
+| Code | `code_instructions_122k` | TokenBender/code_instructions_122k | 122K |
+| Reasoning | `metamath` | meta-math/MetaMathQA | 395K |
+| Reasoning | `gsm8k_sft` | gsm8k | 8.5K |
+| VLM | `llava` | liuhaotian/LLaVA-Instruct-150K | 150K |
+| Audio | `librispeech_sft` | librispeech_asr | 100h |
+| Agentic | `xlam_sft` | Salesforce/xlam-function-calling-60k | 60K |
+| Agentic | `glaive_sft` | glaiveai/glaive-function-calling-v2 | 113K |
+
 #### Agentic / Tool Calling Training (Phase 6)
 - New `halo_forge/agentic/` module for tool calling RLVR training
 - `AgenticRAFTTrainer` for RAFT training on function calling
@@ -31,6 +59,7 @@ description: "All notable changes to halo forge"
 - `halo-forge agentic datasets` - List available datasets
 
 ### Improved
+- Consistent SFT → RAFT → Benchmark pipeline for ALL modules
 - Consistent CLI banner and colors across all modules
 - MetricsTracker integration for TensorBoard logging
 - 32 new unit tests for agentic module

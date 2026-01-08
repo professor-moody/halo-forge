@@ -50,19 +50,36 @@ Phase 4 of halo forge extends the RAFT training framework to support audio-langu
 
 ```bash
 halo-forge audio datasets
+halo-forge sft datasets  # SFT datasets
 ```
 
-### Benchmark a Model
+### Full Pipeline (SFT → RAFT → Benchmark)
 
 ```bash
-halo-forge audio benchmark \
+# Stage 1: SFT with LibriSpeech
+halo-forge audio sft \
+    --dataset librispeech_sft \
     --model openai/whisper-small \
+    --max-samples 10000 \
+    --output models/audio_sft
+
+# Stage 2: RAFT with LibriSpeech
+halo-forge audio train \
+    --model models/audio_sft \
+    --dataset librispeech \
+    --task asr \
+    --cycles 4 \
+    --output models/audio_raft
+
+# Stage 3: Benchmark
+halo-forge audio benchmark \
+    --model models/audio_raft \
     --dataset librispeech \
     --task asr \
     --limit 100
 ```
 
-### Train with RAFT
+### Quick RAFT (Skip SFT)
 
 ```bash
 halo-forge audio train \

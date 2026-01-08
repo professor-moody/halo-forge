@@ -8,12 +8,59 @@ Supervised Fine-Tuning establishes baseline capabilities before RAFT.
 
 ## Basic Usage
 
+### Using HuggingFace Datasets (Recommended)
+
+```bash
+# List available SFT datasets
+halo-forge sft datasets
+
+# Train with HuggingFace dataset
+halo-forge sft train \
+  --dataset codealpaca \
+  --model Qwen/Qwen2.5-Coder-7B \
+  --output models/sft \
+  --epochs 3
+```
+
+### Using Local Data
+
 ```bash
 halo-forge sft train \
   --data data/train.jsonl \
   --output models/sft \
   --model Qwen/Qwen2.5-Coder-7B \
   --epochs 3
+```
+
+## Available SFT Datasets
+
+| Domain | Short Name | HuggingFace ID | Size |
+|--------|------------|----------------|------|
+| Code | `codealpaca` | `sahil2801/CodeAlpaca-20k` | 20K |
+| Code | `code_instructions_122k` | `TokenBender/code_instructions_122k` | 122K |
+| Reasoning | `metamath` | `meta-math/MetaMathQA` | 395K |
+| Reasoning | `gsm8k_sft` | `gsm8k` | 8.5K |
+| VLM | `llava` | `liuhaotian/LLaVA-Instruct-150K` | 150K |
+| Audio | `librispeech_sft` | `librispeech_asr` | 100h |
+| Agentic | `xlam_sft` | `Salesforce/xlam-function-calling-60k` | 60K |
+| Agentic | `glaive_sft` | `glaiveai/glaive-function-calling-v2` | 113K |
+
+## Domain-Specific SFT
+
+Each domain has its own SFT command with optimized defaults:
+
+```bash
+# VLM
+halo-forge vlm sft --dataset llava --model Qwen/Qwen2-VL-2B-Instruct
+
+# Audio
+halo-forge audio sft --dataset librispeech_sft --model openai/whisper-small
+
+# Reasoning
+halo-forge reasoning sft --dataset metamath --model Qwen/Qwen2.5-3B-Instruct
+
+# Agentic (Tool Calling)
+halo-forge agentic sft --dataset xlam_sft --model Qwen/Qwen2.5-7B-Instruct
 ```
 
 ## Configuration

@@ -21,7 +21,8 @@ halo-forge
 │   ├── generate
 │   └── validate
 ├── sft
-│   └── train
+│   ├── train
+│   └── datasets
 ├── raft
 │   └── train
 ├── benchmark
@@ -32,18 +33,22 @@ halo-forge
 │   ├── export
 │   └── benchmark
 ├── vlm                [EXPERIMENTAL]
+│   ├── sft
 │   ├── train
 │   ├── benchmark
 │   └── datasets
 ├── audio              [EXPERIMENTAL]
+│   ├── sft
 │   ├── train
 │   ├── benchmark
 │   └── datasets
 ├── reasoning          [EXPERIMENTAL]
+│   ├── sft
 │   ├── train
 │   ├── benchmark
 │   └── datasets
 ├── agentic            [EXPERIMENTAL]
+│   ├── sft
 │   ├── train
 │   ├── benchmark
 │   └── datasets
@@ -136,15 +141,41 @@ Run supervised fine-tuning.
 |------|-------|------|----------|---------|-------------|
 | `--config` | `-c` | path | No | - | Config file path |
 | `--model` | `-m` | string | No | `Qwen/Qwen2.5-Coder-7B` | Base model |
-| `--data` | - | path | No | - | Training data file |
+| `--dataset` | `-d` | string | No | - | HuggingFace dataset ID or short name |
+| `--data` | - | path | No | - | Local training data file (JSONL) |
+| `--max-samples` | - | int | No | - | Limit number of training samples |
 | `--output` | `-o` | path | No | `models/sft` | Output directory |
 | `--epochs` | - | int | No | 3 | Number of epochs |
 | `--resume` | - | path | No | - | Resume from checkpoint |
+| `--dry-run` | - | flag | No | false | Validate config without training |
+
+**Dataset short names:** `codealpaca`, `metamath`, `gsm8k_sft`, `llava`, `librispeech_sft`, `xlam_sft`, `glaive_sft`
 
 ```bash
-halo-forge sft train --model Qwen/Qwen2.5-Coder-3B --data data/sft.jsonl --output models/sft_3b
+# Using HuggingFace dataset
+halo-forge sft train --dataset codealpaca --model Qwen/Qwen2.5-Coder-3B --output models/sft_3b
+
+# Using local data
+halo-forge sft train --data data/sft.jsonl --model Qwen/Qwen2.5-Coder-3B --output models/sft_3b
+
+# With sample limit
+halo-forge sft train --dataset metamath --max-samples 50000 --epochs 2
+
+# Resume from checkpoint
 halo-forge sft train --config configs/sft.yaml --resume models/sft/checkpoint-500
 ```
+
+---
+
+### halo-forge sft datasets
+
+List available SFT datasets.
+
+```bash
+halo-forge sft datasets
+```
+
+Output shows datasets organized by domain (Code, Reasoning, VLM, Audio, Agentic) with HuggingFace IDs and sizes.
 
 ---
 
@@ -365,6 +396,25 @@ halo-forge inference benchmark \
 
 ---
 
+### halo-forge vlm sft
+
+SFT training for VLM.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `Qwen/Qwen2-VL-2B-Instruct` | VLM model |
+| `--dataset` | `-d` | string | No | `llava` | SFT dataset name |
+| `--max-samples` | - | int | No | - | Limit training samples |
+| `--output` | `-o` | path | No | `models/vlm_sft` | Output directory |
+| `--epochs` | - | int | No | 2 | Number of epochs |
+| `--dry-run` | - | flag | No | false | Validate config only |
+
+```bash
+halo-forge vlm sft --dataset llava --model Qwen/Qwen2-VL-2B-Instruct --output models/vlm_sft
+```
+
+---
+
 ### halo-forge vlm train
 
 Train VLM with RAFT.
@@ -423,6 +473,25 @@ List available VLM datasets.
 
 ```bash
 halo-forge vlm datasets
+```
+
+---
+
+### halo-forge audio sft
+
+SFT training for audio models.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `openai/whisper-small` | Audio model |
+| `--dataset` | `-d` | string | No | `librispeech_sft` | SFT dataset name |
+| `--max-samples` | - | int | No | - | Limit training samples |
+| `--output` | `-o` | path | No | `models/audio_sft` | Output directory |
+| `--epochs` | - | int | No | 3 | Number of epochs |
+| `--dry-run` | - | flag | No | false | Validate config only |
+
+```bash
+halo-forge audio sft --dataset librispeech_sft --model openai/whisper-small --output models/audio_sft
 ```
 
 ---
@@ -487,6 +556,27 @@ halo-forge audio datasets
 
 ---
 
+### halo-forge reasoning sft
+
+SFT training for reasoning models.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `Qwen/Qwen2.5-3B-Instruct` | Base model |
+| `--dataset` | `-d` | string | No | `metamath` | SFT dataset name |
+| `--max-samples` | - | int | No | - | Limit training samples |
+| `--output` | `-o` | path | No | `models/reasoning_sft` | Output directory |
+| `--epochs` | - | int | No | 2 | Number of epochs |
+| `--dry-run` | - | flag | No | false | Validate config only |
+
+**SFT Dataset choices:** `metamath`, `gsm8k_sft`
+
+```bash
+halo-forge reasoning sft --dataset metamath --model Qwen/Qwen2.5-3B-Instruct --output models/reasoning_sft
+```
+
+---
+
 ### halo-forge reasoning train
 
 Train on math/reasoning datasets with RAFT.
@@ -501,7 +591,7 @@ Train on math/reasoning datasets with RAFT.
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
 | `--limit` | - | int | No | - | Limit dataset samples |
 
-**Dataset choices:** `gsm8k`, `math`, `aime`
+**RAFT Dataset choices:** `gsm8k`, `math`, `aime`
 
 ```bash
 halo-forge reasoning train \
@@ -546,6 +636,27 @@ halo-forge reasoning datasets
 
 ## Agentic Commands (Experimental)
 
+### halo-forge agentic sft
+
+SFT training for tool calling models.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | No | `Qwen/Qwen2.5-7B-Instruct` | Base model |
+| `--dataset` | `-d` | string | No | `xlam_sft` | SFT dataset name |
+| `--max-samples` | - | int | No | - | Limit training samples |
+| `--output` | `-o` | path | No | `models/agentic_sft` | Output directory |
+| `--epochs` | - | int | No | 2 | Number of epochs |
+| `--dry-run` | - | flag | No | false | Validate config only |
+
+**SFT Dataset choices:** `xlam_sft`, `glaive_sft`
+
+```bash
+halo-forge agentic sft --dataset xlam_sft --model Qwen/Qwen2.5-7B-Instruct --output models/agentic_sft
+```
+
+---
+
 ### halo-forge agentic train
 
 Train on tool calling datasets with RAFT.
@@ -553,7 +664,7 @@ Train on tool calling datasets with RAFT.
 | Flag | Short | Type | Required | Default | Description |
 |------|-------|------|----------|---------|-------------|
 | `--model` | `-m` | string | No | `Qwen/Qwen2.5-7B-Instruct` | Base model |
-| `--dataset` | `-d` | string | No | `xlam` | Dataset: xlam, glaive |
+| `--dataset` | `-d` | string | No | `xlam` | RAFT Dataset: xlam, glaive |
 | `--output` | `-o` | path | No | `models/agentic_raft` | Output directory |
 | `--cycles` | - | int | No | 5 | RAFT cycles |
 | `--lr` | - | float | No | 5e-5 | Learning rate |

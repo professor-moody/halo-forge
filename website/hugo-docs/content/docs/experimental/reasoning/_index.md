@@ -30,18 +30,34 @@ The reasoning module enables RLVR training for mathematical problem-solving. Unl
 
 ```bash
 halo-forge reasoning datasets
+halo-forge sft datasets  # SFT datasets
 ```
 
-### Run Benchmark
+### Full Pipeline (SFT → RAFT → Benchmark)
 
 ```bash
+# Stage 1: SFT with MetaMathQA
+halo-forge reasoning sft \
+  --dataset metamath \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --max-samples 50000 \
+  --output models/reasoning_sft
+
+# Stage 2: RAFT with GSM8K
+halo-forge reasoning train \
+  --model models/reasoning_sft \
+  --dataset gsm8k \
+  --cycles 4 \
+  --output models/reasoning_raft
+
+# Stage 3: Benchmark
 halo-forge reasoning benchmark \
-  --model Qwen/Qwen2.5-7B-Instruct \
+  --model models/reasoning_raft \
   --dataset gsm8k \
   --limit 100
 ```
 
-### Train with RAFT
+### Quick RAFT (Skip SFT)
 
 ```bash
 halo-forge reasoning train \

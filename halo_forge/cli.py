@@ -222,13 +222,35 @@ def cmd_sft_train(args):
     print(f"{GREEN}SFT Training{NC}")
     print("=" * 60)
     
+    # Require either --dataset or --data
+    dataset = getattr(args, 'dataset', None)
+    data = getattr(args, 'data', None)
+    max_samples = getattr(args, 'max_samples', None)
+    dry_run = getattr(args, 'dry_run', False)
+    
+    if not dataset and not data:
+        print(f"{RED}Error: Either --dataset or --data is required{NC}")
+        print()
+        print("Examples:")
+        print("  halo-forge sft train --dataset codealpaca --model Qwen/Qwen2.5-Coder-3B")
+        print("  halo-forge sft train --data my_data.jsonl --model Qwen/Qwen2.5-Coder-3B")
+        print()
+        print("Available datasets:")
+        print("  codealpaca, metamath, gsm8k_sft, llava, xlam_sft, glaive_sft")
+        print("  Run 'halo-forge sft datasets' to see all options")
+        sys.exit(1)
+    
     if args.config:
         config = SFTConfig.from_yaml(args.config)
         # CLI args override config file
         if args.model:
             config.model_name = args.model
-        if args.data:
-            config.train_file = args.data
+        if dataset:
+            config.dataset = dataset
+        if data:
+            config.train_file = data
+        if max_samples:
+            config.max_samples = max_samples
         if args.output:
             config.output_dir = args.output
         if args.epochs:
@@ -236,13 +258,70 @@ def cmd_sft_train(args):
     else:
         config = SFTConfig(
             model_name=args.model or "Qwen/Qwen2.5-Coder-7B",
-            train_file=args.data,
+            dataset=dataset,
+            train_file=data,
+            max_samples=max_samples,
             output_dir=args.output,
             num_epochs=args.epochs
         )
     
+    print(f"Model: {config.model_name}")
+    if config.dataset:
+        print(f"Dataset: {config.dataset}")
+    elif config.train_file:
+        print(f"Data file: {config.train_file}")
+    if config.max_samples:
+        print(f"Max samples: {config.max_samples}")
+    print(f"Output: {config.output_dir}")
+    print(f"Epochs: {config.num_epochs}")
+    print()
+    
+    if dry_run:
+        print(f"{YELLOW}Dry run mode - validating configuration only{NC}")
+        print()
+        # Validate dataset exists
+        if config.dataset:
+            from halo_forge.sft.datasets import get_sft_dataset_spec, is_huggingface_id
+            spec = get_sft_dataset_spec(config.dataset)
+            if spec:
+                print(f"{GREEN}✓{NC} Dataset: {spec.name} ({spec.huggingface_id})")
+            elif is_huggingface_id(config.dataset):
+                print(f"{GREEN}✓{NC} HuggingFace dataset: {config.dataset}")
+            else:
+                print(f"{RED}✗{NC} Unknown dataset: {config.dataset}")
+                sys.exit(1)
+        print(f"{GREEN}Configuration valid!{NC}")
+        return
+    
     trainer = SFTTrainer(config)
     trainer.train(resume_from_checkpoint=args.resume)
+
+
+def cmd_sft_datasets(args):
+    """List available SFT datasets."""
+    from halo_forge.sft.datasets import list_sft_datasets
+    
+    print_banner()
+    print(f"{GREEN}Available SFT Datasets{NC}")
+    print("=" * 60)
+    print()
+    
+    # Group by domain
+    domains = ["code", "reasoning", "vlm", "audio", "agentic"]
+    
+    for domain in domains:
+        datasets = list_sft_datasets(domain)
+        if datasets:
+            print(f"{YELLOW}{domain.upper()}{NC}")
+            for ds in datasets:
+                print(f"  {CYAN}{ds.name:<20}{NC} [{ds.size_hint:>6}] {ds.description}")
+                print(f"                         HuggingFace: {ds.huggingface_id}")
+            print()
+    
+    print("Usage:")
+    print("  halo-forge sft train --dataset codealpaca --model Qwen/Qwen2.5-Coder-3B")
+    print("  halo-forge sft train --dataset metamath --model Qwen/Qwen2.5-3B-Instruct")
+    print()
 
 
 def cmd_raft_train(args):
@@ -1337,6 +1416,52 @@ def cmd_vlm_train(args):
     print(f"Output: {args.output}")
 
 
+def cmd_vlm_sft(args):
+    """SFT training for VLM."""
+    from halo_forge.sft.trainer import SFTTrainer, SFTConfig
+    
+    print_banner()
+    print(f"{GREEN}VLM SFT Training{NC}")
+    print("=" * 60)
+    
+    dataset = getattr(args, 'dataset', 'llava')
+    max_samples = getattr(args, 'max_samples', None)
+    dry_run = getattr(args, 'dry_run', False)
+    
+    print(f"Model: {args.model}")
+    print(f"Dataset: {dataset}")
+    if max_samples:
+        print(f"Max samples: {max_samples}")
+    print(f"Output: {args.output}")
+    print(f"Epochs: {args.epochs}")
+    print()
+    
+    if dry_run:
+        print(f"{YELLOW}Dry run mode - validating configuration only{NC}")
+        from halo_forge.sft.datasets import get_sft_dataset_spec, is_huggingface_id
+        spec = get_sft_dataset_spec(dataset)
+        if spec:
+            print(f"{GREEN}✓{NC} Dataset: {spec.name} ({spec.huggingface_id})")
+        elif is_huggingface_id(dataset):
+            print(f"{GREEN}✓{NC} HuggingFace dataset: {dataset}")
+        else:
+            print(f"{RED}✗{NC} Unknown dataset: {dataset}")
+            sys.exit(1)
+        print(f"{GREEN}Configuration valid!{NC}")
+        return
+    
+    config = SFTConfig(
+        model_name=args.model,
+        dataset=dataset,
+        max_samples=max_samples,
+        output_dir=args.output,
+        num_epochs=args.epochs
+    )
+    
+    trainer = SFTTrainer(config)
+    trainer.train()
+
+
 def cmd_vlm_benchmark(args):
     """Benchmark VLM on dataset."""
     from halo_forge.vlm.data import load_vlm_dataset
@@ -1483,6 +1608,52 @@ def cmd_audio_datasets(args):
     print("Usage:")
     print("  halo-forge audio benchmark --model openai/whisper-small --dataset librispeech")
     print("  halo-forge audio train --model openai/whisper-small --dataset librispeech")
+
+
+def cmd_audio_sft(args):
+    """SFT training for audio."""
+    from halo_forge.sft.trainer import SFTTrainer, SFTConfig
+    
+    print_banner()
+    print(f"{GREEN}Audio SFT Training{NC}")
+    print("=" * 60)
+    
+    dataset = getattr(args, 'dataset', 'librispeech_sft')
+    max_samples = getattr(args, 'max_samples', None)
+    dry_run = getattr(args, 'dry_run', False)
+    
+    print(f"Model: {args.model}")
+    print(f"Dataset: {dataset}")
+    if max_samples:
+        print(f"Max samples: {max_samples}")
+    print(f"Output: {args.output}")
+    print(f"Epochs: {args.epochs}")
+    print()
+    
+    if dry_run:
+        print(f"{YELLOW}Dry run mode - validating configuration only{NC}")
+        from halo_forge.sft.datasets import get_sft_dataset_spec, is_huggingface_id
+        spec = get_sft_dataset_spec(dataset)
+        if spec:
+            print(f"{GREEN}✓{NC} Dataset: {spec.name} ({spec.huggingface_id})")
+        elif is_huggingface_id(dataset):
+            print(f"{GREEN}✓{NC} HuggingFace dataset: {dataset}")
+        else:
+            print(f"{RED}✗{NC} Unknown dataset: {dataset}")
+            sys.exit(1)
+        print(f"{GREEN}Configuration valid!{NC}")
+        return
+    
+    config = SFTConfig(
+        model_name=args.model,
+        dataset=dataset,
+        max_samples=max_samples,
+        output_dir=args.output,
+        num_epochs=args.epochs
+    )
+    
+    trainer = SFTTrainer(config)
+    trainer.train()
 
 
 def cmd_audio_benchmark(args):
@@ -1651,10 +1822,16 @@ def main():
     sft_train_parser = sft_subparsers.add_parser('train', help='Run SFT training')
     sft_train_parser.add_argument('--config', '-c', help='Config file path')
     sft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
-    sft_train_parser.add_argument('--data', help='Training data file')
+    sft_train_parser.add_argument('--dataset', '-d', help='HuggingFace dataset ID or short name (e.g., codealpaca, metamath)')
+    sft_train_parser.add_argument('--data', help='Local training data file (JSONL)')
+    sft_train_parser.add_argument('--max-samples', type=int, help='Limit number of training samples')
     sft_train_parser.add_argument('--output', '-o', default='models/sft', help='Output directory')
     sft_train_parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
     sft_train_parser.add_argument('--resume', help='Resume from checkpoint')
+    sft_train_parser.add_argument('--dry-run', action='store_true', help='Validate config without training')
+    
+    # sft datasets
+    sft_datasets_parser = sft_subparsers.add_parser('datasets', help='List available SFT datasets')
     
     # raft command
     raft_parser = subparsers.add_parser('raft', help='RAFT training')
@@ -1804,6 +1981,17 @@ def main():
     # vlm datasets
     vlm_datasets_parser = vlm_subparsers.add_parser('datasets', help='List available VLM datasets')
     
+    # vlm sft
+    vlm_sft_parser = vlm_subparsers.add_parser('sft', help='SFT training for VLM')
+    vlm_sft_parser.add_argument('--model', '-m', default='Qwen/Qwen2-VL-2B-Instruct',
+                                help='VLM model name')
+    vlm_sft_parser.add_argument('--dataset', '-d', default='llava',
+                                help='Dataset name (default: llava)')
+    vlm_sft_parser.add_argument('--max-samples', type=int, help='Limit training samples')
+    vlm_sft_parser.add_argument('--output', '-o', default='models/vlm_sft', help='Output directory')
+    vlm_sft_parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
+    vlm_sft_parser.add_argument('--dry-run', action='store_true', help='Validate config only')
+    
     # audio command
     audio_parser = subparsers.add_parser('audio', help='Audio-language training')
     audio_subparsers = audio_parser.add_subparsers(dest='audio_command', required=True)
@@ -1844,6 +2032,17 @@ def main():
     audio_train_parser.add_argument('--dry-run', action='store_true',
                                     help='Validate config without running training')
     
+    # audio sft
+    audio_sft_parser = audio_subparsers.add_parser('sft', help='SFT training for audio')
+    audio_sft_parser.add_argument('--model', '-m', default='openai/whisper-small',
+                                  help='Audio model (default: openai/whisper-small)')
+    audio_sft_parser.add_argument('--dataset', '-d', default='librispeech_sft',
+                                  help='Dataset name (default: librispeech_sft)')
+    audio_sft_parser.add_argument('--max-samples', type=int, help='Limit training samples')
+    audio_sft_parser.add_argument('--output', '-o', default='models/audio_sft', help='Output directory')
+    audio_sft_parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
+    audio_sft_parser.add_argument('--dry-run', action='store_true', help='Validate config only')
+    
     # reasoning command
     reasoning_parser = subparsers.add_parser('reasoning', help='Math/Reasoning training')
     reasoning_subparsers = reasoning_parser.add_subparsers(dest='reasoning_command', required=True)
@@ -1881,6 +2080,17 @@ def main():
     reasoning_train_parser.add_argument('--dry-run', action='store_true',
                                         help='Validate config without running training')
     
+    # reasoning sft
+    reasoning_sft_parser = reasoning_subparsers.add_parser('sft', help='SFT training for reasoning')
+    reasoning_sft_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
+                                      help='Model name (default: Qwen/Qwen2.5-3B-Instruct)')
+    reasoning_sft_parser.add_argument('--dataset', '-d', default='metamath',
+                                      help='Dataset name (default: metamath)')
+    reasoning_sft_parser.add_argument('--max-samples', type=int, help='Limit training samples')
+    reasoning_sft_parser.add_argument('--output', '-o', default='models/reasoning_sft', help='Output directory')
+    reasoning_sft_parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
+    reasoning_sft_parser.add_argument('--dry-run', action='store_true', help='Validate config only')
+    
     # agentic command (tool calling)
     agentic_parser = subparsers.add_parser('agentic', help='Tool calling / function calling training')
     agentic_subparsers = agentic_parser.add_subparsers(dest='agentic_command', required=True)
@@ -1915,6 +2125,17 @@ def main():
     agentic_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     agentic_train_parser.add_argument('--dry-run', action='store_true',
                                       help='Validate config without running training')
+    
+    # agentic sft
+    agentic_sft_parser = agentic_subparsers.add_parser('sft', help='SFT training for tool calling')
+    agentic_sft_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
+                                    help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
+    agentic_sft_parser.add_argument('--dataset', '-d', default='xlam_sft',
+                                    help='Dataset name (default: xlam_sft)')
+    agentic_sft_parser.add_argument('--max-samples', type=int, help='Limit training samples')
+    agentic_sft_parser.add_argument('--output', '-o', default='models/agentic_sft', help='Output directory')
+    agentic_sft_parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
+    agentic_sft_parser.add_argument('--dry-run', action='store_true', help='Validate config only')
     
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
@@ -1963,6 +2184,52 @@ def cmd_reasoning_datasets(args):
     print("Usage:")
     print("  halo-forge reasoning benchmark --dataset gsm8k")
     print("  halo-forge reasoning train --dataset gsm8k --cycles 4")
+
+
+def cmd_reasoning_sft(args):
+    """SFT training for reasoning."""
+    from halo_forge.sft.trainer import SFTTrainer, SFTConfig
+    
+    print_banner()
+    print(f"{GREEN}Reasoning SFT Training{NC}")
+    print("=" * 60)
+    
+    dataset = getattr(args, 'dataset', 'metamath')
+    max_samples = getattr(args, 'max_samples', None)
+    dry_run = getattr(args, 'dry_run', False)
+    
+    print(f"Model: {args.model}")
+    print(f"Dataset: {dataset}")
+    if max_samples:
+        print(f"Max samples: {max_samples}")
+    print(f"Output: {args.output}")
+    print(f"Epochs: {args.epochs}")
+    print()
+    
+    if dry_run:
+        print(f"{YELLOW}Dry run mode - validating configuration only{NC}")
+        from halo_forge.sft.datasets import get_sft_dataset_spec, is_huggingface_id
+        spec = get_sft_dataset_spec(dataset)
+        if spec:
+            print(f"{GREEN}✓{NC} Dataset: {spec.name} ({spec.huggingface_id})")
+        elif is_huggingface_id(dataset):
+            print(f"{GREEN}✓{NC} HuggingFace dataset: {dataset}")
+        else:
+            print(f"{RED}✗{NC} Unknown dataset: {dataset}")
+            sys.exit(1)
+        print(f"{GREEN}Configuration valid!{NC}")
+        return
+    
+    config = SFTConfig(
+        model_name=args.model,
+        dataset=dataset,
+        max_samples=max_samples,
+        output_dir=args.output,
+        num_epochs=args.epochs
+    )
+    
+    trainer = SFTTrainer(config)
+    trainer.train()
 
 
 def cmd_reasoning_benchmark(args):
@@ -2154,6 +2421,52 @@ def cmd_agentic_datasets(args):
     print(f"\n{YELLOW}Note:{NC} Datasets are downloaded on first use via HuggingFace.")
 
 
+def cmd_agentic_sft(args):
+    """SFT training for tool calling."""
+    from halo_forge.sft.trainer import SFTTrainer, SFTConfig
+    
+    print_banner()
+    print(f"{GREEN}Agentic SFT Training{NC}")
+    print("=" * 60)
+    
+    dataset = getattr(args, 'dataset', 'xlam_sft')
+    max_samples = getattr(args, 'max_samples', None)
+    dry_run = getattr(args, 'dry_run', False)
+    
+    print(f"Model: {args.model}")
+    print(f"Dataset: {dataset}")
+    if max_samples:
+        print(f"Max samples: {max_samples}")
+    print(f"Output: {args.output}")
+    print(f"Epochs: {args.epochs}")
+    print()
+    
+    if dry_run:
+        print(f"{YELLOW}Dry run mode - validating configuration only{NC}")
+        from halo_forge.sft.datasets import get_sft_dataset_spec, is_huggingface_id
+        spec = get_sft_dataset_spec(dataset)
+        if spec:
+            print(f"{GREEN}✓{NC} Dataset: {spec.name} ({spec.huggingface_id})")
+        elif is_huggingface_id(dataset):
+            print(f"{GREEN}✓{NC} HuggingFace dataset: {dataset}")
+        else:
+            print(f"{RED}✗{NC} Unknown dataset: {dataset}")
+            sys.exit(1)
+        print(f"{GREEN}Configuration valid!{NC}")
+        return
+    
+    config = SFTConfig(
+        model_name=args.model,
+        dataset=dataset,
+        max_samples=max_samples,
+        output_dir=args.output,
+        num_epochs=args.epochs
+    )
+    
+    trainer = SFTTrainer(config)
+    trainer.train()
+
+
 def cmd_agentic_benchmark(args):
     """Run agentic/tool calling benchmark."""
     from halo_forge.agentic import AgenticRAFTTrainer, AgenticRAFTConfig
@@ -2291,6 +2604,8 @@ def _dispatch_commands(args):
     elif args.command == 'sft':
         if args.sft_command == 'train':
             cmd_sft_train(args)
+        elif args.sft_command == 'datasets':
+            cmd_sft_datasets(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
@@ -2319,6 +2634,8 @@ def _dispatch_commands(args):
             cmd_vlm_benchmark(args)
         elif args.vlm_command == 'datasets':
             cmd_vlm_datasets(args)
+        elif args.vlm_command == 'sft':
+            cmd_vlm_sft(args)
     elif args.command == 'audio':
         if args.audio_command == 'datasets':
             cmd_audio_datasets(args)
@@ -2326,6 +2643,8 @@ def _dispatch_commands(args):
             cmd_audio_benchmark(args)
         elif args.audio_command == 'train':
             cmd_audio_train(args)
+        elif args.audio_command == 'sft':
+            cmd_audio_sft(args)
     elif args.command == 'reasoning':
         if args.reasoning_command == 'datasets':
             cmd_reasoning_datasets(args)
@@ -2333,6 +2652,8 @@ def _dispatch_commands(args):
             cmd_reasoning_benchmark(args)
         elif args.reasoning_command == 'train':
             cmd_reasoning_train(args)
+        elif args.reasoning_command == 'sft':
+            cmd_reasoning_sft(args)
     elif args.command == 'agentic':
         if args.agentic_command == 'datasets':
             cmd_agentic_datasets(args)
@@ -2340,6 +2661,8 @@ def _dispatch_commands(args):
             cmd_agentic_benchmark(args)
         elif args.agentic_command == 'train':
             cmd_agentic_train(args)
+        elif args.agentic_command == 'sft':
+            cmd_agentic_sft(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'test':
