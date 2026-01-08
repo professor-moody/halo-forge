@@ -1,11 +1,11 @@
 ---
 title: "Documentation"
-description: "Complete documentation for halo-forge RLVR training framework"
+description: "Complete documentation for halo forge RLVR training framework"
 ---
 
-## What is halo-forge?
+## What is halo forge?
 
-halo-forge is an **RLVR (Reinforcement Learning from Verifiable Rewards)** framework that uses compiler feedback as reward signals for iterative model refinement.
+halo forge is an **RLVR (Reinforcement Learning from Verifiable Rewards)** framework that uses compiler feedback as reward signals for iterative model refinement.
 
 ### The Problem
 

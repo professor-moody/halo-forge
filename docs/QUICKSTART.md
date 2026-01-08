@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get started with halo-forge in under 30 minutes.
+Get started with halo forge in under 30 minutes.
 
 ## Prerequisites
 
@@ -38,7 +38,7 @@ halo-forge info
 Expected test output:
 ```
 ============================================================
-halo-forge Standard Test
+halo forge Standard Test
 Model: Qwen/Qwen2.5-Coder-0.5B
 ============================================================
 

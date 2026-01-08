@@ -1,6 +1,6 @@
 # Windows Build Server Setup
 
-This guide covers setting up a Windows machine for halo-forge's MSVC verification.
+This guide covers setting up a Windows machine for halo forge's MSVC verification.
 
 ## Overview
 
@@ -111,7 +111,7 @@ echo "int main() { return 0; }" > /tmp/test.cpp
 scp -i ~/.ssh/win /tmp/test.cpp user@windows-ip:C:/Binaries/input/
 ```
 
-## Step 6: Configure halo-forge
+## Step 6: Configure halo forge
 
 Create or update `configs/raft_windows.yaml`:
 

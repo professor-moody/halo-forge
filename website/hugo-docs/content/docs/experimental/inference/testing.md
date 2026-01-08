@@ -5,7 +5,7 @@ weight: 50
 
 # Inference Module Testing Guide
 
-Step-by-step guide to testing the halo-forge Inference optimization module.
+Step-by-step guide to testing the halo forge Inference optimization module.
 
 ## Prerequisites
 

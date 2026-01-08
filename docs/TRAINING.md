@@ -1,6 +1,6 @@
 # RAFT Training Guide
 
-Comprehensive guide to RAFT training with halo-forge, including advanced options for curriculum learning and reward shaping.
+Comprehensive guide to RAFT training with halo forge, including advanced options for curriculum learning and reward shaping.
 
 ## Basic Training
 

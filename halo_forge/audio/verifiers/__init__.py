@@ -6,6 +6,7 @@ Verification components for audio-language training.
 
 from halo_forge.audio.verifiers.base import (
     AudioVerifier,
+    AudioVerifyConfig,
     AudioVerifyResult,
     AudioVerificationError,
     check_audio_verifier_dependencies,
@@ -19,6 +20,7 @@ from halo_forge.audio.verifiers.classification import (
 
 __all__ = [
     "AudioVerifier",
+    "AudioVerifyConfig",
     "AudioVerifyResult",
     "AudioVerificationError",
     "check_audio_verifier_dependencies",

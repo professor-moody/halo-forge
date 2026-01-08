@@ -1,6 +1,6 @@
 ---
 title: "Contributing"
-description: "How to contribute to halo-forge"
+description: "How to contribute to halo forge"
 ---
 
 ## Getting Started

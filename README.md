@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="halo-forge.png" alt="halo-forge logo" width="350">
+  <img src="halo-forge.png" alt="halo forge logo" width="350">
 </p>
 
-<h1 align="center">halo-forge</h1>
+<h1 align="center">halo forge</h1>
 
 <p align="center">
   A complete RLVR (Reinforcement Learning from Verifier Rewards) training framework for AMD Strix Halo.<br>
@@ -13,7 +13,7 @@
 
 ## Table of Contents
 
-1. [What is halo-forge](#what-is-halo-forge)
+1. [What is halo forge](#what-is-halo-forge)
 2. [How It Works](#how-it-works)
 3. [Key Concepts](#key-concepts)
 4. [Hardware Requirements](#hardware-requirements)
@@ -71,9 +71,9 @@ halo-forge vlm benchmark \
 
 ---
 
-## What is halo-forge
+## What is halo forge
 
-halo-forge implements **RAFT (Reward-Ranked Fine-Tuning)**, a technique for improving code generation models by training on verified outputs rather than relying solely on human preferences or model self-evaluation.
+halo forge implements **RAFT (Reward-Ranked Fine-Tuning)**, a technique for improving code generation models by training on verified outputs rather than relying solely on human preferences or model self-evaluation.
 
 The core insight: **A compiler is a perfect reward signal.** It provides unambiguous, deterministic feedback about code correctness that cannot be gamed.
 
@@ -100,7 +100,7 @@ This creates a self-improving loop where the model learns from its own successfu
 ## How It Works
 
 ```
-                         halo-forge Pipeline
+                         halo forge Pipeline
 
     +------------------+     +------------------+     +------------------+
     |  DATA GENERATION |     |   SFT TRAINING   |     |  RAFT TRAINING   |
@@ -336,7 +336,7 @@ halo-forge benchmark run \
 
 ## Testing Your Setup
 
-halo-forge includes a built-in test command to validate your installation at various levels.
+halo forge includes a built-in test command to validate your installation at various levels.
 
 ### Test Levels
 
@@ -369,7 +369,7 @@ halo-forge test --level standard --model Qwen/Qwen2.5-Coder-7B
 
 ```
 ============================================================
-halo-forge Standard Test
+halo forge Standard Test
 Model: Qwen/Qwen2.5-Coder-0.5B
 ============================================================
 
@@ -721,7 +721,7 @@ toolbox enter halo-forge
 
 ### RAFT: Reward-Ranked Fine-Tuning
 
-halo-forge implements RAFT as described in:
+halo forge implements RAFT as described in:
 
 > **RAFT: Reward rAnked FineTuning for Generative Foundation Model Alignment**
 > Hanze Dong, Wei Xiong, Deepanshu Goyal, et al.
@@ -768,11 +768,11 @@ For correctness verification, use test-based verifiers (PytestVerifier) or execu
 
 ## Extensibility
 
-halo-forge is designed as a generic RLVR framework that can be extended to domains beyond code generation.
+halo forge is designed as a generic RLVR framework that can be extended to domains beyond code generation.
 
 ### Custom Verifier Template
 
-Any domain with deterministic verification can use halo-forge:
+Any domain with deterministic verification can use halo forge:
 
 ```python
 from halo_forge.rlvr.verifiers import Verifier, VerifyResult

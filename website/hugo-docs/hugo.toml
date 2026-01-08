@@ -1,6 +1,6 @@
 baseURL = "https://halo-forge.io/"
 languageCode = "en-us"
-title = "halo-forge"
+title = "Halo Forge"
 enableRobotsTXT = true
 
 [params]

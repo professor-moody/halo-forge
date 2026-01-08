@@ -508,7 +508,7 @@ See accompanying files:
 - **RAFT**: Dong et al., 2023 - Reward rAnked FineTuning
 - **Linear Scaling**: Goyal et al., 2017 - Accurate, Large Minibatch SGD
 
-### Related Work in halo-forge
+### Related Work in halo forge
 
 - `docs/THEORY.md` - General RLVR theory
 - `docs/HARDWARE_NOTES.md` - Strix Halo optimization notes

@@ -45,7 +45,7 @@ print(result.details)   # Human-readable message
 
 ## Graduated Rewards
 
-Binary rewards create sparse gradients. halo-forge uses graduated rewards:
+Binary rewards create sparse gradients. halo forge uses graduated rewards:
 
 | Outcome | Reward | Signal |
 |---------|--------|--------|

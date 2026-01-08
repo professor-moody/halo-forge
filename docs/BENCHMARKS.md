@@ -1,6 +1,6 @@
 # Benchmarking Guide
 
-This document explains the halo-forge benchmark system, what results to expect, and how to interpret them.
+This document explains the halo forge benchmark system, what results to expect, and how to interpret them.
 
 ---
 

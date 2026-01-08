@@ -5,7 +5,7 @@ weight: 50
 
 # VLM Module Testing Guide
 
-Step-by-step guide to testing the halo-forge Vision-Language Model training module.
+Step-by-step guide to testing the halo forge Vision-Language Model training module.
 
 ## Prerequisites
 

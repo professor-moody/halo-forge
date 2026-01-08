@@ -1,6 +1,6 @@
 # Strix Halo Configuration Alignment
 
-This document summarizes the alignment work done to ensure halo-forge configurations match the production-tested settings from `strix-edr-training`.
+This document summarizes the alignment work done to ensure halo forge configurations match the production-tested settings from `strix-edr-training`.
 
 ---
 
@@ -134,7 +134,7 @@ gc.collect()
 
 ## Configuration Comparison
 
-| Setting | strix-edr-training | halo-forge (after alignment) |
+| Setting | strix-edr-training | halo forge (after alignment) |
 |---------|-------------------|-------------------------------|
 | `bf16` | true | true |
 | `gradient_checkpointing` | true | true |
@@ -159,12 +159,12 @@ gc.collect()
 "You are an expert C++ programmer specializing in Windows malware development and EDR evasion techniques."
 ```
 
-**halo-forge:**
+**halo forge:**
 ```
 "You are an expert programmer."
 ```
 
-**Reason**: halo-forge is domain-agnostic. Users configure their own system prompts.
+**Reason**: halo forge is domain-agnostic. Users configure their own system prompts.
 
 ### 2. Verifier Type
 
@@ -172,7 +172,7 @@ gc.collect()
 
 **halo-forge**: Pluggable verifiers (GCC, MinGW, MSVC, pytest, etc.)
 
-**Reason**: halo-forge supports multiple domains beyond EDR evasion.
+**Reason**: halo forge supports multiple domains beyond EDR evasion.
 
 ---
 

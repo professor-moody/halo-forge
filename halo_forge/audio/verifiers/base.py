@@ -188,4 +188,16 @@ def check_audio_verifier_dependencies() -> Dict[str, bool]:
             DependencyWarning
         )
     
+    # librosa for audio feature extraction
+    try:
+        import librosa
+        deps["librosa"] = True
+    except ImportError:
+        deps["librosa"] = False
+        warnings.warn(
+            "librosa not installed. Advanced audio features unavailable. "
+            "Install with: pip install librosa",
+            DependencyWarning
+        )
+    
     return deps

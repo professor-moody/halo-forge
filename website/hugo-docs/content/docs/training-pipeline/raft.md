@@ -4,7 +4,7 @@ description: "Reward-Ranked Fine-Tuning with compiler verification"
 weight: 3
 ---
 
-RAFT (Reward-Ranked Fine-Tuning) is the core of halo-forge's RLVR approach.
+RAFT (Reward-Ranked Fine-Tuning) is the core of halo forge's RLVR approach.
 
 ## The Algorithm
 
@@ -214,7 +214,7 @@ models/raft/
 
 ### Progress Display
 
-halo-forge provides real-time progress during generation:
+halo forge provides real-time progress during generation:
 
 ```
 > Generating batch 13/47 ━━━━━━━━━━ 13/47 • 28% • 1:13:10 • 0.15 it/s
@@ -258,7 +258,7 @@ If you see degradation, consider [learning rate decay](/docs/background/learning
 
 ## Graduated Rewards
 
-halo-forge uses graduated rewards for better gradient flow:
+halo forge uses graduated rewards for better gradient flow:
 
 | Outcome | Reward |
 |---------|--------|

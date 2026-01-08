@@ -1,7 +1,7 @@
 # =============================================================================
 # Production RAFT Configuration: Qwen2.5-Coder-7B
 # =============================================================================
-# Full production training configuration for demonstrating halo-forge capabilities.
+# Full production training configuration for demonstrating halo forge capabilities.
 # Optimized for AMD Strix Halo (gfx1151) with 128GB unified memory.
 #
 # Estimated time: ~5 hours (6 cycles × ~45 min each)

@@ -1,6 +1,6 @@
 # Toolbox Setup Guide
 
-Complete guide for building and using the halo-forge toolbox on AMD Strix Halo.
+Complete guide for building and using the halo forge toolbox on AMD Strix Halo.
 
 ## Prerequisites
 
@@ -185,7 +185,7 @@ After entering the toolbox, run the verification script:
 Expected output:
 ```
 ╭──────────────────────────────────────────────────────────────╮
-│   HALO-FORGE Environment Verification                       │
+│   halo forge Environment Verification                        │
 ╰──────────────────────────────────────────────────────────────╯
 
 Python Environment

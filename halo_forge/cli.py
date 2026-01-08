@@ -2,7 +2,7 @@
 """
 halo-forge CLI
 
-Unified command-line interface for the halo-forge framework.
+Unified command-line interface for the halo forge framework.
 
 Usage:
     halo-forge data prepare --dataset codeforces_cpp --output data/train.jsonl
@@ -28,6 +28,25 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+# ANSI color codes
+GREEN = "\033[32m"
+RED = "\033[31m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+CYAN = "\033[36m"
+BOLD = "\033[1m"
+NC = "\033[0m"  # No Color
+
+
+def print_banner():
+    """Print the halo forge banner."""
+    print(f"""
+{CYAN}╔═══════════════════════════════════════════════════════════════╗
+║                      HALO-FORGE                               ║
+║              RAFT Training for AMD Strix Halo                 ║
+╚═══════════════════════════════════════════════════════════════╝{NC}
+""")
 
 
 def cmd_data_validate(args):
@@ -199,6 +218,10 @@ def cmd_sft_train(args):
     """Run SFT training."""
     from halo_forge.sft.trainer import SFTTrainer, SFTConfig
     
+    print_banner()
+    print(f"{GREEN}SFT Training{NC}")
+    print("=" * 60)
+    
     if args.config:
         config = SFTConfig.from_yaml(args.config)
         # CLI args override config file
@@ -225,6 +248,10 @@ def cmd_sft_train(args):
 def cmd_raft_train(args):
     """Run RAFT training."""
     # Note: --experimental-attention is handled at script startup (before imports)
+    
+    print_banner()
+    print(f"{GREEN}RAFT Training{NC}")
+    print("=" * 60)
     
     import yaml
     from halo_forge.rlvr.raft_trainer import RAFTTrainer, RAFTConfig
@@ -355,6 +382,10 @@ def cmd_raft_train(args):
 def cmd_benchmark(args):
     """Run benchmark."""
     # Note: --experimental-attention is handled at script startup (before imports)
+    
+    print_banner()
+    print(f"{GREEN}Benchmark{NC}")
+    print("=" * 60)
     
     from halo_forge.benchmark.pass_at_k import Benchmark
     from halo_forge.rlvr.verifiers import (
@@ -858,7 +889,7 @@ class TestRunner:
             self.ui.print_header("Smoke Test", "Quick validation without GPU")
         else:
             print(f"\n{'='*60}")
-            print("halo-forge Smoke Test")
+            print("halo forge Smoke Test")
             print(f"{'='*60}\n")
         
         self.run_test("Import modules", self.test_imports)
@@ -874,7 +905,7 @@ class TestRunner:
             self.ui.print_header("Standard Test", f"Model: {self.model_name}")
         else:
             print(f"\n{'='*60}")
-            print("halo-forge Standard Test")
+            print("halo forge Standard Test")
             print(f"Model: {self.model_name}")
             print(f"{'='*60}\n")
         
@@ -914,7 +945,7 @@ class TestRunner:
             self.ui.print_header("Full Pipeline Test", f"Model: {self.model_name}")
         else:
             print(f"\n{'='*60}")
-            print("halo-forge Full Pipeline Test")
+            print("halo forge Full Pipeline Test")
             print(f"Model: {self.model_name}")
             print(f"{'='*60}\n")
         
@@ -978,6 +1009,9 @@ def cmd_inference_optimize(args):
         check_dependencies, validate_config
     )
     
+    print_banner()
+    print(f"{GREEN}Inference Optimization{NC}")
+    print("=" * 60)
     print(f"Optimizing model: {args.model}")
     print(f"Target precision: {args.target_precision}")
     print(f"Target latency: {args.target_latency}ms")
@@ -1051,6 +1085,9 @@ def cmd_inference_optimize(args):
 
 def cmd_inference_export(args):
     """Export model to deployment format."""
+    print_banner()
+    print(f"{GREEN}Model Export{NC}")
+    print("=" * 60)
     print(f"Exporting model: {args.model}")
     print(f"Format: {args.format}")
     print(f"Output: {args.output}")
@@ -1111,6 +1148,9 @@ def cmd_inference_benchmark(args):
     from transformers import AutoModelForCausalLM, AutoTokenizer
     import time
     
+    print_banner()
+    print(f"{GREEN}Inference Benchmark{NC}")
+    print("=" * 60)
     print(f"Benchmarking: {args.model}")
     print(f"Max tokens: {args.max_tokens}")
     print(f"Warmup iterations: {args.warmup}")

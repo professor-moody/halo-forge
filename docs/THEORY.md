@@ -1,4 +1,4 @@
-# Theory & Research Behind halo-forge
+# Theory & Research Behind halo forge
 
 This document explains the theoretical foundations, research that informed the design, and lessons learned during development.
 

@@ -11,7 +11,7 @@ Train audio-language models (ASR, TTS, Classification) using RLVR with task-spec
 
 ## Overview
 
-Phase 4 of halo-forge extends the RAFT training framework to support audio-language models. This enables training models like Whisper and Wav2Vec2 on speech tasks with graduated reward signals.
+Phase 4 of halo forge extends the RAFT training framework to support audio-language models. This enables training models like Whisper and Wav2Vec2 on speech tasks with graduated reward signals.
 
 ## Architecture
 

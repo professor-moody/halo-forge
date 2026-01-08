@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# halo-forge Post-Build Verification Script
+# halo forge Post-Build Verification Script
 # =============================================================================
 # Validates that the toolbox environment is correctly configured for training.
 #
@@ -39,7 +39,7 @@ WARNINGS=0
 print_header() {
     echo ""
     echo -e "${BOLD}╭──────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${BOLD}│${NC}   ${GREEN}HALO-FORGE${NC} Environment Verification                       ${BOLD}│${NC}"
+    echo -e "${BOLD}│${NC}   ${GREEN}halo forge${NC} Environment Verification                        ${BOLD}│${NC}"
     echo -e "${BOLD}╰──────────────────────────────────────────────────────────────╯${NC}"
     echo ""
 }
@@ -271,7 +271,7 @@ except Exception as e:
 }
 
 test_halo_forge_modules() {
-    section "halo-forge Modules"
+    section "halo forge Modules"
     
     # Core modules (required)
     local core_modules=(

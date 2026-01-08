@@ -6,7 +6,7 @@ weight: 1
 
 # Command Index
 
-Complete reference for all `halo-forge` commands, subcommands, and flags.
+Complete reference for all halo forge commands, subcommands, and flags.
 
 ---
 

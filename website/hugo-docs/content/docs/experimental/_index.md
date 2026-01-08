@@ -5,7 +5,7 @@ weight: 80
 
 # Experimental Features
 
-This section contains features that are currently in development and testing. These modules extend halo-forge beyond code generation training into new domains.
+This section contains features that are currently in development and testing. These modules extend halo forge beyond code generation training into new domains.
 
 **Status**: These features are functional but may change significantly as we iterate on the designs.
 

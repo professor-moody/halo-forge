@@ -1,6 +1,6 @@
 # Model Support Guide
 
-halo-forge supports various causal language models for code generation training.
+halo forge supports various causal language models for code generation training.
 
 ## Officially Tested Models
 
@@ -116,7 +116,7 @@ For models with different architectures (e.g., StarCoder), the target modules ma
 
 ### Chat Templates
 
-halo-forge uses the model's chat template for formatting. Most modern models include this:
+halo forge uses the model's chat template for formatting. Most modern models include this:
 
 ```python
 messages = [

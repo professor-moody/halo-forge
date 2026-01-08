@@ -1,3 +1,3 @@
 ---
-title: "halo-forge"
+title: "halo forge"
 ---

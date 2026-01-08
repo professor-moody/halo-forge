@@ -396,25 +396,29 @@ class TestWhisperAdapter:
         assert adapter.device == "cpu"
         assert adapter.model is None  # Not loaded yet
     
-    @patch('halo_forge.audio.models.adapters.WhisperAdapter.load')
-    def test_transcribe_calls_load(self, mock_load):
+    def test_transcribe_calls_load(self):
         """Test that transcribe loads model if needed."""
         from halo_forge.audio.models.adapters import WhisperAdapter
         
         adapter = WhisperAdapter()
         
-        # Mock the model after load
-        adapter.model = Mock()
-        adapter.processor = Mock()
-        adapter.processor.return_value = Mock(input_features=Mock(to=Mock(return_value=Mock())))
-        adapter.model.generate = Mock(return_value=[[1, 2, 3]])
-        adapter.processor.batch_decode = Mock(return_value=["test"])
-        
-        audio = np.zeros(16000)
-        result = adapter.transcribe(audio)
-        
-        # Model should be loaded
-        mock_load.assert_called_once()
+        # Patch the load method
+        with patch.object(adapter, 'load') as mock_load:
+            # Set up model after load would be called
+            def set_model():
+                adapter.model = Mock()
+                adapter.processor = Mock()
+                adapter.processor.return_value = Mock(input_features=Mock(to=Mock(return_value=Mock())))
+                adapter.model.generate = Mock(return_value=[[1, 2, 3]])
+                adapter.processor.batch_decode = Mock(return_value=["test"])
+            
+            mock_load.side_effect = set_model
+            
+            audio = np.zeros(16000)
+            result = adapter.transcribe(audio)
+            
+            # Model should be loaded
+            mock_load.assert_called_once()
 
 
 class TestWav2VecAdapter:
@@ -527,7 +531,7 @@ class TestAudioRAFTTrainer:
 class TestLibriSpeechLoader:
     """Tests for LibriSpeechLoader."""
     
-    @patch('halo_forge.audio.data.loaders.load_dataset')
+    @patch('datasets.load_dataset')
     def test_load_samples(self, mock_load):
         """Test loading LibriSpeech samples."""
         from halo_forge.audio.data.loaders import LibriSpeechLoader
@@ -558,7 +562,7 @@ class TestLibriSpeechLoader:
 class TestSpeechCommandsLoader:
     """Tests for SpeechCommandsLoader."""
     
-    @patch('halo_forge.audio.data.loaders.load_dataset')
+    @patch('datasets.load_dataset')
     def test_load_samples(self, mock_load):
         """Test loading Speech Commands samples."""
         from halo_forge.audio.data.loaders import SpeechCommandsLoader

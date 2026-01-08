@@ -40,7 +40,7 @@ print(f"Details: {result.details}")
 
 ## Reward Levels
 
-halo-forge uses graduated rewards to provide partial credit for near-successes. This helps gradient flow during training by distinguishing between different failure modes.
+halo forge uses graduated rewards to provide partial credit for near-successes. This helps gradient flow during training by distinguishing between different failure modes.
 
 ### Standard Reward Levels
 
@@ -591,7 +591,7 @@ trainer = RAFTTrainer(verifier=verifier, ...)
 
 ## Extensibility
 
-halo-forge verifiers can be extended to domains beyond code compilation.
+halo forge verifiers can be extended to domains beyond code compilation.
 
 ### Example Domain Verifiers
 

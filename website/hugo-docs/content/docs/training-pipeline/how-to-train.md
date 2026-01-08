@@ -1,6 +1,6 @@
 ---
 title: "How to Train"
-description: "Complete guide to training code generation models with halo-forge"
+description: "Complete guide to training code generation models with halo forge"
 weight: 0
 ---
 

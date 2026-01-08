@@ -1,6 +1,6 @@
 # ROCm Troubleshooting Guide
 
-Common issues and solutions when running halo-forge with AMD GPUs on ROCm.
+Common issues and solutions when running halo forge with AMD GPUs on ROCm.
 
 ## Table of Contents
 
@@ -124,7 +124,7 @@ torch.cuda.OutOfMemoryError: HIP out of memory
    --train-batch-size 1 --gradient-accumulation-steps 32
    ```
 
-3. **Enable gradient checkpointing** (enabled by default in halo-forge)
+3. **Enable gradient checkpointing** (enabled by default in halo forge)
 
 4. **For Strix Halo unified memory:** The GPU shares system RAM. Ensure you have enough free system memory:
    ```bash

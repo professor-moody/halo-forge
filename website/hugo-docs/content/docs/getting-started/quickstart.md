@@ -1,6 +1,6 @@
 ---
 title: "Quick Start"
-description: "Get halo-forge running in under 30 minutes"
+description: "Get halo forge running in under 30 minutes"
 weight: 1
 ---
 

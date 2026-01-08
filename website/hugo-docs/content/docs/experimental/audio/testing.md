@@ -5,7 +5,7 @@ weight: 50
 
 # Audio Module Testing Guide
 
-Step-by-step guide to testing the halo-forge Audio training module.
+Step-by-step guide to testing the halo forge Audio training module.
 
 ## Prerequisites
 

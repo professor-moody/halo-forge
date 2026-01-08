@@ -1,10 +1,10 @@
 ---
 title: "Toolbox Setup"
-description: "Build and configure the halo-forge container environment"
+description: "Build and configure the halo forge container environment"
 weight: 2
 ---
 
-The halo-forge toolbox is a containerized environment with ROCm and PyTorch configured for Strix Halo.
+The halo forge toolbox is a containerized environment with ROCm and PyTorch configured for Strix Halo.
 
 ## Why a Toolbox?
 

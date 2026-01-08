@@ -342,8 +342,8 @@ class TestPrepareQAT:
             with pytest.raises(ValueError, match="Unknown precision"):
                 prepare_qat(mock_model, "invalid")
         except RuntimeError as e:
-            if "Python 3.14" in str(e) or "torch.compile" in str(e):
-                pytest.skip(f"Python version issue: {e}")
+            if "Python 3.14" in str(e) or "torch.compile" in str(e) or "bitsandbytes" in str(e):
+                pytest.skip(f"Python/bitsandbytes version issue: {e}")
             raise
     
     def test_int4_quantization(self, mock_model):

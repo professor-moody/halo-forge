@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# halo-forge banner with machine/GPU info and ROCm version
+# halo forge banner with machine/GPU info and ROCm version
 
 # Load ROCm env quietly if present
 [[ -f /etc/profile.d/01-rocm.sh ]] && . /etc/profile.d/01-rocm.sh 2>/dev/null
