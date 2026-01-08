@@ -84,6 +84,9 @@ Results vary significantly based on model, dataset, hardware, and domain. Run be
 Features under active development and testing:
 - [Experimental Overview](/docs/experimental/) — What's being tested
 - [VLM Training](/docs/experimental/vlm/) — Vision-language models
+- [Audio Training](/docs/experimental/audio/) — Speech and audio models
+- [Reasoning](/docs/experimental/reasoning/) — Math and logical reasoning
+- [Agentic / Tool Calling](/docs/experimental/agentic/) — Function calling training
 - [Inference Optimization](/docs/experimental/inference/) — Model export/quantization
 
 ### Meta

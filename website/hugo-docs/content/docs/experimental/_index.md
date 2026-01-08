@@ -9,6 +9,8 @@ This section contains features that are currently in development and testing. Th
 
 **Status**: These features are functional but may change significantly as we iterate on the designs.
 
+**Current Version**: v1.1.0
+
 ---
 
 ## Available Experimental Modules
@@ -24,11 +26,6 @@ Train vision-language models using RLVR with perception-aware verification.
 | PerceptionChecker | Beta | YOLOv8 + EasyOCR |
 | Dataset Loaders | Beta | TextVQA, DocVQA, ChartQA |
 
-**New in v0.5.1:**
-- `--dry-run` flag for validating config without training
-- Improved error handling and dependency checking
-- Better error messages for missing dependencies
-
 ```bash
 # Validate configuration first
 halo-forge vlm train --model Qwen/Qwen2-VL-7B-Instruct --dataset textvqa --dry-run
@@ -38,6 +35,87 @@ halo-forge vlm train --model Qwen/Qwen2-VL-7B-Instruct --dataset textvqa
 ```
 
 [Full VLM Documentation](vlm/)
+
+---
+
+### Audio-Language Training (Phase 4)
+
+Train speech and audio models using RLVR with ASR/TTS verification.
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| AudioRAFTTrainer | Beta | RAFT training for audio models |
+| AudioVerifier | Beta | Multi-task verification |
+| ASRChecker | Beta | Word Error Rate (WER) evaluation |
+| TTSChecker | Beta | Quality and intelligibility scoring |
+| Dataset Loaders | Beta | LibriSpeech, Common Voice, VoxPopuli |
+
+```bash
+# List available datasets
+halo-forge audio datasets
+
+# Validate configuration
+halo-forge audio train --model openai/whisper-small --dataset librispeech --dry-run
+
+# Train with ASR verification
+halo-forge audio train --model openai/whisper-small --dataset librispeech --cycles 3
+```
+
+[Full Audio Documentation](audio/)
+
+---
+
+### Reasoning & Math Training (Phase 5)
+
+Train models on mathematical and logical reasoning with symbolic verification.
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| ReasoningRAFTTrainer | Beta | RAFT training for reasoning |
+| ReasoningVerifier | Beta | Multi-method verification |
+| MathVerifier | Beta | SymPy symbolic evaluation |
+| Dataset Loaders | Beta | GSM8K, MATH, ARC |
+
+```bash
+# List available datasets
+halo-forge reasoning datasets
+
+# Train on GSM8K
+halo-forge reasoning train --model Qwen/Qwen2.5-3B-Instruct --dataset gsm8k --cycles 3
+```
+
+[Full Reasoning Documentation](reasoning/)
+
+---
+
+### Agentic / Tool Calling (Phase 6)
+
+Train models to generate structured function calls with schema-aware verification.
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| AgenticRAFTTrainer | Beta | RAFT training for tool calling |
+| ToolCallingVerifier | Beta | JSON schema validation |
+| HermesFormatter | Beta | Hermes chat format conversion |
+| Dataset Loaders | Beta | xLAM, Glaive, ToolBench |
+
+**Key Features:**
+- Graduated reward structure (partial credit for valid JSON, schema compliance)
+- Hermes format output (XML-style tags in ChatML, compatible with Qwen/Llama)
+- Supports multi-turn conversations with tool results
+
+```bash
+# List available datasets
+halo-forge agentic datasets
+
+# Validate configuration
+halo-forge agentic train --model Qwen/Qwen2.5-7B-Instruct --dataset xlam --dry-run
+
+# Train on xLAM dataset
+halo-forge agentic train --model Qwen/Qwen2.5-7B-Instruct --dataset xlam --cycles 3
+```
+
+[Full Agentic Documentation](agentic/)
 
 ---
 
@@ -51,12 +129,6 @@ Optimize trained models for deployment without full retraining.
 | QATTrainer | Alpha | Quantization-aware training |
 | GGUFExporter | Beta | Export for llama.cpp |
 | ONNXExporter | Alpha | Cross-platform export |
-
-**New in v0.5.1:**
-- `--dry-run` flag for validating config and dependencies
-- Comprehensive error handling with helpful messages
-- Dependency checking: `check_dependencies()` utility function
-- Custom exception classes for better error handling
 
 ```bash
 # Check dependencies and validate config
@@ -72,7 +144,7 @@ halo-forge inference export --model models/trained --format gguf --output model.
 
 ### Liquid AI LFM2.5 Models
 
-Liquid AI's [LFM2.5 family](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) is now experimentally supported for RAFT training. These models feature a hybrid convolutional architecture optimized for edge deployment.
+Liquid AI's [LFM2.5 family](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) is experimentally supported for RAFT training. These models feature a hybrid convolutional architecture optimized for edge deployment.
 
 | Model | Parameters | Status | Notes |
 |-------|------------|--------|-------|
@@ -92,13 +164,8 @@ halo-forge benchmark run \
 **Initial results** (5 Windows API prompts, 3 samples each):
 - pass@1: 33%
 - Compile rate: 40-60%
-- PEFT/LoRA: ✅ Compatible
+- PEFT/LoRA: Compatible
 - Generation speed: ~47s per batch of 4
-
-**Why LFM2.5?**
-- Efficient 1.2B parameter size = fast iteration cycles
-- AMD partnership suggests good ROCm compatibility
-- Strong instruction following benchmarks
 
 ---
 
@@ -124,10 +191,7 @@ These features are actively developed based on testing results. If you encounter
 
 ## Planned Features
 
-Future experimental features:
-
 | Feature | Status |
 |---------|--------|
-| Audio-Language Training | Planned |
-| Reasoning & Math | Planned |
+| Full Testing / Artifacts | In Progress |
 | Cross-Platform GUI | Planned |
