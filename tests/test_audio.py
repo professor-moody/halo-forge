@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from dataclasses import asdict
 import numpy as np
+import torch
 
 
 # =============================================================================
@@ -406,10 +407,18 @@ class TestWhisperAdapter:
         with patch.object(adapter, 'load') as mock_load:
             # Set up model after load would be called
             def set_model():
+                # Create a mock parameter for dtype detection
+                mock_param = Mock()
+                mock_param.dtype = torch.float32
+                
                 adapter.model = Mock()
-                adapter.processor = Mock()
-                adapter.processor.return_value = Mock(input_features=Mock(to=Mock(return_value=Mock())))
+                adapter.model.parameters = Mock(return_value=iter([mock_param]))
                 adapter.model.generate = Mock(return_value=[[1, 2, 3]])
+                
+                adapter.processor = Mock()
+                mock_input_features = Mock()
+                mock_input_features.to = Mock(return_value=mock_input_features)
+                adapter.processor.return_value = Mock(input_features=mock_input_features)
                 adapter.processor.batch_decode = Mock(return_value=["test"])
             
             mock_load.side_effect = set_model
@@ -536,8 +545,8 @@ class TestLibriSpeechLoader:
         """Test loading LibriSpeech samples."""
         from halo_forge.audio.data.loaders import LibriSpeechLoader
         
-        # Mock dataset
-        mock_dataset = [
+        # Mock dataset items - with 'array' key for already-decoded format
+        mock_items = [
             {
                 "audio": {
                     "array": np.zeros(16000),
@@ -549,6 +558,11 @@ class TestLibriSpeechLoader:
                 "chapter_id": 1,
             }
         ]
+        
+        # Create a mock dataset with cast_column method
+        mock_dataset = MagicMock()
+        mock_dataset.__iter__ = lambda self: iter(mock_items)
+        mock_dataset.cast_column.return_value = mock_dataset
         mock_load.return_value = mock_dataset
         
         loader = LibriSpeechLoader(limit=1)
@@ -567,8 +581,8 @@ class TestSpeechCommandsLoader:
         """Test loading Speech Commands samples."""
         from halo_forge.audio.data.loaders import SpeechCommandsLoader
         
-        # Mock dataset
-        mock_dataset = [
+        # Mock dataset items - with 'array' key for already-decoded format
+        mock_items = [
             {
                 "audio": {
                     "array": np.zeros(16000),
@@ -577,6 +591,11 @@ class TestSpeechCommandsLoader:
                 "label": "yes",
             }
         ]
+        
+        # Create a mock dataset with cast_column method
+        mock_dataset = MagicMock()
+        mock_dataset.__iter__ = lambda self: iter(mock_items)
+        mock_dataset.cast_column.return_value = mock_dataset
         mock_load.return_value = mock_dataset
         
         loader = SpeechCommandsLoader(limit=1)

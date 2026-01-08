@@ -1840,9 +1840,240 @@ def main():
     audio_train_parser.add_argument('--dry-run', action='store_true',
                                     help='Validate config without running training')
     
+    # reasoning command
+    reasoning_parser = subparsers.add_parser('reasoning', help='Math/Reasoning training')
+    reasoning_subparsers = reasoning_parser.add_subparsers(dest='reasoning_command', required=True)
+    
+    # reasoning datasets
+    reasoning_datasets_parser = reasoning_subparsers.add_parser('datasets', help='List available math datasets')
+    
+    # reasoning benchmark
+    reasoning_bench_parser = reasoning_subparsers.add_parser('benchmark', help='Benchmark math reasoning')
+    reasoning_bench_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
+                                        help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
+    reasoning_bench_parser.add_argument('--dataset', '-d', default='gsm8k',
+                                        help='Dataset name (default: gsm8k)')
+    reasoning_bench_parser.add_argument('--split', default='test',
+                                        help='Dataset split (default: test)')
+    reasoning_bench_parser.add_argument('--limit', type=int, default=100,
+                                        help='Limit samples (default: 100)')
+    reasoning_bench_parser.add_argument('--output', '-o', help='Output file for results')
+    
+    # reasoning train
+    reasoning_train_parser = reasoning_subparsers.add_parser('train', help='Train with RAFT')
+    reasoning_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
+                                        help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
+    reasoning_train_parser.add_argument('--dataset', '-d', default='gsm8k',
+                                        help='Dataset name (default: gsm8k)')
+    reasoning_train_parser.add_argument('--cycles', type=int, default=4,
+                                        help='Number of RAFT cycles (default: 4)')
+    reasoning_train_parser.add_argument('--lr', type=float, default=1e-5,
+                                        help='Initial learning rate (default: 1e-5)')
+    reasoning_train_parser.add_argument('--lr-decay', type=float, default=0.85,
+                                        help='Learning rate decay per cycle (default: 0.85)')
+    reasoning_train_parser.add_argument('--output', '-o', default='models/reasoning_raft',
+                                        help='Output directory (default: models/reasoning_raft)')
+    reasoning_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    reasoning_train_parser.add_argument('--dry-run', action='store_true',
+                                        help='Validate config without running training')
+    
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
+
+
+# =============================================================================
+# Reasoning Commands
+# =============================================================================
+
+def cmd_reasoning_datasets(args):
+    """List available math datasets."""
+    from halo_forge.reasoning.data import list_math_datasets
     
+    print("Available Math/Reasoning Datasets")
+    print("=" * 60)
+    
+    dataset_info = {
+        'gsm8k': ('Grade School', '8.5K problems, 2-8 step solutions'),
+        'math': ('Competition', '12.5K problems, 7 subjects, 5 levels'),
+        'aime': ('Competition', 'AIME problems (hard)'),
+    }
+    
+    datasets = list_math_datasets()
+    
+    for name in datasets:
+        level, desc = dataset_info.get(name, ('Unknown', 'Math dataset'))
+        print(f"  {name:12} [{level:12}] - {desc}")
+    
+    print()
+    print("Usage:")
+    print("  halo-forge reasoning benchmark --dataset gsm8k")
+    print("  halo-forge reasoning train --dataset gsm8k --cycles 4")
+
+
+def cmd_reasoning_benchmark(args):
+    """Benchmark math reasoning model."""
+    from halo_forge.reasoning import MathVerifier, ReasoningRAFTConfig
+    from halo_forge.reasoning.data import load_math_dataset
+    
+    print_banner()
+    
+    print(f"\n{GREEN}Reasoning Benchmark{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Split: {args.split}")
+    print(f"Limit: {args.limit}")
+    
+    # Load dataset
+    try:
+        dataset = load_math_dataset(args.dataset, split=args.split, limit=args.limit)
+        print(f"\nLoaded {len(dataset)} samples from {args.dataset}")
+    except Exception as e:
+        print(f"\n{RED}Error loading dataset: {e}{NC}")
+        sys.exit(1)
+    
+    # Load model
+    try:
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        
+        print(f"\nLoading model...")
+        tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        print(f"Model loaded on {model.device}")
+    except Exception as e:
+        print(f"\n{RED}Error loading model: {e}{NC}")
+        sys.exit(1)
+    
+    # Run benchmark
+    verifier = MathVerifier()
+    correct = 0
+    total = 0
+    total_reward = 0
+    
+    print(f"\nRunning benchmark...")
+    for sample in dataset:
+        # Format prompt
+        prompt = (
+            f"Solve the following math problem step by step. "
+            f"Put your final answer in \\boxed{{}}.\n\n"
+            f"Problem: {sample.question}\n\nSolution:"
+        )
+        
+        # Generate
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=0.7,
+                do_sample=True,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+        
+        completion = tokenizer.decode(
+            outputs[0][inputs.input_ids.shape[1]:],
+            skip_special_tokens=True
+        )
+        
+        # Verify
+        result = verifier.verify(sample.question, completion, sample.answer)
+        
+        total += 1
+        total_reward += result.reward
+        if result.success:
+            correct += 1
+    
+    # Results
+    accuracy = correct / total if total > 0 else 0
+    avg_reward = total_reward / total if total > 0 else 0
+    
+    print(f"\n{GREEN}Results:{NC}")
+    print(f"  Samples: {total}")
+    print(f"  Correct: {correct}")
+    print(f"  Accuracy: {accuracy:.1%}")
+    print(f"  Average reward: {avg_reward:.3f}")
+    
+    if args.output:
+        results = {
+            'model': args.model,
+            'dataset': args.dataset,
+            'samples': total,
+            'correct': correct,
+            'accuracy': accuracy,
+            'avg_reward': avg_reward,
+        }
+        with open(args.output, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"\nResults saved to {args.output}")
+
+
+def cmd_reasoning_train(args):
+    """Train reasoning model with RAFT."""
+    from halo_forge.reasoning import ReasoningRAFTTrainer, ReasoningRAFTConfig
+    from halo_forge.reasoning.data import load_math_dataset
+    
+    print_banner()
+    
+    print(f"\n{GREEN}Reasoning RAFT Training{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Cycles: {args.cycles}")
+    print(f"Output: {args.output}")
+    
+    if args.dry_run:
+        print(f"\n{YELLOW}Dry run mode - validating configuration only{NC}")
+        
+        # Check dependencies
+        try:
+            import sympy
+            print(f"\n{GREEN}✓{NC} sympy installed")
+        except ImportError:
+            print(f"\n{RED}✗{NC} sympy not installed (pip install sympy)")
+        
+        # Check dataset
+        try:
+            from halo_forge.reasoning.data import list_math_datasets
+            if args.dataset in list_math_datasets():
+                print(f"{GREEN}✓{NC} Dataset: {args.dataset}")
+            else:
+                print(f"{RED}✗{NC} Unknown dataset: {args.dataset}")
+        except Exception as e:
+            print(f"{RED}✗{NC} Error: {e}")
+        
+        print(f"\n{GREEN}Configuration valid!{NC}")
+        return
+    
+    # Create config
+    config = ReasoningRAFTConfig(
+        model_name=args.model,
+        num_cycles=args.cycles,
+        learning_rate=args.lr,
+        lr_decay_per_cycle=args.lr_decay,
+        output_dir=args.output,
+    )
+    
+    # Load dataset
+    dataset = load_math_dataset(args.dataset, split="train", limit=args.limit)
+    print(f"\nLoaded {len(dataset)} samples from {args.dataset}")
+    
+    # Train
+    trainer = ReasoningRAFTTrainer(config)
+    summary = trainer.train(list(dataset))
+    
+    print(f"\n{GREEN}Training complete!{NC}")
+    print(f"Final accuracy: {summary.get('final_accuracy', 0):.1%}")
+    print(f"Results saved to: {args.output}")
+
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
@@ -1905,6 +2136,13 @@ def main():
             cmd_audio_benchmark(args)
         elif args.audio_command == 'train':
             cmd_audio_train(args)
+    elif args.command == 'reasoning':
+        if args.reasoning_command == 'datasets':
+            cmd_reasoning_datasets(args)
+        elif args.reasoning_command == 'benchmark':
+            cmd_reasoning_benchmark(args)
+        elif args.reasoning_command == 'train':
+            cmd_reasoning_train(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'test':

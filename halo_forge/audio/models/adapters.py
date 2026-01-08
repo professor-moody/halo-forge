@@ -136,7 +136,9 @@ class WhisperAdapter(AudioAdapter):
             sampling_rate=self.sample_rate,
             return_tensors="pt",
         )
-        input_features = inputs.input_features.to(self.device)
+        # Match input dtype to model dtype (fp16 for CUDA, fp32 for CPU)
+        model_dtype = next(self.model.parameters()).dtype
+        input_features = inputs.input_features.to(device=self.device, dtype=model_dtype)
         
         # Generate with forced language
         generate_kwargs = {}
@@ -226,8 +228,9 @@ class Wav2VecAdapter(AudioAdapter):
             padding=True,
         )
         
-        # Move to device
-        input_values = inputs.input_values.to(self.device)
+        # Match input dtype to model dtype (fp16 for CUDA, fp32 for CPU)
+        model_dtype = next(self.model.parameters()).dtype
+        input_values = inputs.input_values.to(device=self.device, dtype=model_dtype)
         
         # Get logits
         with torch.no_grad():

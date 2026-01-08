@@ -11,7 +11,7 @@ FROM registry.fedoraproject.org/fedora:42 AS builder
 
 LABEL maintainer="halo-forge community"
 LABEL description="halo-forge: RLVR Training Framework for Strix Halo"
-LABEL version="0.5.0"
+LABEL version="1.0.0"
 
 # --- base toolchain ---
 # Includes: compilers, build tools, Python, system utilities
@@ -150,12 +150,19 @@ RUN python -m pip install --no-cache-dir \
 # torchaudio: Audio loading and processing (from AMD nightlies to match torch version)
 # librosa: Audio feature extraction
 # jiwer: Word error rate calculation for ASR
+# NOTE: We use torchaudio directly for audio decoding instead of torchcodec,
+#       because torchcodec is incompatible with PyTorch 2.11+ nightlies.
 RUN python -m pip install --no-cache-dir \
     --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
     --pre torchaudio && \
     python -m pip install --no-cache-dir \
     librosa>=0.10.0 \
     jiwer>=3.0.0
+
+# --- Reasoning dependencies (Phase 5: Math/Reasoning) ---
+# sympy: Symbolic mathematics for answer verification
+RUN python -m pip install --no-cache-dir \
+    sympy>=1.12
 
 # --- PyTorch memory optimization for Strix Halo (128GB unified memory) ---
 ENV PYTORCH_HIP_ALLOC_CONF="backend:native,expandable_segments:True,garbage_collection_threshold:0.9,max_split_size_mb:512"

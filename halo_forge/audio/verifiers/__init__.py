@@ -4,6 +4,7 @@ Audio Verifiers Module
 Verification components for audio-language training.
 """
 
+from halo_forge.rlvr.verifiers.base import VerifyResult
 from halo_forge.audio.verifiers.base import (
     AudioVerifier,
     AudioVerifyConfig,
@@ -30,4 +31,5 @@ __all__ = [
     "TTSResult",
     "AudioClassificationChecker",
     "ClassificationResult",
+    "VerifyResult",
 ]

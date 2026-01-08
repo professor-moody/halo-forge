@@ -1,12 +1,12 @@
 baseURL = "https://halo-forge.io/"
 languageCode = "en-us"
-title = "Halo Forge"
+title = "halo forge"
 enableRobotsTXT = true
 
 [params]
   description = "RLVR Training Framework for AMD Strix Halo"
   github = "https://github.com/professor-moody/halo-forge"
-  version = "0.5.0"
+  version = "1.0.0"
 
 [markup]
   [markup.highlight]

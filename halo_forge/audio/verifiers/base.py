@@ -9,6 +9,8 @@ from typing import Dict, Any, Optional, List, Union
 import logging
 import warnings
 
+from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,20 +64,23 @@ class AudioVerifyConfig:
     exact_match: bool = True
 
 
-class AudioVerifier:
+class AudioVerifier(Verifier):
     """
     Multi-task audio verifier.
     
+    Inherits from base Verifier to follow codebase architecture patterns.
     Delegates to task-specific checkers based on configuration.
     """
     
-    def __init__(self, config: Optional[AudioVerifyConfig] = None):
+    def __init__(self, config: Optional[AudioVerifyConfig] = None, max_workers: int = 8):
         """
         Initialize audio verifier.
         
         Args:
             config: Verification configuration
+            max_workers: Maximum parallel workers for batch verification
         """
+        super().__init__(max_workers=max_workers)
         self.config = config or AudioVerifyConfig()
         
         # Check dependencies
