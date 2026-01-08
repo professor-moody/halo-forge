@@ -302,24 +302,26 @@ print_next_steps() {
 # Parse arguments
 NO_CACHE="false"
 
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --no-cache)
             NO_CACHE="true"
+            shift
             ;;
         --tag)
-            shift
-            IMAGE_TAG="$1"
+            IMAGE_TAG="$2"
+            shift 2
             ;;
         --tag=*)
-            IMAGE_TAG="${arg#*=}"
+            IMAGE_TAG="${1#*=}"
+            shift
             ;;
         --help|-h)
             show_help
             exit 0
             ;;
         *)
-            print_error "Unknown option: $arg"
+            print_error "Unknown option: $1"
             show_help
             exit 1
             ;;
