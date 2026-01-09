@@ -324,6 +324,52 @@ def cmd_sft_datasets(args):
     print()
 
 
+def _resolve_model_path(model_path: str) -> tuple:
+    """
+    Resolve a model path that may be a base model ID or SFT output directory.
+    
+    Handles three cases:
+    1. HuggingFace model ID (e.g., "Qwen/Qwen2.5-Coder-3B") - returns as-is
+    2. SFT output directory with final_model/ subdirectory - auto-detects
+    3. Direct LoRA adapter directory - reads base_model from adapter_config
+    
+    Returns:
+        tuple: (base_model, sft_checkpoint) where base_model is the HuggingFace ID
+               and sft_checkpoint is the path to the LoRA adapters (or None if fresh)
+    """
+    from pathlib import Path
+    
+    model_path_obj = Path(model_path)
+    
+    # Case 1: Not a local path, assume it's a HuggingFace model ID
+    if not model_path_obj.exists():
+        return (model_path, None)
+    
+    # Check for final_model subdirectory (SFT output pattern)
+    final_model_path = model_path_obj / "final_model"
+    if final_model_path.exists() and (final_model_path / "adapter_config.json").exists():
+        checkpoint_path = final_model_path
+    elif (model_path_obj / "adapter_config.json").exists():
+        checkpoint_path = model_path_obj
+    else:
+        # It's a local path but not a LoRA adapter - might be a merged model
+        return (model_path, None)
+    
+    # Read base model from adapter config
+    adapter_config_path = checkpoint_path / "adapter_config.json"
+    try:
+        with open(adapter_config_path) as f:
+            adapter_config = json.load(f)
+        base_model = adapter_config.get("base_model_name_or_path")
+        if base_model:
+            return (base_model, str(checkpoint_path))
+    except (json.JSONDecodeError, IOError):
+        pass
+    
+    # Fallback: couldn't read config
+    return (model_path, None)
+
+
 def cmd_raft_train(args):
     """Run RAFT training."""
     # Note: --experimental-attention is handled at script startup (before imports)
@@ -425,9 +471,28 @@ def cmd_raft_train(args):
     lr_decay = getattr(args, 'lr_decay', None) or cfg_dict.get('lr_decay_per_cycle', 0.85)
     min_lr = getattr(args, 'min_lr', None) or cfg_dict.get('min_lr', 1e-6)
     
+    # Resolve model path - handles SFT output directories automatically
+    # This allows: --model models/code_sft (where adapters are in models/code_sft/final_model)
+    model_arg = args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B')
+    checkpoint_arg = args.checkpoint or cfg_dict.get('sft_checkpoint')
+    
+    if checkpoint_arg:
+        # Explicit checkpoint provided - use as-is
+        base_model = model_arg
+        sft_checkpoint = checkpoint_arg
+    else:
+        # Auto-detect from --model argument
+        base_model, sft_checkpoint = _resolve_model_path(model_arg)
+        if sft_checkpoint:
+            print(f"  > Auto-detected SFT adapter: {sft_checkpoint}")
+            print(f"  > Base model: {base_model}")
+        else:
+            # No adapter found - will train from scratch
+            sft_checkpoint = cfg_dict.get('sft_checkpoint', 'models/sft/final_model')
+    
     config = RAFTConfig(
-        base_model=args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B'),
-        sft_checkpoint=args.checkpoint or cfg_dict.get('sft_checkpoint', 'models/sft/final_model'),
+        base_model=base_model,
+        sft_checkpoint=sft_checkpoint,
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
         num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
         keep_top_percent=keep_percent,
@@ -522,11 +587,28 @@ def cmd_benchmark(args):
         print("Available verifiers: gcc, mingw, msvc, rust, go, dotnet, powershell, auto")
         sys.exit(1)
     
+    # Resolve model path - handles SFT/RAFT output directories automatically
+    model_arg = args.model
+    base_model_arg = args.base_model
+    
+    if not base_model_arg:
+        # Auto-detect from model path
+        detected_base, detected_checkpoint = _resolve_model_path(model_arg)
+        if detected_checkpoint:
+            print(f"  > Auto-detected adapter: {detected_checkpoint}")
+            print(f"  > Base model: {detected_base}")
+            model_path = detected_checkpoint
+            base_model_arg = detected_base
+        else:
+            model_path = model_arg
+    else:
+        model_path = model_arg
+    
     # Create benchmark
     benchmark = Benchmark(
-        model_path=args.model,
+        model_path=model_path,
         verifier=verifier,
-        base_model=args.base_model,
+        base_model=base_model_arg,
         system_prompt=args.system_prompt
     )
     
