@@ -41,11 +41,17 @@ NC = "\033[0m"  # No Color
 
 def print_banner():
     """Print the halo forge banner."""
+    # Disable colors when output is piped to file
+    if sys.stdout.isatty():
+        c, nc = CYAN, NC
+    else:
+        c, nc = "", ""
+    
     print(f"""
-{CYAN}╔═══════════════════════════════════════════════════════════════╗
+{c}╔═══════════════════════════════════════════════════════════════╗
 ║                      HALO-FORGE                               ║
 ║              RAFT Training for AMD Strix Halo                 ║
-╚═══════════════════════════════════════════════════════════════╝{NC}
+╚═══════════════════════════════════════════════════════════════╝{nc}
 """)
 
 

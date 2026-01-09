@@ -177,11 +177,11 @@ halo-forge sft train \
   --output models/code_sft \
   --epochs 2
 
-# 2. RAFT Training
+# 2. RAFT Training (HumanEval uses Python, so use humaneval verifier)
 halo-forge raft train \
   --model models/code_sft \
   --prompts data/rlvr/humaneval_prompts.jsonl \
-  --verifier gcc \
+  --verifier humaneval \
   --cycles 5 \
   --output models/code_raft
 
@@ -189,7 +189,7 @@ halo-forge raft train \
 halo-forge benchmark run \
   --model models/code_raft \
   --prompts data/rlvr/humaneval_prompts.jsonl \
-  --verifier gcc \
+  --verifier humaneval \
   --samples 10
 ```
 

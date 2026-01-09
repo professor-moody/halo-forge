@@ -77,7 +77,7 @@ The repository includes sample data for quick testing:
 halo-forge raft train \
   --prompts data/rlvr/humaneval_prompts.jsonl \
   --model Qwen/Qwen2.5-Coder-0.5B \
-  --verifier python \
+  --verifier humaneval \
   --cycles 3
 
 # SFT with CodeForces samples
