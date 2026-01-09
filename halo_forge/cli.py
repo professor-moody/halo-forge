@@ -695,6 +695,93 @@ def cmd_benchmark_full(args):
         print(f"\nBenchmark complete. Results saved to: {args.output}/summary.json")
 
 
+def cmd_plot_training(args):
+    """Generate charts from TensorBoard training logs."""
+    from pathlib import Path
+    
+    # Import the plotting module
+    try:
+        from scripts.plot_training import (
+            load_training_metrics,
+            load_multiple_runs,
+            generate_all_charts,
+            plot_loss_curve,
+            plot_learning_rate,
+            plot_grad_norm,
+            plot_training_summary,
+            plot_comparison,
+        )
+    except ImportError:
+        # Fallback: run as subprocess
+        import subprocess
+        cmd = ["python", "scripts/plot_training.py"] + args.log_dirs
+        if args.output:
+            cmd.extend(["--output", args.output])
+        if args.compare:
+            cmd.append("--compare")
+        if args.only:
+            cmd.extend(["--only", args.only])
+        if args.name:
+            cmd.extend(["--name", args.name])
+        subprocess.run(cmd)
+        return
+    
+    log_dirs = [Path(d) for d in args.log_dirs]
+    
+    # Comparison mode
+    if args.compare and len(log_dirs) > 1:
+        runs = load_multiple_runs(log_dirs)
+        if not runs:
+            print("Error: No valid training runs found")
+            return
+        
+        output_dir = Path(args.output) if args.output else Path("figures/comparison")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"\nGenerating comparison charts in {output_dir}...")
+        plot_comparison(runs, output_dir / "loss_comparison.png", 'train_loss')
+        plot_comparison(runs, output_dir / "lr_comparison.png", 'learning_rate')
+        print(f"\nDone! Comparison charts saved to {output_dir}")
+        return
+    
+    # Single run mode
+    log_dir = log_dirs[0]
+    
+    try:
+        metrics = load_training_metrics(log_dir, name=args.name)
+    except Exception as e:
+        print(f"Error loading training logs: {e}")
+        return
+    
+    print(f"Loaded {metrics.name}: {metrics.total_steps} steps, final loss {metrics.final_loss:.4f}")
+    
+    output_dir = Path(args.output) if args.output else log_dir.parent / "figures"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\nGenerating charts in {output_dir}...")
+    
+    if args.only == 'loss':
+        plot_loss_curve(metrics, output_dir / "loss_curve.png")
+    elif args.only == 'lr':
+        plot_learning_rate(metrics, output_dir / "learning_rate.png")
+    elif args.only == 'grad':
+        plot_grad_norm(metrics, output_dir / "grad_norm.png")
+    elif args.only == 'summary':
+        plot_training_summary(metrics, output_dir / "training_summary.png")
+    else:
+        generate_all_charts(metrics, output_dir)
+    
+    print(f"\nDone! Charts saved to {output_dir}")
+
+
+def cmd_plot_benchmarks(args):
+    """Generate charts from benchmark results."""
+    import subprocess
+    cmd = ["python", "scripts/plot_benchmarks.py", args.results_dir]
+    if args.output:
+        cmd.extend(["--output", args.output])
+    subprocess.run(cmd)
+
+
 def cmd_info(args):
     """Show hardware info."""
     try:
@@ -2236,6 +2323,32 @@ def main():
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
     
+    # plot command - visualization tools
+    plot_parser = subparsers.add_parser('plot', help='Generate training/benchmark visualizations')
+    plot_subparsers = plot_parser.add_subparsers(dest='plot_command')
+    
+    # plot training
+    plot_training_parser = plot_subparsers.add_parser('training', 
+        help='Generate charts from TensorBoard training logs')
+    plot_training_parser.add_argument('log_dirs', nargs='+',
+        help='TensorBoard log directory (e.g., models/code_sft/logs)')
+    plot_training_parser.add_argument('--output', '-o', default=None,
+        help='Output directory for charts')
+    plot_training_parser.add_argument('--compare', action='store_true',
+        help='Generate comparison charts for multiple runs')
+    plot_training_parser.add_argument('--only', choices=['loss', 'lr', 'grad', 'summary'],
+        help='Generate only specific chart type')
+    plot_training_parser.add_argument('--name', default=None,
+        help='Override run name in chart titles')
+    
+    # plot benchmarks
+    plot_benchmarks_parser = plot_subparsers.add_parser('benchmarks',
+        help='Generate charts from benchmark results')
+    plot_benchmarks_parser.add_argument('results_dir',
+        help='Directory containing benchmark results')
+    plot_benchmarks_parser.add_argument('--output', '-o', default=None,
+        help='Output directory for charts')
+    
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
@@ -2761,6 +2874,16 @@ def _dispatch_commands(args):
             cmd_agentic_sft(args)
     elif args.command == 'info':
         cmd_info(args)
+    elif args.command == 'plot':
+        if not hasattr(args, 'plot_command') or not args.plot_command:
+            print("Usage: halo-forge plot {training|benchmarks} ...")
+            print("\nAvailable commands:")
+            print("  training    Generate charts from TensorBoard training logs")
+            print("  benchmarks  Generate charts from benchmark results")
+        elif args.plot_command == 'training':
+            cmd_plot_training(args)
+        elif args.plot_command == 'benchmarks':
+            cmd_plot_benchmarks(args)
     elif args.command == 'test':
         cmd_test(args)
 
