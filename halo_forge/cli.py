@@ -562,6 +562,14 @@ def cmd_benchmark(args):
         verifier = MultiLanguageVerifier(
             run_after_compile=getattr(args, 'run_after_compile', False)
         )
+    elif args.verifier in ('humaneval', 'python'):
+        from halo_forge.rlvr.verifiers import HumanEvalVerifier
+        dataset_path = getattr(args, 'dataset', None) or 'data/rlvr/humaneval_full.jsonl'
+        verifier = HumanEvalVerifier(dataset_path)
+    elif args.verifier == 'mbpp':
+        from halo_forge.rlvr.verifiers import MBPPVerifier
+        dataset_path = getattr(args, 'dataset', None) or 'data/rlvr/mbpp_train_full.jsonl'
+        verifier = MBPPVerifier(dataset_path)
     elif args.verifier == 'msvc':
         # Validate required MSVC parameters
         missing = []
@@ -590,7 +598,7 @@ def cmd_benchmark(args):
         )
     else:
         print(f"Unknown verifier: {args.verifier}")
-        print("Available verifiers: gcc, mingw, msvc, rust, go, dotnet, powershell, auto")
+        print("Available verifiers: gcc, mingw, msvc, rust, go, dotnet, powershell, auto, humaneval, mbpp, python")
         sys.exit(1)
     
     # Resolve model path - handles SFT/RAFT output directories automatically
@@ -1934,8 +1942,8 @@ def main():
     raft_train_parser.add_argument('--output', '-o', default='models/raft', help='Output directory')
     raft_train_parser.add_argument('--cycles', type=int, help='Number of RAFT cycles')
     raft_train_parser.add_argument('--verifier', default='gcc',
-                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto'],
-                                   help='Verifier type (auto=multi-language)')
+                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto', 'humaneval', 'mbpp', 'python'],
+                                   help='Verifier type (humaneval/mbpp/python for Python, auto=multi-language)')
     raft_train_parser.add_argument('--keep-percent', type=float, default=0.5, 
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
@@ -1972,8 +1980,8 @@ def main():
     bench_run_parser.add_argument('--k', default='1,5,10', help='k values (comma-separated)')
     bench_run_parser.add_argument('--max-prompts', type=int, help='Max prompts to evaluate')
     bench_run_parser.add_argument('--verifier', default='gcc', 
-                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto'],
-                                   help='Verifier type (auto=multi-language)')
+                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto', 'humaneval', 'mbpp', 'python'],
+                                   help='Verifier type (humaneval/mbpp/python for Python, auto=multi-language)')
     bench_run_parser.add_argument('--base-model', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
     bench_run_parser.add_argument('--system-prompt', default='You are an expert Windows systems programmer.', help='System prompt')
     bench_run_parser.add_argument('--host', help='MSVC host')
