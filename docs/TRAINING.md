@@ -24,6 +24,12 @@ halo-forge raft train \
 | `--output`, `-o` | models/raft | Output directory |
 | `--cycles` | 3 | Number of RAFT cycles |
 | `--verifier` | gcc | Verifier type |
+| `--samples-per-prompt` | 8 | Samples to generate per prompt |
+| `--temperature` | 0.7 | Generation temperature |
+| `--max-new-tokens` | 1024 | Max tokens per completion |
+| `--min-samples` | None | Auto-adjust threshold if too few pass |
+
+> **Note:** All training commands auto-log to `logs/` with timestamped filenames. Use `--quiet` to suppress terminal output.
 
 ### Verifiers
 

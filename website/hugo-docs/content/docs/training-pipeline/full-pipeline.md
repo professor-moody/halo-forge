@@ -125,6 +125,16 @@ halo-forge raft train \
   --verifier gcc \
   --cycles 5 \
   --samples-per-prompt 8 \
+  --temperature 0.7 \
+  --output models/raft
+```
+
+Or use a preset config:
+
+```bash
+halo-forge raft train \
+  --config configs/raft_conservative.yaml \
+  --prompts data/prompts.jsonl \
   --output models/raft
 ```
 
@@ -132,10 +142,13 @@ halo-forge raft train \
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `cycles` | 5 | Number of RAFT iterations |
-| `samples-per-prompt` | 8 | Samples to generate per prompt |
-| `reward-threshold` | 0.5 | Minimum reward to keep |
-| `keep-top-percent` | 0.5 | Top % of samples above threshold |
+| `--cycles` | 5 | Number of RAFT iterations |
+| `--samples-per-prompt` | 8 | Samples to generate per prompt |
+| `--temperature` | 0.7 | Generation diversity |
+| `--max-new-tokens` | 1024 | Max tokens per completion |
+| `--reward-threshold` | 0.5 | Minimum reward to keep |
+| `--keep-percent` | 0.5 | Top % of samples above threshold |
+| `--min-samples` | - | Auto-adjust threshold if too few pass |
 
 ### Cycle Dynamics
 

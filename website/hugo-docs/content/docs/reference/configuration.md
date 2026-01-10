@@ -56,6 +56,22 @@ early_stopping:
 
 ## RAFT Configuration
 
+### Preset Configs
+
+halo forge includes preset configurations for common scenarios:
+
+| Config | Use Case | Key Settings |
+|--------|----------|--------------|
+| `configs/raft_conservative.yaml` | Safe, gradual improvement | 80% keep, slow LR decay, min 200 samples |
+| `configs/raft_aggressive.yaml` | Stricter filtering | 30% keep, 16 samples/prompt, 0.8 temp |
+
+```bash
+# Use a preset config
+halo-forge raft train --config configs/raft_conservative.yaml --prompts data/prompts.jsonl
+```
+
+### Full Config Reference
+
 ```yaml
 # configs/raft.yaml
 sft_checkpoint: models/sft/final_model  # Starting checkpoint
@@ -169,12 +185,19 @@ halo-forge raft train \
   --config configs/raft.yaml \     # Config file
   --checkpoint models/sft/final \  # SFT checkpoint
   --prompts data/prompts.jsonl \   # Prompts file
-  --verifier gcc \                 # Verifier type
+  --verifier humaneval \           # Verifier type (humaneval, mbpp, gcc, etc.)
   --cycles 5 \                     # Number of cycles
   --samples-per-prompt 8 \         # Samples per prompt
+  --temperature 0.7 \              # Generation temperature
+  --max-new-tokens 1024 \          # Max tokens per completion
+  --keep-percent 0.5 \             # Keep top 50% of passing samples
+  --reward-threshold 0.5 \         # Minimum reward to pass
+  --min-samples 200 \              # Auto-adjust threshold if too few pass
   --output models/raft \           # Output directory
   --resume                         # Resume from last cycle
 ```
+
+> **Note:** All training commands auto-log to `logs/` with timestamped filenames. Use `--quiet` to suppress terminal output.
 
 ### Benchmark
 

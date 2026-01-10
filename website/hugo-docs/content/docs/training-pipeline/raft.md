@@ -178,10 +178,14 @@ Be selective and only train on samples that actually execute.
 halo-forge raft train \
   --model Qwen/Qwen2.5-Coder-7B \
   --prompts data/prompts.jsonl \
-  --verifier mbpp \
+  --verifier humaneval \
   --cycles 5 \
+  --samples-per-prompt 8 \    # Samples to generate per prompt
+  --temperature 0.7 \         # Generation diversity
+  --max-new-tokens 1024 \     # Max tokens per completion
   --keep-percent 0.5 \        # Keep top 50% of passing samples
   --reward-threshold 0.5 \    # Min reward to pass
+  --min-samples 200 \         # Auto-adjust threshold if too few pass
   --output models/production
 ```
 
@@ -387,14 +391,19 @@ This creates curriculum learning: easier criteria early, harder later.
 
 ## Verifier Choice
 
-| Verifier | Use Case |
-|----------|----------|
-| `gcc` | Linux C/C++ |
-| `mingw` | Windows C/C++ (cross-compile) |
-| `clang` | Alternative to GCC |
-| `humaneval` | Python with HumanEval tests |
-| `mbpp` | Python with MBPP tests |
-| `custom` | Your own verifier |
+| Verifier | Language | Use Case |
+|----------|----------|----------|
+| `gcc` | C/C++ | Linux compilation |
+| `mingw` | C/C++ | Windows cross-compile |
+| `clang` | C/C++ | Alternative to GCC |
+| `humaneval` | Python | HumanEval benchmark tests |
+| `mbpp` | Python | MBPP benchmark tests |
+| `python` | Python | Generic Python execution |
+| `rust` | Rust | Rust compilation |
+| `go` | Go | Go compilation |
+| `custom` | Any | Your own verifier |
+
+> **Important:** Match your verifier to your dataset! Using `--verifier gcc` with Python prompts will cause 100% failure.
 
 See [Verifiers](/docs/verifiers/) for details.
 

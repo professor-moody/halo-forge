@@ -58,6 +58,29 @@ halo-forge
 
 ---
 
+## Global Flags
+
+These flags work with all commands:
+
+| Flag | Short | Type | Description |
+|------|-------|------|-------------|
+| `--quiet` | `-q` | flag | Suppress terminal output (logs still written to file) |
+
+### Auto-Logging
+
+All training and benchmark commands automatically log output to `logs/` with timestamped filenames:
+
+```
+logs/
+├── raft_train_20260110_143052.log
+├── sft_train_20260110_121500.log
+└── benchmark_run_20260110_160000.log
+```
+
+No need for manual `tee` or `PYTHONUNBUFFERED`. Use `--quiet` to suppress terminal output while still capturing logs.
+
+---
+
 ## Core Commands (Production Ready)
 
 ### halo-forge config validate
@@ -192,8 +215,12 @@ Run RAFT (Reward-Ranked Fine-Tuning).
 | `--output` | `-o` | path | No | `models/raft` | Output directory |
 | `--cycles` | - | int | No | 6 | Number of RAFT cycles |
 | `--verifier` | - | string | No | `gcc` | Verifier type (see below) |
+| `--samples-per-prompt` | - | int | No | 8 | Samples to generate per prompt |
+| `--temperature` | - | float | No | 0.7 | Generation temperature |
+| `--max-new-tokens` | - | int | No | 1024 | Max tokens to generate |
 | `--keep-percent` | - | float | No | 0.5 | Keep top X% of passing samples |
 | `--reward-threshold` | - | float | No | 0.5 | Minimum reward to pass |
+| `--min-samples` | - | int | No | - | Auto-adjust threshold if fewer pass |
 | `--curriculum` | - | string | No | `none` | Curriculum strategy |
 | `--reward-shaping` | - | string | No | `fixed` | Reward shaping strategy |
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
@@ -203,7 +230,7 @@ Run RAFT (Reward-Ranked Fine-Tuning).
 | `--user` | - | string | No | - | MSVC verifier user |
 | `--ssh-key` | - | path | No | - | MSVC verifier SSH key |
 
-**Verifier choices:** `gcc`, `mingw`, `msvc`, `rust`, `go`, `dotnet`, `powershell`, `auto`
+**Verifier choices:** `gcc`, `mingw`, `msvc`, `rust`, `go`, `dotnet`, `powershell`, `humaneval`, `mbpp`, `python`, `auto`
 
 **Curriculum choices:** `none`, `complexity`, `progressive`, `adaptive`
 
@@ -249,7 +276,7 @@ Run pass@k benchmark.
 | `--samples` | - | int | No | 10 | Samples per prompt |
 | `--k` | - | string | No | `1,5,10` | k values (comma-separated) |
 | `--max-prompts` | - | int | No | - | Max prompts to evaluate |
-| `--verifier` | - | string | No | `gcc` | Verifier type |
+| `--verifier` | - | string | No | `gcc` | Verifier type (gcc, humaneval, mbpp, etc.) |
 | `--base-model` | - | string | No | `Qwen/Qwen2.5-Coder-7B` | Base model |
 | `--system-prompt` | - | string | No | (Windows prompt) | System prompt |
 | `--host` | - | string | No | - | MSVC host |

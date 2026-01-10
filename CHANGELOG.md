@@ -5,6 +5,29 @@ All notable changes to halo forge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-10
+
+### Added
+- **Auto-logging** - All training/benchmark commands automatically log to `logs/` with timestamped filenames
+- **`--quiet` flag** - Suppress terminal output while still writing logs
+- **New RAFT CLI flags:**
+  - `--samples-per-prompt` - Control samples per prompt (default: 8)
+  - `--temperature` - Set generation temperature (default: 0.7)
+  - `--max-new-tokens` - Limit generation length (default: 1024)
+  - `--min-samples` - Auto-adjust threshold if too few samples pass
+- **Preset config files:**
+  - `configs/raft_conservative.yaml` - Safe training with 80% keep
+  - `configs/raft_aggressive.yaml` - Strict filtering with 30% keep
+  - `configs/vlm_example.yaml`, `configs/audio_example.yaml`, `configs/reasoning_example.yaml`
+- Added `humaneval`, `mbpp`, `python` to verifier choices in CLI
+
+### Changed
+- Improved base model loading for LoRA checkpoints (reads from `adapter_config.json`)
+- Fixed code extraction to strip input tokens from generated completions
+- Added missing CLI flags to VLM, Audio, Reasoning, Agentic modules for consistency
+
+---
+
 ## [Unreleased]
 
 ### Added

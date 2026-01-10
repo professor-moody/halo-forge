@@ -3,6 +3,39 @@ title: "Changelog"
 description: "All notable changes to halo forge"
 ---
 
+## [1.2.0] - 2026-01-10
+
+### Added
+
+#### Auto-Logging
+- **Automatic log capture** - All training and benchmark commands now automatically log to `logs/` with timestamped filenames
+- **`--quiet` flag** - Suppress terminal output while still writing to log file
+- No more need for manual `tee` or `PYTHONUNBUFFERED=1`
+
+#### New RAFT CLI Flags
+- `--samples-per-prompt` - Control samples generated per prompt (default: 8)
+- `--temperature` - Set generation temperature (default: 0.7)
+- `--max-new-tokens` - Limit generation length (default: 1024)
+- `--min-samples` - Auto-adjust threshold if too few samples pass filtering
+
+#### Preset Config Files
+- `configs/raft_conservative.yaml` - Safe training: 80% keep, slow LR decay, min 200 samples
+- `configs/raft_aggressive.yaml` - Strict filtering: 30% keep, 16 samples/prompt, 0.8 temp
+- `configs/vlm_example.yaml` - VLM RAFT with perception/reasoning/output weights
+- `configs/audio_example.yaml` - Audio RAFT for ASR/TTS
+- `configs/reasoning_example.yaml` - Math/reasoning RAFT
+
+#### Module Consistency
+- Added missing flags to all domain modules (VLM, Audio, Reasoning, Agentic)
+- Consistent `--samples-per-prompt`, `--temperature`, `--keep-percent`, `--reward-threshold` across all `train` commands
+
+### Changed
+- Added `humaneval`, `mbpp`, `python` to verifier choices in CLI
+- Improved base model loading for LoRA checkpoints (reads from `adapter_config.json`)
+- Fixed code extraction to strip input tokens from generated completions
+
+---
+
 ## [1.1.0] - 2026-01-08
 
 ### Added
