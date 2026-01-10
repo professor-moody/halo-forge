@@ -39,6 +39,90 @@ BOLD = "\033[1m"
 NC = "\033[0m"  # No Color
 
 
+# =============================================================================
+# Auto-Logging System
+# =============================================================================
+
+class TeeWriter:
+    """
+    Write to both stdout and a log file simultaneously.
+    
+    Implements tee-style output without requiring external commands.
+    Used for automatic logging of all training/benchmark commands.
+    """
+    
+    def __init__(self, log_path: Path, quiet: bool = False):
+        """
+        Initialize TeeWriter.
+        
+        Args:
+            log_path: Path to log file
+            quiet: If True, suppress terminal output (log file only)
+        """
+        self.log_path = log_path
+        self.quiet = quiet
+        self.terminal = sys.stdout
+        self.log_file = open(log_path, 'w', buffering=1)  # Line buffered
+    
+    def write(self, message: str):
+        """Write to both terminal and log file."""
+        # Always write to log file
+        self.log_file.write(message)
+        
+        # Write to terminal unless quiet mode
+        if not self.quiet:
+            self.terminal.write(message)
+    
+    def flush(self):
+        """Flush both outputs."""
+        self.log_file.flush()
+        if not self.quiet:
+            self.terminal.flush()
+    
+    def close(self):
+        """Close log file and restore stdout."""
+        self.log_file.close()
+        sys.stdout = self.terminal
+    
+    def isatty(self):
+        """Check if terminal is a TTY (for color support)."""
+        return not self.quiet and self.terminal.isatty()
+
+
+def setup_auto_logging(command_name: str, output_dir: str = "logs", quiet: bool = False) -> Path:
+    """
+    Configure automatic logging with timestamped file.
+    
+    Creates logs/ directory if needed and redirects stdout to both
+    terminal and log file (unless quiet mode).
+    
+    Args:
+        command_name: Name of command being run (e.g., 'raft_train')
+        output_dir: Directory for log files (default: 'logs')
+        quiet: If True, suppress terminal output
+    
+    Returns:
+        Path to log file
+    """
+    from datetime import datetime
+    
+    log_dir = Path(output_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / f"{command_name}_{timestamp}.log"
+    
+    # Install TeeWriter
+    tee = TeeWriter(log_path, quiet=quiet)
+    sys.stdout = tee
+    
+    # Also capture stderr if not quiet
+    if not quiet:
+        sys.stderr = tee
+    
+    return log_path
+
+
 def print_banner():
     """Print the halo forge banner."""
     # Disable colors when output is piped to file
@@ -477,6 +561,12 @@ def cmd_raft_train(args):
     lr_decay = getattr(args, 'lr_decay', None) or cfg_dict.get('lr_decay_per_cycle', 0.85)
     min_lr = getattr(args, 'min_lr', None) or cfg_dict.get('min_lr', 1e-6)
     
+    # New generation parameters
+    samples_per_prompt = getattr(args, 'samples_per_prompt', None) or cfg_dict.get('raft', {}).get('samples_per_prompt', 8)
+    temperature = getattr(args, 'temperature', None) or cfg_dict.get('generation', {}).get('temperature', 0.7)
+    max_new_tokens = getattr(args, 'max_new_tokens', None) or cfg_dict.get('generation', {}).get('max_new_tokens', 1024)
+    min_samples = getattr(args, 'min_samples', None) or cfg_dict.get('raft', {}).get('min_samples')
+    
     # Resolve model path - handles SFT output directories automatically
     # This allows: --model models/code_sft (where adapters are in models/code_sft/final_model)
     model_arg = args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B')
@@ -507,7 +597,11 @@ def cmd_raft_train(args):
         reward_shaping_strategy=reward_shaping,
         system_prompt=system_prompt,
         lr_decay_per_cycle=lr_decay,
-        min_lr=min_lr
+        min_lr=min_lr,
+        samples_per_prompt=samples_per_prompt,
+        temperature=temperature,
+        max_new_tokens=max_new_tokens,
+        min_samples_per_cycle=min_samples
     )
     
     # Load prompts
@@ -1958,6 +2052,11 @@ def main():
         prog='halo-forge',
         description='Complete RLVR training framework for AMD Strix Halo'
     )
+    
+    # Global flags
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Suppress terminal output (logs still written to file)')
+    
     subparsers = parser.add_subparsers(dest='command', required=True)
     
     # config command
@@ -2050,6 +2149,14 @@ def main():
     raft_train_parser.add_argument('--system-prompt', 
                                    default='You are an expert Windows systems programmer.',
                                    help='System prompt for generation')
+    raft_train_parser.add_argument('--samples-per-prompt', type=int, default=8,
+                                   help='Samples to generate per prompt (default: 8)')
+    raft_train_parser.add_argument('--temperature', type=float, default=0.7,
+                                   help='Sampling temperature (default: 0.7)')
+    raft_train_parser.add_argument('--max-new-tokens', type=int, default=1024,
+                                   help='Maximum tokens to generate (default: 1024)')
+    raft_train_parser.add_argument('--min-samples', type=int,
+                                   help='Minimum samples per cycle (auto-adjusts threshold if needed)')
     raft_train_parser.add_argument('--host', help='MSVC verifier host')
     raft_train_parser.add_argument('--user', help='MSVC verifier user')
     raft_train_parser.add_argument('--ssh-key', help='MSVC verifier SSH key')
@@ -2148,6 +2255,12 @@ def main():
                                   help='Learning rate decay per cycle (default: 0.85)')
     vlm_train_parser.add_argument('--temperature', type=float, default=0.7,
                                   help='Generation temperature (default: 0.7)')
+    vlm_train_parser.add_argument('--max-new-tokens', type=int, default=512,
+                                  help='Maximum tokens to generate (default: 512)')
+    vlm_train_parser.add_argument('--keep-percent', type=float, default=0.5,
+                                  help='Keep top X%% of passing samples (default: 0.5)')
+    vlm_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
+                                  help='Minimum reward to consider passing (default: 0.5)')
     vlm_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     vlm_train_parser.add_argument('--dry-run', action='store_true',
                                   help='Validate config and datasets without running training')
@@ -2210,6 +2323,14 @@ def main():
                                     help='Initial learning rate (default: 5e-5)')
     audio_train_parser.add_argument('--lr-decay', type=float, default=0.85,
                                     help='Learning rate decay per cycle (default: 0.85)')
+    audio_train_parser.add_argument('--samples-per-prompt', type=int, default=4,
+                                    help='Samples per prompt (default: 4)')
+    audio_train_parser.add_argument('--temperature', type=float, default=0.7,
+                                    help='Generation temperature (default: 0.7)')
+    audio_train_parser.add_argument('--keep-percent', type=float, default=0.5,
+                                    help='Keep top X%% of passing samples (default: 0.5)')
+    audio_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
+                                    help='Minimum reward to consider passing (default: 0.5)')
     audio_train_parser.add_argument('--output', '-o', default='models/audio_raft',
                                     help='Output directory (default: models/audio_raft)')
     audio_train_parser.add_argument('--dry-run', action='store_true',
@@ -2257,6 +2378,12 @@ def main():
                                         help='Initial learning rate (default: 1e-5)')
     reasoning_train_parser.add_argument('--lr-decay', type=float, default=0.85,
                                         help='Learning rate decay per cycle (default: 0.85)')
+    reasoning_train_parser.add_argument('--samples-per-prompt', type=int, default=4,
+                                        help='Samples per prompt (default: 4)')
+    reasoning_train_parser.add_argument('--temperature', type=float, default=0.7,
+                                        help='Generation temperature (default: 0.7)')
+    reasoning_train_parser.add_argument('--keep-percent', type=float, default=0.5,
+                                        help='Keep top X%% of passing samples (default: 0.5)')
     reasoning_train_parser.add_argument('--output', '-o', default='models/reasoning_raft',
                                         help='Output directory (default: models/reasoning_raft)')
     reasoning_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
@@ -2303,6 +2430,12 @@ def main():
                                       help='Initial learning rate (default: 5e-5)')
     agentic_train_parser.add_argument('--lr-decay', type=float, default=0.85,
                                       help='Learning rate decay per cycle (default: 0.85)')
+    agentic_train_parser.add_argument('--samples-per-prompt', type=int, default=4,
+                                      help='Samples per prompt (default: 4)')
+    agentic_train_parser.add_argument('--temperature', type=float, default=0.7,
+                                      help='Generation temperature (default: 0.7)')
+    agentic_train_parser.add_argument('--keep-percent', type=float, default=0.5,
+                                      help='Keep top X%% of passing samples (default: 0.5)')
     agentic_train_parser.add_argument('--output', '-o', default='models/agentic_raft',
                                       help='Output directory (default: models/agentic_raft)')
     agentic_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
@@ -2798,6 +2931,43 @@ def cmd_agentic_train(args):
 
 def _dispatch_commands(args):
     """Dispatch to appropriate command handler."""
+    
+    # Commands that should have auto-logging enabled
+    logged_commands = {
+        ('raft', 'train'): 'raft_train',
+        ('sft', 'train'): 'sft_train',
+        ('vlm', 'train'): 'vlm_train',
+        ('audio', 'train'): 'audio_train',
+        ('reasoning', 'train'): 'reasoning_train',
+        ('agentic', 'train'): 'agentic_train',
+        ('benchmark', 'run'): 'benchmark_run',
+        ('benchmark', 'full'): 'benchmark_full',
+    }
+    
+    # Setup auto-logging for training/benchmark commands
+    quiet = getattr(args, 'quiet', False)
+    subcommand = None
+    if args.command == 'raft':
+        subcommand = getattr(args, 'raft_command', None)
+    elif args.command == 'sft':
+        subcommand = getattr(args, 'sft_command', None)
+    elif args.command == 'vlm':
+        subcommand = getattr(args, 'vlm_command', None)
+    elif args.command == 'audio':
+        subcommand = getattr(args, 'audio_command', None)
+    elif args.command == 'reasoning':
+        subcommand = getattr(args, 'reasoning_command', None)
+    elif args.command == 'agentic':
+        subcommand = getattr(args, 'agentic_command', None)
+    elif args.command == 'benchmark':
+        subcommand = getattr(args, 'bench_command', None)
+    
+    log_key = (args.command, subcommand) if subcommand else None
+    if log_key in logged_commands:
+        log_name = logged_commands[log_key]
+        log_path = setup_auto_logging(log_name, quiet=quiet)
+        if not quiet:
+            print(f"Logging to: {log_path}")
     
     # Route to handler
     if args.command == 'config':

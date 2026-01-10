@@ -1,0 +1,66 @@
+# =============================================================================
+# RAFT Training Configuration - Conservative Profile
+# =============================================================================
+# This profile keeps more samples per cycle, which is useful when:
+#   - Model performance is initially low (few samples pass threshold)
+#   - You want to avoid overfitting to a small subset of examples
+#   - Training data diversity is important
+#
+# Usage:
+#   halo-forge raft train --config configs/raft_conservative.yaml \
+#     --prompts data/rlvr/humaneval_prompts.jsonl \
+#     --verifier humaneval
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# RAFT Parameters (Conservative)
+# -----------------------------------------------------------------------------
+raft:
+  # Number of generate-verify-train cycles
+  num_cycles: 5
+  
+  # Number of samples to generate per prompt
+  samples_per_prompt: 8
+  
+  # Minimum reward threshold - standard threshold
+  reward_threshold: 0.5
+  
+  # Keep 80% of passing samples (vs 50% default)
+  # This ensures more training data per cycle
+  keep_top_percent: 0.8
+  
+  # Minimum samples per cycle - auto-adjust threshold if too few pass
+  min_samples: 200
+
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
+generation:
+  max_new_tokens: 1024
+  temperature: 0.7
+  batch_size: 8
+
+# -----------------------------------------------------------------------------
+# Training Settings
+# -----------------------------------------------------------------------------
+training:
+  epochs: 1
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  learning_rate: 5e-5
+  
+  # Slower LR decay - less aggressive changes per cycle
+  lr_decay_per_cycle: 0.9
+  min_lr: 1e-6
+  
+  # Strix Halo unified memory settings
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# -----------------------------------------------------------------------------
+# Hardware Settings
+# -----------------------------------------------------------------------------
+hardware:
+  bf16: true
+  gradient_checkpointing: true
+  attn_implementation: eager

@@ -1,0 +1,72 @@
+# =============================================================================
+# RAFT Training Configuration - Aggressive Profile
+# =============================================================================
+# This profile uses stricter filtering for higher quality training data.
+# Best when:
+#   - Base model already performs reasonably well
+#   - Quality > quantity for training samples
+#   - You want faster convergence to high performance
+#
+# Warning: May result in very few samples per cycle if model performance is low.
+# Consider using min_samples to prevent cycles with insufficient training data.
+#
+# Usage:
+#   halo-forge raft train --config configs/raft_aggressive.yaml \
+#     --prompts data/rlvr/humaneval_prompts.jsonl \
+#     --verifier humaneval
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# RAFT Parameters (Aggressive)
+# -----------------------------------------------------------------------------
+raft:
+  # Number of generate-verify-train cycles
+  num_cycles: 6
+  
+  # Generate more samples for better exploration
+  samples_per_prompt: 16
+  
+  # Higher reward threshold - only keep fully correct samples
+  reward_threshold: 0.7
+  
+  # Keep only top 30% of passing samples
+  # This selects the highest-quality examples
+  keep_top_percent: 0.3
+  
+  # Ensure at least 100 samples per cycle
+  min_samples: 100
+
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
+generation:
+  max_new_tokens: 1024
+  
+  # Higher temperature for more diverse exploration
+  temperature: 0.8
+  batch_size: 8
+
+# -----------------------------------------------------------------------------
+# Training Settings
+# -----------------------------------------------------------------------------
+training:
+  epochs: 1
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  learning_rate: 5e-5
+  
+  # Standard LR decay
+  lr_decay_per_cycle: 0.85
+  min_lr: 1e-6
+  
+  # Strix Halo unified memory settings
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# -----------------------------------------------------------------------------
+# Hardware Settings
+# -----------------------------------------------------------------------------
+hardware:
+  bf16: true
+  gradient_checkpointing: true
+  attn_implementation: eager

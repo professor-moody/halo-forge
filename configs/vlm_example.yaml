@@ -1,0 +1,86 @@
+# =============================================================================
+# VLM RAFT Training Configuration
+# =============================================================================
+# Configuration for Vision-Language Model RAFT training.
+# Optimized for AMD Strix Halo with 128GB unified memory.
+#
+# Supported datasets:
+#   - textvqa: Text reading in images
+#   - docvqa: Document understanding
+#   - chartqa: Chart interpretation
+#   - Custom JSONL with image paths
+#
+# Usage:
+#   halo-forge vlm train --config configs/vlm_example.yaml \
+#     --dataset textvqa \
+#     --model Qwen/Qwen2-VL-7B-Instruct
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  name: Qwen/Qwen2-VL-7B-Instruct
+  
+  # Adapter type (auto-detected from model name if not specified)
+  # Options: qwen_vl, llava, idefics, auto
+  adapter_type: auto
+
+# -----------------------------------------------------------------------------
+# RAFT Parameters
+# -----------------------------------------------------------------------------
+raft:
+  num_cycles: 6
+  samples_per_prompt: 4
+  reward_threshold: 0.5
+  keep_top_percent: 0.5
+
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
+generation:
+  # VLM outputs are typically shorter than code
+  max_new_tokens: 512
+  temperature: 0.7
+
+# -----------------------------------------------------------------------------
+# Verification Weights
+# -----------------------------------------------------------------------------
+# VLM verification combines three scores:
+#   - Perception: Did the model see the image correctly?
+#   - Reasoning: Did it reason about what it saw?
+#   - Output: Is the final answer correct?
+#
+# Weights should sum to 1.0
+verification:
+  perception_weight: 0.3
+  reasoning_weight: 0.4
+  output_weight: 0.3
+
+# -----------------------------------------------------------------------------
+# Training Settings
+# -----------------------------------------------------------------------------
+training:
+  learning_rate: 5e-5
+  lr_decay_per_cycle: 0.85
+  min_lr: 1e-6
+  
+  batch_size: 1  # VLMs with images need smaller batches
+  gradient_accumulation_steps: 32
+  
+  # Strix Halo settings
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output_dir: models/vlm_raft
+save_every_cycle: true
+
+# -----------------------------------------------------------------------------
+# Hardware Settings
+# -----------------------------------------------------------------------------
+hardware:
+  bf16: true
+  gradient_checkpointing: true

@@ -95,6 +95,10 @@ class RAFTConfig:
     reward_shaping_strategy: str = "fixed"
     reward_shaping_warmup_cycles: int = 1  # For warmup strategy
     
+    # Minimum samples per cycle: if too few samples pass threshold,
+    # automatically lower the threshold to ensure sufficient training data
+    min_samples_per_cycle: Optional[int] = None  # e.g., 200 to ensure 200+ samples
+    
     def get_temperature_for_cycle(self, cycle: int) -> float:
         """Get temperature for a specific cycle with optional scheduling."""
         if self.temperature_start is None or self.temperature_end is None:
@@ -501,11 +505,32 @@ class RAFTTrainer:
         all_data.sort(key=lambda x: x['reward'], reverse=True)
         
         # Filter by threshold
-        above_threshold = [d for d in all_data if d['reward'] >= cfg.reward_threshold]
+        effective_threshold = cfg.reward_threshold
+        above_threshold = [d for d in all_data if d['reward'] >= effective_threshold]
         
         # Keep top %
         keep_count = max(1, int(len(above_threshold) * cfg.keep_top_percent))
         filtered = above_threshold[:keep_count]
+        
+        # Auto-adjust threshold if min_samples_per_cycle is set and we have too few
+        threshold_adjusted = False
+        if cfg.min_samples_per_cycle and len(filtered) < cfg.min_samples_per_cycle:
+            self._log(f"Only {len(filtered)} samples kept, below minimum {cfg.min_samples_per_cycle}", "warning")
+            
+            # Progressively lower threshold to get more samples
+            # Take top N samples by reward regardless of threshold
+            if len(all_data) >= cfg.min_samples_per_cycle:
+                filtered = all_data[:cfg.min_samples_per_cycle]
+                # Find the new effective threshold (lowest reward in filtered set)
+                new_threshold = filtered[-1]['reward']
+                self._log(f"Auto-adjusted: taking top {cfg.min_samples_per_cycle} samples (lowest reward: {new_threshold:.2f})", "dim")
+                effective_threshold = new_threshold
+                above_threshold = filtered
+                threshold_adjusted = True
+            else:
+                # Not enough samples even with threshold=0, take all
+                filtered = all_data
+                self._log(f"Not enough samples, using all {len(all_data)}", "warning")
         
         # Statistics
         stats = {
@@ -520,13 +545,18 @@ class RAFTTrainer:
                 '0.5': sum(1 for d in all_data if 0.4 <= d['reward'] < 0.6),
                 '0.7': sum(1 for d in all_data if 0.6 <= d['reward'] < 0.9),
                 '1.0': sum(1 for d in all_data if d['reward'] >= 0.9)
-            }
+            },
+            'threshold_adjusted': threshold_adjusted,
+            'effective_threshold': effective_threshold
         }
         
         # Print filtering summary (plain text, works through pipes)
         print(f"\nFiltering results:")
         print(f"  Total: {stats['total_samples']}")
-        print(f"  Above threshold ({cfg.reward_threshold}): {stats['above_threshold']} ({stats['above_threshold']/stats['total_samples']*100:.1f}%)")
+        threshold_str = f"{cfg.reward_threshold}"
+        if threshold_adjusted:
+            threshold_str = f"{cfg.reward_threshold} → {effective_threshold:.2f} (auto-adjusted)"
+        print(f"  Above threshold ({threshold_str}): {stats['above_threshold']} ({stats['above_threshold']/stats['total_samples']*100:.1f}%)")
         print(f"  Kept: {stats['kept']} ({stats['kept']/stats['total_samples']*100:.1f}%)")
         print(f"  Avg reward: {stats['avg_reward']:.3f}")
         print(f"  Success rate: {stats['success_rate']*100:.1f}%")

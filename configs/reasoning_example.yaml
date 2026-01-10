@@ -1,0 +1,70 @@
+# =============================================================================
+# Reasoning RAFT Training Configuration
+# =============================================================================
+# Configuration for mathematical and logical reasoning RAFT training.
+# Uses symbolic verification to check answer correctness.
+#
+# Supported datasets:
+#   - gsm8k: Grade school math (8.5K problems)
+#   - math: Competition math (12.5K problems, harder)
+#   - aime: AIME problems (very hard)
+#
+# Usage:
+#   halo-forge reasoning train --config configs/reasoning_example.yaml \
+#     --dataset gsm8k \
+#     --model Qwen/Qwen2.5-7B-Instruct
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  name: Qwen/Qwen2.5-7B-Instruct
+
+# -----------------------------------------------------------------------------
+# RAFT Parameters
+# -----------------------------------------------------------------------------
+raft:
+  num_cycles: 4
+  samples_per_prompt: 4
+  reward_threshold: 0.5
+  keep_top_percent: 0.5
+
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
+generation:
+  # Reasoning chains can be long
+  max_new_tokens: 512
+  temperature: 0.7
+
+# -----------------------------------------------------------------------------
+# Verification Settings
+# -----------------------------------------------------------------------------
+verification:
+  # Numerical tolerance for answer comparison
+  # e.g., 3.14159 vs 3.1416 within tolerance=1e-4 is correct
+  tolerance: 1e-6
+  
+  # Award partial credit for showing work even if final answer is wrong
+  partial_credit: true
+
+# -----------------------------------------------------------------------------
+# Training Settings
+# -----------------------------------------------------------------------------
+training:
+  learning_rate: 1e-5  # Lower LR for reasoning tasks
+  lr_decay_per_cycle: 0.85
+  min_lr: 1e-7
+  
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  
+  # Strix Halo settings
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output_dir: models/reasoning_raft

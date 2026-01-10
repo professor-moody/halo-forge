@@ -1,0 +1,84 @@
+# =============================================================================
+# Audio RAFT Training Configuration
+# =============================================================================
+# Configuration for Audio-Language Model RAFT training.
+# Supports ASR (Automatic Speech Recognition), TTS, and classification tasks.
+#
+# Supported datasets:
+#   - librispeech: English speech recognition (clean subset)
+#   - common_voice: Multilingual speech recognition
+#   - Custom JSONL with audio file paths
+#
+# Usage:
+#   halo-forge audio train --config configs/audio_example.yaml \
+#     --dataset librispeech \
+#     --task asr
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  # Whisper models for ASR
+  name: openai/whisper-small
+  
+  # Adapter type (auto-detected if not specified)
+  # Options: whisper, seamless, auto
+  adapter_type: auto
+
+# -----------------------------------------------------------------------------
+# Task Configuration
+# -----------------------------------------------------------------------------
+# Options: asr (speech-to-text), tts (text-to-speech), classification
+task: asr
+
+# -----------------------------------------------------------------------------
+# Audio Processing
+# -----------------------------------------------------------------------------
+audio:
+  sample_rate: 16000
+  max_audio_length: 30.0  # seconds
+
+# -----------------------------------------------------------------------------
+# RAFT Parameters
+# -----------------------------------------------------------------------------
+raft:
+  num_cycles: 6
+  samples_per_prompt: 4
+  reward_threshold: 0.5
+  keep_top_percent: 0.5
+
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
+generation:
+  temperature: 0.7
+
+# -----------------------------------------------------------------------------
+# ASR Verification Settings
+# -----------------------------------------------------------------------------
+verification:
+  # Word Error Rate threshold (0.0 = perfect, 1.0 = all wrong)
+  # Samples with WER below this get reward=1.0
+  wer_threshold: 0.3
+
+# -----------------------------------------------------------------------------
+# Training Settings
+# -----------------------------------------------------------------------------
+training:
+  learning_rate: 5e-5
+  lr_decay_per_cycle: 0.85
+  min_lr: 1e-6
+  
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  
+  # Strix Halo settings
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output_dir: models/audio_raft
+save_every_cycle: true
