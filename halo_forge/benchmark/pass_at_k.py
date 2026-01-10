@@ -322,15 +322,18 @@ class Benchmark:
         
         # Flatten all completions for batch verification
         all_completions = []
+        all_prompts = []  # Track corresponding prompts for each completion
         indices = []  # Track which sample each completion belongs to
         
         for i, sample in enumerate(samples):
+            prompt = sample.get('prompt', '')
             for completion in sample['completions']:
                 all_completions.append(completion)
+                all_prompts.append(prompt)  # Repeat prompt for each completion
                 indices.append(i)
         
-        # Batch verify
-        results = self.verifier.verify_batch(all_completions)
+        # Batch verify - pass prompts for verifiers that need them (HumanEval, MBPP)
+        results = self.verifier.verify_batch(all_completions, all_prompts)
         
         # Organize results back to samples
         for sample in samples:
