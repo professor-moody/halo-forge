@@ -149,8 +149,17 @@ class Benchmark:
         
         print(f"Loading model from {self.model_path}")
         
-        # Check if it's a LoRA checkpoint
-        adapter_config_path = Path(self.model_path) / "adapter_config.json"
+        # Check if it's a LoRA checkpoint - check both root and final_model subdirectory
+        model_path = Path(self.model_path)
+        adapter_config_path = model_path / "adapter_config.json"
+        
+        # If adapter_config.json not in root, check final_model subdirectory
+        if not adapter_config_path.exists():
+            final_model_path = model_path / "final_model" / "adapter_config.json"
+            if final_model_path.exists():
+                adapter_config_path = final_model_path
+                model_path = model_path / "final_model"
+                print(f"Using final_model subdirectory: {model_path}")
         
         if adapter_config_path.exists():
             # LoRA checkpoint - read base_model from adapter config (authoritative source)
@@ -176,7 +185,7 @@ class Benchmark:
                 attn_implementation="eager",
                 trust_remote_code=True
             )
-            self.model = PeftModel.from_pretrained(base, self.model_path)
+            self.model = PeftModel.from_pretrained(base, str(model_path))
         else:
             # Full model - reload tokenizer from model_path (not base_model)
             print("Loading as full model...")

@@ -213,6 +213,15 @@ class RAFTTrainer:
         # Check if SFT checkpoint has PEFT adapters
         checkpoint_path = Path(cfg.sft_checkpoint)
         adapter_config_path = checkpoint_path / "adapter_config.json"
+        
+        # If adapter_config.json not in root, check final_model subdirectory
+        if not adapter_config_path.exists():
+            final_model_path = checkpoint_path / "final_model" / "adapter_config.json"
+            if final_model_path.exists():
+                adapter_config_path = final_model_path
+                checkpoint_path = checkpoint_path / "final_model"
+                self._log(f"Using final_model subdirectory: {checkpoint_path}", "dim")
+        
         has_peft = checkpoint_path.exists() and adapter_config_path.exists()
         
         # Determine base model - adapter config is authoritative if present
@@ -246,10 +255,10 @@ class RAFTTrainer:
         
         if has_peft:
             # Load existing PEFT adapters
-            self._log(f"Loading LoRA adapters from: {cfg.sft_checkpoint}", "dim")
+            self._log(f"Loading LoRA adapters from: {checkpoint_path}", "dim")
             self.model = PeftModel.from_pretrained(
                 self.base_model,
-                cfg.sft_checkpoint,
+                str(checkpoint_path),
                 is_trainable=True
             )
         else:
