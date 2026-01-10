@@ -2,13 +2,26 @@
 SFT Dataset Loaders
 
 Provides unified access to HuggingFace datasets for Supervised Fine-Tuning.
-Supports short names and auto-formatting to ChatML instruction format.
+Supports short names and uses tokenizer's native chat template for proper formatting.
+
+IMPORTANT: Always pass a tokenizer to load_sft_dataset() to ensure the correct
+BOS token and chat template are used. Different models have different formats:
+- LFM2.5: Requires <|startoftext|> prefix
+- Qwen: Uses ChatML without BOS
+- Llama: Uses different template entirely
+
+Without a tokenizer, we fall back to hardcoded ChatML which may not match the
+model's expected format, causing training/inference mismatches.
 """
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, TYPE_CHECKING
+from functools import partial
 from datasets import load_dataset, Dataset
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +142,13 @@ def format_to_chatml(
     output: str = "",
     system_prompt: str = "You are a helpful assistant."
 ) -> str:
-    """Format to ChatML format used by Qwen and other models."""
+    """
+    Format to ChatML format (FALLBACK - use format_with_tokenizer when possible).
+    
+    WARNING: This hardcodes ChatML tokens without BOS. Many models require
+    additional tokens (e.g., LFM2.5 needs <|startoftext|>). Use tokenizer's
+    apply_chat_template() for production training.
+    """
     text = f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
     
     if input_text:
@@ -142,34 +161,92 @@ def format_to_chatml(
     return text
 
 
-def format_alpaca(example: Dict[str, Any]) -> Dict[str, str]:
+def format_with_tokenizer(
+    tokenizer: "PreTrainedTokenizer",
+    messages: List[Dict[str, str]]
+) -> str:
+    """
+    Format messages using tokenizer's native chat template.
+    
+    This ensures correct BOS tokens, special tokens, and format for the
+    specific model being trained.
+    
+    Args:
+        tokenizer: The model's tokenizer with chat_template defined
+        messages: List of {"role": "...", "content": "..."} dicts
+        
+    Returns:
+        Properly formatted text string with all required tokens
+    """
+    return tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=False  # Include full conversation for training
+    )
+
+
+def format_alpaca(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format Alpaca-style datasets (instruction, input, output)."""
     instruction = example.get("instruction", "")
     input_text = example.get("input", "")
     output = example.get("output", "")
     
-    return {"text": format_to_chatml(instruction, input_text, output)}
+    # Build user content
+    if input_text:
+        user_content = f"{instruction}\n\n{input_text}"
+    else:
+        user_content = instruction
+    
+    if tokenizer is not None:
+        # Use tokenizer's native format (correct BOS, special tokens)
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": user_content},
+            {"role": "assistant", "content": output}
+        ]
+        return {"text": format_with_tokenizer(tokenizer, messages)}
+    else:
+        # Fallback to hardcoded ChatML (may lack BOS token)
+        return {"text": format_to_chatml(instruction, input_text, output)}
 
 
-def format_metamath(example: Dict[str, Any]) -> Dict[str, str]:
+def format_metamath(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format MetaMathQA dataset."""
     query = example.get("query", "")
     response = example.get("response", "")
     
     system = "You are a helpful math tutor. Solve problems step by step."
-    return {"text": format_to_chatml(query, "", response, system)}
+    
+    if tokenizer is not None:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": response}
+        ]
+        return {"text": format_with_tokenizer(tokenizer, messages)}
+    else:
+        return {"text": format_to_chatml(query, "", response, system)}
 
 
-def format_gsm8k(example: Dict[str, Any]) -> Dict[str, str]:
+def format_gsm8k(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format GSM8K dataset for SFT."""
     question = example.get("question", "")
     answer = example.get("answer", "")
     
     system = "You are a helpful math tutor. Solve problems step by step and put your final answer in \\boxed{}."
-    return {"text": format_to_chatml(question, "", answer, system)}
+    
+    if tokenizer is not None:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer}
+        ]
+        return {"text": format_with_tokenizer(tokenizer, messages)}
+    else:
+        return {"text": format_to_chatml(question, "", answer, system)}
 
 
-def format_llava(example: Dict[str, Any]) -> Dict[str, str]:
+def format_llava(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format LLaVA instruction dataset."""
     # LLaVA has conversations format
     conversations = example.get("conversations", [])
@@ -177,24 +254,35 @@ def format_llava(example: Dict[str, Any]) -> Dict[str, str]:
     if not conversations:
         return {"text": ""}
     
-    text = "<|im_start|>system\nYou are a helpful vision-language assistant.<|im_end|>\n"
+    # Build messages list
+    messages = [{"role": "system", "content": "You are a helpful vision-language assistant."}]
     
     for conv in conversations:
         role = "user" if conv.get("from") == "human" else "assistant"
         content = conv.get("value", "")
-        text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        messages.append({"role": role, "content": content})
     
-    return {"text": text.strip()}
+    if tokenizer is not None:
+        return {"text": format_with_tokenizer(tokenizer, messages)}
+    else:
+        # Fallback to hardcoded ChatML
+        text = "<|im_start|>system\nYou are a helpful vision-language assistant.<|im_end|>\n"
+        for conv in conversations:
+            role = "user" if conv.get("from") == "human" else "assistant"
+            content = conv.get("value", "")
+            text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        return {"text": text.strip()}
 
 
-def format_asr(example: Dict[str, Any]) -> Dict[str, str]:
+def format_asr(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format ASR dataset for Whisper-style training."""
     # Audio datasets have different structure - return transcript
+    # No chat formatting needed for ASR
     text = example.get("text", example.get("sentence", ""))
     return {"text": text}
 
 
-def format_xlam(example: Dict[str, Any]) -> Dict[str, str]:
+def format_xlam(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format xLAM function calling dataset."""
     query = example.get("query", "")
     tools = example.get("tools", "")
@@ -205,18 +293,33 @@ def format_xlam(example: Dict[str, Any]) -> Dict[str, str]:
 
 Use tools by responding with <tool_call>{{"name": "tool_name", "arguments": {{}}}}</tool_call>"""
     
-    return {"text": format_to_chatml(query, "", str(answer), system)}
+    if tokenizer is not None:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": str(answer)}
+        ]
+        return {"text": format_with_tokenizer(tokenizer, messages)}
+    else:
+        return {"text": format_to_chatml(query, "", str(answer), system)}
 
 
-def format_glaive(example: Dict[str, Any]) -> Dict[str, str]:
+def format_glaive(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
     """Format Glaive function calling dataset."""
-    # Glaive uses system/user/assistant format
+    # Glaive uses system/user/assistant format already embedded in chat
     system = example.get("system", "You are a helpful assistant.")
     chat = example.get("chat", "")
     
-    # Parse the chat format
-    text = f"<|im_start|>system\n{system}<|im_end|>\n{chat}"
-    return {"text": text}
+    # For Glaive, the chat field already has the conversation
+    # We can't easily parse it back to messages, so we construct manually
+    if tokenizer is not None:
+        # Try to use tokenizer's BOS token at minimum
+        bos = getattr(tokenizer, 'bos_token', '') or ''
+        text = f"{bos}<|im_start|>system\n{system}<|im_end|>\n{chat}"
+        return {"text": text}
+    else:
+        text = f"<|im_start|>system\n{system}<|im_end|>\n{chat}"
+        return {"text": text}
 
 
 # Formatter registry
@@ -253,7 +356,8 @@ def load_sft_dataset(
     name_or_id: str,
     max_samples: Optional[int] = None,
     split: Optional[str] = None,
-    streaming: bool = False
+    streaming: bool = False,
+    tokenizer: Optional["PreTrainedTokenizer"] = None
 ) -> Dataset:
     """
     Load an SFT dataset by short name or HuggingFace ID.
@@ -263,10 +367,19 @@ def load_sft_dataset(
         max_samples: Maximum number of samples to load
         split: Dataset split to use (overrides default)
         streaming: Whether to use streaming mode
+        tokenizer: Model tokenizer for proper chat template formatting.
+                   IMPORTANT: Pass this to ensure correct BOS tokens and format!
         
     Returns:
         HuggingFace Dataset with 'text' column formatted for SFT
     """
+    if tokenizer is None:
+        logger.warning(
+            "No tokenizer provided to load_sft_dataset(). "
+            "Using fallback ChatML format which may lack proper BOS tokens. "
+            "For production training, pass the model's tokenizer."
+        )
+    
     spec = get_sft_dataset_spec(name_or_id)
     
     if spec:
@@ -296,10 +409,13 @@ def load_sft_dataset(
             formatter = FORMATTERS[spec.formatter]
             logger.info(f"Applying formatter: {spec.formatter}")
             
+            # Create partial function with tokenizer bound
+            formatter_with_tok = partial(formatter, tokenizer=tokenizer)
+            
             if streaming:
-                ds = ds.map(formatter)
+                ds = ds.map(formatter_with_tok)
             else:
-                ds = ds.map(formatter, remove_columns=ds.column_names)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
         
     elif is_huggingface_id(name_or_id):
         # Direct HuggingFace ID
@@ -318,13 +434,16 @@ def load_sft_dataset(
             sample = ds[0]
             if "instruction" in sample and "output" in sample:
                 logger.info("Detected Alpaca format, applying formatter")
-                ds = ds.map(format_alpaca, remove_columns=ds.column_names)
+                formatter_with_tok = partial(format_alpaca, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
             elif "query" in sample and "response" in sample:
                 logger.info("Detected MetaMath format, applying formatter")
-                ds = ds.map(format_metamath, remove_columns=ds.column_names)
+                formatter_with_tok = partial(format_metamath, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
             elif "question" in sample and "answer" in sample:
                 logger.info("Detected QA format, applying formatter")
-                ds = ds.map(format_gsm8k, remove_columns=ds.column_names)
+                formatter_with_tok = partial(format_gsm8k, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
     else:
         raise ValueError(
             f"Unknown dataset: {name_or_id}\n"

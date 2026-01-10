@@ -209,10 +209,12 @@ class SFTTrainer:
             else:
                 print(f"Loading HuggingFace dataset: {dataset_name}")
             
+            # Pass tokenizer for proper chat template formatting
             dataset = load_sft_dataset(
                 dataset_name,
                 max_samples=self.config.max_samples,
-                split="train"
+                split="train",
+                tokenizer=self.tokenizer  # Ensures correct BOS tokens
             )
             
             print(f"Loaded {len(dataset)} examples")
@@ -265,15 +267,19 @@ class SFTTrainer:
         cfg = self.config
         
         # Tokenizer
-        print("Loading tokenizer...")
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            cfg.model_name,
-            trust_remote_code=cfg.trust_remote_code
-        )
-        
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        # Load tokenizer if not already loaded (may be loaded early for dataset formatting)
+        if self.tokenizer is None:
+            print("Loading tokenizer...")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                cfg.model_name,
+                trust_remote_code=cfg.trust_remote_code
+            )
+            
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        else:
+            print("Tokenizer already loaded (used for dataset formatting)")
         
         print(f"Tokenizer loaded: {len(self.tokenizer)} tokens")
         print()
@@ -385,6 +391,21 @@ class SFTTrainer:
             return_tensors=None
         )
     
+    def _load_tokenizer(self):
+        """Load tokenizer early for dataset formatting."""
+        if self.tokenizer is not None:
+            return  # Already loaded
+            
+        cfg = self.config
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            cfg.model_name,
+            trust_remote_code=cfg.trust_remote_code
+        )
+        
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+    
     def train(
         self,
         train_file: Optional[str] = None,
@@ -409,13 +430,19 @@ class SFTTrainer:
         # Environment check
         self.check_environment()
         
+        # Load tokenizer early for proper dataset formatting
+        # This ensures correct BOS tokens and chat template are used
+        self._load_tokenizer()
+        print(f"Tokenizer loaded for dataset formatting: {cfg.model_name}")
+        
         # Load data (dataset takes precedence over file)
+        # Pass tokenizer so formatters use correct chat template
         train_dataset, val_dataset = self.load_dataset(
             file_path=train_file,
             dataset_name=dataset
         )
         
-        # Setup model
+        # Setup model (tokenizer already loaded, will be reused)
         self.setup_model()
         
         # Tokenize
