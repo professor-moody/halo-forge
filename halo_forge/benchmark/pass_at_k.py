@@ -149,24 +149,28 @@ class Benchmark:
         
         print(f"Loading model from {self.model_path}")
         
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.base_model,
-            trust_remote_code=True,
-            padding_side='left'
-        )
-        
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        
         # Check if it's a LoRA checkpoint
-        adapter_config = Path(self.model_path) / "adapter_config.json"
+        adapter_config_path = Path(self.model_path) / "adapter_config.json"
         
-        if adapter_config.exists():
-            # LoRA checkpoint - use base_model for tokenizer (already loaded above)
-            print("Loading as LoRA checkpoint...")
+        if adapter_config_path.exists():
+            # LoRA checkpoint - read base_model from adapter config (authoritative source)
+            with open(adapter_config_path) as f:
+                adapter_config = json.load(f)
+            base_model = adapter_config.get("base_model_name_or_path", self.base_model)
+            print(f"Loading as LoRA checkpoint (base: {base_model})...")
+            
+            # Load tokenizer from base model
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                base_model,
+                trust_remote_code=True,
+                padding_side='left'
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            # Load base model and apply adapter
             base = AutoModelForCausalLM.from_pretrained(
-                self.base_model,
+                base_model,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 attn_implementation="eager",
@@ -265,6 +269,9 @@ class Benchmark:
                 max_length=2048
             ).to(self.model.device)
             
+            # Track input length to strip from output
+            input_len = inputs['input_ids'].shape[1]
+            
             # Generate
             with torch.no_grad():
                 outputs = self.model.generate(
@@ -276,11 +283,13 @@ class Benchmark:
                     pad_token_id=self.tokenizer.pad_token_id
                 )
             
-            # Decode
-            all_outputs = self.tokenizer.batch_decode(
-                outputs,
-                skip_special_tokens=True
-            )
+            # Decode ONLY the new tokens (strip input prompt)
+            # This prevents the full chat template from polluting completions
+            all_outputs = []
+            for output in outputs:
+                new_tokens = output[input_len:]
+                completion = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+                all_outputs.append(completion)
             
             # Organize by prompt
             for j, item in enumerate(formatted):

@@ -210,8 +210,23 @@ class RAFTTrainer:
         
         self._log("Loading model...", "step")
         
+        # Check if SFT checkpoint has PEFT adapters
+        checkpoint_path = Path(cfg.sft_checkpoint)
+        adapter_config_path = checkpoint_path / "adapter_config.json"
+        has_peft = checkpoint_path.exists() and adapter_config_path.exists()
+        
+        # Determine base model - adapter config is authoritative if present
+        base_model_name = cfg.base_model
+        if has_peft:
+            with open(adapter_config_path) as f:
+                adapter_config = json.load(f)
+            adapter_base = adapter_config.get("base_model_name_or_path")
+            if adapter_base and adapter_base != base_model_name:
+                self._log(f"Using base model from adapter config: {adapter_base}", "dim")
+                base_model_name = adapter_base
+        
         self.tokenizer = AutoTokenizer.from_pretrained(
-            cfg.base_model,
+            base_model_name,
             trust_remote_code=True,
             padding_side='left'
         )
@@ -220,19 +235,14 @@ class RAFTTrainer:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
         # Load base model
-        self._log(f"Loading base model: {cfg.base_model}", "dim")
+        self._log(f"Loading base model: {base_model_name}", "dim")
         self.base_model = AutoModelForCausalLM.from_pretrained(
-            cfg.base_model,
+            base_model_name,
             torch_dtype=torch.bfloat16,
             device_map="auto",
             attn_implementation="eager",
             trust_remote_code=True
         )
-        
-        # Check if SFT checkpoint has PEFT adapters
-        checkpoint_path = Path(cfg.sft_checkpoint)
-        has_peft = (checkpoint_path.exists() and 
-                    (checkpoint_path / "adapter_config.json").exists())
         
         if has_peft:
             # Load existing PEFT adapters
@@ -361,6 +371,9 @@ class RAFTTrainer:
                     max_length=2048
                 ).to(self.model.device)
                 
+                # Track input length to strip from output
+                input_len = inputs['input_ids'].shape[1]
+                
                 # Generate
                 with torch.no_grad():
                     outputs = self.model.generate(
@@ -372,11 +385,13 @@ class RAFTTrainer:
                         pad_token_id=self.tokenizer.pad_token_id
                     )
                 
-                # Decode
-                completions = self.tokenizer.batch_decode(
-                    outputs,
-                    skip_special_tokens=True
-                )
+                # Decode ONLY the new tokens (strip input prompt)
+                # This prevents the full chat template from polluting completions
+                completions = []
+                for output in outputs:
+                    new_tokens = output[input_len:]
+                    completion = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+                    completions.append(completion)
                 
                 # Pair prompts with completions and stream to disk
                 batch_samples = []
