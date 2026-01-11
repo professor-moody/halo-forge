@@ -260,6 +260,13 @@ output_dir: "models/raft_aggressive"
         self.is_modified = True
         self.validation_error = None
     
+    # Expected top-level keys for halo-forge configs
+    VALID_TOP_LEVEL_KEYS = {
+        'model', 'training', 'raft', 'sft', 'lora', 'output', 'verifier',
+        'prompts', 'output_dir', 'dataset', 'data', 'benchmark', 'vlm',
+        'audio', 'agentic', 'hardware', 'logging', 'checkpoint', 'name',
+    }
+    
     def _validate(self):
         """Validate the current YAML content."""
         # Get current content from editor widget
@@ -272,15 +279,47 @@ output_dir: "models/raft_aggressive"
         
         try:
             parsed = yaml.safe_load(content)
-            if parsed is None:
-                self.validation_error = "Empty or whitespace-only configuration"
-                ui.notify('Empty configuration', type='warning', timeout=1500)
-                return
-            self.validation_error = None
-            ui.notify('Valid YAML ✓', type='positive', timeout=1500)
         except yaml.YAMLError as e:
-            self.validation_error = str(e)
-            ui.notify('Invalid YAML', type='negative')
+            self.validation_error = f"YAML syntax error: {e}"
+            ui.notify('Invalid YAML syntax', type='negative')
+            return
+        
+        # Check if it parsed to something useful
+        if parsed is None:
+            self.validation_error = "Empty or whitespace-only configuration"
+            ui.notify('Empty configuration', type='warning', timeout=1500)
+            return
+        
+        # Must be a dictionary at the top level
+        if not isinstance(parsed, dict):
+            self.validation_error = f"Config must be a YAML mapping (got {type(parsed).__name__})"
+            ui.notify('Invalid config structure', type='negative')
+            return
+        
+        # Check for at least one recognized key
+        found_keys = set(parsed.keys())
+        recognized = found_keys & self.VALID_TOP_LEVEL_KEYS
+        
+        if not recognized:
+            self.validation_error = (
+                f"No recognized config keys found. Expected one of: "
+                f"{', '.join(sorted(self.VALID_TOP_LEVEL_KEYS)[:5])}..."
+            )
+            ui.notify('No valid config keys found', type='negative')
+            return
+        
+        # Check for common issues
+        warnings = []
+        if 'model' in parsed:
+            model_cfg = parsed['model']
+            if isinstance(model_cfg, dict) and 'name' not in model_cfg:
+                warnings.append("'model' section missing 'name' field")
+        
+        self.validation_error = None
+        if warnings:
+            ui.notify(f'Valid with warnings: {warnings[0]}', type='warning', timeout=3000)
+        else:
+            ui.notify(f'Valid YAML ✓ ({len(recognized)} config keys)', type='positive', timeout=1500)
     
     def _save_config(self):
         """Save the current config."""
