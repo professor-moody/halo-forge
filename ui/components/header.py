@@ -13,6 +13,9 @@ class Header:
     """Top header bar component."""
     
     def __init__(self):
+        # Initialize bindable attributes BEFORE rendering
+        self._gpu_util = None
+        self._gpu_mem = None
         self.render()
     
     def render(self):
@@ -79,8 +82,6 @@ class Header:
             ).bind_text_from(
                 self, '_gpu_util', backward=lambda x: f'{x}%' if x else '--'
             )
-        
-        self._gpu_util = None
     
     async def _refresh(self):
         """Refresh page data."""
