@@ -113,4 +113,5 @@ def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
         favicon="🔥",
         dark=True,
         binding_refresh_interval=0.1,
+        storage_secret='halo-forge-storage-secret',  # Required for app.storage.user
     )
