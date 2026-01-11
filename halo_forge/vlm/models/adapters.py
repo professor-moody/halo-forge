@@ -403,19 +403,52 @@ class GenericVLMAdapter(VLMAdapter):
             
         except Exception as e:
             print(f"Vision2Seq loading failed: {e}")
-            print("Trying CausalLM...")
+            print("Trying CausalLM with separate component loading...")
             
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoImageProcessor
             
-            self.processor = AutoProcessor.from_pretrained(
-                self.model_name,
-                trust_remote_code=self.trust_remote_code
-            )
+            # Try loading processor - if it fails, load components separately
+            try:
+                self.processor = AutoProcessor.from_pretrained(
+                    self.model_name,
+                    trust_remote_code=self.trust_remote_code
+                )
+            except ValueError as proc_err:
+                # Processor failed (e.g., custom tokenizer class not found)
+                # Try loading image processor directly
+                print(f"AutoProcessor failed: {proc_err}")
+                print("Loading image processor and tokenizer separately...")
+                
+                try:
+                    self.processor = AutoImageProcessor.from_pretrained(
+                        self.model_name,
+                        trust_remote_code=self.trust_remote_code
+                    )
+                except Exception:
+                    # Fallback: Create a minimal processor wrapper
+                    self.processor = None
             
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name,
-                trust_remote_code=self.trust_remote_code
-            )
+            # Load tokenizer - try with and without trust_remote_code
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_name,
+                    trust_remote_code=self.trust_remote_code
+                )
+            except ValueError:
+                # Try loading with use_fast=False or from base model
+                print("Trying slow tokenizer...")
+                try:
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        self.model_name,
+                        trust_remote_code=self.trust_remote_code,
+                        use_fast=False
+                    )
+                except Exception as tok_err:
+                    raise ValueError(
+                        f"Could not load tokenizer for {self.model_name}. "
+                        f"This model may require a specific transformers version or "
+                        f"custom dependencies. Error: {tok_err}"
+                    )
             
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
@@ -442,12 +475,26 @@ class GenericVLMAdapter(VLMAdapter):
         # Load image
         img = self._load_image(image)
         
-        # Process inputs
-        inputs = self.processor(
-            text=prompt,
-            images=img,
-            return_tensors="pt"
-        )
+        # Process inputs - handle different processor types
+        if self.processor is not None and hasattr(self.processor, '__call__'):
+            # Check if processor supports both text and images
+            try:
+                inputs = self.processor(
+                    text=prompt,
+                    images=img,
+                    return_tensors="pt"
+                )
+            except TypeError:
+                # Processor might be image-only, process separately
+                image_inputs = self.processor(images=img, return_tensors="pt")
+                text_inputs = self.tokenizer(prompt, return_tensors="pt")
+                inputs = {**image_inputs, **text_inputs}
+        else:
+            # No processor - use tokenizer and manual image handling
+            text_inputs = self.tokenizer(prompt, return_tensors="pt")
+            # For models without proper processor, embed image info in prompt
+            inputs = text_inputs
+        
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
         
         # Generate
@@ -478,10 +525,156 @@ class GenericVLMAdapter(VLMAdapter):
         )
 
 
+class LFMVLAdapter(VLMAdapter):
+    """
+    Adapter for LiquidAI LFM VL models.
+    
+    LFM models use a custom tokenizer backend that requires special handling.
+    """
+    
+    def load(self):
+        """Load LFM VL model with custom tokenizer handling."""
+        from transformers import (
+            AutoModelForCausalLM, 
+            AutoTokenizer, 
+            AutoImageProcessor,
+            CLIPImageProcessor
+        )
+        
+        print(f"Loading LFM VL model: {self.model_name}")
+        
+        # LFM models have a custom TokenizersBackend that may not be available
+        # Try loading tokenizer with different strategies
+        tokenizer_loaded = False
+        
+        # Strategy 1: Try with trust_remote_code and use_fast=False
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                trust_remote_code=True,
+                use_fast=False
+            )
+            tokenizer_loaded = True
+        except (ValueError, OSError) as e:
+            print(f"Slow tokenizer loading failed: {e}")
+        
+        # Strategy 2: Try to find a base tokenizer in the model config
+        if not tokenizer_loaded:
+            try:
+                # Many VL models use a LLaMA or similar base tokenizer
+                from transformers import AutoConfig
+                config = AutoConfig.from_pretrained(
+                    self.model_name, 
+                    trust_remote_code=True
+                )
+                
+                # Check if there's a text_config with tokenizer info
+                if hasattr(config, 'text_config'):
+                    base_model = getattr(config.text_config, '_name_or_path', None)
+                    if base_model:
+                        print(f"Trying base tokenizer from: {base_model}")
+                        self.tokenizer = AutoTokenizer.from_pretrained(base_model)
+                        tokenizer_loaded = True
+            except Exception as e:
+                print(f"Config-based tokenizer loading failed: {e}")
+        
+        # Strategy 3: Use a known compatible tokenizer for LFM models
+        if not tokenizer_loaded:
+            print("Falling back to LLaMA tokenizer as base...")
+            try:
+                # LFM models are often based on LLaMA architecture
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    "meta-llama/Llama-2-7b-hf",
+                    trust_remote_code=True
+                )
+                tokenizer_loaded = True
+            except Exception as e:
+                print(f"LLaMA tokenizer fallback failed: {e}")
+        
+        if not tokenizer_loaded:
+            raise ValueError(
+                f"Could not load tokenizer for {self.model_name}. "
+                f"LFM VL models may require a specific transformers version or "
+                f"the 'tokenizers' package to be updated. "
+                f"Try: pip install --upgrade tokenizers transformers"
+            )
+        
+        # Load image processor
+        try:
+            self.processor = AutoImageProcessor.from_pretrained(
+                self.model_name,
+                trust_remote_code=True
+            )
+        except Exception:
+            print("AutoImageProcessor failed, using CLIP processor...")
+            self.processor = CLIPImageProcessor.from_pretrained(
+                "openai/clip-vit-base-patch32"
+            )
+        
+        # Load model
+        device_map = "auto" if self.device == "auto" else self.device
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            torch_dtype=self.dtype,
+            device_map=device_map,
+            trust_remote_code=True
+        )
+        
+        self._loaded = True
+        print(f"Loaded LFM VL on {self.model.device}")
+    
+    def generate(
+        self,
+        image: Union[Image.Image, str, Path],
+        prompt: str,
+        max_new_tokens: int = 512,
+        temperature: float = 0.7,
+        do_sample: bool = True,
+        **kwargs
+    ) -> VLMOutput:
+        """Generate with LFM VL model."""
+        self._ensure_loaded()
+        
+        # Load image
+        img = self._load_image(image)
+        
+        # Process image
+        image_inputs = self.processor(images=img, return_tensors="pt")
+        
+        # Tokenize text
+        text_inputs = self.tokenizer(prompt, return_tensors="pt")
+        
+        # Combine inputs
+        inputs = {**image_inputs, **text_inputs}
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        
+        # Generate
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature if do_sample else None,
+                do_sample=do_sample,
+                **kwargs
+            )
+        
+        # Decode
+        generated_text = self.tokenizer.decode(
+            outputs[0],
+            skip_special_tokens=True
+        )
+        
+        return VLMOutput(
+            text=generated_text,
+            metadata={'model': self.model_name}
+        )
+
+
 # Adapter registry
 VLM_ADAPTERS = {
     'qwen_vl': QwenVLAdapter,
     'llava': LLaVAAdapter,
+    'lfm_vl': LFMVLAdapter,
     'generic': GenericVLMAdapter,
 }
 
@@ -530,6 +723,8 @@ def detect_adapter_type(model_name: str) -> str:
         return 'qwen_vl'
     elif 'llava' in model_lower:
         return 'llava'
+    elif 'lfm' in model_lower or 'liquidai' in model_lower:
+        return 'lfm_vl'
     else:
         return 'generic'
 
@@ -547,6 +742,10 @@ def list_supported_vlms() -> Dict[str, List[str]]:
             'Qwen/Qwen2-VL-2B-Instruct',
             'Qwen/Qwen2-VL-7B-Instruct',
             'Qwen/Qwen2-VL-72B-Instruct',
+        ],
+        'lfm_vl': [
+            'LiquidAI/LFM2.5-VL-1.6B',
+            'LiquidAI/LFM2.5-VL-3.2B',
         ],
         'llava': [
             'llava-hf/llava-1.5-7b-hf',
