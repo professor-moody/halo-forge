@@ -262,8 +262,20 @@ output_dir: "models/raft_aggressive"
     
     def _validate(self):
         """Validate the current YAML content."""
+        # Get current content from editor widget
+        content = self.editor.value if hasattr(self, 'editor') else self.editor_content
+        
+        if not content or not content.strip():
+            self.validation_error = "Empty configuration"
+            ui.notify('Empty configuration', type='warning', timeout=1500)
+            return
+        
         try:
-            yaml.safe_load(self.editor_content)
+            parsed = yaml.safe_load(content)
+            if parsed is None:
+                self.validation_error = "Empty or whitespace-only configuration"
+                ui.notify('Empty configuration', type='warning', timeout=1500)
+                return
             self.validation_error = None
             ui.notify('Valid YAML ✓', type='positive', timeout=1500)
         except yaml.YAMLError as e:
@@ -272,20 +284,27 @@ output_dir: "models/raft_aggressive"
     
     def _save_config(self):
         """Save the current config."""
-        if not self.editor_content.strip():
+        # Get current content from editor widget
+        content = self.editor.value if hasattr(self, 'editor') else self.editor_content
+        self.editor_content = content  # Sync
+        
+        if not content or not content.strip():
             ui.notify('Nothing to save', type='warning')
             return
         
         # Validate first
         try:
-            yaml.safe_load(self.editor_content)
+            parsed = yaml.safe_load(content)
+            if parsed is None:
+                ui.notify('Empty configuration', type='warning')
+                return
         except yaml.YAMLError as e:
             self.validation_error = str(e)
             ui.notify('Fix YAML errors before saving', type='negative')
             return
         
         if self.current_file:
-            self.current_file.write_text(self.editor_content)
+            self.current_file.write_text(content)
             self.is_modified = False
             ui.notify(f'Saved {self.current_file.name}', type='positive')
         else:
