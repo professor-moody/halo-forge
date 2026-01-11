@@ -10,13 +10,17 @@ from nicegui import ui
 from ui.theme import COLORS
 from ui.state import state
 from ui.services.hardware import get_gpu_summary
+from ui.services import get_results_service, get_hardware_monitor
 
 
 class Dashboard:
     """Dashboard page component."""
     
     def __init__(self):
-        pass
+        self._gpu_value_label = None
+        self._gpu_subtitle_label = None
+        self.results_service = get_results_service()
+        self.hardware_monitor = get_hardware_monitor()
     
     def render(self):
         """Render the dashboard page."""
@@ -47,7 +51,8 @@ class Dashboard:
                     gpu.get('name', 'AMD GPU')[:20],
                     COLORS["info"],
                     "memory",
-                    1
+                    1,
+                    is_gpu=True
                 )
                 self._render_stat_card(
                     "Active Jobs",
@@ -73,6 +78,9 @@ class Dashboard:
                     "error",
                     4
                 )
+            
+            # Set up live GPU updates
+            self._setup_gpu_polling()
             
             # Visualization charts grid
             with ui.element('div').classes('grid-panels w-full'):
@@ -159,7 +167,8 @@ class Dashboard:
         subtitle: str,
         color: str,
         icon: str,
-        stagger: int
+        stagger: int,
+        is_gpu: bool = False
     ):
         """Render a statistics card."""
         with ui.column().classes(
@@ -171,18 +180,23 @@ class Dashboard:
                     ui.label(title).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
-                    ui.label(value).classes(
+                    value_label = ui.label(value).classes(
                         f'text-3xl font-bold text-[{COLORS["text_primary"]}] font-mono'
                     )
+                    # Store reference for GPU card updates
+                    if is_gpu:
+                        self._gpu_value_label = value_label
                 
                 with ui.element('div').classes(
                     f'w-10 h-10 rounded-lg flex items-center justify-center bg-[{color}]/10'
                 ):
                     ui.icon(icon, size='20px').classes(f'text-[{color}]')
             
-            ui.label(subtitle).classes(
+            subtitle_label = ui.label(subtitle).classes(
                 f'text-xs text-[{COLORS["text_secondary"]}]'
             )
+            if is_gpu:
+                self._gpu_subtitle_label = subtitle_label
     
     def _render_active_jobs(self):
         """Render the active jobs list."""
@@ -488,3 +502,24 @@ class Dashboard:
     async def _refresh_jobs(self):
         """Refresh jobs data."""
         ui.notify('Refreshing...', type='info', timeout=1000)
+    
+    def _setup_gpu_polling(self):
+        """Set up periodic GPU stats polling."""
+        async def update_gpu():
+            gpu = get_gpu_summary()
+            if self._gpu_value_label:
+                self._gpu_value_label.set_text(gpu.get('util', '--'))
+            if self._gpu_subtitle_label:
+                name = gpu.get('name', 'AMD GPU')[:20]
+                temp = gpu.get('temp', '')
+                subtitle = f"{name} • {temp}" if temp and temp != '--' else name
+                self._gpu_subtitle_label.set_text(subtitle)
+        
+        ui.timer(3.0, update_gpu)
+    
+    def _get_recent_benchmark_results(self):
+        """Get recent benchmark results from the results service."""
+        try:
+            return self.results_service.get_latest_results(5)
+        except Exception:
+            return []

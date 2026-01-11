@@ -51,6 +51,22 @@ llm-backends = [
     "anthropic>=0.18.0",
     "openai>=1.0.0",
 ]
+vlm-benchmark = [
+    "vlmeval>=0.2.0",
+]
+vlm = [
+    "qwen-vl-utils",
+    "ultralytics",
+    "easyocr",
+]
+audio = [
+    "openai-whisper",
+    "librosa",
+    "soundfile",
+]
+all = [
+    "halo-forge[dev,llm-backends,vlm-benchmark,vlm,audio]",
+]
 
 [project.scripts]
 halo-forge = "halo_forge.cli:main"

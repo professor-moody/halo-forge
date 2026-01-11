@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from ui.theme import COLORS
 from ui.state import state
+from ui.services import TrainingService
 
 
 @dataclass
@@ -86,6 +87,7 @@ class Training:
         self.raft_data = RAFTFormData()
         self.selected_preset = "conservative"
         self.is_running = False
+        self.training_service = TrainingService(state)
     
     def render(self):
         """Render the training page."""
@@ -385,70 +387,63 @@ class Training:
     
     async def _launch_sft(self):
         """Launch SFT training."""
+        if self.is_running:
+            return
+        
         self.is_running = True
         ui.notify('Starting SFT training...', type='info')
         
-        # Create job in state
-        job = state.create_job(
-            job_type="sft",
-            name=f"SFT: {self.sft_data.dataset}",
-            output_dir=Path(self.sft_data.output_dir)
-        )
-        
-        # Build command
-        cmd_parts = [
-            "halo-forge", "sft", "train",
-            "--model", self.sft_data.model,
-            "--dataset", self.sft_data.dataset,
-            "--output", self.sft_data.output_dir,
-            "--epochs", str(self.sft_data.epochs),
-            "--batch-size", str(self.sft_data.batch_size),
-            "--learning-rate", str(self.sft_data.learning_rate),
-        ]
-        
-        if self.sft_data.use_lora:
-            cmd_parts.extend(["--lora-rank", str(self.sft_data.lora_rank)])
-        
-        cmd_str = " ".join(cmd_parts)
-        
-        ui.notify(f'Launching: {cmd_str[:60]}...', type='positive', timeout=3000)
-        
-        # Navigate to monitor
-        ui.navigate.to(f'/monitor/{job.id}')
-        
-        self.is_running = False
+        try:
+            # Launch actual training subprocess via TrainingService
+            job_id = await self.training_service.launch_sft(
+                model=self.sft_data.model,
+                dataset=self.sft_data.dataset,
+                output_dir=self.sft_data.output_dir,
+                epochs=self.sft_data.epochs,
+                batch_size=self.sft_data.batch_size,
+                learning_rate=self.sft_data.learning_rate,
+                use_lora=self.sft_data.use_lora,
+                lora_rank=self.sft_data.lora_rank,
+            )
+            
+            ui.notify(f'Training started! Job ID: {job_id}', type='positive')
+            
+            # Navigate to monitor
+            ui.navigate.to(f'/monitor/{job_id}')
+            
+        except Exception as e:
+            ui.notify(f'Failed to start training: {e}', type='negative')
+        finally:
+            self.is_running = False
     
     async def _launch_raft(self):
         """Launch RAFT training."""
+        if self.is_running:
+            return
+        
         self.is_running = True
         ui.notify('Starting RAFT training...', type='info')
         
-        # Create job in state
-        job = state.create_job(
-            job_type="raft",
-            name=f"RAFT: {self.raft_data.verifier}",
-            output_dir=Path(self.raft_data.output_dir)
-        )
-        job.total_cycles = self.raft_data.cycles
-        
-        # Build command
-        cmd_parts = [
-            "halo-forge", "raft", "train",
-            "--model", self.raft_data.model,
-            "--prompts", self.raft_data.prompts,
-            "--output", self.raft_data.output_dir,
-            "--cycles", str(self.raft_data.cycles),
-            "--samples-per-prompt", str(self.raft_data.samples_per_prompt),
-            "--temperature", str(self.raft_data.temperature),
-            "--keep-percent", str(self.raft_data.keep_percent),
-            "--reward-threshold", str(self.raft_data.reward_threshold),
-        ]
-        
-        cmd_str = " ".join(cmd_parts)
-        
-        ui.notify(f'Launching: {cmd_str[:60]}...', type='positive', timeout=3000)
-        
-        # Navigate to monitor
-        ui.navigate.to(f'/monitor/{job.id}')
-        
-        self.is_running = False
+        try:
+            # Launch actual training subprocess via TrainingService
+            job_id = await self.training_service.launch_raft(
+                model=self.raft_data.model,
+                prompts=self.raft_data.prompts,
+                output_dir=self.raft_data.output_dir,
+                verifier=self.raft_data.verifier,
+                cycles=self.raft_data.cycles,
+                samples_per_prompt=self.raft_data.samples_per_prompt,
+                temperature=self.raft_data.temperature,
+                keep_percent=self.raft_data.keep_percent,
+                reward_threshold=self.raft_data.reward_threshold,
+            )
+            
+            ui.notify(f'RAFT training started! Job ID: {job_id}', type='positive')
+            
+            # Navigate to monitor
+            ui.navigate.to(f'/monitor/{job_id}')
+            
+        except Exception as e:
+            ui.notify(f'Failed to start RAFT: {e}', type='negative')
+        finally:
+            self.is_running = False

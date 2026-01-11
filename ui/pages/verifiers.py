@@ -2,6 +2,7 @@
 Verifiers Page
 
 Test and manage verifiers for code/math validation.
+Uses the VerifierService for actual backend verification.
 """
 
 from nicegui import ui, app
@@ -12,6 +13,7 @@ import tempfile
 import os
 
 from ui.theme import COLORS
+from ui.services import get_verifier_service, VerifierService
 
 
 @dataclass
@@ -78,6 +80,9 @@ class Verifiers:
     ]
     
     def __init__(self):
+        # Get verifier service
+        self.verifier_service = get_verifier_service()
+        
         # Restore selected verifier from storage
         stored_name = app.storage.user.get('selected_verifier_name')
         self.selected_verifier: Optional[VerifierInfo] = next(
@@ -245,7 +250,7 @@ class Verifiers:
                              style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.test_result['output']}</pre>''')
     
     async def _run_test(self):
-        """Run the verification test."""
+        """Run the verification test using VerifierService."""
         if not self.selected_verifier:
             ui.notify('Select a verifier first', type='warning')
             return
@@ -253,19 +258,27 @@ class Verifiers:
         ui.notify('Running verification...', type='info')
         
         try:
-            # For Code verifiers, execute Python code
-            if self.selected_verifier.domain == "Code":
-                result = await self._run_python_verification()
-            else:
-                # For Math verifiers, do simple answer matching
-                result = await self._run_math_verification()
+            # Use VerifierService for actual verification
+            result = await self.verifier_service.verify(
+                verifier_name=self.selected_verifier.name,
+                prompt=self.selected_verifier.example_prompt,
+                solution=self.test_code,
+                # For math problems, pass expected answer
+                ground_truth=self._get_expected_answer() if self.selected_verifier.domain == "Math" else None,
+            )
             
-            self.test_result = result
+            self.test_result = {
+                'passed': result.passed,
+                'message': result.message,
+                'output': result.output or result.error or '',
+                'reward': result.reward,
+                'duration_ms': result.duration_ms,
+            }
             
-            if result['passed']:
-                ui.notify('Verification passed!', type='positive')
+            if result.passed:
+                ui.notify(f'Verification passed! (reward: {result.reward:.2f})', type='positive')
             else:
-                ui.notify('Verification failed', type='negative')
+                ui.notify(f'Verification failed: {result.message}', type='negative')
             
             # Refresh the test panel to show result
             if self.test_panel_container:
@@ -280,6 +293,14 @@ class Verifiers:
                 'output': '',
             }
             ui.notify(f'Verification error: {e}', type='negative')
+    
+    def _get_expected_answer(self) -> str:
+        """Get expected answer for math problems."""
+        expected = {
+            "Math": "12",
+            "GSM8K": "36",
+        }.get(self.selected_verifier.name, "")
+        return expected
     
     async def _run_python_verification(self) -> dict:
         """Run Python code verification."""

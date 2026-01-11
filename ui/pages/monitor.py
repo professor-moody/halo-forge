@@ -11,6 +11,7 @@ import asyncio
 
 from ui.theme import COLORS
 from ui.state import state, JobState
+from ui.services import TrainingService
 
 
 class Monitor:
@@ -21,6 +22,8 @@ class Monitor:
         self.job: Optional[JobState] = None
         self.update_timer = None
         self.log_lines: list[str] = []
+        self.training_service = TrainingService(state)
+        self._update_task: Optional[asyncio.Task] = None
         
         if job_id:
             self.job = state.get_job(job_id)
@@ -92,6 +95,10 @@ class Monitor:
                 f'border border-[#2d343c] animate-in stagger-4'
             ):
                 self._render_log_viewer()
+            
+            # Start live updates if job is running
+            if self.job and self.job.status == 'running':
+                self._start_live_updates()
     
     def _render_no_job(self):
         """Render when no job is selected."""
@@ -315,8 +322,91 @@ class Monitor:
     
     async def _refresh(self):
         """Refresh the monitor data."""
-        ui.notify('Refreshing...', type='info', timeout=1000)
-        # TODO: Reload job state and metrics
+        if self.job_id:
+            self.job = state.get_job(self.job_id)
+            self._update_metrics_display()
+            self._update_logs_display()
+        ui.notify('Refreshed', type='info', timeout=1000)
+    
+    def _start_live_updates(self):
+        """Start live updates for running job."""
+        async def update_loop():
+            while True:
+                try:
+                    # Check if job still exists and is running
+                    self.job = state.get_job(self.job_id)
+                    if not self.job or self.job.status != 'running':
+                        break
+                    
+                    # Update displays
+                    self._update_metrics_display()
+                    self._update_chart()
+                    self._update_logs_display()
+                    
+                    await asyncio.sleep(1)
+                    
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"Update error: {e}")
+                    await asyncio.sleep(5)
+        
+        # Use ui.timer for NiceGUI compatibility
+        ui.timer(1.0, self._live_update_tick)
+    
+    async def _live_update_tick(self):
+        """Single tick of live updates."""
+        if not self.job_id:
+            return
+        
+        self.job = state.get_job(self.job_id)
+        if not self.job or self.job.status != 'running':
+            return
+        
+        self._update_metrics_display()
+        self._update_chart()
+        self._update_logs_display()
+    
+    def _update_metrics_display(self):
+        """Update the metrics display labels."""
+        # This would update the UI elements if we stored references to them
+        pass
+    
+    def _update_chart(self):
+        """Update the loss chart with new data."""
+        if hasattr(self, 'chart') and self.chart:
+            loss_data = self._get_loss_data()
+            self.chart.options['series'][0]['data'] = loss_data
+            self.chart.update()
+    
+    def _update_logs_display(self):
+        """Update the logs display with new entries."""
+        if not hasattr(self, 'log_container') or not self.log_container:
+            return
+        
+        # Get logs from training service
+        logs = self.training_service.get_logs(self.job_id, last_n=50)
+        
+        if logs:
+            self.log_container.clear()
+            with self.log_container:
+                for log_entry in logs[-20:]:  # Show last 20
+                    line = log_entry.get('line', '')
+                    color = self._get_log_color(line)
+                    ui.label(line).classes(f'text-[{color}]')
+    
+    def _get_log_color(self, line: str) -> str:
+        """Determine log line color."""
+        line_lower = line.lower()
+        if 'error' in line_lower or 'failed' in line_lower:
+            return COLORS['error']
+        elif 'warning' in line_lower:
+            return COLORS['warning']
+        elif 'saved' in line_lower or 'checkpoint' in line_lower:
+            return COLORS['success']
+        elif 'loading' in line_lower or 'starting' in line_lower:
+            return COLORS['info']
+        return COLORS['text_secondary']
     
     async def _stop_job(self):
         """Stop the current job."""
@@ -335,7 +425,7 @@ class Monitor:
                 ui.button('Cancel', on_click=dialog.close).props('flat').classes(
                     f'text-[{COLORS["text_secondary"]}]'
                 )
-                ui.button('Stop', on_click=lambda: self._confirm_stop(dialog)).props(
+                ui.button('Stop', on_click=lambda: asyncio.create_task(self._confirm_stop(dialog))).props(
                     'unelevated'
                 ).classes(f'bg-[{COLORS["error"]}] text-white')
         
@@ -346,15 +436,27 @@ class Monitor:
         dialog.close()
         
         if self.job:
-            state.update_job_status(self.job.id, 'stopped')
-            ui.notify('Training stopped', type='warning')
+            ui.notify('Stopping training...', type='warning')
+            
+            # Actually stop the job via TrainingService
+            success = await self.training_service.stop_job(self.job.id)
+            
+            if success:
+                ui.notify('Training stopped', type='info')
+                self.job = state.get_job(self.job_id)  # Refresh job state
+            else:
+                ui.notify('Failed to stop training', type='negative')
     
     def _scroll_to_bottom(self):
         """Scroll log viewer to bottom."""
-        pass  # Would use JS interop
+        if hasattr(self, 'log_container') and self.log_container:
+            ui.run_javascript(f'document.querySelector("[data-log-container]").scrollTop = 999999')
     
     def _copy_logs(self):
         """Copy logs to clipboard."""
+        logs = self.training_service.get_logs(self.job_id, last_n=100)
+        log_text = '\n'.join([entry.get('line', '') for entry in logs])
+        ui.run_javascript(f'navigator.clipboard.writeText({repr(log_text)})')
         ui.notify('Logs copied to clipboard', type='positive', timeout=1500)
 
 
