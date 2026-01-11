@@ -93,3 +93,8 @@ toolbox/*.log
 
 # Large combined datasets (generated from strix-edr-training)
 datasets/combined_*.jsonl
+
+# Research/benchmark scripts (local only)
+scripts/continue_*.sh
+scripts/run_all_*.sh
+scripts/*_benchmark*.sh
