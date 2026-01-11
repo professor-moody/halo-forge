@@ -6,11 +6,12 @@ Main overview page with system status, active jobs, and recent runs.
 
 import json
 from pathlib import Path
+from typing import Callable, List
 from nicegui import ui
 from ui.theme import COLORS
 from ui.state import state
 from ui.services.hardware import get_gpu_summary
-from ui.services import get_results_service, get_hardware_monitor
+from ui.services import get_results_service, get_hardware_monitor, get_event_bus, Event, EventType
 
 
 class Dashboard:
@@ -19,6 +20,9 @@ class Dashboard:
     def __init__(self):
         self._gpu_value_label = None
         self._gpu_subtitle_label = None
+        self._active_jobs_container = None
+        self._active_jobs_count_label = None
+        self._unsubscribe_callbacks: List[Callable[[], None]] = []
         self.results_service = get_results_service()
         self.hardware_monitor = get_hardware_monitor()
     
@@ -60,7 +64,8 @@ class Dashboard:
                     "Running now",
                     COLORS["running"],
                     "play_circle",
-                    2
+                    2,
+                    is_active_jobs=True
                 )
                 self._render_stat_card(
                     "Completed",
@@ -168,7 +173,8 @@ class Dashboard:
         color: str,
         icon: str,
         stagger: int,
-        is_gpu: bool = False
+        is_gpu: bool = False,
+        is_active_jobs: bool = False
     ):
         """Render a statistics card."""
         with ui.column().classes(
@@ -186,6 +192,9 @@ class Dashboard:
                     # Store reference for GPU card updates
                     if is_gpu:
                         self._gpu_value_label = value_label
+                    # Store reference for Active Jobs count updates
+                    if is_active_jobs:
+                        self._active_jobs_count_label = value_label
                 
                 with ui.element('div').classes(
                     f'w-10 h-10 rounded-lg flex items-center justify-center bg-[{color}]/10'
@@ -199,7 +208,14 @@ class Dashboard:
                 self._gpu_subtitle_label = subtitle_label
     
     def _render_active_jobs(self):
-        """Render the active jobs list."""
+        """Render the active jobs list container."""
+        # Create a container we can update dynamically
+        self._active_jobs_container = ui.column().classes('w-full gap-2')
+        with self._active_jobs_container:
+            self._render_active_jobs_content()
+    
+    def _render_active_jobs_content(self):
+        """Render the actual active jobs content (can be re-rendered)."""
         active_jobs = state.get_active_jobs()
         
         if not active_jobs:
@@ -504,18 +520,62 @@ class Dashboard:
         ui.notify('Refreshing...', type='info', timeout=1000)
     
     def _setup_gpu_polling(self):
-        """Set up periodic GPU stats polling."""
-        async def update_gpu():
-            gpu = get_gpu_summary()
-            if self._gpu_value_label:
-                self._gpu_value_label.set_text(gpu.get('util', '--'))
-            if self._gpu_subtitle_label:
-                name = gpu.get('name', 'AMD GPU')[:20]
-                temp = gpu.get('temp', '')
-                subtitle = f"{name} • {temp}" if temp and temp != '--' else name
-                self._gpu_subtitle_label.set_text(subtitle)
+        """Set up GPU stats updates via event subscription."""
+        bus = get_event_bus()
         
-        ui.timer(3.0, update_gpu)
+        # Subscribe to GPU updates
+        unsub_gpu = bus.subscribe(EventType.GPU_UPDATE, self._on_gpu_update)
+        self._unsubscribe_callbacks.append(unsub_gpu)
+        
+        # Subscribe to job state changes
+        unsub_created = bus.subscribe(EventType.JOB_CREATED, self._on_job_change)
+        self._unsubscribe_callbacks.append(unsub_created)
+        
+        unsub_completed = bus.subscribe(EventType.JOB_COMPLETED, self._on_job_change)
+        self._unsubscribe_callbacks.append(unsub_completed)
+        
+        unsub_failed = bus.subscribe(EventType.JOB_FAILED, self._on_job_change)
+        self._unsubscribe_callbacks.append(unsub_failed)
+        
+        unsub_stopped = bus.subscribe(EventType.JOB_STOPPED, self._on_job_change)
+        self._unsubscribe_callbacks.append(unsub_stopped)
+        
+        # Also start hardware monitor if not running
+        import asyncio
+        if not self.hardware_monitor.is_running:
+            asyncio.create_task(self.hardware_monitor.start())
+    
+    def _on_gpu_update(self, event: Event):
+        """Handle GPU update event."""
+        stats = event.data.get('stats')
+        if not stats:
+            return
+        
+        util = stats.get('utilization_percent')
+        if self._gpu_value_label and util is not None:
+            self._gpu_value_label.set_text(f"{util:.0f}%")
+        
+        if self._gpu_subtitle_label:
+            name = (stats.get('name') or 'AMD GPU')[:20]
+            temp = stats.get('temperature_c')
+            if temp is not None:
+                subtitle = f"{name} • {temp:.0f}°C"
+            else:
+                subtitle = name
+            self._gpu_subtitle_label.set_text(subtitle)
+    
+    def _on_job_change(self, event: Event):
+        """Handle job state change event."""
+        # Update active jobs count
+        active_jobs = state.get_active_jobs()
+        if self._active_jobs_count_label:
+            self._active_jobs_count_label.set_text(str(len(active_jobs)))
+        
+        # Re-render active jobs panel
+        if self._active_jobs_container:
+            self._active_jobs_container.clear()
+            with self._active_jobs_container:
+                self._render_active_jobs_content()
     
     def _get_recent_benchmark_results(self):
         """Get recent benchmark results from the results service."""

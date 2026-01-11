@@ -15,6 +15,7 @@ from typing import Optional, Callable, Any
 from collections import deque
 
 from .metrics_parser import MetricsParser, ParsedMetrics
+from .event_bus import get_event_bus, Event, EventType
 
 # Import notification helpers (only used when UI is running)
 try:
@@ -137,6 +138,13 @@ class TrainingService:
         )
         job.total_epochs = epochs
         
+        # Emit job created event
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data={'name': job.name, 'type': 'sft'}
+        ))
+        
         # Build command
         cmd = [
             "python", "-m", "halo_forge.cli", "sft", "train",
@@ -202,6 +210,13 @@ class TrainingService:
         )
         job.total_cycles = cycles
         
+        # Emit job created event
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data={'name': job.name, 'type': 'raft'}
+        ))
+        
         # Build command
         cmd = [
             "python", "-m", "halo_forge.cli", "raft", "train",
@@ -262,6 +277,13 @@ class TrainingService:
         job.started_at = datetime.now()
         self.state.update_job_status(job_id, "running")
         
+        # Emit job started event
+        await get_event_bus().emit(Event(
+            type=EventType.JOB_STARTED,
+            job_id=job_id,
+            data={'name': job.name, 'type': job.type}
+        ))
+        
         # Start log streaming task
         asyncio.create_task(self._stream_logs(job_id))
     
@@ -274,6 +296,7 @@ class TrainingService:
         parser = self._parsers.get(job_id)
         log_buffer = self._log_buffers.get(job_id, deque(maxlen=1000))
         callbacks = self._callbacks.get(job_id, [])
+        event_bus = get_event_bus()
         
         try:
             async for line_bytes in job.process.stdout:
@@ -281,13 +304,22 @@ class TrainingService:
                 if not line:
                     continue
                 
+                timestamp = datetime.now().isoformat()
+                
                 # Store log line
                 log_buffer.append({
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': timestamp,
                     'line': line,
                 })
                 
-                # Call callbacks
+                # Emit log line event
+                await event_bus.emit(Event(
+                    type=EventType.LOG_LINE,
+                    job_id=job_id,
+                    data={'line': line, 'timestamp': timestamp}
+                ))
+                
+                # Call legacy callbacks
                 for callback in callbacks:
                     try:
                         callback(line)
@@ -299,15 +331,39 @@ class TrainingService:
                     metrics = parser.parse_line(line)
                     if metrics:
                         self._update_job_metrics(job_id, metrics)
+                        
+                        # Emit metrics update event
+                        await event_bus.emit(Event(
+                            type=EventType.METRICS_UPDATE,
+                            job_id=job_id,
+                            data={
+                                'loss': metrics.loss,
+                                'learning_rate': metrics.learning_rate,
+                                'epoch': metrics.epoch,
+                                'step': metrics.step,
+                                'total_steps': metrics.total_steps,
+                                'cycle': metrics.cycle,
+                                'total_cycles': metrics.total_cycles,
+                                'compile_rate': metrics.compile_rate,
+                                'grad_norm': metrics.grad_norm,
+                            }
+                        ))
                 
                 # Detect checkpoint saves and notify
                 line_lower = line.lower()
                 if ('checkpoint' in line_lower and 'saved' in line_lower) or \
                    ('saving' in line_lower and 'checkpoint' in line_lower):
+                    checkpoint_path = str(job.output_dir) if job.output_dir else "checkpoint"
+                    
+                    # Emit checkpoint event
+                    await event_bus.emit(Event(
+                        type=EventType.CHECKPOINT_SAVED,
+                        job_id=job_id,
+                        data={'path': checkpoint_path}
+                    ))
+                    
                     if HAS_UI_NOTIFICATIONS:
-                        # Extract checkpoint path if available, else use output dir
-                        checkpoint_path = job.output_dir if job.output_dir else "checkpoint"
-                        notify_checkpoint_saved(str(checkpoint_path))
+                        notify_checkpoint_saved(checkpoint_path)
         
         except Exception as e:
             job.error_message = str(e)
@@ -317,11 +373,26 @@ class TrainingService:
         
         if return_code == 0:
             self.state.update_job_status(job_id, "completed")
+            await event_bus.emit(Event(
+                type=EventType.JOB_COMPLETED,
+                job_id=job_id,
+                data={'return_code': return_code}
+            ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
             self.state.update_job_status(job_id, "stopped")
+            await event_bus.emit(Event(
+                type=EventType.JOB_STOPPED,
+                job_id=job_id,
+                data={'return_code': return_code}
+            ))
         else:
             self.state.update_job_status(job_id, "failed")
             job.error_message = f"Process exited with code {return_code}"
+            await event_bus.emit(Event(
+                type=EventType.JOB_FAILED,
+                job_id=job_id,
+                data={'return_code': return_code, 'error': job.error_message}
+            ))
     
     def _update_job_metrics(self, job_id: str, metrics: ParsedMetrics):
         """Update job state with parsed metrics."""

@@ -113,6 +113,14 @@ from .hardware_monitor import (
     get_gpu_stats_sync,
 )
 
+# Event bus for real-time updates
+from .event_bus import (
+    EventBus,
+    Event,
+    EventType,
+    get_event_bus,
+)
+
 
 # Convenience functions for common operations
 
@@ -179,4 +187,10 @@ __all__ = [
     
     # Metrics
     'MetricsParser',
+    
+    # Event bus
+    'EventBus',
+    'Event',
+    'EventType',
+    'get_event_bus',
 ]

@@ -6,12 +6,12 @@ Real-time job monitoring with loss charts and log viewer.
 
 from nicegui import ui
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable, List
 import asyncio
 
 from ui.theme import COLORS
 from ui.state import state, JobState
-from ui.services import TrainingService
+from ui.services import TrainingService, get_event_bus, Event, EventType
 from ui.components.notifications import (
     notify_training_stopped,
     notify_job_completed,
@@ -29,6 +29,7 @@ class Monitor:
         self.log_lines: list[str] = []
         self.training_service = TrainingService(state)
         self._update_task: Optional[asyncio.Task] = None
+        self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
         if job_id:
             self.job = state.get_job(job_id)
@@ -334,56 +335,102 @@ class Monitor:
         ui.notify('Refreshed', type='info', timeout=1000)
     
     def _start_live_updates(self):
-        """Start live updates for running job."""
-        async def update_loop():
-            while True:
-                try:
-                    # Check if job still exists and is running
-                    self.job = state.get_job(self.job_id)
-                    if not self.job or self.job.status != 'running':
-                        break
-                    
-                    # Update displays
-                    self._update_metrics_display()
-                    self._update_chart()
-                    self._update_logs_display()
-                    
-                    await asyncio.sleep(1)
-                    
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    print(f"Update error: {e}")
-                    await asyncio.sleep(5)
-        
-        # Use ui.timer for NiceGUI compatibility
-        ui.timer(1.0, self._live_update_tick)
-    
-    async def _live_update_tick(self):
-        """Single tick of live updates."""
+        """Start live updates for running job using event subscriptions."""
         if not self.job_id:
             return
         
-        previous_status = self.job.status if self.job else None
+        bus = get_event_bus()
+        
+        # Subscribe to metrics updates
+        unsub_metrics = bus.subscribe(EventType.METRICS_UPDATE, self._on_metrics_event)
+        self._unsubscribe_callbacks.append(unsub_metrics)
+        
+        # Subscribe to log lines
+        unsub_logs = bus.subscribe(EventType.LOG_LINE, self._on_log_event)
+        self._unsubscribe_callbacks.append(unsub_logs)
+        
+        # Subscribe to job completion
+        unsub_completed = bus.subscribe(EventType.JOB_COMPLETED, self._on_job_completed)
+        self._unsubscribe_callbacks.append(unsub_completed)
+        
+        # Subscribe to job failed
+        unsub_failed = bus.subscribe(EventType.JOB_FAILED, self._on_job_failed)
+        self._unsubscribe_callbacks.append(unsub_failed)
+        
+        # Subscribe to job stopped
+        unsub_stopped = bus.subscribe(EventType.JOB_STOPPED, self._on_job_stopped)
+        self._unsubscribe_callbacks.append(unsub_stopped)
+        
+        # Subscribe to checkpoint saves
+        unsub_checkpoint = bus.subscribe(EventType.CHECKPOINT_SAVED, self._on_checkpoint)
+        self._unsubscribe_callbacks.append(unsub_checkpoint)
+    
+    def _on_metrics_event(self, event: Event):
+        """Handle metrics update event."""
+        if event.job_id != self.job_id:
+            return
+        
+        # Update job state
         self.job = state.get_job(self.job_id)
         
-        if not self.job:
-            return
-        
-        # Check for status transition and notify
-        if previous_status == 'running' and self.job.status != 'running':
-            if self.job.status == 'completed':
-                notify_job_completed(self.job.name)
-            elif self.job.status == 'failed':
-                notify_job_failed(self.job.name, self.job.error_message or "Unknown error")
-            return
-        
-        if self.job.status != 'running':
-            return
-        
+        # Update UI
         self._update_metrics_display()
         self._update_chart()
-        self._update_logs_display()
+    
+    def _on_log_event(self, event: Event):
+        """Handle new log line event."""
+        if event.job_id != self.job_id:
+            return
+        
+        line = event.data.get('line', '')
+        if line:
+            self.log_lines.append(line)
+            self._update_logs_display()
+    
+    def _on_job_completed(self, event: Event):
+        """Handle job completion event."""
+        if event.job_id != self.job_id:
+            return
+        
+        self.job = state.get_job(self.job_id)
+        notify_job_completed(self.job.name if self.job else "Job")
+        self._cleanup_subscriptions()
+    
+    def _on_job_failed(self, event: Event):
+        """Handle job failed event."""
+        if event.job_id != self.job_id:
+            return
+        
+        self.job = state.get_job(self.job_id)
+        error_msg = event.data.get('error', 'Unknown error')
+        notify_job_failed(self.job.name if self.job else "Job", error_msg)
+        self._cleanup_subscriptions()
+    
+    def _on_job_stopped(self, event: Event):
+        """Handle job stopped event."""
+        if event.job_id != self.job_id:
+            return
+        
+        self.job = state.get_job(self.job_id)
+        notify_training_stopped(self.job.name if self.job else "Job")
+        self._cleanup_subscriptions()
+    
+    def _on_checkpoint(self, event: Event):
+        """Handle checkpoint saved event."""
+        if event.job_id != self.job_id:
+            return
+        
+        # Checkpoint notification is already handled by TrainingService
+        pass
+    
+    def _cleanup_subscriptions(self):
+        """Unsubscribe from all events."""
+        for unsub in self._unsubscribe_callbacks:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubscribe_callbacks.clear()
     
     def _update_metrics_display(self):
         """Update the metrics display labels."""
@@ -402,14 +449,18 @@ class Monitor:
         if not hasattr(self, 'log_container') or not self.log_container:
             return
         
-        # Get logs from training service
-        logs = self.training_service.get_logs(self.job_id, last_n=50)
+        # Use event-driven log lines if available, otherwise fetch from service
+        if self.log_lines:
+            lines_to_display = self.log_lines[-30:]  # Show last 30
+        else:
+            # Fallback: Get logs from training service (e.g., if page loaded after job started)
+            logs = self.training_service.get_logs(self.job_id, last_n=50)
+            lines_to_display = [entry.get('line', '') for entry in logs[-30:]]
         
-        if logs:
+        if lines_to_display:
             self.log_container.clear()
             with self.log_container:
-                for log_entry in logs[-20:]:  # Show last 20
-                    line = log_entry.get('line', '')
+                for line in lines_to_display:
                     color = self._get_log_color(line)
                     ui.label(line).classes(f'text-[{color}]')
     

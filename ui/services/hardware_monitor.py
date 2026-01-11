@@ -10,6 +10,7 @@ from typing import Optional, Callable, List, Any
 from dataclasses import dataclass
 
 from .hardware import GPUStats, get_gpu_stats, get_gpu_summary
+from .event_bus import get_event_bus, Event, EventType
 
 
 @dataclass
@@ -92,13 +93,29 @@ class HardwareMonitor:
     
     async def _monitor_loop(self):
         """Main monitoring loop."""
+        event_bus = get_event_bus()
+        
         while self._running:
             try:
                 # Get GPU stats
                 stats = get_gpu_stats()
                 self._latest_stats = stats
                 
-                # Notify callbacks
+                # Emit GPU update event
+                await event_bus.emit(Event(
+                    type=EventType.GPU_UPDATE,
+                    data={
+                        'stats': {
+                            'name': stats.name if stats else None,
+                            'utilization_percent': stats.utilization_percent if stats else None,
+                            'memory_used_gb': stats.memory_used_gb if stats else None,
+                            'memory_total_gb': stats.memory_total_gb if stats else None,
+                            'temperature_c': stats.temperature_c if stats else None,
+                        } if stats else None
+                    }
+                ))
+                
+                # Notify legacy callbacks
                 if stats:
                     for callback in self._callbacks:
                         try:
