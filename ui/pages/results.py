@@ -65,6 +65,19 @@ class Results:
                 with open(json_file) as f:
                     data = json.load(f)
                 
+                # FIX: Handle list format - take first item
+                if isinstance(data, list):
+                    if not data:
+                        continue  # Empty list, skip
+                    if isinstance(data[0], dict):
+                        data = data[0]  # Use first result
+                    else:
+                        continue  # Not a dict list, skip
+                
+                # Now data should be a dict
+                if not isinstance(data, dict):
+                    continue
+                
                 # Extract benchmark info from file path and content
                 parts = json_file.relative_to(self.RESULTS_DIR).parts
                 
