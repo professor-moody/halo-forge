@@ -52,7 +52,7 @@ class Sidebar:
             # Footer
             with ui.column().classes('w-full px-4 py-4 border-t border-[#2d343c] gap-2'):
                 # Version info
-                ui.label('v0.1.0').classes(
+                ui.label('v1.0.0').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
                 
@@ -66,14 +66,28 @@ class Sidebar:
                     )
     
     def _render_nav_item(self, item: dict):
-        """Render a single navigation item."""
+        """Render a single navigation item with active state."""
+        # Detect current route
+        try:
+            current_path = ui.context.client.page.path
+        except Exception:
+            current_path = "/"
+        
+        # Check if this nav item is active
+        if item['path'] == '/':
+            is_active = current_path == '/'
+        else:
+            is_active = current_path.startswith(item['path'])
+        
+        # Active styling
+        icon_color = COLORS["primary"] if is_active else COLORS["text_secondary"]
+        text_color = COLORS["primary"] if is_active else COLORS["text_secondary"]
+        bg_class = f'bg-[{COLORS["primary"]}]/10' if is_active else ''
+        border_class = f'border-l-2 border-[{COLORS["primary"]}]' if is_active else 'border-l-2 border-transparent'
+        
         with ui.link(target=item['path']).classes('no-underline w-full'):
             with ui.row().classes(
-                'nav-item w-full items-center gap-3 px-4 py-3 cursor-pointer rounded-r-lg'
+                f'nav-item w-full items-center gap-3 px-4 py-3 cursor-pointer rounded-r-lg {bg_class} {border_class}'
             ):
-                ui.icon(item['icon'], size='20px').classes(
-                    f'text-[{COLORS["text_secondary"]}]'
-                )
-                ui.label(item['label']).classes(
-                    f'text-sm font-medium text-[{COLORS["text_secondary"]}]'
-                )
+                ui.icon(item['icon'], size='20px').classes(f'text-[{icon_color}]')
+                ui.label(item['label']).classes(f'text-sm font-medium text-[{text_color}]')

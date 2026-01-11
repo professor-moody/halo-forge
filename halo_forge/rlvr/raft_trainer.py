@@ -16,6 +16,8 @@ import torch
 import time
 import json
 import gc
+import signal
+import sys
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Type
 from dataclasses import dataclass, field
@@ -115,24 +117,6 @@ class RAFTConfig:
         """
         Get learning rate for a specific cycle with exponential decay.
         
-        Prevents training degradation at later cycles (7-8) by reducing
-        learning rate as training progresses.
-        
-        Formula: lr_n = lr_0 * decay^(n-1)
-        
-        Args:
-            cycle: Current cycle number (1-indexed)
-            
-        Returns:
-            Learning rate for this cycle, floored at min_lr
-        """
-        lr = self.learning_rate * (self.lr_decay_per_cycle ** (cycle - 1))
-        return max(lr, self.min_lr)
-    
-    def get_learning_rate_for_cycle(self, cycle: int) -> float:
-        """
-        Get learning rate for a specific cycle with exponential decay.
-        
         Prevents training degradation at cycles 7-8 by reducing LR over time.
         Formula: lr_n = lr_0 * decay^(n-1)
         
@@ -189,6 +173,10 @@ class RAFTTrainer:
         # UI helpers
         self.use_rich = HAS_RICH
         
+        # Graceful shutdown handling
+        self._shutdown_requested = False
+        self._setup_signal_handlers()
+        
         # Load model and tokenizer
         self._load_model()
         
@@ -207,6 +195,61 @@ class RAFTTrainer:
         }
         prefix = prefixes.get(level, "")
         print(f"{prefix} {msg}", flush=True)
+    
+    def _setup_signal_handlers(self):
+        """Setup graceful shutdown on SIGINT/SIGTERM."""
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+    
+    def _handle_shutdown(self, signum, frame):
+        """Handle shutdown signal - finish current step, save checkpoint."""
+        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+        self._log(f"Received {sig_name}, finishing current step...", "warning")
+        self._shutdown_requested = True
+    
+    def _check_shutdown(self) -> bool:
+        """
+        Check if shutdown was requested and save state if so.
+        
+        Call this at the end of each training step/cycle to enable
+        graceful shutdown without checkpoint corruption.
+        
+        Returns:
+            True if shutdown requested (caller should exit), False otherwise
+        """
+        if self._shutdown_requested:
+            self._log("Saving checkpoint before exit...", "warning")
+            self._save_checkpoint("shutdown_checkpoint")
+            self._log("Checkpoint saved. Exiting gracefully.", "success")
+            return True
+        return False
+    
+    def _save_checkpoint(self, name: str):
+        """
+        Save current model state as a checkpoint.
+        
+        Args:
+            name: Checkpoint name (will be saved to output_dir/name)
+        """
+        checkpoint_path = self.output_dir / name
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save model
+        self.model.save_pretrained(str(checkpoint_path))
+        self.tokenizer.save_pretrained(str(checkpoint_path))
+        
+        # Save training state
+        state = {
+            "cycle_stats": self.cycle_stats,
+            "config": {
+                "base_model": self.config.base_model,
+                "num_cycles": self.config.num_cycles,
+                "reward_threshold": self.config.reward_threshold,
+            }
+        }
+        state_path = checkpoint_path / "trainer_state.json"
+        with open(state_path, "w") as f:
+            json.dump(state, f, indent=2)
     
     def _load_model(self):
         """Load base model and optionally SFT adapters."""
@@ -912,6 +955,11 @@ class RAFTTrainer:
             
             if stats is None:
                 self._log(f"Cycle {cycle} failed. Stopping.", "error")
+                break
+            
+            # Check for graceful shutdown request
+            if self._check_shutdown():
+                self._log(f"Training interrupted after cycle {cycle}.", "warning")
                 break
             
             # Update curriculum with performance

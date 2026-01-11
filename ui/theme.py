@@ -190,6 +190,28 @@ CSS_ANIMATIONS = """
 .tooltip-hover:hover::after {
     opacity: 1;
 }
+
+/* Grid utilities for consistent layouts */
+.grid-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.grid-panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+/* Equal height cards */
+.equal-height {
+    display: flex;
+    flex-direction: column;
+}
+.equal-height > * {
+    flex: 1;
+}
 """
 
 # =============================================================================

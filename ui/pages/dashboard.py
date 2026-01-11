@@ -36,9 +36,9 @@ class Dashboard:
                     f'btn-hover bg-[{COLORS["primary"]}] text-white'
                 )
             
-            # Stats cards row
+            # Stats cards grid
             gpu = get_gpu_summary()
-            with ui.row().classes('w-full gap-4 flex-wrap'):
+            with ui.element('div').classes('grid-stats w-full'):
                 self._render_stat_card(
                     "GPU Status",
                     gpu.get('util', '--'),
@@ -73,10 +73,10 @@ class Dashboard:
                 )
             
             # Main content grid
-            with ui.row().classes('w-full gap-6 flex-wrap'):
+            with ui.element('div').classes('grid-panels w-full'):
                 # Active Jobs panel
                 with ui.column().classes(
-                    f'flex-1 min-w-[300px] gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+                    f'gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
                     f'border border-[#2d343c] animate-in stagger-5 card-hover'
                 ):
                     with ui.row().classes('w-full items-center justify-between'):
@@ -91,7 +91,7 @@ class Dashboard:
                 
                 # Recent Runs panel
                 with ui.column().classes(
-                    f'flex-1 min-w-[300px] gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+                    f'gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
                     f'border border-[#2d343c] animate-in stagger-6 card-hover'
                 ):
                     with ui.row().classes('w-full items-center justify-between'):
@@ -131,7 +131,7 @@ class Dashboard:
     ):
         """Render a statistics card."""
         with ui.column().classes(
-            f'flex-1 min-w-[180px] gap-3 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+            f'gap-3 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-{stagger} card-hover'
         ):
             with ui.row().classes('w-full items-start justify-between'):

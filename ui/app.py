@@ -25,7 +25,7 @@ def create_layout(page_title: str = "Dashboard"):
     # Left drawer (sidebar)
     with ui.left_drawer(value=True, fixed=True).classes(
         f'bg-[{COLORS["bg_secondary"]}] w-56 p-0 border-r border-[#2d343c]'
-    ).props('behavior=desktop overlay bordered'):
+    ).props('behavior=desktop bordered'):
         Sidebar()
     
     return header
