@@ -4,7 +4,7 @@ Results Page
 View and compare benchmark results.
 """
 
-from nicegui import ui
+from nicegui import ui, app
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -36,18 +36,88 @@ class Results:
     
     def __init__(self):
         self.results: list[BenchmarkResult] = []
-        self.selected_ids: set[str] = set()
-        self.sort_by: str = "timestamp"
-        self.sort_desc: bool = True
+        # Restore selection from storage
+        stored_ids = app.storage.user.get('results_selected_ids', [])
+        self.selected_ids: set[str] = set(stored_ids)
+        self.sort_by: str = app.storage.user.get('results_sort_by', 'timestamp')
+        self.sort_desc: bool = app.storage.user.get('results_sort_desc', True)
         
         self._load_results()
     
     def _load_results(self):
         """Load results from the results directory."""
-        # Demo results for UI development
+        self.results = []
+        
+        # Load from results directory
+        if self.RESULTS_DIR.exists():
+            self._scan_results_directory()
+        
+        # If no real results, show demo data
+        if not self.results:
+            self._load_demo_results()
+    
+    def _scan_results_directory(self):
+        """Scan results directory for benchmark JSON files."""
+        result_id = 0
+        
+        for json_file in self.RESULTS_DIR.glob('**/*.json'):
+            try:
+                with open(json_file) as f:
+                    data = json.load(f)
+                
+                # Extract benchmark info from file path and content
+                parts = json_file.relative_to(self.RESULTS_DIR).parts
+                
+                # Try to get model and benchmark from various formats
+                model = data.get('model') or data.get('model_name') or (parts[1] if len(parts) > 1 else 'Unknown')
+                benchmark = data.get('benchmark') or data.get('dataset') or json_file.stem
+                
+                # Extract scores - handle different formats
+                pass_at_1 = data.get('pass@1') or data.get('pass_at_1') or data.get('accuracy') or data.get('score') or 0.0
+                if pass_at_1 > 1:  # Convert percentage to decimal
+                    pass_at_1 = pass_at_1 / 100
+                
+                pass_at_5 = data.get('pass@5') or data.get('pass_at_5')
+                if pass_at_5 and pass_at_5 > 1:
+                    pass_at_5 = pass_at_5 / 100
+                
+                pass_at_10 = data.get('pass@10') or data.get('pass_at_10')
+                if pass_at_10 and pass_at_10 > 1:
+                    pass_at_10 = pass_at_10 / 100
+                
+                # Get timestamp from file or content
+                timestamp_str = data.get('timestamp') or data.get('created_at')
+                if timestamp_str:
+                    try:
+                        timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    except (ValueError, AttributeError):
+                        timestamp = datetime.fromtimestamp(json_file.stat().st_mtime)
+                else:
+                    timestamp = datetime.fromtimestamp(json_file.stat().st_mtime)
+                
+                self.results.append(BenchmarkResult(
+                    id=f"result-{result_id}",
+                    model=str(model),
+                    benchmark=str(benchmark).replace('_', ' ').title(),
+                    pass_at_1=float(pass_at_1),
+                    pass_at_5=float(pass_at_5) if pass_at_5 else None,
+                    pass_at_10=float(pass_at_10) if pass_at_10 else None,
+                    samples=data.get('samples') or data.get('total') or data.get('n_samples') or 0,
+                    duration_seconds=data.get('duration_seconds') or data.get('duration') or data.get('time_seconds') or 0,
+                    timestamp=timestamp,
+                    notes=data.get('notes') or str(json_file.relative_to(self.RESULTS_DIR)),
+                ))
+                result_id += 1
+                
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                # Skip malformed files
+                continue
+    
+    def _load_demo_results(self):
+        """Load demo results for UI development when no real results exist."""
         self.results = [
             BenchmarkResult(
-                id="base-qwen-1",
+                id="demo-base-qwen-1",
                 model="Qwen/Qwen2.5-Coder-3B",
                 benchmark="HumanEval",
                 pass_at_1=0.421,
@@ -56,22 +126,10 @@ class Results:
                 samples=164,
                 duration_seconds=1847.3,
                 timestamp=datetime.now(),
-                notes="Base model baseline"
+                notes="Demo: Base model baseline"
             ),
             BenchmarkResult(
-                id="sft-qwen-1",
-                model="models/code_sft",
-                benchmark="HumanEval",
-                pass_at_1=0.457,
-                pass_at_5=0.612,
-                pass_at_10=0.683,
-                samples=164,
-                duration_seconds=1923.1,
-                timestamp=datetime.now(),
-                notes="After 3 epochs SFT on Alpaca"
-            ),
-            BenchmarkResult(
-                id="raft-qwen-1",
+                id="demo-raft-qwen-1",
                 model="models/code_raft/cycle_5",
                 benchmark="HumanEval",
                 pass_at_1=0.518,
@@ -80,19 +138,7 @@ class Results:
                 samples=164,
                 duration_seconds=2104.7,
                 timestamp=datetime.now(),
-                notes="After 5 RAFT cycles"
-            ),
-            BenchmarkResult(
-                id="base-lfm-1",
-                model="amd/lfm-2b",
-                benchmark="HumanEval",
-                pass_at_1=0.312,
-                pass_at_5=0.445,
-                pass_at_10=0.521,
-                samples=164,
-                duration_seconds=1562.4,
-                timestamp=datetime.now(),
-                notes="LFM base model"
+                notes="Demo: After 5 RAFT cycles"
             ),
         ]
     
@@ -263,6 +309,8 @@ class Results:
         else:
             self.sort_by = sort_by
             self.sort_desc = True
+        app.storage.user['results_sort_by'] = self.sort_by
+        app.storage.user['results_sort_desc'] = self.sort_desc
         ui.navigate.to('/results')
     
     def _toggle_selection(self, result_id: str, selected: bool):
@@ -271,6 +319,7 @@ class Results:
             self.selected_ids.add(result_id)
         else:
             self.selected_ids.discard(result_id)
+        app.storage.user['results_selected_ids'] = list(self.selected_ids)
     
     def _toggle_all(self, e):
         """Toggle selection of all results."""
@@ -278,6 +327,8 @@ class Results:
             self.selected_ids = {r.id for r in self.results}
         else:
             self.selected_ids.clear()
+        app.storage.user['results_selected_ids'] = list(self.selected_ids)
+        ui.navigate.to('/results')  # Force UI rebuild
     
     def _show_comparison(self):
         """Show comparison chart for selected results."""

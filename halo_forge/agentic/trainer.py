@@ -12,6 +12,7 @@ import logging
 import time
 
 import torch
+from tqdm import tqdm
 
 from halo_forge.agentic.verifiers import ToolCallingVerifier, ToolCallVerifyResult
 from halo_forge.agentic.data import ToolCallSample, XLAMLoader
@@ -495,10 +496,7 @@ class AgenticRAFTTrainer:
         
         total_reward = 0.0
         
-        for i, sample in enumerate(samples):
-            if i % 50 == 0:
-                logger.info(f"Benchmark: {i + 1}/{len(samples)}")
-            
+        for sample in tqdm(samples, desc="Evaluating"):
             # Generate single completion (temperature=0 for benchmark)
             prompt = self.formatter.format_prompt(sample)
             

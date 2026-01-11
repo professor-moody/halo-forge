@@ -4,9 +4,12 @@ Verifiers Page
 Test and manage verifiers for code/math validation.
 """
 
-from nicegui import ui
+from nicegui import ui, app
 from typing import Optional
 from dataclasses import dataclass
+import subprocess
+import tempfile
+import os
 
 from ui.theme import COLORS
 
@@ -75,9 +78,15 @@ class Verifiers:
     ]
     
     def __init__(self):
-        self.selected_verifier: Optional[VerifierInfo] = None
-        self.test_code: str = ""
+        # Restore selected verifier from storage
+        stored_name = app.storage.user.get('selected_verifier_name')
+        self.selected_verifier: Optional[VerifierInfo] = next(
+            (v for v in self.VERIFIERS if v.name == stored_name), None
+        ) if stored_name else None
+        
+        self.test_code: str = self.selected_verifier.example_solution if self.selected_verifier else ""
         self.test_result: Optional[dict] = None
+        self.test_panel_container = None  # Reference for dynamic refresh
     
     def render(self):
         """Render the verifiers page."""
@@ -93,10 +102,11 @@ class Verifiers:
                     self._render_verifier_card(verifier, i)
             
             # Test panel
-            with ui.column().classes(
+            self.test_panel_container = ui.column().classes(
                 f'w-full gap-4 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
                 f'border border-[#2d343c] animate-in stagger-6'
-            ):
+            )
+            with self.test_panel_container:
                 self._render_test_panel()
     
     def _render_verifier_card(self, verifier: VerifierInfo, index: int):
@@ -145,7 +155,14 @@ class Verifiers:
         self.selected_verifier = verifier
         self.test_code = verifier.example_solution
         self.test_result = None
-        ui.navigate.to('/verifiers')  # Force refresh
+        app.storage.user['selected_verifier_name'] = verifier.name
+        # Refresh only the test panel instead of full page
+        if self.test_panel_container:
+            self.test_panel_container.clear()
+            with self.test_panel_container:
+                self._render_test_panel()
+        else:
+            ui.navigate.to('/verifiers')  # Fallback
     
     def _render_test_panel(self):
         """Render the test panel."""
@@ -229,17 +246,158 @@ class Verifiers:
     
     async def _run_test(self):
         """Run the verification test."""
+        if not self.selected_verifier:
+            ui.notify('Select a verifier first', type='warning')
+            return
+        
         ui.notify('Running verification...', type='info')
         
-        # Simulate verification
-        import asyncio
-        await asyncio.sleep(1)
+        try:
+            # For Code verifiers, execute Python code
+            if self.selected_verifier.domain == "Code":
+                result = await self._run_python_verification()
+            else:
+                # For Math verifiers, do simple answer matching
+                result = await self._run_math_verification()
+            
+            self.test_result = result
+            
+            if result['passed']:
+                ui.notify('Verification passed!', type='positive')
+            else:
+                ui.notify('Verification failed', type='negative')
+            
+            # Refresh the test panel to show result
+            if self.test_panel_container:
+                self.test_panel_container.clear()
+                with self.test_panel_container:
+                    self._render_test_panel()
+                    
+        except Exception as e:
+            self.test_result = {
+                'passed': False,
+                'message': f'Error: {str(e)}',
+                'output': '',
+            }
+            ui.notify(f'Verification error: {e}', type='negative')
+    
+    async def _run_python_verification(self) -> dict:
+        """Run Python code verification."""
+        # Combine prompt (function signature) with solution
+        full_code = self.selected_verifier.example_prompt + "\n" + self.test_code
         
-        # Demo result
-        self.test_result = {
-            'passed': True,
-            'message': 'All tests passed',
-            'output': 'Test 1: ✓ add(1, 2) == 3\nTest 2: ✓ add(-1, 1) == 0\nTest 3: ✓ add(0, 0) == 0',
+        # Add simple test cases based on the verifier
+        test_code = full_code + "\n\n"
+        
+        if self.selected_verifier.name == "HumanEval":
+            # Test add function
+            test_code += """
+# Test cases
+try:
+    assert add(1, 2) == 3, "add(1, 2) should be 3"
+    assert add(-1, 1) == 0, "add(-1, 1) should be 0"
+    assert add(0, 0) == 0, "add(0, 0) should be 0"
+    print("Test 1: ✓ add(1, 2) == 3")
+    print("Test 2: ✓ add(-1, 1) == 0")
+    print("Test 3: ✓ add(0, 0) == 0")
+    print("\\nAll tests passed!")
+except AssertionError as e:
+    print(f"✗ {e}")
+    exit(1)
+except Exception as e:
+    print(f"✗ Error: {e}")
+    exit(1)
+"""
+        elif self.selected_verifier.name == "MBPP":
+            # Test factorial function
+            test_code += """
+# Test cases
+try:
+    assert factorial(0) == 1, "factorial(0) should be 1"
+    assert factorial(1) == 1, "factorial(1) should be 1"
+    assert factorial(5) == 120, "factorial(5) should be 120"
+    print("Test 1: ✓ factorial(0) == 1")
+    print("Test 2: ✓ factorial(1) == 1")
+    print("Test 3: ✓ factorial(5) == 120")
+    print("\\nAll tests passed!")
+except AssertionError as e:
+    print(f"✗ {e}")
+    exit(1)
+except Exception as e:
+    print(f"✗ Error: {e}")
+    exit(1)
+"""
+        elif self.selected_verifier.name == "LiveCodeBench":
+            # Test reverse_string function
+            test_code += """
+# Test cases
+try:
+    assert reverse_string("hello") == "olleh", "reverse_string('hello') should be 'olleh'"
+    assert reverse_string("") == "", "reverse_string('') should be ''"
+    assert reverse_string("a") == "a", "reverse_string('a') should be 'a'"
+    print("Test 1: ✓ reverse_string('hello') == 'olleh'")
+    print("Test 2: ✓ reverse_string('') == ''")
+    print("Test 3: ✓ reverse_string('a') == 'a'")
+    print("\\nAll tests passed!")
+except AssertionError as e:
+    print(f"✗ {e}")
+    exit(1)
+except Exception as e:
+    print(f"✗ Error: {e}")
+    exit(1)
+"""
+        else:
+            # Generic: just try to run the code
+            test_code += "\nprint('Code executed successfully')\n"
+        
+        # Run in subprocess
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(test_code)
+            temp_path = f.name
+        
+        try:
+            result = subprocess.run(
+                ['python', temp_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            output = result.stdout + result.stderr
+            passed = result.returncode == 0
+            
+            return {
+                'passed': passed,
+                'message': 'All tests passed' if passed else 'Some tests failed',
+                'output': output.strip() or '(no output)',
+            }
+        finally:
+            os.unlink(temp_path)
+    
+    async def _run_math_verification(self) -> dict:
+        """Run math answer verification."""
+        # Extract numeric answer from solution
+        solution = self.test_code.strip()
+        
+        # For GSM8K format, extract answer after ####
+        if '####' in solution:
+            answer = solution.split('####')[-1].strip()
+        else:
+            # Try to find a number
+            import re
+            numbers = re.findall(r'-?\d+\.?\d*', solution)
+            answer = numbers[-1] if numbers else solution
+        
+        # Check against expected (hardcoded for demo)
+        expected = {
+            "Math": "12",
+            "GSM8K": "36",
+        }.get(self.selected_verifier.name, "")
+        
+        passed = answer.strip() == expected.strip()
+        
+        return {
+            'passed': passed,
+            'message': f'Answer: {answer}' + (' ✓' if passed else f' (expected {expected})'),
+            'output': f'Your answer: {answer}\nExpected: {expected}',
         }
-        
-        ui.notify('Verification complete', type='positive')

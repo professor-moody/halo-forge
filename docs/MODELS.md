@@ -161,3 +161,37 @@ halo-forge raft train \
 - **CodeLlama-34B**: Needs multi-GPU or very large VRAM
 - **Phi models**: Different architecture, may need config adjustments
 
+## LiquidAI LFM Models
+
+**Status: Experimental / Partially Supported**
+
+| Model | Domain | Status | Notes |
+|-------|--------|--------|-------|
+| `LiquidAI/LFM2-1.2B` | Text | Supported | Works with standard APIs |
+| `LiquidAI/LFM2.5-1.2B-Base` | Text/Agentic | Supported | Standard CausalLM |
+| `LiquidAI/LFM2.5-VL-1.6B` | VLM | **Unsupported** | Custom architecture, no `generate()` |
+| `LiquidAI/LFM2.5-Audio-1.5B` | Audio | **Unsupported** | No Whisper-compatible processor |
+
+### Why LFM Multimodal Models Don't Work
+
+LFM multimodal models use custom architectures that are incompatible with standard HuggingFace APIs:
+
+1. **VL Models**: Use `Lfm2VlConfig` which is not registered with `AutoModelForCausalLM`. The model loads as a vision encoder without text generation capability.
+
+2. **Audio Models**: Use a custom `TokenizersBackend` class instead of standard HuggingFace tokenizers. The processor doesn't implement the Whisper-compatible interface expected by our audio benchmarks.
+
+### Workarounds
+
+For LFM text models (LFM2-1.2B, LFM2.5-1.2B-Base), use standard loading:
+
+```bash
+halo-forge raft train --model LiquidAI/LFM2.5-1.2B-Base --prompts data/prompts.jsonl
+```
+
+For VLM and Audio benchmarks, use alternative models:
+- VLM: `Qwen/Qwen2-VL-2B-Instruct` 
+- Audio: `openai/whisper-small`
+
+### Future Support
+
+Full LFM multimodal support requires direct integration with LiquidAI's custom inference code. Contact LiquidAI for guidance if this is a priority.

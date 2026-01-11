@@ -14,7 +14,7 @@ class Sidebar:
     NAV_ITEMS = [
         {"icon": "dashboard", "label": "Dashboard", "path": "/"},
         {"icon": "model_training", "label": "Training", "path": "/training"},
-        {"icon": "monitoring", "label": "Monitor", "path": "/monitor"},
+        {"icon": "computer", "label": "Monitor", "path": "/monitor"},  # More reliable icon
         {"icon": "settings", "label": "Config", "path": "/config"},
         {"icon": "verified", "label": "Verifiers", "path": "/verifiers"},
         {"icon": "storage", "label": "Datasets", "path": "/datasets"},

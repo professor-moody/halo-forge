@@ -7,6 +7,8 @@ Browse and preview available training datasets.
 from nicegui import ui
 from typing import Optional
 from dataclasses import dataclass
+from pathlib import Path
+import json
 
 from ui.theme import COLORS
 
@@ -21,12 +23,14 @@ class DatasetInfo:
     format_type: str
     source: str
     example: dict
+    is_local: bool = False  # Whether this is a local file
 
 
 class Datasets:
     """Dataset browser page component."""
     
-    DATASETS = [
+    # Built-in/HuggingFace datasets
+    BUILTIN_DATASETS = [
         # SFT Datasets
         DatasetInfo(
             name="Alpaca",
@@ -78,36 +82,72 @@ class Datasets:
                 "output": "{\"name\": \"get_weather\", \"arguments\": {\"city\": \"New York\"}}"
             }
         ),
-        # RAFT Prompts
-        DatasetInfo(
-            name="HumanEval Prompts",
-            description="164 Python function completion prompts",
-            size="164 prompts",
-            domain="Code",
-            format_type="Prompt",
-            source="data/rlvr/humaneval_prompts.jsonl",
-            example={
-                "prompt": "def has_close_elements(numbers: List[float], threshold: float) -> bool:\n    ...",
-                "task_id": "HumanEval/0"
-            }
-        ),
-        DatasetInfo(
-            name="MBPP Prompts",
-            description="Mostly Basic Python Problems",
-            size="500 prompts",
-            domain="Code",
-            format_type="Prompt",
-            source="data/rlvr/mbpp_train_prompts.jsonl",
-            example={
-                "prompt": "Write a function to find the factorial of a number.",
-                "task_id": "MBPP/1"
-            }
-        ),
     ]
+    
+    LOCAL_DATA_DIRS = [Path("data"), Path("data/rlvr"), Path("data/sft")]
     
     def __init__(self):
         self.selected_dataset: Optional[DatasetInfo] = None
         self.filter_domain: str = "All"
+        self.datasets: list[DatasetInfo] = []
+        self._load_datasets()
+    
+    def _load_datasets(self):
+        """Load all available datasets (builtin + local)."""
+        self.datasets = list(self.BUILTIN_DATASETS)
+        
+        # Scan local data directories for JSONL files
+        for data_dir in self.LOCAL_DATA_DIRS:
+            if data_dir.exists():
+                self._scan_local_datasets(data_dir)
+    
+    def _scan_local_datasets(self, data_dir: Path):
+        """Scan a directory for local dataset files."""
+        for jsonl_file in data_dir.glob("*.jsonl"):
+            # Skip if already in builtin
+            if any(d.source.endswith(jsonl_file.name) for d in self.BUILTIN_DATASETS):
+                continue
+            
+            try:
+                # Count lines and get example
+                line_count = 0
+                example = {}
+                with open(jsonl_file) as f:
+                    for i, line in enumerate(f):
+                        if i == 0:
+                            example = json.loads(line)
+                        line_count += 1
+                
+                # Infer domain from path or content
+                domain = "Code"
+                if "math" in jsonl_file.name.lower():
+                    domain = "Math"
+                elif "sft" in str(jsonl_file).lower():
+                    domain = "General"
+                elif "agentic" in str(jsonl_file).lower() or "xlam" in jsonl_file.name.lower():
+                    domain = "Agentic"
+                
+                # Infer format from content
+                format_type = "Prompt"
+                if "instruction" in example:
+                    format_type = "Instruction"
+                elif "question" in example:
+                    format_type = "QA"
+                elif "tests" in example:
+                    format_type = "Prompt+Tests"
+                
+                self.datasets.append(DatasetInfo(
+                    name=jsonl_file.stem.replace("_", " ").title(),
+                    description=f"Local dataset from {jsonl_file.parent.name}/",
+                    size=f"{line_count} examples",
+                    domain=domain,
+                    format_type=format_type,
+                    source=str(jsonl_file),
+                    example=example,
+                    is_local=True
+                ))
+            except (json.JSONDecodeError, IOError):
+                continue
     
     def render(self):
         """Render the datasets page."""
@@ -130,10 +170,12 @@ class Datasets:
                     ).props('outlined dense dark').classes('w-32')
             
             # Stats row
+            domains = set(d.domain for d in self.datasets)
+            local_count = sum(1 for d in self.datasets if d.is_local)
             with ui.row().classes('w-full gap-4 animate-in stagger-1'):
-                self._stat_card('Total Datasets', str(len(self.DATASETS)), 'storage')
-                self._stat_card('Domains', '4', 'category')
-                self._stat_card('Total Size', '~500K', 'data_usage')
+                self._stat_card('Total Datasets', str(len(self.datasets)), 'storage')
+                self._stat_card('Domains', str(len(domains)), 'category')
+                self._stat_card('Local Files', str(local_count), 'folder')
             
             # Dataset grid
             with ui.row().classes('w-full gap-4 flex-wrap'):
@@ -147,8 +189,8 @@ class Datasets:
     def _filtered_datasets(self) -> list[DatasetInfo]:
         """Get datasets filtered by domain."""
         if self.filter_domain == "All":
-            return self.DATASETS
-        return [d for d in self.DATASETS if d.domain == self.filter_domain]
+            return self.datasets
+        return [d for d in self.datasets if d.domain == self.filter_domain]
     
     def _set_filter(self, domain: str):
         """Set the domain filter."""
