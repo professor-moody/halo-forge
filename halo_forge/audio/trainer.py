@@ -12,6 +12,7 @@ import json
 import os
 
 import torch
+from tqdm import tqdm
 
 from halo_forge.audio.data import AudioSample, AudioProcessor, load_audio_dataset
 from halo_forge.audio.verifiers import AudioVerifier, AudioVerifyConfig
@@ -250,11 +251,14 @@ class AudioRAFTTrainer:
     def _generate_predictions(
         self,
         samples: List[AudioSample],
+        show_progress: bool = True,
     ) -> List[str]:
         """Generate predictions for samples."""
         predictions = []
         
-        for sample in samples:
+        iterator = tqdm(samples, desc="Transcribing") if show_progress else samples
+        
+        for sample in iterator:
             try:
                 # Get audio
                 if sample.audio_array is not None:
@@ -279,11 +283,15 @@ class AudioRAFTTrainer:
         self,
         predictions: List[str],
         samples: List[AudioSample],
+        show_progress: bool = True,
     ) -> List[Dict[str, Any]]:
         """Verify predictions against ground truth."""
         verified = []
         
-        for pred, sample in zip(predictions, samples):
+        pairs = list(zip(predictions, samples))
+        iterator = tqdm(pairs, desc="Verifying") if show_progress else pairs
+        
+        for pred, sample in iterator:
             result = self.verifier.verify(pred, sample.text)
             verified.append({
                 "prediction": pred,
