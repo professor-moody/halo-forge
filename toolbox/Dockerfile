@@ -117,7 +117,7 @@ RUN python -m pip install --no-cache-dir \
     huggingface-hub \
     trl>=0.12.0 \
     einops \
-    datasets>=2.14.0 \
+    "datasets>=2.14.0,<4.0.0" \
     scipy \
     protobuf
 
