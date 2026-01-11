@@ -176,6 +176,7 @@ ENV container=podman
 
 # --- profile.d scripts ---
 COPY scripts/01-triton-env.sh /etc/profile.d/01-triton-env.sh
+COPY scripts/50-halo-forge-install.sh /etc/profile.d/50-halo-forge-install.sh
 COPY scripts/99-halo-forge-banner.sh /etc/profile.d/99-halo-forge-banner.sh
 COPY scripts/zz-venv-path-fix.sh /etc/profile.d/zz-venv-path-fix.sh
 
