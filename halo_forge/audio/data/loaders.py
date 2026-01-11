@@ -237,7 +237,7 @@ class LibriSpeechLoader(AudioDataset):
         
         # Load with audio decoding DISABLED to avoid torchcodec dependency
         # We'll decode audio ourselves using torchaudio
-        dataset = load_dataset("librispeech_asr", split=hf_split)
+        dataset = load_dataset("librispeech_asr", split=hf_split, trust_remote_code=True)
         
         # Cast audio column to disable decoding - returns raw bytes
         dataset = dataset.cast_column("audio", Audio(decode=False))

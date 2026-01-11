@@ -173,7 +173,7 @@ class DatasetPreparer:
         print(f"Loading {self.spec.hf_path}...")
         
         try:
-            dataset = load_dataset(self.spec.hf_path, split=self.spec.hf_split)
+            dataset = load_dataset(self.spec.hf_path, split=self.spec.hf_split, trust_remote_code=True)
         except Exception as e:
             print(f"Error loading dataset: {e}")
             raise

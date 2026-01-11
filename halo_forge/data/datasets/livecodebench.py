@@ -106,12 +106,12 @@ class LiveCodeBenchLoader:
         print(f"Loading LiveCodeBench from {self.HF_DATASET}...")
         
         try:
-            dataset = load_dataset(self.HF_DATASET, split="test")
+            dataset = load_dataset(self.HF_DATASET, split="test", trust_remote_code=True)
         except Exception as e:
             print(f"Note: LiveCodeBench may require authentication or different config")
             # Try alternative config
             try:
-                dataset = load_dataset("livecodebench/code_generation", "release_v1", split="test")
+                dataset = load_dataset("livecodebench/code_generation", "release_v1", split="test", trust_remote_code=True)
             except:
                 raise e
         

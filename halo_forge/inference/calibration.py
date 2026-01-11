@@ -213,7 +213,7 @@ def load_calibration_data(
     try:
         from datasets import load_dataset
         
-        dataset = load_dataset(source, split="train")
+        dataset = load_dataset(source, split="train", trust_remote_code=True)
         text_field = "text" if "text" in dataset.column_names else dataset.column_names[0]
         samples = [item[text_field] for item in dataset]
         

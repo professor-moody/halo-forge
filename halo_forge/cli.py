@@ -2624,7 +2624,8 @@ def cmd_reasoning_benchmark(args):
     total_reward = 0
     
     print(f"\nRunning benchmark...")
-    for sample in dataset:
+    from tqdm import tqdm
+    for sample in tqdm(dataset, desc="Evaluating", unit="sample"):
         # Format prompt
         prompt = (
             f"Solve the following math problem step by step. "

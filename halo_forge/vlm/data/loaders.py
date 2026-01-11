@@ -148,7 +148,7 @@ class TextVQALoader(VLMDataset):
         
         print(f"Loading TextVQA ({self.split})...")
         
-        dataset = load_dataset("textvqa", split=self.split)
+        dataset = load_dataset("textvqa", split=self.split, trust_remote_code=True)
         
         samples = []
         for i, item in enumerate(dataset):
@@ -205,7 +205,7 @@ class DocVQALoader(VLMDataset):
         }
         hf_split = split_map.get(self.split, self.split)
         
-        dataset = load_dataset("lmms-lab/DocVQA", split=hf_split)
+        dataset = load_dataset("lmms-lab/DocVQA", split=hf_split, trust_remote_code=True)
         
         samples = []
         for i, item in enumerate(dataset):
@@ -251,7 +251,7 @@ class ChartQALoader(VLMDataset):
         
         print(f"Loading ChartQA ({self.split})...")
         
-        dataset = load_dataset("ahmed-masry/chartqa", split=self.split)
+        dataset = load_dataset("ahmed-masry/chartqa", split=self.split, trust_remote_code=True)
         
         samples = []
         for i, item in enumerate(dataset):
@@ -296,7 +296,7 @@ class RealWorldQALoader(VLMDataset):
         print(f"Loading RealWorldQA...")
         
         # RealWorldQA only has test split
-        dataset = load_dataset("xai-org/RealworldQA", split="test")
+        dataset = load_dataset("xai-org/RealworldQA", split="test", trust_remote_code=True)
         
         samples = []
         for i, item in enumerate(dataset):
@@ -348,7 +348,7 @@ class MathVistaLoader(VLMDataset):
         
         print(f"Loading MathVista ({self.split})...")
         
-        dataset = load_dataset("AI4Math/MathVista", split=self.split)
+        dataset = load_dataset("AI4Math/MathVista", split=self.split, trust_remote_code=True)
         
         samples = []
         for i, item in enumerate(dataset):

@@ -82,7 +82,7 @@ class HumanEvalPlusLoader:
             raise ImportError("datasets library required. Install with: pip install datasets")
         
         print(f"Loading HumanEval+ from {self.HF_DATASET}...")
-        dataset = load_dataset(self.HF_DATASET, split="test")
+        dataset = load_dataset(self.HF_DATASET, split="test", trust_remote_code=True)
         
         problems = []
         for item in dataset:

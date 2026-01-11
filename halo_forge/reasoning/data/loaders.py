@@ -115,7 +115,7 @@ class GSM8KLoader(MathDataset):
             raise ImportError("datasets library required: pip install datasets")
         
         logger.info(f"Loading GSM8K {self.split}...")
-        dataset = load_dataset("gsm8k", "main", split=self.split)
+        dataset = load_dataset("gsm8k", "main", split=self.split, trust_remote_code=True)
         
         samples = []
         for i, item in enumerate(dataset):
@@ -285,7 +285,7 @@ class AIMELoader(MathDataset):
         
         # Try to load AIME dataset
         try:
-            dataset = load_dataset("AI-MO/aimo-validation-aime", split="train")
+            dataset = load_dataset("AI-MO/aimo-validation-aime", split="train", trust_remote_code=True)
         except Exception as e:
             logger.warning(f"AIME dataset not available: {e}")
             self.samples = []
