@@ -91,6 +91,11 @@ class Datasets:
         self.filter_domain: str = "All"
         self.datasets: list[DatasetInfo] = []
         self._load_datasets()
+        
+        # UI container references for dynamic updates
+        self._cards_container = None
+        self._preview_container = None
+        self._stats_container = None
     
     def _load_datasets(self):
         """Load all available datasets (builtin + local)."""
@@ -169,22 +174,21 @@ class Datasets:
                         on_change=lambda e: self._set_filter(e.value)
                     ).props('outlined dense dark').classes('w-32')
             
-            # Stats row
-            domains = set(d.domain for d in self.datasets)
-            local_count = sum(1 for d in self.datasets if d.is_local)
-            with ui.row().classes('w-full gap-4 animate-in stagger-1'):
-                self._stat_card('Total Datasets', str(len(self.datasets)), 'storage')
-                self._stat_card('Domains', str(len(domains)), 'category')
-                self._stat_card('Local Files', str(local_count), 'folder')
+            # Stats row - store reference for updates
+            self._stats_container = ui.row().classes('w-full gap-4 animate-in stagger-1')
+            with self._stats_container:
+                self._render_stats()
             
-            # Dataset grid
-            with ui.row().classes('w-full gap-4 flex-wrap'):
-                for i, dataset in enumerate(self._filtered_datasets()):
-                    self._render_dataset_card(dataset, i)
+            # Dataset grid - store reference for selection highlighting
+            self._cards_container = ui.row().classes('w-full gap-4 flex-wrap')
+            with self._cards_container:
+                self._render_dataset_cards()
             
-            # Preview panel
-            if self.selected_dataset:
-                self._render_preview()
+            # Preview panel - store reference for content updates
+            self._preview_container = ui.column().classes('w-full')
+            with self._preview_container:
+                if self.selected_dataset:
+                    self._render_preview()
     
     def _filtered_datasets(self) -> list[DatasetInfo]:
         """Get datasets filtered by domain."""
@@ -192,11 +196,46 @@ class Datasets:
             return self.datasets
         return [d for d in self.datasets if d.domain == self.filter_domain]
     
+    def _render_stats(self):
+        """Render stats cards."""
+        filtered = self._filtered_datasets()
+        domains = set(d.domain for d in filtered)
+        local_count = sum(1 for d in filtered if d.is_local)
+        
+        self._stat_card('Total Datasets', str(len(filtered)), 'storage')
+        self._stat_card('Domains', str(len(domains)), 'category')
+        self._stat_card('Local Files', str(local_count), 'folder')
+    
+    def _render_dataset_cards(self):
+        """Render all dataset cards."""
+        for i, dataset in enumerate(self._filtered_datasets()):
+            self._render_dataset_card(dataset, i)
+    
     def _set_filter(self, domain: str):
-        """Set the domain filter."""
+        """Set the domain filter.
+        
+        FIXED: Updates UI dynamically instead of navigating.
+        """
         self.filter_domain = domain
         self.selected_dataset = None
-        ui.navigate.to('/datasets')
+        
+        # Update stats
+        if self._stats_container:
+            self._stats_container.clear()
+            with self._stats_container:
+                self._render_stats()
+        
+        # Update cards
+        if self._cards_container:
+            self._cards_container.clear()
+            with self._cards_container:
+                self._render_dataset_cards()
+        
+        # Clear preview
+        if self._preview_container:
+            self._preview_container.clear()
+        
+        # NOTE: Removed ui.navigate.to('/datasets') which was causing page reset
     
     def _stat_card(self, label: str, value: str, icon: str):
         """Render a statistics card."""
@@ -248,9 +287,26 @@ class Datasets:
                     )
     
     def _select_dataset(self, dataset: DatasetInfo):
-        """Select a dataset to preview."""
+        """Select a dataset to preview.
+        
+        FIXED: Updates UI dynamically instead of navigating (which killed state).
+        """
         self.selected_dataset = dataset
-        ui.navigate.to('/datasets')  # Force refresh
+        
+        # Re-render cards to update selection highlighting
+        if self._cards_container:
+            self._cards_container.clear()
+            with self._cards_container:
+                self._render_dataset_cards()
+        
+        # Show preview panel
+        if self._preview_container:
+            self._preview_container.clear()
+            with self._preview_container:
+                self._render_preview()
+        
+        # NOTE: Removed ui.navigate.to('/datasets') which was causing full page reload
+        # and resetting self.selected_dataset to None
     
     def _render_preview(self):
         """Render the dataset preview panel."""
