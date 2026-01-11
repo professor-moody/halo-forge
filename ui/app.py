@@ -12,7 +12,7 @@ from ui.components.sidebar import Sidebar
 from ui.components.header import Header
 
 
-def create_layout():
+def create_layout(page_title: str = "Dashboard"):
     """Create the base page layout with sidebar and header."""
     apply_theme()
     
@@ -20,19 +20,21 @@ def create_layout():
     with ui.header().classes(
         f'bg-[{COLORS["bg_secondary"]}] border-b border-[#2d343c] h-14'
     ):
-        Header()
+        header = Header(title=page_title)
     
     # Left drawer (sidebar)
     with ui.left_drawer(value=True, fixed=True).classes(
         f'bg-[{COLORS["bg_secondary"]}] w-56 p-0 border-r border-[#2d343c]'
     ).props('behavior=desktop overlay bordered'):
         Sidebar()
+    
+    return header
 
 
 @ui.page('/')
 def dashboard_page():
     """Dashboard page."""
-    create_layout()
+    create_layout("Dashboard")
     with ui.column().classes('w-full h-full'):
         from ui.pages.dashboard import Dashboard
         Dashboard().render()
@@ -41,7 +43,7 @@ def dashboard_page():
 @ui.page('/training')
 def training_page():
     """Training configuration and launch page."""
-    create_layout()
+    create_layout("Training")
     with ui.column().classes('w-full h-full'):
         from ui.pages.training import Training
         Training().render()
@@ -50,7 +52,7 @@ def training_page():
 @ui.page('/monitor')
 def monitor_list_page():
     """Job monitor list page."""
-    create_layout()
+    create_layout("Monitor")
     with ui.column().classes('w-full h-full'):
         from ui.pages.monitor import MonitorList
         MonitorList().render()
@@ -59,7 +61,7 @@ def monitor_list_page():
 @ui.page('/monitor/{job_id}')
 def monitor_page(job_id: str):
     """Job monitor detail page."""
-    create_layout()
+    create_layout("Job Monitor")
     with ui.column().classes('w-full h-full'):
         from ui.pages.monitor import Monitor
         Monitor(job_id=job_id).render()
@@ -68,7 +70,7 @@ def monitor_page(job_id: str):
 @ui.page('/config')
 def config_page():
     """Configuration editor page."""
-    create_layout()
+    create_layout("Configuration")
     with ui.column().classes('w-full h-full'):
         from ui.pages.config import ConfigEditor
         ConfigEditor().render()
@@ -77,7 +79,7 @@ def config_page():
 @ui.page('/verifiers')
 def verifiers_page():
     """Verifier management page."""
-    create_layout()
+    create_layout("Verifiers")
     with ui.column().classes('w-full h-full'):
         from ui.pages.verifiers import Verifiers
         Verifiers().render()
@@ -86,7 +88,7 @@ def verifiers_page():
 @ui.page('/datasets')
 def datasets_page():
     """Dataset browser page."""
-    create_layout()
+    create_layout("Datasets")
     with ui.column().classes('w-full h-full'):
         from ui.pages.datasets import Datasets
         Datasets().render()
@@ -95,7 +97,7 @@ def datasets_page():
 @ui.page('/results')
 def results_page():
     """Benchmark results page."""
-    create_layout()
+    create_layout("Results")
     with ui.column().classes('w-full h-full'):
         from ui.pages.results import Results
         Results().render()

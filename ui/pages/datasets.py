@@ -187,9 +187,9 @@ class Datasets:
                     ui.label(dataset.name).classes(
                         f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
                     )
-                    ui.element('span').classes(
+                    ui.label(dataset.domain).classes(
                         f'px-2 py-0.5 rounded text-xs bg-[{COLORS["info"]}]/10 text-[{COLORS["info"]}]'
-                    ).text(dataset.domain)
+                    )
                 
                 # Description
                 ui.label(dataset.description).classes(
@@ -238,9 +238,6 @@ class Datasets:
                 f'text-sm font-medium text-[{COLORS["text_secondary"]}] mt-2'
             )
             
-            with ui.element('pre').classes(
-                f'w-full p-4 rounded-lg bg-[{COLORS["bg_primary"]}] '
-                f'font-mono text-xs text-[{COLORS["text_secondary"]}] overflow-x-auto'
-            ):
-                import json
-                ui.text(json.dumps(dataset.example, indent=2))
+            import json
+            ui.html(f'''<pre class="w-full p-4 rounded-lg font-mono text-xs overflow-x-auto" 
+                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{json.dumps(dataset.example, indent=2)}</pre>''')

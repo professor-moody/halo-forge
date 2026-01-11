@@ -130,15 +130,15 @@ class Verifiers:
                 
                 # Tags
                 with ui.row().classes('gap-1 flex-wrap'):
-                    ui.element('span').classes(
+                    ui.label(verifier.domain).classes(
                         f'px-2 py-0.5 rounded text-xs bg-[{COLORS["info"]}]/10 text-[{COLORS["info"]}]'
-                    ).text(verifier.domain)
+                    )
                     
                     for lang in verifier.languages[:2]:
-                        ui.element('span').classes(
+                        ui.label(lang).classes(
                             f'px-2 py-0.5 rounded text-xs bg-[{COLORS["bg_secondary"]}] '
                             f'text-[{COLORS["text_muted"]}]'
-                        ).text(lang)
+                        )
     
     def _select_verifier(self, verifier: VerifierInfo):
         """Select a verifier for testing."""
@@ -174,11 +174,8 @@ class Verifiers:
             ui.label('Prompt').classes(
                 f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
             )
-            with ui.element('pre').classes(
-                f'w-full p-4 rounded-lg bg-[{COLORS["bg_primary"]}] '
-                f'font-mono text-sm text-[{COLORS["text_secondary"]}] overflow-x-auto'
-            ):
-                ui.text(self.selected_verifier.example_prompt)
+            ui.html(f'''<pre class="w-full p-4 rounded-lg font-mono text-sm overflow-x-auto"
+                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.selected_verifier.example_prompt}</pre>''')
         
         # Code input
         with ui.column().classes('w-full gap-2'):
@@ -227,11 +224,8 @@ class Verifiers:
                 )
             
             if 'output' in self.test_result:
-                with ui.element('pre').classes(
-                    f'w-full p-3 rounded bg-[{COLORS["bg_primary"]}] '
-                    f'font-mono text-xs text-[{COLORS["text_secondary"]}] overflow-x-auto'
-                ):
-                    ui.text(self.test_result['output'])
+                ui.html(f'''<pre class="w-full p-3 rounded font-mono text-xs overflow-x-auto"
+                             style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.test_result['output']}</pre>''')
     
     async def _run_test(self):
         """Run the verification test."""

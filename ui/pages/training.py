@@ -113,21 +113,19 @@ class Training:
         """Render a mode toggle button."""
         is_active = self.mode == mode
         
-        with ui.button(
-            on_click=lambda m=mode: self._set_mode(m)
-        ).props('flat').classes(
-            f'flex-1 py-4 rounded-lg transition-all '
+        # Use a container div instead of nesting inside button
+        with ui.element('div').classes(
+            f'flex-1 flex items-center justify-center gap-3 py-4 rounded-lg cursor-pointer transition-all '
             + (f'bg-[{COLORS["primary"]}]/20 border border-[{COLORS["primary"]}]' if is_active 
-               else f'bg-transparent hover:bg-[{COLORS["bg_hover"]}]')
-        ):
-            with ui.row().classes('items-center gap-3 justify-center'):
-                ui.icon(icon, size='24px').classes(
-                    f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]'
-                )
-                ui.label(label).classes(
-                    f'text-base font-medium '
-                    + (f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]')
-                )
+               else f'bg-transparent border border-transparent hover:bg-[{COLORS["bg_hover"]}]')
+        ).on('click', lambda m=mode: self._set_mode(m)):
+            ui.icon(icon, size='24px').classes(
+                f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]'
+            )
+            ui.label(label).classes(
+                f'text-base font-medium '
+                + (f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]')
+            )
     
     def _set_mode(self, mode: str):
         """Switch between SFT and RAFT mode."""
@@ -239,13 +237,11 @@ class Training:
             with ui.row().classes('w-full gap-3'):
                 for preset_name in self.RAFT_PRESETS.keys():
                     is_selected = self.selected_preset == preset_name
-                    with ui.button(
-                        on_click=lambda p=preset_name: self._apply_preset(p)
-                    ).props('flat').classes(
-                        f'flex-1 py-3 rounded-lg '
+                    with ui.element('div').classes(
+                        f'flex-1 flex items-center justify-center py-3 rounded-lg cursor-pointer transition-all '
                         + (f'bg-[{COLORS["accent"]}]/20 border border-[{COLORS["accent"]}]' if is_selected
-                           else f'bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]')
-                    ):
+                           else f'bg-[{COLORS["bg_secondary"]}] border border-[#2d343c] hover:bg-[{COLORS["bg_hover"]}]')
+                    ).on('click', lambda p=preset_name: self._apply_preset(p)):
                         ui.label(preset_name.capitalize()).classes(
                             f'text-sm font-medium '
                             + (f'text-[{COLORS["accent"]}]' if is_selected else f'text-[{COLORS["text_secondary"]}]')

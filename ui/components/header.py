@@ -7,23 +7,28 @@ Top bar with status indicators and actions.
 from nicegui import ui
 from ui.theme import COLORS
 from ui.state import state
+from ui.services.hardware import get_gpu_summary
 
 
 class Header:
     """Top header bar component."""
     
-    def __init__(self):
+    def __init__(self, title: str = "Dashboard"):
         # Initialize bindable attributes BEFORE rendering
         self._gpu_util = None
         self._gpu_mem = None
+        self._title = title
         self.render()
+        
+        # Start GPU polling timer (every 3 seconds)
+        ui.timer(3.0, self._update_gpu_stats)
     
     def render(self):
         """Render the header content."""
         with ui.row().classes('w-full items-center justify-between px-6 py-3'):
-            # Left: Page title (will be set by each page)
+            # Left: Page title (set from route)
             with ui.row().classes('items-center gap-4'):
-                self.page_title = ui.label('Dashboard').classes(
+                self.page_title = ui.label(self._title).classes(
                     f'text-lg font-semibold text-[{COLORS["text_primary"]}]'
                 )
             
@@ -73,15 +78,31 @@ class Header:
     
     def _render_gpu_status(self):
         """Render GPU status indicator."""
-        # TODO: Get real GPU stats from hardware module
         with ui.row().classes('items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1a1f25]'):
             ui.icon('memory', size='16px').classes(f'text-[{COLORS["info"]}]')
             ui.label('GPU').classes(f'text-xs text-[{COLORS["text_muted"]}]')
-            ui.label('--').classes(
+            self._gpu_label = ui.label('--').classes(
                 f'text-xs font-mono font-medium text-[{COLORS["text_secondary"]}]'
-            ).bind_text_from(
-                self, '_gpu_util', backward=lambda x: f'{x}%' if x else '--'
             )
+        
+        # Initial GPU stats fetch
+        self._update_gpu_stats()
+    
+    def _update_gpu_stats(self):
+        """Fetch and update GPU statistics."""
+        try:
+            gpu = get_gpu_summary()
+            if gpu.get('available'):
+                self._gpu_util = gpu.get('util_percent')
+                display = gpu.get('util', '--')
+                if hasattr(self, '_gpu_label'):
+                    self._gpu_label.text = display
+            else:
+                if hasattr(self, '_gpu_label'):
+                    self._gpu_label.text = '--'
+        except Exception:
+            # Silently ignore GPU polling errors
+            pass
     
     async def _refresh(self):
         """Refresh page data."""
