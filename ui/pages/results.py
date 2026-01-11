@@ -60,71 +60,147 @@ class Results:
         """Scan results directory for benchmark JSON files."""
         result_id = 0
         
+        # Only scan specific result file patterns - skip model checkpoints, configs, etc.
+        # Valid result files: summary.json, baseline_*.json, *_benchmark.json, etc.
+        valid_patterns = [
+            'summary.json',
+            'baseline_*.json',
+            '*_benchmark.json',
+            '*_test.json',
+            '*_test*.json',
+            '*_verify*.json',
+        ]
+        
+        # Directories to skip (contain model artifacts, not results)
+        skip_dirs = {'checkpoint', 'cycle_', 'adapter', 'tokenizer', 'tensorboard'}
+        
         for json_file in self.RESULTS_DIR.glob('**/*.json'):
             try:
+                # Skip non-result files by checking filename patterns
+                filename = json_file.name.lower()
+                
+                # Skip common model/training artifact files
+                if filename in (
+                    'adapter_config.json', 'tokenizer_config.json', 
+                    'special_tokens_map.json', 'added_tokens.json',
+                    'vocab.json', 'tokenizer.json', 'trainer_state.json',
+                    'config.json', 'generation_config.json'
+                ):
+                    continue
+                
+                # Skip files in checkpoint directories
+                path_str = str(json_file).lower()
+                if any(skip in path_str for skip in ['checkpoint-', '/cycle_', '/adapter', 'tensorboard']):
+                    continue
+                
                 with open(json_file) as f:
                     data = json.load(f)
                 
-                # FIX: Handle list format - take first item
+                # Handle list format - take first item
                 if isinstance(data, list):
                     if not data:
-                        continue  # Empty list, skip
+                        continue
                     if isinstance(data[0], dict):
-                        data = data[0]  # Use first result
+                        data = data[0]
                     else:
-                        continue  # Not a dict list, skip
+                        continue
                 
-                # Now data should be a dict
                 if not isinstance(data, dict):
                     continue
                 
-                # Extract benchmark info from file path and content
-                parts = json_file.relative_to(self.RESULTS_DIR).parts
+                # Skip if this doesn't look like a benchmark result
+                # Must have at least one of these fields
+                if not any(k in data for k in ['pass_at_k', 'pass_rate', 'accuracy', 'model_path', 'model_name', 'baseline']):
+                    continue
                 
-                # Try to get model and benchmark from various formats
-                model = data.get('model') or data.get('model_name') or (parts[1] if len(parts) > 1 else 'Unknown')
-                benchmark = data.get('benchmark') or data.get('dataset') or json_file.stem
+                # Extract benchmark info
+                result = self._parse_benchmark_result(json_file, data, result_id)
+                if result:
+                    self.results.append(result)
+                    result_id += 1
                 
-                # Extract scores - handle different formats
-                pass_at_1 = data.get('pass@1') or data.get('pass_at_1') or data.get('accuracy') or data.get('score') or 0.0
-                if pass_at_1 > 1:  # Convert percentage to decimal
-                    pass_at_1 = pass_at_1 / 100
-                
-                pass_at_5 = data.get('pass@5') or data.get('pass_at_5')
-                if pass_at_5 and pass_at_5 > 1:
-                    pass_at_5 = pass_at_5 / 100
-                
-                pass_at_10 = data.get('pass@10') or data.get('pass_at_10')
-                if pass_at_10 and pass_at_10 > 1:
-                    pass_at_10 = pass_at_10 / 100
-                
-                # Get timestamp from file or content
-                timestamp_str = data.get('timestamp') or data.get('created_at')
-                if timestamp_str:
-                    try:
-                        timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                    except (ValueError, AttributeError):
-                        timestamp = datetime.fromtimestamp(json_file.stat().st_mtime)
-                else:
-                    timestamp = datetime.fromtimestamp(json_file.stat().st_mtime)
-                
-                self.results.append(BenchmarkResult(
-                    id=f"result-{result_id}",
-                    model=str(model),
-                    benchmark=str(benchmark).replace('_', ' ').title(),
-                    pass_at_1=float(pass_at_1),
-                    pass_at_5=float(pass_at_5) if pass_at_5 else None,
-                    pass_at_10=float(pass_at_10) if pass_at_10 else None,
-                    samples=data.get('samples') or data.get('total') or data.get('n_samples') or 0,
-                    duration_seconds=data.get('duration_seconds') or data.get('duration') or data.get('time_seconds') or 0,
-                    timestamp=timestamp,
-                    notes=data.get('notes') or str(json_file.relative_to(self.RESULTS_DIR)),
-                ))
-                result_id += 1
-                
-            except (json.JSONDecodeError, KeyError, TypeError) as e:
-                # Skip malformed files
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
+    
+    def _parse_benchmark_result(self, json_file: Path, data: dict, result_id: int) -> Optional[BenchmarkResult]:
+        """Parse a benchmark result from JSON data."""
+        parts = json_file.relative_to(self.RESULTS_DIR).parts
+        
+        # Handle nested "baseline" structure (summary.json format)
+        if 'baseline' in data and isinstance(data['baseline'], dict):
+            baseline = data['baseline']
+            model = data.get('model_name') or data.get('model_path') or 'Unknown'
+            # Use parent directory as benchmark name
+            benchmark = parts[1] if len(parts) > 1 else json_file.stem
+            
+            pass_at_k = baseline.get('pass_at_k', {})
+            if isinstance(pass_at_k, dict):
+                pass_at_1 = pass_at_k.get('1') or pass_at_k.get(1) or baseline.get('pass_at_1', 0)
+            else:
+                pass_at_1 = baseline.get('pass_at_1', 0)
+            
+            samples = baseline.get('total_samples') or baseline.get('total') or 0
+            duration = data.get('total_time_sec') or 0
+        else:
+            # Direct format (baseline_*.json, *_test.json)
+            model = data.get('model_path') or data.get('model_name') or data.get('model') or 'Unknown'
+            benchmark = data.get('benchmark') or data.get('dataset') or json_file.stem
+            
+            # Handle pass_at_k as nested dict
+            pass_at_k = data.get('pass_at_k', {})
+            if isinstance(pass_at_k, dict):
+                pass_at_1 = pass_at_k.get('1') or pass_at_k.get(1) or 0
+                pass_at_5 = pass_at_k.get('5') or pass_at_k.get(5)
+                pass_at_10 = pass_at_k.get('10') or pass_at_k.get(10)
+            else:
+                pass_at_1 = data.get('pass@1') or data.get('pass_at_1') or data.get('accuracy') or 0
+                pass_at_5 = data.get('pass@5') or data.get('pass_at_5')
+                pass_at_10 = data.get('pass@10') or data.get('pass_at_10')
+            
+            samples = data.get('total') or data.get('samples') or data.get('n_samples') or 0
+            
+            # Handle timing as nested dict
+            timing = data.get('timing', {})
+            if isinstance(timing, dict):
+                duration = timing.get('total_time') or timing.get('total_time_sec') or 0
+            else:
+                duration = data.get('duration_seconds') or data.get('duration') or 0
+        
+        # Extract model short name from path
+        if '/' in str(model):
+            model = str(model).split('/')[-1]
+        
+        # Convert pass rates to percentages if they're decimals < 1
+        # (they should already be 0-1 range, we'll display as percentage)
+        pass_at_1 = float(pass_at_1) if pass_at_1 else 0.0
+        
+        # Get timestamp
+        timestamp_str = data.get('timestamp') or data.get('created_at')
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(str(timestamp_str).replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                timestamp = datetime.fromtimestamp(json_file.stat().st_mtime)
+        else:
+            timestamp = datetime.fromtimestamp(json_file.stat().st_mtime)
+        
+        # Format benchmark name nicely
+        benchmark_name = str(benchmark).replace('_', ' ').replace('-', ' ').title()
+        if 'baseline' in json_file.name.lower():
+            benchmark_name = f"Baseline {benchmark_name}"
+        
+        return BenchmarkResult(
+            id=f"result-{result_id}",
+            model=str(model),
+            benchmark=benchmark_name,
+            pass_at_1=pass_at_1,
+            pass_at_5=float(pass_at_5) if pass_at_5 else None,
+            pass_at_10=float(pass_at_10) if pass_at_10 else None,
+            samples=int(samples),
+            duration_seconds=float(duration),
+            timestamp=timestamp,
+            notes=str(json_file.relative_to(self.RESULTS_DIR)),
+        )
     
     def _load_demo_results(self):
         """Load demo results for UI development when no real results exist."""
