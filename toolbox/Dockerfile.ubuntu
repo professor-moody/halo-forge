@@ -173,7 +173,7 @@ RUN python -m pip install --no-cache-dir \
     huggingface-hub \
     trl>=0.12.0 \
     einops \
-    datasets>=2.14.0 \
+    "datasets>=2.14.0,<4.0.0" \
     scipy \
     protobuf
 
@@ -231,6 +231,7 @@ ENV SHELL=/bin/bash
 
 # --- profile.d scripts ---
 COPY scripts/01-triton-env.sh /etc/profile.d/01-triton-env.sh
+COPY scripts/50-halo-forge-install.sh /etc/profile.d/50-halo-forge-install.sh
 COPY scripts/99-halo-forge-banner.sh /etc/profile.d/99-halo-forge-banner.sh
 COPY scripts/zz-venv-path-fix.sh /etc/profile.d/zz-venv-path-fix.sh
 
