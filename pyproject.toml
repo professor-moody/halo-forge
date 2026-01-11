@@ -38,6 +38,7 @@ dependencies = [
     "matplotlib",
     "pandas",
     "rich",
+    "nicegui>=1.4.0",
 ]
 
 [project.optional-dependencies]
@@ -61,7 +62,7 @@ Repository = "https://github.com/professor-moody/halo-forge"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["halo_forge*"]
+include = ["halo_forge*", "ui*"]
 
 [tool.black]
 line-length = 100

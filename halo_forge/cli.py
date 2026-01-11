@@ -1358,6 +1358,20 @@ def cmd_test(args):
     sys.exit(0 if success else 1)
 
 
+def cmd_ui(args):
+    """Launch the web UI."""
+    print_banner()
+    print(f"{GREEN}Launching Web UI{NC}")
+    print("=" * 60)
+    print(f"Host: {args.host}")
+    print(f"Port: {args.port}")
+    print(f"URL:  http://{args.host}:{args.port}")
+    print()
+    
+    from ui.app import run
+    run(host=args.host, port=args.port, reload=args.reload)
+
+
 def cmd_inference_optimize(args):
     """Optimize model for inference."""
     from halo_forge.inference import (
@@ -2492,6 +2506,15 @@ def main():
     test_parser.add_argument('--verbose', '-v', action='store_true',
                              help='Verbose output with detailed logging')
     
+    # ui command - web interface
+    ui_parser = subparsers.add_parser('ui', help='Launch web UI')
+    ui_parser.add_argument('--host', default='127.0.0.1',
+                           help='Host to bind to (default: 127.0.0.1)')
+    ui_parser.add_argument('--port', '-p', type=int, default=8080,
+                           help='Port to listen on (default: 8080)')
+    ui_parser.add_argument('--reload', action='store_true',
+                           help='Enable hot reload for development')
+    
     # Parse arguments and dispatch
     args = parser.parse_args()
     _dispatch_commands(args)
@@ -3057,6 +3080,8 @@ def _dispatch_commands(args):
             cmd_plot_benchmarks(args)
     elif args.command == 'test':
         cmd_test(args)
+    elif args.command == 'ui':
+        cmd_ui(args)
 
 
 if __name__ == '__main__':

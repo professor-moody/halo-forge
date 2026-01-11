@@ -157,7 +157,7 @@ class QwenVLAdapter(VLMAdapter):
     
     def load(self):
         """Load Qwen-VL model."""
-        from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
+        from transformers import AutoTokenizer, AutoProcessor
         
         print(f"Loading Qwen-VL: {self.model_name}")
         
@@ -173,15 +173,27 @@ class QwenVLAdapter(VLMAdapter):
             trust_remote_code=self.trust_remote_code
         )
         
-        # Load model
+        # Load model - use appropriate class for Qwen2-VL
         device_map = "auto" if self.device == "auto" else self.device
         
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype=self.dtype,
-            device_map=device_map,
-            trust_remote_code=self.trust_remote_code
-        )
+        # Qwen2-VL requires Qwen2VLForConditionalGeneration, not AutoModelForCausalLM
+        if "Qwen2-VL" in self.model_name or "qwen2-vl" in self.model_name.lower():
+            from transformers import Qwen2VLForConditionalGeneration
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.model_name,
+                torch_dtype=self.dtype,
+                device_map=device_map,
+                trust_remote_code=self.trust_remote_code
+            )
+        else:
+            # Fallback for older Qwen-VL models
+            from transformers import AutoModelForCausalLM
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=self.dtype,
+                device_map=device_map,
+                trust_remote_code=self.trust_remote_code
+            )
         
         self._loaded = True
         print(f"Loaded Qwen-VL on {self.model.device}")

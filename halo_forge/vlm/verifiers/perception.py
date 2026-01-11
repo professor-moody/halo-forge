@@ -152,11 +152,17 @@ class PerceptionChecker:
         if self._detector is None:
             return []
         
-        # Convert to numpy if needed
+        # Convert to numpy if needed, ensuring RGB format (YOLO expects 3 channels)
         if isinstance(image, Image.Image):
+            # Convert RGBA/other modes to RGB
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
             image_np = np.array(image)
         else:
             image_np = image
+            # Handle RGBA numpy arrays (4 channels -> 3)
+            if image_np.ndim == 3 and image_np.shape[2] == 4:
+                image_np = image_np[:, :, :3]
         
         # Run detection
         results = self._detector(image_np, verbose=False)
