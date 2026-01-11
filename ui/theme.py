@@ -142,18 +142,19 @@ CSS_ANIMATIONS = """
     animation: shimmer 1.5s infinite;
 }
 
-/* Sidebar nav item */
+/* Sidebar nav item - use box-shadow instead of border to avoid layout shift */
 .nav-item {
     transition: all 0.15s ease;
-    border-left: 3px solid transparent;
+    box-shadow: inset 3px 0 0 0 transparent;
+    padding-left: 16px !important;
 }
 .nav-item:hover {
     background: rgba(124, 152, 133, 0.1);
-    border-left-color: rgba(124, 152, 133, 0.5);
+    box-shadow: inset 3px 0 0 0 rgba(124, 152, 133, 0.5);
 }
 .nav-item.active {
     background: rgba(124, 152, 133, 0.15);
-    border-left-color: #7C9885;
+    box-shadow: inset 3px 0 0 0 #7C9885;
 }
 
 /* Page transition container */

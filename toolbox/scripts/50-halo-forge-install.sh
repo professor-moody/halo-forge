@@ -26,6 +26,17 @@ _halo_forge_install() {
             echo -e "\033[0;31m✗\033[0m Failed to install halo-forge"
         fi
     fi
+    
+    # Check for HuggingFace token (for gated datasets like xLAM)
+    # Pass -e HF_TOKEN=hf_xxx when running the container
+    if [[ -n "$HF_TOKEN" ]]; then
+        echo -e "\033[0;34m>\033[0m Logging into HuggingFace..."
+        if huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null; then
+            echo -e "\033[0;32m✓\033[0m HuggingFace authenticated"
+        else
+            echo -e "\033[0;33m!\033[0m HuggingFace login failed (some datasets may be unavailable)"
+        fi
+    fi
 }
 
 # Run on first shell prompt

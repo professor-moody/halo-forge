@@ -79,15 +79,14 @@ class Sidebar:
         else:
             is_active = current_path.startswith(item['path'])
         
-        # Active styling
+        # Active styling - CSS handles box-shadow via .nav-item.active
         icon_color = COLORS["primary"] if is_active else COLORS["text_secondary"]
         text_color = COLORS["primary"] if is_active else COLORS["text_secondary"]
-        bg_class = f'bg-[{COLORS["primary"]}]/10' if is_active else ''
-        border_class = f'border-l-2 border-[{COLORS["primary"]}]' if is_active else 'border-l-2 border-transparent'
+        active_class = 'active' if is_active else ''
         
         with ui.link(target=item['path']).classes('no-underline w-full'):
             with ui.row().classes(
-                f'nav-item w-full items-center gap-3 px-4 py-3 cursor-pointer rounded-r-lg {bg_class} {border_class}'
+                f'nav-item w-full items-center gap-3 py-3 cursor-pointer rounded-r-lg {active_class}'
             ):
                 ui.icon(item['icon'], size='20px').classes(f'text-[{icon_color}]')
                 ui.label(item['label']).classes(f'text-sm font-medium text-[{text_color}]')

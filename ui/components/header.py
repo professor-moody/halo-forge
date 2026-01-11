@@ -66,23 +66,23 @@ class Header:
                     f'w-2 h-2 rounded-full bg-[{COLORS["running"]}] running-glow'
                 )
                 ui.label(f'{job_count} running').classes(
-                    f'text-xs font-medium text-[{COLORS["text_secondary"]}]'
+                    f'text-xs font-medium text-[{COLORS["text_secondary"]}] leading-none'
                 )
             else:
                 ui.element('div').classes(
                     f'w-2 h-2 rounded-full bg-[{COLORS["text_muted"]}]'
                 )
                 ui.label('Idle').classes(
-                    f'text-xs text-[{COLORS["text_muted"]}]'
+                    f'text-xs text-[{COLORS["text_muted"]}] leading-none'
                 )
     
     def _render_gpu_status(self):
         """Render GPU status indicator."""
         with ui.row().classes('items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1a1f25]'):
             ui.icon('memory', size='16px').classes(f'text-[{COLORS["info"]}]')
-            ui.label('GPU').classes(f'text-xs text-[{COLORS["text_muted"]}]')
+            ui.label('GPU').classes(f'text-xs text-[{COLORS["text_muted"]}] leading-none')
             self._gpu_label = ui.label('--').classes(
-                f'text-xs font-mono font-medium text-[{COLORS["text_secondary"]}]'
+                f'text-xs font-mono font-medium text-[{COLORS["text_secondary"]}] leading-none'
             )
         
         # Initial GPU stats fetch
