@@ -136,8 +136,12 @@ class Results:
             pass_at_k = baseline.get('pass_at_k', {})
             if isinstance(pass_at_k, dict):
                 pass_at_1 = pass_at_k.get('1') or pass_at_k.get(1) or baseline.get('pass_at_1', 0)
+                pass_at_5 = pass_at_k.get('5') or pass_at_k.get(5)
+                pass_at_10 = pass_at_k.get('10') or pass_at_k.get(10)
             else:
                 pass_at_1 = baseline.get('pass_at_1', 0)
+                pass_at_5 = None
+                pass_at_10 = None
             
             samples = baseline.get('total_samples') or baseline.get('total') or 0
             duration = data.get('total_time_sec') or 0
