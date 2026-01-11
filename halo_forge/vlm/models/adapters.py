@@ -535,19 +535,63 @@ class LFMVLAdapter(VLMAdapter):
     def load(self):
         """Load LFM VL model with custom tokenizer handling."""
         from transformers import (
-            AutoModelForCausalLM, 
+            AutoModel,
+            AutoModelForVision2Seq,
             AutoTokenizer, 
+            AutoProcessor,
             AutoImageProcessor,
             CLIPImageProcessor
         )
         
         print(f"Loading LFM VL model: {self.model_name}")
         
-        # LFM models have a custom TokenizersBackend that may not be available
-        # Try loading tokenizer with different strategies
+        device_map = "auto" if self.device == "auto" else self.device
+        
+        # Strategy 1: Try AutoProcessor + AutoModelForVision2Seq (most correct for VL models)
+        try:
+            self.processor = AutoProcessor.from_pretrained(
+                self.model_name,
+                trust_remote_code=True
+            )
+            self.tokenizer = getattr(self.processor, 'tokenizer', None)
+            
+            self.model = AutoModelForVision2Seq.from_pretrained(
+                self.model_name,
+                torch_dtype=self.dtype,
+                device_map=device_map,
+                trust_remote_code=True
+            )
+            self._loaded = True
+            print(f"Loaded LFM VL (Vision2Seq) on {self.model.device}")
+            return
+        except Exception as e:
+            print(f"Vision2Seq loading failed: {e}")
+        
+        # Strategy 2: Use AutoModel (generic, with trust_remote_code handles custom configs)
+        try:
+            self.processor = AutoProcessor.from_pretrained(
+                self.model_name,
+                trust_remote_code=True
+            )
+            self.tokenizer = getattr(self.processor, 'tokenizer', None)
+            
+            self.model = AutoModel.from_pretrained(
+                self.model_name,
+                torch_dtype=self.dtype,
+                device_map=device_map,
+                trust_remote_code=True
+            )
+            self._loaded = True
+            print(f"Loaded LFM VL (AutoModel) on {self.model.device}")
+            return
+        except Exception as e:
+            print(f"AutoModel with AutoProcessor failed: {e}")
+        
+        # Strategy 3: Load components separately for custom tokenizer backends
+        print("Trying separate component loading...")
         tokenizer_loaded = False
         
-        # Strategy 1: Try with trust_remote_code and use_fast=False
+        # Try loading tokenizer with use_fast=False
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
@@ -558,44 +602,31 @@ class LFMVLAdapter(VLMAdapter):
         except (ValueError, OSError) as e:
             print(f"Slow tokenizer loading failed: {e}")
         
-        # Strategy 2: Try to find a base tokenizer in the model config
+        # Fallback: Try base tokenizer from config
         if not tokenizer_loaded:
             try:
-                # Many VL models use a LLaMA or similar base tokenizer
                 from transformers import AutoConfig
                 config = AutoConfig.from_pretrained(
                     self.model_name, 
                     trust_remote_code=True
                 )
                 
-                # Check if there's a text_config with tokenizer info
                 if hasattr(config, 'text_config'):
                     base_model = getattr(config.text_config, '_name_or_path', None)
                     if base_model:
                         print(f"Trying base tokenizer from: {base_model}")
-                        self.tokenizer = AutoTokenizer.from_pretrained(base_model)
+                        self.tokenizer = AutoTokenizer.from_pretrained(
+                            base_model,
+                            trust_remote_code=True
+                        )
                         tokenizer_loaded = True
             except Exception as e:
                 print(f"Config-based tokenizer loading failed: {e}")
         
-        # Strategy 3: Use a known compatible tokenizer for LFM models
-        if not tokenizer_loaded:
-            print("Falling back to LLaMA tokenizer as base...")
-            try:
-                # LFM models are often based on LLaMA architecture
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    "meta-llama/Llama-2-7b-hf",
-                    trust_remote_code=True
-                )
-                tokenizer_loaded = True
-            except Exception as e:
-                print(f"LLaMA tokenizer fallback failed: {e}")
-        
         if not tokenizer_loaded:
             raise ValueError(
                 f"Could not load tokenizer for {self.model_name}. "
-                f"LFM VL models may require a specific transformers version or "
-                f"the 'tokenizers' package to be updated. "
+                f"LFM VL models may require a specific transformers version. "
                 f"Try: pip install --upgrade tokenizers transformers"
             )
         
@@ -611,9 +642,8 @@ class LFMVLAdapter(VLMAdapter):
                 "openai/clip-vit-base-patch32"
             )
         
-        # Load model
-        device_map = "auto" if self.device == "auto" else self.device
-        self.model = AutoModelForCausalLM.from_pretrained(
+        # Load model with AutoModel (handles Lfm2VlConfig properly)
+        self.model = AutoModel.from_pretrained(
             self.model_name,
             torch_dtype=self.dtype,
             device_map=device_map,
@@ -638,31 +668,56 @@ class LFMVLAdapter(VLMAdapter):
         # Load image
         img = self._load_image(image)
         
-        # Process image
-        image_inputs = self.processor(images=img, return_tensors="pt")
+        # Process inputs - try combined processor first
+        try:
+            # AutoProcessor can handle both text and images
+            inputs = self.processor(
+                text=prompt,
+                images=img,
+                return_tensors="pt"
+            )
+        except (TypeError, AttributeError):
+            # Fallback: process image and text separately
+            if hasattr(self.processor, 'image_processor'):
+                image_inputs = self.processor.image_processor(images=img, return_tensors="pt")
+            else:
+                image_inputs = self.processor(images=img, return_tensors="pt")
+            
+            text_inputs = self.tokenizer(prompt, return_tensors="pt")
+            inputs = {**image_inputs, **text_inputs}
         
-        # Tokenize text
-        text_inputs = self.tokenizer(prompt, return_tensors="pt")
-        
-        # Combine inputs
-        inputs = {**image_inputs, **text_inputs}
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
         
-        # Generate
+        # Generate - handle models with or without generate method
         with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature if do_sample else None,
-                do_sample=do_sample,
-                **kwargs
-            )
-        
-        # Decode
-        generated_text = self.tokenizer.decode(
-            outputs[0],
-            skip_special_tokens=True
-        )
+            if hasattr(self.model, 'generate'):
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature if do_sample else None,
+                    do_sample=do_sample,
+                    **kwargs
+                )
+                
+                # Decode
+                if self.tokenizer:
+                    generated_text = self.tokenizer.decode(
+                        outputs[0],
+                        skip_special_tokens=True
+                    )
+                elif hasattr(self.processor, 'decode'):
+                    generated_text = self.processor.decode(
+                        outputs[0],
+                        skip_special_tokens=True
+                    )
+                else:
+                    generated_text = str(outputs[0])
+            else:
+                # Model doesn't have generate - this is a feature extractor, not generative
+                raise NotImplementedError(
+                    f"{self.model_name} does not support text generation. "
+                    f"This may be a vision encoder model, not a VL generation model."
+                )
         
         return VLMOutput(
             text=generated_text,
