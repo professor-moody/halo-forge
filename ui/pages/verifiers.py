@@ -203,7 +203,7 @@ class Verifiers:
                 f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
             )
             ui.html(f'''<pre class="w-full p-4 rounded-lg font-mono text-sm overflow-x-auto"
-                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.selected_verifier.example_prompt}</pre>''')
+                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.selected_verifier.example_prompt}</pre>''', sanitize=False)
         
         # Code input - use binding for reactivity
         with ui.column().classes('w-full gap-2'):
@@ -255,7 +255,7 @@ class Verifiers:
             
             if 'output' in self.test_result:
                 ui.html(f'''<pre class="w-full p-3 rounded font-mono text-xs overflow-x-auto"
-                             style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.test_result['output']}</pre>''')
+                             style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.test_result['output']}</pre>''', sanitize=False)
     
     async def _run_test(self):
         """Run the verification test."""

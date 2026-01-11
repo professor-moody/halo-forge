@@ -338,4 +338,4 @@ class Datasets:
             
             import json
             ui.html(f'''<pre class="w-full p-4 rounded-lg font-mono text-xs overflow-x-auto" 
-                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{json.dumps(dataset.example, indent=2)}</pre>''')
+                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{json.dumps(dataset.example, indent=2)}</pre>''', sanitize=False)
