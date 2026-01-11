@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from ui.theme import COLORS
 from ui.state import state
 from ui.services import TrainingService
+from ui.components.notifications import notify_job_started, notify_job_failed
 
 
 @dataclass
@@ -391,7 +392,6 @@ class Training:
             return
         
         self.is_running = True
-        ui.notify('Starting SFT training...', type='info')
         
         try:
             # Launch actual training subprocess via TrainingService
@@ -406,13 +406,13 @@ class Training:
                 lora_rank=self.sft_data.lora_rank,
             )
             
-            ui.notify(f'Training started! Job ID: {job_id}', type='positive')
+            notify_job_started(f"SFT: {self.sft_data.dataset}")
             
             # Navigate to monitor
             ui.navigate.to(f'/monitor/{job_id}')
             
         except Exception as e:
-            ui.notify(f'Failed to start training: {e}', type='negative')
+            notify_job_failed("SFT Training", str(e))
         finally:
             self.is_running = False
     
@@ -422,7 +422,6 @@ class Training:
             return
         
         self.is_running = True
-        ui.notify('Starting RAFT training...', type='info')
         
         try:
             # Launch actual training subprocess via TrainingService
@@ -438,12 +437,12 @@ class Training:
                 reward_threshold=self.raft_data.reward_threshold,
             )
             
-            ui.notify(f'RAFT training started! Job ID: {job_id}', type='positive')
+            notify_job_started(f"RAFT: {self.raft_data.verifier}")
             
             # Navigate to monitor
             ui.navigate.to(f'/monitor/{job_id}')
             
         except Exception as e:
-            ui.notify(f'Failed to start RAFT: {e}', type='negative')
+            notify_job_failed("RAFT Training", str(e))
         finally:
             self.is_running = False

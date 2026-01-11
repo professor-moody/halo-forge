@@ -12,6 +12,11 @@ import asyncio
 from ui.theme import COLORS
 from ui.state import state, JobState
 from ui.services import TrainingService
+from ui.components.notifications import (
+    notify_training_stopped,
+    notify_job_completed,
+    notify_job_failed,
+)
 
 
 class Monitor:
@@ -359,8 +364,21 @@ class Monitor:
         if not self.job_id:
             return
         
+        previous_status = self.job.status if self.job else None
         self.job = state.get_job(self.job_id)
-        if not self.job or self.job.status != 'running':
+        
+        if not self.job:
+            return
+        
+        # Check for status transition and notify
+        if previous_status == 'running' and self.job.status != 'running':
+            if self.job.status == 'completed':
+                notify_job_completed(self.job.name)
+            elif self.job.status == 'failed':
+                notify_job_failed(self.job.name, self.job.error_message or "Unknown error")
+            return
+        
+        if self.job.status != 'running':
             return
         
         self._update_metrics_display()
@@ -436,16 +454,14 @@ class Monitor:
         dialog.close()
         
         if self.job:
-            ui.notify('Stopping training...', type='warning')
-            
             # Actually stop the job via TrainingService
             success = await self.training_service.stop_job(self.job.id)
             
             if success:
-                ui.notify('Training stopped', type='info')
+                notify_training_stopped(self.job.name)
                 self.job = state.get_job(self.job_id)  # Refresh job state
             else:
-                ui.notify('Failed to stop training', type='negative')
+                notify_job_failed(self.job.name, "Failed to stop training")
     
     def _scroll_to_bottom(self):
         """Scroll log viewer to bottom."""

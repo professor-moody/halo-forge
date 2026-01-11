@@ -16,6 +16,13 @@ from collections import deque
 
 from .metrics_parser import MetricsParser, ParsedMetrics
 
+# Import notification helpers (only used when UI is running)
+try:
+    from ui.components.notifications import notify_checkpoint_saved
+    HAS_UI_NOTIFICATIONS = True
+except ImportError:
+    HAS_UI_NOTIFICATIONS = False
+
 
 @dataclass
 class TrainingMetrics:
@@ -292,6 +299,15 @@ class TrainingService:
                     metrics = parser.parse_line(line)
                     if metrics:
                         self._update_job_metrics(job_id, metrics)
+                
+                # Detect checkpoint saves and notify
+                line_lower = line.lower()
+                if ('checkpoint' in line_lower and 'saved' in line_lower) or \
+                   ('saving' in line_lower and 'checkpoint' in line_lower):
+                    if HAS_UI_NOTIFICATIONS:
+                        # Extract checkpoint path if available, else use output dir
+                        checkpoint_path = job.output_dir if job.output_dir else "checkpoint"
+                        notify_checkpoint_saved(str(checkpoint_path))
         
         except Exception as e:
             job.error_message = str(e)
