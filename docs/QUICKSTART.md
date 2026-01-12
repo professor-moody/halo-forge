@@ -122,10 +122,32 @@ halo-forge benchmark run \
   --output results/benchmark.json
 ```
 
+## 7. Launch the Web UI (Optional)
+
+halo-forge includes a web-based dashboard for training, benchmarking, and monitoring:
+
+```bash
+# Launch at http://127.0.0.1:8080
+halo-forge ui
+
+# Custom port
+halo-forge ui --port 8888
+```
+
+The UI provides:
+- **Dashboard**: GPU status, active jobs, charts
+- **Training**: Configure and launch SFT/RAFT runs
+- **Benchmark**: Run Code/VLM/Audio/Agentic benchmarks
+- **Monitor**: Real-time progress, logs, and metrics
+- **Results**: View and compare benchmark scores
+
+See [WEB_UI.md](WEB_UI.md) for full documentation.
+
 ## Next Steps
 
 - Read [FULL_PIPELINE.md](FULL_PIPELINE.md) for complete training guide
 - See [VERIFIERS.md](VERIFIERS.md) for custom verification
+- See [WEB_UI.md](WEB_UI.md) for web interface details
 - Check [examples/](../examples/) for working examples
 
 ## Troubleshooting

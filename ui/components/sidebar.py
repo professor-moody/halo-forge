@@ -53,7 +53,7 @@ class Sidebar:
             # Footer
             with ui.column().classes('w-full px-4 py-4 border-t border-[#2d343c] gap-2'):
                 # Version info
-                ui.label('v1.0.0').classes(
+                ui.label('v1.1.0').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
                 

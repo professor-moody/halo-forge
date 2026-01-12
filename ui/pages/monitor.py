@@ -31,6 +31,18 @@ class Monitor:
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
+        # References to dynamic UI elements for live updates
+        self._duration_label = None
+        self._duration_timer = None
+        self._progress_percent_label = None
+        self._progress_bar = None
+        self._epoch_label = None
+        self._step_label = None
+        self._loss_label = None
+        self._lr_label = None
+        self._grad_norm_label = None
+        self._verification_label = None
+        
         if job_id:
             self.job = state.get_job(job_id)
     
@@ -52,8 +64,8 @@ class Monitor:
                     with ui.row().classes('items-center gap-3'):
                         # Status badge
                         self._render_status_badge()
-                        # Duration
-                        ui.label(f'Duration: {self.job.duration_str}').classes(
+                        # Duration (stored for live updates)
+                        self._duration_label = ui.label(f'Duration: {self.job.duration_str}').classes(
                             f'text-sm text-[{COLORS["text_secondary"]}]'
                         )
                         # Job ID
@@ -105,6 +117,8 @@ class Monitor:
             # Start live updates if job is running
             if self.job and self.job.status == 'running':
                 self._start_live_updates()
+                # Timer for duration updates (duration changes every second)
+                self._duration_timer = ui.timer(1.0, self._tick_duration)
     
     def _render_no_job(self):
         """Render when no job is selected."""
@@ -151,36 +165,41 @@ class Monitor:
             ui.label('Progress').classes(
                 f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
             )
-            ui.label(f'{self.job.progress_percent:.1f}%').classes(
+            # Store reference for live updates
+            self._progress_percent_label = ui.label(f'{self.job.progress_percent:.1f}%').classes(
                 f'text-sm font-mono text-[{COLORS["accent"]}]'
             )
         
-        # Progress bar
+        # Progress bar (store reference)
         with ui.element('div').classes(
             f'w-full h-2 rounded-full bg-[{COLORS["bg_secondary"]}] overflow-hidden'
         ):
-            ui.element('div').classes(
+            self._progress_bar = ui.element('div').classes(
                 f'h-full bg-[{COLORS["primary"]}] progress-fill rounded-full'
             ).style(f'width: {self.job.progress_percent}%')
         
-        # Progress details
+        # Progress details (store references)
         with ui.row().classes('w-full gap-6 mt-2'):
-            if self.job.type == 'raft':
-                self._progress_stat('Cycle', self.job.current_cycle, self.job.total_cycles)
-            else:
-                self._progress_stat('Epoch', self.job.current_epoch, self.job.total_epochs)
+            # Epoch/Cycle
+            with ui.row().classes('items-center gap-2'):
+                epoch_label = 'Cycle' if self.job.type == 'raft' else 'Epoch'
+                current = self.job.current_cycle if self.job.type == 'raft' else self.job.current_epoch
+                total = self.job.total_cycles if self.job.type == 'raft' else self.job.total_epochs
+                ui.label(f'{epoch_label}:').classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+                self._epoch_label = ui.label(f'{current}/{total}').classes(
+                    f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
+                )
             
-            self._progress_stat('Step', self.job.current_step, self.job.total_steps or '?')
-    
-    def _progress_stat(self, label: str, current: int, total):
-        """Render a progress statistic."""
-        with ui.row().classes('items-center gap-2'):
-            ui.label(f'{label}:').classes(
-                f'text-xs text-[{COLORS["text_muted"]}]'
-            )
-            ui.label(f'{current}/{total}').classes(
-                f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
-            )
+            # Step
+            with ui.row().classes('items-center gap-2'):
+                ui.label('Step:').classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+                self._step_label = ui.label(f'{self.job.current_step}/{self.job.total_steps or "?"}').classes(
+                    f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
+                )
     
     def _render_chart_section(self):
         """Render the loss chart section."""
@@ -253,36 +272,45 @@ class Monitor:
         return [[p.step, p.value] for p in loss_points]
     
     def _render_metrics_panel(self):
-        """Render the current metrics panel."""
+        """Render the current metrics panel with stored references for live updates."""
         ui.label('Current Metrics').classes(
             f'text-base font-semibold text-[{COLORS["text_primary"]}]'
         )
         
         with ui.column().classes('w-full gap-3 mt-2'):
-            self._metric_row('Loss', self.job.latest_loss, format_spec='.4f')
-            self._metric_row('Learning Rate', self.job.latest_lr, format_spec='.2e')
-            self._metric_row('Grad Norm', self.job.latest_grad_norm, format_spec='.4f')
+            # Loss
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Loss').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss else '--'
+                self._loss_label = ui.label(val).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
             
+            # Learning Rate
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Learning Rate').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr else '--'
+                self._lr_label = ui.label(val).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            
+            # Grad Norm
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Grad Norm').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm else '--'
+                self._grad_norm_label = ui.label(val).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            
+            # Verification (RAFT only)
             if self.job.type == 'raft':
                 ui.separator().classes('my-2')
-                self._metric_row('Verification', self.job.verification_rate, 
-                                format_spec='.1%', suffix='')
-    
-    def _metric_row(self, label: str, value, format_spec: str = '.2f', suffix: str = ''):
-        """Render a single metric row."""
-        with ui.row().classes('w-full items-center justify-between'):
-            ui.label(label).classes(
-                f'text-sm text-[{COLORS["text_secondary"]}]'
-            )
-            
-            if value is not None:
-                formatted = f'{value:{format_spec}}{suffix}'
-            else:
-                formatted = '--'
-            
-            ui.label(formatted).classes(
-                f'text-sm font-mono text-[{COLORS["text_primary"]}]'
-            )
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Verification').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    val = f'{self.job.verification_rate:.1%}' if self.job.verification_rate is not None else '--'
+                    self._verification_label = ui.label(val).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                    )
     
     def _render_log_viewer(self):
         """Render the log viewer section."""
@@ -424,18 +452,70 @@ class Monitor:
         pass
     
     def _cleanup_subscriptions(self):
-        """Unsubscribe from all events."""
+        """Unsubscribe from all events and stop timers."""
         for unsub in self._unsubscribe_callbacks:
             try:
                 unsub()
             except Exception:
                 pass
         self._unsubscribe_callbacks.clear()
+        
+        # Stop duration timer
+        if self._duration_timer:
+            self._duration_timer.cancel()
+            self._duration_timer = None
+    
+    def _tick_duration(self):
+        """Timer callback to update duration every second."""
+        if self._duration_label and self.job:
+            self._duration_label.set_text(f'Duration: {self.job.duration_str}')
     
     def _update_metrics_display(self):
-        """Update the metrics display labels."""
-        # This would update the UI elements if we stored references to them
-        pass
+        """Update all dynamic UI elements with current job state."""
+        if not self.job:
+            return
+        
+        # Refresh job state
+        self.job = state.get_job(self.job_id)
+        if not self.job:
+            return
+        
+        # Duration
+        if self._duration_label:
+            self._duration_label.set_text(f'Duration: {self.job.duration_str}')
+        
+        # Progress
+        if self._progress_percent_label:
+            self._progress_percent_label.set_text(f'{self.job.progress_percent:.1f}%')
+        if self._progress_bar:
+            self._progress_bar.style(f'width: {self.job.progress_percent}%')
+        
+        # Epoch/Cycle
+        if self._epoch_label:
+            if self.job.type == 'raft':
+                self._epoch_label.set_text(f'{self.job.current_cycle}/{self.job.total_cycles}')
+            else:
+                self._epoch_label.set_text(f'{self.job.current_epoch}/{self.job.total_epochs}')
+        
+        # Step
+        if self._step_label:
+            self._step_label.set_text(f'{self.job.current_step}/{self.job.total_steps or "?"}')
+        
+        # Metrics
+        if self._loss_label:
+            val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss else '--'
+            self._loss_label.set_text(val)
+        
+        if self._lr_label:
+            val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr else '--'
+            self._lr_label.set_text(val)
+        
+        if self._grad_norm_label:
+            val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm else '--'
+            self._grad_norm_label.set_text(val)
+        
+        if self._verification_label and self.job.verification_rate is not None:
+            self._verification_label.set_text(f'{self.job.verification_rate:.1%}')
     
     def _update_chart(self):
         """Update the loss chart with new data."""
