@@ -1,9 +1,19 @@
 """
-Benchmarking and evaluation module.
+Benchmarking and Evaluation Module
+
+This module is for **benchmark reporting** — producing metrics comparable to published papers.
+
+Two evaluation modes in halo-forge:
+1. **Training Verification** (halo_forge.rlvr.verifiers): Graduated rewards for RAFT training loop
+2. **Benchmark Reporting** (this module): Standard metrics for papers and comparison
 
 Supports multiple backends:
 - Native: Code generation benchmarks (HumanEval, MBPP, LiveCodeBench, compile verification)
 - VLMEvalKit: Vision-language benchmarks (community standard)
+
+When to use:
+- Use this module AFTER training to evaluate your model
+- Use halo_forge.rlvr.verifiers DURING training for reward signals
 
 Usage:
     from halo_forge.benchmark import run_benchmark, BenchmarkBackend
@@ -13,6 +23,8 @@ Usage:
     
     # Force specific backend
     result = run_benchmark("LiquidAI/LFM2.5-VL-1.6B", "MMStar", backend=BenchmarkBackend.VLMEVALKIT)
+
+See docs/BENCHMARKS.md for the full benchmarking guide.
 """
 
 from enum import Enum

@@ -48,7 +48,9 @@ Configure and launch training jobs:
 
 ### Benchmark (`/benchmark`)
 
-Run standardized benchmarks:
+**Purpose**: Run standardized benchmarks for **model comparison** (not training).
+
+> **Note**: This page is for benchmark **reporting** — comparing your trained model to published results. For training verification, use the Verifiers page to test the native training verifiers.
 
 | Type | Benchmarks | Models |
 |------|------------|--------|
@@ -56,6 +58,8 @@ Run standardized benchmarks:
 | **VLM** | TextVQA, DocVQA, MMStar, ChartQA | Qwen2-VL, LLaVA, Phi-3-Vision |
 | **Audio** | LibriSpeech, CommonVoice | Whisper (tiny → large-v3) |
 | **Agentic** | xLAM Function Calling | Qwen2.5-Instruct, Mistral-Instruct |
+
+**Uses community tools**: VLM benchmarks use VLMEvalKit when available for standardized, comparable results.
 
 Features:
 - Model autocomplete with popular presets
@@ -83,14 +87,22 @@ YAML configuration editor:
 
 ### Verifiers (`/verifiers`)
 
-Test code verification backends:
-- HumanEval (Python)
-- MBPP (Python basics)
-- LiveCodeBench (Multi-language)
-- Math (Numerical)
-- GSM8K (Grade-school math)
+**Purpose**: Test **native training verifiers** — these provide reward signals for RAFT, not benchmark scores.
 
-Interactive testing with code input and verification results.
+> **Note**: Verifiers are **training infrastructure**. They provide graduated rewards (0.0 → 1.0) for the RAFT training loop. For final model evaluation with comparable metrics, use the Benchmark page.
+
+Available verifiers:
+- **HumanEval** (Python): HumanEval test suite verification
+- **MBPP** (Python basics): Mostly Basic Python Problems tests
+- **Execution** (Multi-language): Compile + run verification
+- **Math** (Numerical): Answer extraction and numeric comparison
+- **GSM8K** (Grade-school math): Math reasoning verification
+
+Interactive testing:
+1. Select a verifier
+2. Enter code snippet
+3. Click "Run Verification"
+4. See graduated reward result (not just pass/fail)
 
 ### Datasets (`/datasets`)
 

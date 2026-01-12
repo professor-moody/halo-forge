@@ -90,9 +90,13 @@ class Verifiers:
         """Render the verifiers page."""
         with ui.column().classes('page-content w-full gap-6 p-6'):
             # Header
-            ui.label('Verifiers').classes(
-                f'text-2xl font-bold text-[{COLORS["text_primary"]}] animate-in'
-            )
+            with ui.column().classes('gap-1 animate-in'):
+                ui.label('Verifiers').classes(
+                    f'text-2xl font-bold text-[{COLORS["text_primary"]}]'
+                )
+                ui.label('Test training verifiers — these provide reward signals for RAFT, not benchmark scores').classes(
+                    f'text-sm text-[{COLORS["text_muted"]}]'
+                )
             
             # Verifier cards - store reference for highlighting updates
             self._cards_container = ui.row().classes('w-full gap-4 flex-wrap animate-in stagger-1')

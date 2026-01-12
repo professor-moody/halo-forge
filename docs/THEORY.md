@@ -231,6 +231,51 @@ We found that binary rewards (0 or 1) work worse than staged:
 
 **Lesson**: Partial credit helps gradient flow.
 
+## Verification vs Benchmarking Philosophy
+
+halo-forge distinguishes between **training verification** and **benchmark reporting**:
+
+### Training Verification (Native Verifiers)
+
+Used during the RAFT loop to provide learning signal:
+
+```
+Generate → Verify (graduated reward) → Filter → Train → Repeat
+```
+
+**Key properties:**
+- **Graduated rewards**: 0.0 → 0.3 → 0.5 → 0.7 → 1.0 ladder
+- **Rich feedback**: Distinguishes "syntax error" from "compiles but wrong"
+- **Fast iteration**: Integrated directly into training loop
+- **Training-optimized**: Rewards shaped for gradient flow
+
+### Benchmark Reporting (Community Tools)
+
+Used after training to compare with published results:
+
+```
+Trained Model → Benchmark Suite → Metrics (pass@k, accuracy)
+```
+
+**Key properties:**
+- **Standard metrics**: Comparable to papers and leaderboards
+- **Community tools**: VLMEvalKit, standard pass@k implementations
+- **Final evaluation**: Run after training is complete
+- **Not for training**: Binary results don't provide gradient signal
+
+### Why This Separation Matters
+
+| Training (Verifiers) | Reporting (Benchmarks) |
+|---------------------|------------------------|
+| Needs gradient signal | Needs comparable metrics |
+| Runs millions of times | Runs once per model |
+| Partial credit essential | Binary pass/fail acceptable |
+| Custom for domain | Standard for community |
+
+**We train using native verified RAFT, we report using community standards.**
+
+See [BENCHMARKS.md](BENCHMARKS.md) for the full benchmarking guide.
+
 ## Future Directions
 
 ### Execution-Based Verification

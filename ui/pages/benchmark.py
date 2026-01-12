@@ -88,7 +88,7 @@ class Benchmark:
                 # Quick status
                 with ui.row().classes('items-center gap-2'):
                     ui.icon('speed', size='20px').classes(f'text-[{COLORS["accent"]}]')
-                    ui.label('Evaluate model performance').classes(
+                    ui.label('Compare model to published benchmarks').classes(
                         f'text-sm text-[{COLORS["text_muted"]}]'
                     )
             

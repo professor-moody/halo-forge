@@ -2,16 +2,56 @@
 
 Verifiers are the core of RLVR training. They provide the reward signal that guides model improvement by checking if generated code meets requirements.
 
+> **Important:** Verifiers are **training infrastructure**, not benchmarks. For benchmark reporting (comparing to papers), see [BENCHMARKS.md](BENCHMARKS.md).
+
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Reward Levels](#reward-levels)
-3. [Built-in Verifiers](#built-in-verifiers)
-4. [Verification Modes](#verification-modes)
-5. [Creating Custom Verifiers](#creating-custom-verifiers)
-6. [Integration with RAFT](#integration-with-raft)
-7. [Best Practices](#best-practices)
-8. [Extensibility](#extensibility)
+1. [Verifiers vs Benchmarks](#verifiers-vs-benchmarks)
+2. [Overview](#overview)
+3. [Reward Levels](#reward-levels)
+4. [Built-in Verifiers](#built-in-verifiers)
+5. [Verification Modes](#verification-modes)
+6. [Creating Custom Verifiers](#creating-custom-verifiers)
+7. [Integration with RAFT](#integration-with-raft)
+8. [Best Practices](#best-practices)
+9. [Extensibility](#extensibility)
+
+---
+
+## Verifiers vs Benchmarks
+
+Verifiers and benchmarks serve different purposes in halo-forge:
+
+| Aspect | Verifiers (Training) | Benchmarks (Reporting) |
+|--------|---------------------|------------------------|
+| **Purpose** | Provide reward signal for RAFT training | Compare model to published results |
+| **Output** | Graduated rewards (0.0 → 1.0) | Metrics (pass@k, accuracy, WER) |
+| **When Used** | During training loop | After training is complete |
+| **Tooling** | Native halo-forge verifiers | Community tools (VLMEvalKit, etc.) |
+
+### Why This Distinction Matters
+
+**Verifiers provide gradient-rich feedback:**
+- Graduated rewards (0.0 → 0.3 → 0.5 → 0.7 → 1.0) enable learning from partial successes
+- Multi-step verification (compile → run → test) distinguishes failure modes
+- Tightly integrated with RAFTTrainer for immediate feedback
+
+**Benchmarks provide comparable metrics:**
+- Standard evaluation matching published papers
+- Binary pass/fail or percentage metrics
+- Community-trusted tools for apples-to-apples comparison
+
+### When to Use Which
+
+| Task | Use |
+|------|-----|
+| RAFT training loop | Native verifiers |
+| Evaluating trained model | Benchmark reporting |
+| Comparing to paper results | Benchmark reporting |
+| Debugging training issues | Native verifiers |
+| Publishing results | Benchmark reporting |
+
+For benchmark reporting details, see [BENCHMARKS.md](BENCHMARKS.md).
 
 ---
 

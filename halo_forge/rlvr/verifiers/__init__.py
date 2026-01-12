@@ -1,4 +1,21 @@
-"""Verifier implementations for RLVR training."""
+"""
+Training Verifiers for RAFT
+
+These verifiers provide **graduated reward signals** for the RAFT training loop.
+They are NOT benchmarks — they are training infrastructure.
+
+Graduated Reward Ladder:
+- 0.0: Failed to generate valid code
+- 0.3: Valid syntax, failed to compile
+- 0.5: Compiled, failed tests
+- 0.7: Passed some tests
+- 1.0: Passed all tests
+
+This gradient enables RAFT to learn from partial successes, not just perfect solutions.
+
+For benchmark reporting (paper comparison), use halo_forge.benchmark.
+See docs/VERIFIERS.md for the full verifier documentation.
+"""
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult, ChainedVerifier, RewardLevel
 from halo_forge.rlvr.verifiers.compile import GCCVerifier, MinGWVerifier, ClangVerifier

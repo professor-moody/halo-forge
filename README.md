@@ -164,12 +164,14 @@ Iterative training loop:
 5. SFT on filtered samples
 6. Repeat with updated model
 
-### Verifiers
+### Verifiers (Training Infrastructure)
 
-Automated systems that check if generated code meets requirements. Examples:
+Automated systems that provide **graduated reward signals** for RAFT training:
 - **Compile verifiers**: Does the code compile without errors?
 - **Test verifiers**: Do unit tests pass?
 - **Chained verifiers**: Multiple stages (compile, then test)
+
+> **Note**: Verifiers are training components that provide learning signals (0.0→1.0), not benchmarks. For model comparison with published results, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### Rewards
 
@@ -830,7 +832,16 @@ Demo benchmarks on AMD Strix Halo (128GB unified memory) with 16 prompts, 2 cycl
 
 **Note**: Demo benchmarks validate the pipeline works. Larger datasets and more cycles are needed for meaningful improvement.
 
-See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for detailed methodology and results.
+### Dual Evaluation Architecture
+
+halo-forge separates **training verification** from **benchmark reporting**:
+
+| Purpose | Tool | Output |
+|---------|------|--------|
+| **Training verification** | Native verifiers | Graduated rewards (0.0→1.0) for RAFT |
+| **Benchmark reporting** | VLMEvalKit, pass@k | Metrics for papers/comparison |
+
+See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for the full benchmarking guide.
 
 ---
 

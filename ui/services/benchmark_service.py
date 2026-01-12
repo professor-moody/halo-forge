@@ -1,7 +1,15 @@
 """
-Benchmark Service
+Benchmark Service - For Reporting
 
-Manages benchmark job execution via subprocess.
+Launches benchmark jobs for **model evaluation** (not training).
+This is for comparing trained models to published results.
+
+Uses community tools where available:
+- VLMEvalKit for VLM benchmarks
+- Native pass@k for code benchmarks
+
+For training verification (RAFT loop), see halo_forge.rlvr.verifiers.
+
 Supports Code, VLM, Audio, and Agentic benchmark types.
 """
 

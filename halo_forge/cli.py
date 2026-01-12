@@ -2210,8 +2210,9 @@ def main():
     raft_train_parser.add_argument('--user', help='MSVC verifier user')
     raft_train_parser.add_argument('--ssh-key', help='MSVC verifier SSH key')
     
-    # benchmark command
-    bench_parser = subparsers.add_parser('benchmark', help='Benchmarking')
+    # benchmark command (for reporting, not training)
+    bench_parser = subparsers.add_parser('benchmark', 
+        help='Benchmark reporting (compare to papers). For training verification, use RAFT.')
     bench_subparsers = bench_parser.add_subparsers(dest='bench_command', required=True)
     
     # benchmark run (legacy pass@k benchmark)
