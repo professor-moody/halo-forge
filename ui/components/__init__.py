@@ -6,6 +6,7 @@ Reusable UI components for the web interface.
 
 from ui.components.sidebar import Sidebar
 from ui.components.header import Header
+from ui.components.file_picker import FilePicker
 from ui.components.notifications import (
     NotificationType,
     notify,
@@ -23,6 +24,7 @@ from ui.components.notifications import (
 __all__ = [
     "Sidebar",
     "Header",
+    "FilePicker",
     # Notifications
     "NotificationType",
     "notify",

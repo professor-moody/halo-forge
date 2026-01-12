@@ -332,11 +332,11 @@ class Monitor:
                     'flat round dense size=sm'
                 ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Copy logs')
         
-        # Log container
+        # Log container - with data attribute for scroll targeting
         self.log_container = ui.column().classes(
             f'w-full h-64 overflow-y-auto p-4 rounded-lg bg-[{COLORS["bg_primary"]}] '
             f'font-mono text-xs leading-relaxed'
-        )
+        ).props('data-log-container')
         
         with self.log_container:
             # Demo log lines
