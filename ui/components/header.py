@@ -168,3 +168,19 @@ class Header:
     def set_title(self, title: str):
         """Set the page title."""
         self.page_title.text = title
+    
+    def _cleanup(self):
+        """Clean up event subscriptions when client disconnects."""
+        for unsub in self._unsubscribe_callbacks:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubscribe_callbacks.clear()
+    
+    def register_cleanup(self):
+        """Register cleanup handler - call this after render in a page context."""
+        try:
+            ui.context.client.on_disconnect(self._cleanup)
+        except Exception:
+            pass  # May fail if not in a proper client context

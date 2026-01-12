@@ -8,6 +8,7 @@ from nicegui import ui
 from datetime import datetime
 from typing import Optional, Callable, List
 import asyncio
+import json
 
 from ui.theme import COLORS
 from ui.state import state, JobState
@@ -119,6 +120,9 @@ class Monitor:
                 self._start_live_updates()
                 # Timer for duration updates (duration changes every second)
                 self._duration_timer = ui.timer(1.0, self._tick_duration)
+            
+            # Register cleanup on client disconnect (handles navigation away)
+            ui.context.client.on_disconnect(self._cleanup_subscriptions)
     
     def _render_no_job(self):
         """Render when no job is selected."""
@@ -603,7 +607,8 @@ class Monitor:
         """Copy logs to clipboard."""
         logs = self.training_service.get_logs(self.job_id, last_n=100)
         log_text = '\n'.join([entry.get('line', '') for entry in logs])
-        ui.run_javascript(f'navigator.clipboard.writeText({repr(log_text)})')
+        # Use json.dumps for proper JS string escaping
+        ui.run_javascript(f'navigator.clipboard.writeText({json.dumps(log_text)})')
         ui.notify('Logs copied to clipboard', type='positive', timeout=1500)
 
 

@@ -21,6 +21,7 @@ def create_layout(page_title: str = "Dashboard"):
         f'bg-[{COLORS["bg_secondary"]}] border-b border-[#2d343c] h-14'
     ):
         header = Header(title=page_title)
+        header.register_cleanup()
     
     # Left drawer (sidebar)
     with ui.left_drawer(value=True, fixed=True).classes(

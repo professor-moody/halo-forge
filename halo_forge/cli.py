@@ -789,6 +789,47 @@ def cmd_benchmark_full(args):
         print(f"\nBenchmark complete. Results saved to: {args.output}/summary.json")
 
 
+def cmd_benchmark_eval(args):
+    """Run code evaluation on standard benchmarks (HumanEval, MBPP, LiveCodeBench)."""
+    from pathlib import Path
+    from halo_forge.benchmark import run_benchmark
+    
+    print_banner()
+    print(f"{GREEN}Code Benchmark: {args.benchmark}{NC}")
+    print("=" * 60)
+    print(f"Model: {args.model}")
+    print(f"Benchmark: {args.benchmark}")
+    if args.limit:
+        print(f"Limit: {args.limit}")
+    print("=" * 60)
+    
+    output = Path(args.output) if args.output else None
+    
+    result = run_benchmark(
+        model=args.model,
+        benchmark=args.benchmark,
+        limit=args.limit,
+        output=output,
+        samples_per_prompt=getattr(args, 'samples_per_prompt', 5),
+    )
+    
+    if 'error' in result:
+        print(f"\n{RED}Error: {result['error']}{NC}")
+        sys.exit(1)
+    
+    print(f"\n{GREEN}Results:{NC}")
+    for key, value in result.get('metrics', {}).items():
+        if isinstance(value, float):
+            print(f"  {key}: {value:.4f}")
+        else:
+            print(f"  {key}: {value}")
+    
+    print(f"\nSamples evaluated: {result.get('samples', 0)}")
+    
+    if output:
+        print(f"Results saved to: {output}")
+
+
 def cmd_plot_training(args):
     """Generate charts from TensorBoard training logs."""
     from pathlib import Path
@@ -2203,6 +2244,17 @@ def main():
     bench_full_parser.add_argument('--output', '-o', default='results/benchmarks', help='Output directory')
     bench_full_parser.add_argument('--quiet', '-q', action='store_true', help='Minimal output')
     
+    # benchmark eval (simple code evaluation on standard datasets)
+    bench_eval_parser = bench_subparsers.add_parser('eval', help='Evaluate model on standard code benchmarks')
+    bench_eval_parser.add_argument('--model', '-m', required=True, help='Model name or path')
+    bench_eval_parser.add_argument('--benchmark', '-b', default='humaneval',
+                                   choices=['humaneval', 'mbpp', 'livecodebench'],
+                                   help='Benchmark dataset (default: humaneval)')
+    bench_eval_parser.add_argument('--limit', type=int, help='Max samples to evaluate')
+    bench_eval_parser.add_argument('--output', '-o', help='Output file path')
+    bench_eval_parser.add_argument('--samples-per-prompt', type=int, default=5,
+                                   help='Samples per prompt for pass@k (default: 5)')
+    
     # inference command
     inference_parser = subparsers.add_parser('inference', help='Inference optimization')
     inference_subparsers = inference_parser.add_subparsers(dest='inference_command', required=True)
@@ -2960,6 +3012,7 @@ def _dispatch_commands(args):
         ('agentic', 'train'): 'agentic_train',
         ('benchmark', 'run'): 'benchmark_run',
         ('benchmark', 'full'): 'benchmark_full',
+        ('benchmark', 'eval'): 'benchmark_eval',
     }
     
     # Setup auto-logging for training/benchmark commands
@@ -3017,6 +3070,8 @@ def _dispatch_commands(args):
                 print("  halo-forge benchmark full --suite all")
                 sys.exit(1)
             cmd_benchmark_full(args)
+        elif args.bench_command == 'eval':
+            cmd_benchmark_eval(args)
     elif args.command == 'inference':
         if args.inference_command == 'optimize':
             cmd_inference_optimize(args)

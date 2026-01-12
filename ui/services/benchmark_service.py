@@ -257,8 +257,9 @@ class BenchmarkService:
         
         if benchmark_type == BenchmarkType.CODE:
             cmd = [
-                "python", "-m", "halo_forge.cli", "benchmark",
+                "python", "-m", "halo_forge.cli", "benchmark", "eval",
                 "--model", model,
+                "--benchmark", benchmark_name,
                 "--output", output_dir,
             ]
             if limit:

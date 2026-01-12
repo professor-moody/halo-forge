@@ -87,6 +87,9 @@ class Dashboard:
             # Set up live GPU updates
             self._setup_gpu_polling()
             
+            # Register cleanup on client disconnect
+            ui.context.client.on_disconnect(self._cleanup)
+            
             # Visualization charts grid
             with ui.element('div').classes('grid-panels w-full'):
                 # Training History chart
@@ -583,3 +586,12 @@ class Dashboard:
             return self.results_service.get_latest_results(5)
         except Exception:
             return []
+    
+    def _cleanup(self):
+        """Clean up event subscriptions when client disconnects."""
+        for unsub in self._unsubscribe_callbacks:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubscribe_callbacks.clear()

@@ -502,6 +502,25 @@ class BenchmarkRunner:
         
         return result
     
+    def run_evaluation_only(self, limit: Optional[int] = None) -> EvalResult:
+        """
+        Run evaluation without training (just baseline eval).
+        
+        Args:
+            limit: Optional limit on number of prompts to evaluate
+        
+        Returns:
+            EvalResult with metrics
+        """
+        self.log(f"Evaluation-only mode: {self.model_name}")
+        
+        # Limit prompts if specified
+        if limit and hasattr(self, 'prompts') and self.prompts:
+            self.prompts = self.prompts[:limit]
+            self.log(f"Limited to {len(self.prompts)} prompts")
+        
+        return self.run_baseline_eval()
+    
     def run_raft_cycle(self, cycle: int, checkpoint: Optional[str] = None) -> CycleResult:
         """Run a single RAFT cycle."""
         self.log(f"\n--- RAFT Cycle {cycle} ---")
