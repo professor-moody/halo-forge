@@ -1360,13 +1360,7 @@ def cmd_test(args):
 
 def cmd_ui(args):
     """Launch the web UI."""
-    print_banner()
-    print(f"{GREEN}Launching Web UI{NC}")
-    print("=" * 60)
-    print(f"Host: {args.host}")
-    print(f"Port: {args.port}")
-    print(f"URL:  http://{args.host}:{args.port}")
-    print()
+    print(f"{GREEN}halo-forge UI{NC} → http://{args.host}:{args.port}")
     
     from ui.app import run
     run(host=args.host, port=args.port, reload=args.reload)

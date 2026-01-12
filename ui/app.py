@@ -103,6 +103,15 @@ def results_page():
         Results().render()
 
 
+@ui.page('/benchmark')
+def benchmark_page():
+    """Benchmark launcher page."""
+    create_layout("Benchmark")
+    with ui.column().classes('w-full h-full'):
+        from ui.pages.benchmark import Benchmark
+        Benchmark().render()
+
+
 def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
     """Run the halo-forge web UI."""
     ui.run(

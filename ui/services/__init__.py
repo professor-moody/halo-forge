@@ -121,6 +121,20 @@ from .event_bus import (
     get_event_bus,
 )
 
+# Benchmark service
+from .benchmark_service import (
+    BenchmarkService,
+    BenchmarkType,
+    BenchmarkPreset,
+    get_benchmark_service,
+    get_presets_for_type,
+    CODE_PRESETS,
+    VLM_PRESETS,
+    AUDIO_PRESETS,
+    AGENTIC_PRESETS,
+    ALL_PRESETS,
+)
+
 
 # Convenience functions for common operations
 
@@ -193,4 +207,16 @@ __all__ = [
     'Event',
     'EventType',
     'get_event_bus',
+    
+    # Benchmark
+    'BenchmarkService',
+    'BenchmarkType',
+    'BenchmarkPreset',
+    'get_benchmark_service',
+    'get_presets_for_type',
+    'CODE_PRESETS',
+    'VLM_PRESETS',
+    'AUDIO_PRESETS',
+    'AGENTIC_PRESETS',
+    'ALL_PRESETS',
 ]
