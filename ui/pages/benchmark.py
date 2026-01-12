@@ -73,8 +73,7 @@ class Benchmark:
         self.data.preset = CODE_PRESETS[0] if CODE_PRESETS else None
         self.is_running = False
         self.benchmark_service = get_benchmark_service(state)
-        self._type_container = None
-        self._preset_container = None
+        self._tabs_container = None
         self._config_container = None
     
     def render(self):
@@ -93,19 +92,23 @@ class Benchmark:
                         f'text-sm text-[{COLORS["text_muted"]}]'
                     )
             
-            # Benchmark type tabs
+            # Benchmark type tabs - in container for refresh
             with ui.row().classes(
                 f'w-full gap-2 p-2 rounded-xl bg-[{COLORS["bg_card"]}] '
                 f'border border-[#2d343c] animate-in stagger-1'
-            ):
-                self._type_button("Code", BenchmarkType.CODE, "code")
-                self._type_button("VLM", BenchmarkType.VLM, "image")
-                self._type_button("Audio", BenchmarkType.AUDIO, "mic")
-                self._type_button("Agentic", BenchmarkType.AGENTIC, "smart_toy")
+            ) as self._tabs_container:
+                self._render_type_tabs()
             
             # Main form
             with ui.column().classes('w-full gap-6') as self._config_container:
                 self._render_form()
+    
+    def _render_type_tabs(self):
+        """Render the benchmark type tab buttons."""
+        self._type_button("Code", BenchmarkType.CODE, "code")
+        self._type_button("VLM", BenchmarkType.VLM, "image")
+        self._type_button("Audio", BenchmarkType.AUDIO, "mic")
+        self._type_button("Agentic", BenchmarkType.AGENTIC, "smart_toy")
     
     def _type_button(self, label: str, btype: BenchmarkType, icon: str):
         """Render a benchmark type toggle button."""
@@ -137,7 +140,11 @@ class Benchmark:
         if models:
             self.data.model = models[0]
         
-        # Refresh the form
+        # Refresh BOTH tabs and form
+        self._tabs_container.clear()
+        with self._tabs_container:
+            self._render_type_tabs()
+        
         self._config_container.clear()
         with self._config_container:
             self._render_form()

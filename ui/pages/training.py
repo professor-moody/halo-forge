@@ -379,12 +379,13 @@ class Training:
             if hasattr(self.raft_data, key):
                 setattr(self.raft_data, key, value)
         
+        # Notify before clearing (context is still valid)
+        ui.notify(f'Applied "{preset_name}" preset', type='positive', timeout=1500)
+        
         # Re-render form to show updated values
         self.form_container.clear()
         with self.form_container:
             self._render_form()
-        
-        ui.notify(f'Applied "{preset_name}" preset', type='positive', timeout=1500)
     
     async def _launch_sft(self):
         """Launch SFT training."""

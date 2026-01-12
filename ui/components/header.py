@@ -164,7 +164,6 @@ class Header:
     async def _refresh(self):
         """Refresh page data."""
         ui.notify('Refreshing...', type='info', timeout=1000)
-        # TODO: Trigger data refresh
     
     def set_title(self, title: str):
         """Set the page title."""
