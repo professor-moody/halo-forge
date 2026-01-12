@@ -274,6 +274,21 @@ body {{
     background: {COLORS['bg_primary']};
     color: {COLORS['text_primary']};
 }}
+
+/* Fix NiceGUI/Quasar header alignment - remove default padding */
+.q-header {{
+    padding: 0 !important;
+}}
+.q-header .q-toolbar {{
+    min-height: auto !important;
+    padding: 0 !important;
+}}
+.q-header > .nicegui-content {{
+    display: flex !important;
+    align-items: center !important;
+    height: 100% !important;
+    padding: 0 !important;
+}}
 """
 
 

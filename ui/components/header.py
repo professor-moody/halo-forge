@@ -29,7 +29,7 @@ class Header:
     
     def render(self):
         """Render the header content."""
-        with ui.row().classes('w-full items-center justify-between px-6 py-2'):
+        with ui.row().classes('w-full items-center justify-between px-6 h-full'):
             # Left: Page title (set from route)
             with ui.row().classes('items-center gap-4'):
                 self.page_title = ui.label(self._title).classes(

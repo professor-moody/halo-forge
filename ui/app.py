@@ -16,9 +16,9 @@ def create_layout(page_title: str = "Dashboard"):
     """Create the base page layout with sidebar and header."""
     apply_theme()
     
-    # Header - use flex centering for proper vertical alignment
+    # Header
     with ui.header().classes(
-        f'bg-[{COLORS["bg_secondary"]}] border-b border-[#2d343c] h-12 flex items-center'
+        f'bg-[{COLORS["bg_secondary"]}] border-b border-[#2d343c] h-14'
     ):
         header = Header(title=page_title)
         header.register_cleanup()
