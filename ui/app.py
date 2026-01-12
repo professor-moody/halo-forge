@@ -16,9 +16,9 @@ def create_layout(page_title: str = "Dashboard"):
     """Create the base page layout with sidebar and header."""
     apply_theme()
     
-    # Header
+    # Header - use flex centering for proper vertical alignment
     with ui.header().classes(
-        f'bg-[{COLORS["bg_secondary"]}] border-b border-[#2d343c] h-14'
+        f'bg-[{COLORS["bg_secondary"]}] border-b border-[#2d343c] h-12 flex items-center'
     ):
         header = Header(title=page_title)
         header.register_cleanup()
@@ -117,8 +117,8 @@ def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
     """Run the halo-forge web UI."""
     from pathlib import Path
     
-    # Serve favicon from ui/static
-    favicon_path = Path(__file__).parent / "static" / "favicon.svg"
+    # Serve favicon from ui/static (use logo.png which matches website)
+    favicon_path = Path(__file__).parent / "static" / "favicon.png"
     
     ui.run(
         host=host,
