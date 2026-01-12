@@ -72,6 +72,7 @@ Results vary significantly based on model, dataset, hardware, and domain. Run be
 ### Reference
 - **[Command Index](/docs/reference/command-index/)** — Every command and flag
 - [Configuration](/docs/reference/configuration/) — Config file reference
+- [Web UI](/docs/reference/web-ui/) — Dashboard for training and monitoring
 - [Windows Setup](/docs/reference/windows-setup/) — MSVC build server
 - [Troubleshooting](/docs/reference/troubleshooting/) — Common issues
 
@@ -82,12 +83,7 @@ Results vary significantly based on model, dataset, hardware, and domain. Run be
 
 ### Experimental
 Features under active development and testing:
-- [Experimental Overview](/docs/experimental/) — What's being tested
-- [VLM Training](/docs/experimental/vlm/) — Vision-language models
-- [Audio Training](/docs/experimental/audio/) — Speech and audio models
-- [Reasoning](/docs/experimental/reasoning/) — Math and logical reasoning
-- [Agentic / Tool Calling](/docs/experimental/agentic/) — Function calling training
-- [Inference Optimization](/docs/experimental/inference/) — Model export/quantization
+- [Experimental Features](/docs/experimental/) — VLM, Audio, Reasoning, Agentic, Inference
 
 ### Meta
 - [Changelog](/docs/changelog/) — Version history

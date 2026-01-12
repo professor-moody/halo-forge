@@ -4,6 +4,12 @@ description: "Evaluate model performance with pass@k metrics"
 weight: 5
 ---
 
+This page covers **benchmark reporting** — evaluating trained models with standard metrics for comparison to published results.
+
+> **Note**: Benchmarks produce metrics for papers and comparison. For training-time verification (RAFT loop), use [Verifiers](/docs/verifiers/) which provide graduated reward signals.
+
+---
+
 ## Quick Start
 
 ```bash

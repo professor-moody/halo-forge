@@ -5,6 +5,25 @@ description: "Pluggable verification system for RLVR training"
 
 Verifiers are the heart of RLVR — they provide the reward signal that guides training.
 
+> **Important**: Verifiers are **training infrastructure**, not benchmarks. For benchmark reporting (comparing to papers), see [Benchmarking](/docs/training-pipeline/benchmarking/).
+
+## Verifiers vs Benchmarks
+
+Verifiers and benchmarks serve different purposes:
+
+| Aspect | Verifiers (Training) | Benchmarks (Reporting) |
+|--------|---------------------|------------------------|
+| **Purpose** | Provide reward signal for RAFT | Compare model to published results |
+| **Output** | Graduated rewards (0.0 to 1.0) | Metrics (pass@k, accuracy, WER) |
+| **When Used** | During training loop | After training is complete |
+| **Tooling** | Native halo-forge verifiers | Community tools (VLMEvalKit, etc.) |
+
+**Use verifiers when:** Running RAFT training, need graduated feedback, debugging training
+
+**Use benchmarks when:** Evaluating trained model, comparing to papers, publishing results
+
+---
+
 ## Built-in Verifiers
 
 ### Compilation Verifiers
