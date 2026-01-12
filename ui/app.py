@@ -115,12 +115,17 @@ def benchmark_page():
 
 def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
     """Run the halo-forge web UI."""
+    from pathlib import Path
+    
+    # Serve favicon from ui/static
+    favicon_path = Path(__file__).parent / "static" / "favicon.svg"
+    
     ui.run(
         host=host,
         port=port,
         reload=reload,
         title="halo-forge",
-        favicon="🔥",
+        favicon=favicon_path if favicon_path.exists() else "🔥",
         dark=True,
         binding_refresh_interval=0.1,
         storage_secret='halo-forge-storage-secret',  # Required for app.storage.user
