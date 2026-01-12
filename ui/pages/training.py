@@ -264,7 +264,7 @@ class Training:
                     )
                     ui.input(value=self.raft_data.model).classes('w-full').props(
                         'outlined dense dark color=grey-7'
-                    ).on('change', lambda e: setattr(self.raft_data, 'model', e.value))
+                    ).bind_value(self.raft_data, 'model')
                 
                 with ui.column().classes('flex-1 min-w-[280px] gap-2'):
                     ui.label('Verifier').classes(
@@ -275,7 +275,7 @@ class Training:
                         value=self.raft_data.verifier
                     ).classes('w-full').props(
                         'outlined dense dark color=grey-7'
-                    ).on('change', lambda e: setattr(self.raft_data, 'verifier', e.value))
+                    ).bind_value(self.raft_data, 'verifier')
             
             with ui.row().classes('w-full gap-4 flex-wrap'):
                 with ui.column().classes('flex-1 min-w-[280px] gap-2'):
@@ -356,7 +356,7 @@ class Training:
             inp = ui.input(value=display_value).classes('w-full').props(
                 'outlined dense dark color=grey-7'
             )
-            inp.on('change', lambda e: on_change(e.value))
+            inp.on('update:model-value', lambda e: on_change(e.args))
     
     def _render_launch_button(self, label: str, on_click):
         """Render the launch training button."""

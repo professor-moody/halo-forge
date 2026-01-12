@@ -98,3 +98,16 @@ datasets/combined_*.jsonl
 scripts/continue_*.sh
 scripts/run_all_*.sh
 scripts/*_benchmark*.sh
+
+# Scripts output directories
+scripts/models/
+
+# TensorBoard
+**/tensorboard/
+events.out.tfevents*
+
+# NiceGUI storage
+.nicegui/
+
+# Test configs
+configs/*test*.yaml
