@@ -470,14 +470,20 @@ class Training:
         
         # Determine select value - MUST be a valid option key
         # Fix: Check if value exists in options before using it
-        if data_obj.model_source == "preset" and data_obj.model in model_options:
-            select_value = data_obj.model
+        # Also ensure model is a string (could be dict from bad state)
+        model_val = data_obj.model
+        if isinstance(model_val, dict):
+            model_val = model_val.get('value', '') if 'value' in model_val else str(model_val)
+            data_obj.model = model_val
+        
+        if data_obj.model_source == "preset" and isinstance(model_val, str) and model_val in model_options:
+            select_value = model_val
         else:
             select_value = "custom"
             # Also update source if we're forcing custom
-            if data_obj.model_source == "preset" and data_obj.model not in model_options:
+            if data_obj.model_source == "preset":
                 data_obj.model_source = "custom"
-                data_obj.custom_model = data_obj.model
+                data_obj.custom_model = str(model_val) if model_val else ""
         
         with ui.row().classes('w-full gap-2'):
             # Main dropdown
@@ -487,7 +493,15 @@ class Training:
             ).classes('flex-1').props('outlined dense dark color=grey-7')
             
             def on_model_change(e):
-                val = e.value if hasattr(e, 'value') else e.args
+                # Extract the actual value - e.args can be a string or the raw value
+                val = e.args
+                # Handle case where val might be a dict with 'value' key
+                if isinstance(val, dict) and 'value' in val:
+                    val = val['value']
+                # Ensure val is a string
+                if not isinstance(val, str):
+                    val = str(val) if val is not None else "custom"
+                    
                 if val == "custom":
                     data_obj.model_source = "custom"
                 else:
@@ -522,14 +536,20 @@ class Training:
         dataset_options = {k: v for k, v in SFT_DATASETS}
         
         # Determine select value - MUST be a valid option key
-        if self.sft_data.dataset_source == "preset" and self.sft_data.dataset in dataset_options:
-            select_value = self.sft_data.dataset
+        # Ensure dataset is a string
+        dataset_val = self.sft_data.dataset
+        if isinstance(dataset_val, dict):
+            dataset_val = dataset_val.get('value', '') if 'value' in dataset_val else str(dataset_val)
+            self.sft_data.dataset = dataset_val
+        
+        if self.sft_data.dataset_source == "preset" and isinstance(dataset_val, str) and dataset_val in dataset_options:
+            select_value = dataset_val
         else:
             select_value = "custom"
             # Update source if forcing custom
-            if self.sft_data.dataset_source == "preset" and self.sft_data.dataset not in dataset_options:
+            if self.sft_data.dataset_source == "preset":
                 self.sft_data.dataset_source = "custom"
-                self.sft_data.custom_dataset = self.sft_data.dataset
+                self.sft_data.custom_dataset = str(dataset_val) if dataset_val else ""
         
         with ui.row().classes('w-full gap-2'):
             dataset_select = ui.select(
@@ -538,7 +558,13 @@ class Training:
             ).classes('flex-1').props('outlined dense dark color=grey-7')
             
             def on_dataset_change(e):
-                val = e.value if hasattr(e, 'value') else e.args
+                # Extract the actual value
+                val = e.args
+                if isinstance(val, dict) and 'value' in val:
+                    val = val['value']
+                if not isinstance(val, str):
+                    val = str(val) if val is not None else "custom"
+                    
                 if val == "custom":
                     self.sft_data.dataset_source = "custom"
                 else:
@@ -572,14 +598,20 @@ class Training:
         prompts_options = {k: v for k, v in RAFT_PROMPT_PRESETS}
         
         # Determine select value - MUST be a valid option key
-        if self.raft_data.prompts_source == "preset" and self.raft_data.prompts in prompts_options:
-            select_value = self.raft_data.prompts
+        # Ensure prompts is a string
+        prompts_val = self.raft_data.prompts
+        if isinstance(prompts_val, dict):
+            prompts_val = prompts_val.get('value', '') if 'value' in prompts_val else str(prompts_val)
+            self.raft_data.prompts = prompts_val
+        
+        if self.raft_data.prompts_source == "preset" and isinstance(prompts_val, str) and prompts_val in prompts_options:
+            select_value = prompts_val
         else:
             select_value = "custom"
             # Update source if forcing custom
-            if self.raft_data.prompts_source == "preset" and self.raft_data.prompts not in prompts_options:
+            if self.raft_data.prompts_source == "preset":
                 self.raft_data.prompts_source = "custom"
-                self.raft_data.custom_prompts = self.raft_data.prompts
+                self.raft_data.custom_prompts = str(prompts_val) if prompts_val else ""
         
         with ui.row().classes('w-full gap-2'):
             prompts_select = ui.select(
@@ -588,7 +620,13 @@ class Training:
             ).classes('flex-1').props('outlined dense dark color=grey-7')
             
             def on_prompts_change(e):
-                val = e.value if hasattr(e, 'value') else e.args
+                # Extract the actual value
+                val = e.args
+                if isinstance(val, dict) and 'value' in val:
+                    val = val['value']
+                if not isinstance(val, str):
+                    val = str(val) if val is not None else "custom"
+                    
                 if val == "custom":
                     self.raft_data.prompts_source = "custom"
                 else:
