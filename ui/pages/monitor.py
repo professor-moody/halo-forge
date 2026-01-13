@@ -452,9 +452,12 @@ class Monitor:
         # Update job state
         self.job = state.get_job(self.job_id)
         
-        # Update UI
-        self._update_metrics_display()
-        self._update_chart()
+        # Update UI (wrap in try/except for background context)
+        try:
+            self._update_metrics_display()
+            self._update_chart()
+        except Exception:
+            pass  # UI context may be invalid
     
     def _on_log_event(self, event: Event):
         """Handle new log line event."""
@@ -476,7 +479,10 @@ class Monitor:
             return
         
         self.job = state.get_job(self.job_id)
-        notify_job_completed(self.job.name if self.job else "Job")
+        try:
+            notify_job_completed(self.job.name if self.job else "Job")
+        except Exception:
+            pass  # Notification failed due to context
         self._cleanup_subscriptions()
     
     def _on_job_failed(self, event: Event):
@@ -486,7 +492,10 @@ class Monitor:
         
         self.job = state.get_job(self.job_id)
         error_msg = event.data.get('error', 'Unknown error')
-        notify_job_failed(self.job.name if self.job else "Job", error_msg)
+        try:
+            notify_job_failed(self.job.name if self.job else "Job", error_msg)
+        except Exception:
+            pass  # Notification failed due to context
         self._cleanup_subscriptions()
     
     def _on_job_stopped(self, event: Event):
@@ -495,7 +504,10 @@ class Monitor:
             return
         
         self.job = state.get_job(self.job_id)
-        notify_training_stopped(self.job.name if self.job else "Job")
+        try:
+            notify_training_stopped(self.job.name if self.job else "Job")
+        except Exception:
+            pass  # Notification failed due to context
         self._cleanup_subscriptions()
     
     def _on_checkpoint(self, event: Event):
@@ -553,55 +565,61 @@ class Monitor:
         if not self.job:
             return
         
-        # Duration
-        if self._duration_label:
-            self._duration_label.set_text(f'Duration: {self.job.duration_str}')
-        
-        # Progress
-        if self._progress_percent_label:
-            self._progress_percent_label.set_text(f'{self.job.progress_percent:.1f}%')
-        if self._progress_bar:
-            self._progress_bar.style(f'width: {self.job.progress_percent}%')
-        
-        # Epoch/Cycle
-        if self._epoch_label:
-            if self.job.type == 'raft':
-                self._epoch_label.set_text(f'{self.job.current_cycle}/{self.job.total_cycles}')
-            else:
-                # Display epoch as float if fractional, int otherwise
-                current = self.job.current_epoch
-                if isinstance(current, float) and current % 1 != 0:
-                    epoch_str = f'{current:.1f}'
+        try:
+            # Duration
+            if self._duration_label:
+                self._duration_label.set_text(f'Duration: {self.job.duration_str}')
+            
+            # Progress
+            if self._progress_percent_label:
+                self._progress_percent_label.set_text(f'{self.job.progress_percent:.1f}%')
+            if self._progress_bar:
+                self._progress_bar.style(f'width: {self.job.progress_percent}%')
+            
+            # Epoch/Cycle
+            if self._epoch_label:
+                if self.job.type == 'raft':
+                    self._epoch_label.set_text(f'{self.job.current_cycle}/{self.job.total_cycles}')
                 else:
-                    epoch_str = str(int(current))
-                self._epoch_label.set_text(f'{epoch_str}/{self.job.total_epochs}')
-        
-        # Step
-        if self._step_label:
-            self._step_label.set_text(f'{self.job.current_step}/{self.job.total_steps or "?"}')
-        
-        # Metrics
-        if self._loss_label:
-            val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss else '--'
-            self._loss_label.set_text(val)
-        
-        if self._lr_label:
-            val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr else '--'
-            self._lr_label.set_text(val)
-        
-        if self._grad_norm_label:
-            val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm else '--'
-            self._grad_norm_label.set_text(val)
-        
-        if self._verification_label and self.job.verification_rate is not None:
-            self._verification_label.set_text(f'{self.job.verification_rate:.1%}')
+                    # Display epoch as float if fractional, int otherwise
+                    current = self.job.current_epoch
+                    if isinstance(current, float) and current % 1 != 0:
+                        epoch_str = f'{current:.1f}'
+                    else:
+                        epoch_str = str(int(current))
+                    self._epoch_label.set_text(f'{epoch_str}/{self.job.total_epochs}')
+            
+            # Step
+            if self._step_label:
+                self._step_label.set_text(f'{self.job.current_step}/{self.job.total_steps or "?"}')
+            
+            # Metrics
+            if self._loss_label:
+                val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss else '--'
+                self._loss_label.set_text(val)
+            
+            if self._lr_label:
+                val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr else '--'
+                self._lr_label.set_text(val)
+            
+            if self._grad_norm_label:
+                val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm else '--'
+                self._grad_norm_label.set_text(val)
+            
+            if self._verification_label and self.job.verification_rate is not None:
+                self._verification_label.set_text(f'{self.job.verification_rate:.1%}')
+        except Exception:
+            pass  # UI context may be invalid
     
     def _update_chart(self):
         """Update the loss chart with new data."""
-        if hasattr(self, 'chart') and self.chart:
-            loss_data = self._get_loss_data()
-            self.chart.options['series'][0]['data'] = loss_data
-            self.chart.update()
+        try:
+            if hasattr(self, 'chart') and self.chart:
+                loss_data = self._get_loss_data()
+                self.chart.options['series'][0]['data'] = loss_data
+                self.chart.update()
+        except Exception:
+            pass  # UI context may be invalid
     
     def _update_logs_display(self):
         """Update the logs display with new entries (append-only for performance)."""
@@ -682,11 +700,14 @@ class Monitor:
             # Actually stop the job via TrainingService
             success = await self.training_service.stop_job(self.job.id)
             
-            if success:
-                notify_training_stopped(self.job.name)
-                self.job = state.get_job(self.job_id)  # Refresh job state
-            else:
-                notify_job_failed(self.job.name, "Failed to stop training")
+            try:
+                if success:
+                    notify_training_stopped(self.job.name)
+                    self.job = state.get_job(self.job_id)  # Refresh job state
+                else:
+                    notify_job_failed(self.job.name, "Failed to stop training")
+            except Exception:
+                pass  # Notification failed due to context
     
     def _scroll_to_bottom(self):
         """Scroll log viewer to bottom."""
