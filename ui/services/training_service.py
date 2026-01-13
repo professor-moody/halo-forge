@@ -220,10 +220,20 @@ class TrainingService:
         output_dir: str,
         verifier: str = "execution",
         cycles: int = 5,
-        samples_per_prompt: int = 4,
+        samples_per_prompt: int = 8,
         temperature: float = 0.7,
-        keep_percent: float = 0.25,
+        keep_percent: float = 0.5,
         reward_threshold: float = 0.5,
+        min_samples: int = 64,
+        max_new_tokens: int = 1024,
+        learning_rate: float = 1e-5,
+        lr_decay: float = 0.85,
+        min_lr: float = 1e-6,
+        checkpoint: Optional[str] = None,
+        curriculum: str = "none",
+        reward_shaping: str = "fixed",
+        system_prompt: str = "You are an expert programmer.",
+        experimental_attention: bool = False,
         on_log: Optional[Callable[[str], None]] = None,
         **kwargs
     ) -> str:
@@ -240,6 +250,16 @@ class TrainingService:
             temperature: Sampling temperature
             keep_percent: Percentage of samples to keep
             reward_threshold: Minimum reward threshold
+            min_samples: Minimum samples per cycle
+            max_new_tokens: Maximum tokens to generate
+            learning_rate: Initial learning rate
+            lr_decay: Learning rate decay per cycle
+            min_lr: Minimum learning rate floor
+            checkpoint: Optional SFT checkpoint path
+            curriculum: Curriculum learning strategy
+            reward_shaping: Reward shaping strategy
+            system_prompt: System prompt for generation
+            experimental_attention: Enable experimental ROCm attention
             on_log: Optional callback for log lines
             **kwargs: Additional CLI arguments
             
@@ -273,7 +293,22 @@ class TrainingService:
             "--temperature", str(temperature),
             "--keep-percent", str(keep_percent),
             "--reward-threshold", str(reward_threshold),
+            "--min-samples", str(min_samples),
+            "--max-new-tokens", str(max_new_tokens),
+            "--lr-decay", str(lr_decay),
+            "--min-lr", str(min_lr),
+            "--curriculum", curriculum,
+            "--reward-shaping", reward_shaping,
+            "--system-prompt", system_prompt,
         ]
+        
+        # Optional checkpoint for resume
+        if checkpoint:
+            cmd.extend(["--checkpoint", checkpoint])
+        
+        # Experimental attention flag
+        if experimental_attention:
+            cmd.append("--experimental-attention")
         
         # Add any extra arguments
         for key, value in kwargs.items():

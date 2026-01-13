@@ -33,6 +33,9 @@ class BenchmarkFormData:
     preset: Optional[BenchmarkPreset] = None
     limit: int = 500
     output_dir: str = "results/benchmarks"
+    # Code benchmark specific
+    samples_per_prompt: int = 5  # For pass@k calculation
+    verifier: str = "humaneval"  # Code verifier type
 
 
 class Benchmark:
@@ -291,6 +294,40 @@ class Benchmark:
                 limit_slider = ui.slider(min=10, max=1000, step=10, value=self.data.limit).classes('w-full')
                 limit_slider.on('update:model-value', lambda e: self._update_limit(e.args))
             
+            # Code benchmark specific options
+            if self.data.benchmark_type == BenchmarkType.CODE:
+                with ui.row().classes('w-full gap-4 flex-wrap'):
+                    # Samples per prompt (for pass@k)
+                    with ui.column().classes('flex-1 min-w-[200px] gap-2'):
+                        with ui.row().classes('w-full items-center justify-between'):
+                            ui.label('Samples per Prompt').classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                            self._samples_label = ui.label(str(self.data.samples_per_prompt)).classes(
+                                f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
+                            )
+                        samples_slider = ui.slider(
+                            min=1, max=50, step=1, value=self.data.samples_per_prompt
+                        ).classes('w-full')
+                        samples_slider.on('update:model-value', lambda e: self._update_samples(e.args))
+                        ui.label('More samples = more accurate pass@k').classes(
+                            f'text-xs text-[{COLORS["text_muted"]}]'
+                        )
+                    
+                    # Verifier selection
+                    with ui.column().classes('flex-1 min-w-[200px] gap-2'):
+                        ui.label('Verifier').classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                        ui.select(
+                            options={
+                                'humaneval': 'HumanEval (Python tests)',
+                                'mbpp': 'MBPP (Python tests)',
+                                'gcc': 'GCC (C/C++ compile)',
+                                'python': 'Python (generic)',
+                                'auto': 'Auto-detect',
+                            },
+                            value=self.data.verifier
+                        ).classes('w-full').props(
+                            'outlined dense dark color=grey-7'
+                        ).bind_value(self.data, 'verifier')
+            
             # Output directory
             with ui.column().classes('w-full gap-2'):
                 ui.label('Output Directory').classes(f'text-xs text-[{COLORS["text_muted"]}]')
@@ -312,6 +349,12 @@ class Benchmark:
                     ui.label('View results on the Results page after completion').classes(
                         f'text-xs text-[{COLORS["text_muted"]}]'
                     )
+    
+    def _update_samples(self, value):
+        """Update samples per prompt value."""
+        self.data.samples_per_prompt = int(value)
+        if hasattr(self, '_samples_label'):
+            self._samples_label.set_text(str(self.data.samples_per_prompt))
     
     def _update_limit(self, value):
         """Update limit value."""
@@ -385,6 +428,9 @@ class Benchmark:
             model_name = Path(self.data.model).name
             output_dir = f"{self.data.output_dir}/{model_name}-{self.data.preset.dataset}"
             
+            # Merge preset CLI args with form values
+            extra_args = dict(self.data.preset.cli_args)
+            
             # Launch benchmark
             job_id = await self.benchmark_service.launch_benchmark(
                 model=self.data.model,
@@ -392,7 +438,9 @@ class Benchmark:
                 benchmark_name=self.data.preset.dataset,
                 limit=self.data.limit,
                 output_dir=output_dir,
-                **self.data.preset.cli_args,
+                samples_per_prompt=self.data.samples_per_prompt,
+                verifier=self.data.verifier if self.data.benchmark_type == BenchmarkType.CODE else None,
+                **extra_args,
             )
             
             notify_job_started(f"Benchmark: {self.data.preset.name}")

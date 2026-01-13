@@ -176,22 +176,47 @@ class SFTFormData:
 @dataclass
 class RAFTFormData:
     """RAFT training form data."""
+    # Model selection
     model: str = "Qwen/Qwen2.5-Coder-3B"
     model_source: str = "preset"  # "preset" or "custom"
     custom_model: str = ""
+    
+    # Checkpoint resume (optional SFT checkpoint)
+    checkpoint: str = ""
+    use_checkpoint: bool = False
+    
+    # Prompts selection
     prompts: str = "data/rlvr/humaneval_prompts.jsonl"
     prompts_source: str = "preset"  # "preset" or "custom"
     custom_prompts: str = ""
+    
+    # Output
     output_dir: str = "models/raft_run"
+    
+    # RAFT parameters
     cycles: int = 5
     samples_per_prompt: int = 8
     temperature: float = 0.7
     keep_percent: float = 0.5
     reward_threshold: float = 0.5
-    learning_rate: float = 1e-5
     min_samples: int = 64
     max_new_tokens: int = 1024
     verifier: str = "humaneval"
+    
+    # Learning rate schedule
+    learning_rate: float = 1e-5
+    lr_decay: float = 0.85
+    min_lr: float = 1e-6
+    
+    # Advanced strategies
+    curriculum: str = "none"  # none, complexity, progressive, adaptive
+    reward_shaping: str = "fixed"  # fixed, annealing, adaptive, warmup
+    
+    # Generation options
+    system_prompt: str = "You are an expert programmer."
+    
+    # Hardware/experimental
+    experimental_attention: bool = False
 
 
 class Training:
@@ -517,7 +542,7 @@ class Training:
             self._render_form()
     
     def _render_raft_form(self):
-        """Render the RAFT training form."""
+        """Render the RAFT training form with comprehensive options."""
         # Preset selector
         with ui.column().classes(
             f'w-full gap-4 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
@@ -548,10 +573,32 @@ class Training:
             # Model selection
             with ui.column().classes('w-full gap-4'):
                 self._render_model_selector(
-                    "Base Model / Checkpoint",
+                    "Base Model",
                     self.raft_data,
                     model_type="code"
                 )
+            
+            # Checkpoint resume (optional)
+            with ui.column().classes('w-full gap-2 mt-4'):
+                with ui.row().classes('w-full items-center gap-4'):
+                    ui.label('Resume from SFT Checkpoint').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.switch(value=self.raft_data.use_checkpoint).props(
+                        'color=primary'
+                    ).bind_value(self.raft_data, 'use_checkpoint')
+                
+                if self.raft_data.use_checkpoint:
+                    with ui.row().classes('w-full gap-2'):
+                        ui.input(
+                            value=self.raft_data.checkpoint,
+                            placeholder='Path to SFT checkpoint (e.g., models/sft/final_model)'
+                        ).classes('flex-1').props(
+                            'outlined dense dark color=grey-7'
+                        ).bind_value(self.raft_data, 'checkpoint')
+                        ui.button(icon='folder_open', on_click=lambda: self._browse_checkpoint()).props(
+                            'flat dense'
+                        ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Browse checkpoint...')
             
             with ui.row().classes('w-full gap-4 flex-wrap mt-4'):
                 # Verifier selection
@@ -617,16 +664,119 @@ class Training:
                                    lambda v: setattr(self.raft_data, 'min_samples', int(v)),
                                    min_val=8, max_val=512)
                 
+                self._number_input("Max New Tokens", self.raft_data.max_new_tokens,
+                                   lambda v: setattr(self.raft_data, 'max_new_tokens', int(v)),
+                                   min_val=256, max_val=4096)
+            
+            # Learning rate section
+            with ui.row().classes('w-full gap-4 flex-wrap mt-2'):
                 self._number_input("Learning Rate", self.raft_data.learning_rate,
                                    lambda v: setattr(self.raft_data, 'learning_rate', float(v)),
                                    format_val="1e-5")
                 
-                self._number_input("Max New Tokens", self.raft_data.max_new_tokens,
-                                   lambda v: setattr(self.raft_data, 'max_new_tokens', int(v)),
-                                   min_val=256, max_val=4096)
+                self._number_input("LR Decay", self.raft_data.lr_decay,
+                                   lambda v: setattr(self.raft_data, 'lr_decay', float(v)),
+                                   format_val="0.85")
+                
+                self._number_input("Min LR", self.raft_data.min_lr,
+                                   lambda v: setattr(self.raft_data, 'min_lr', float(v)),
+                                   format_val="1e-6")
+            
+            ui.label(f'LR decays by {self.raft_data.lr_decay:.0%} each cycle, floor at {self.raft_data.min_lr:.0e}').classes(
+                f'text-xs text-[{COLORS["text_muted"]}] mt-1'
+            )
+        
+        # Generation Settings section (collapsible)
+        with ui.expansion(
+            text='Generation Settings',
+            icon='edit',
+            value=False
+        ).classes(
+            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-5'
+        ).props('dense dark'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                ui.label('System Prompt').classes(
+                    f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.textarea(
+                    value=self.raft_data.system_prompt
+                ).classes('w-full').props(
+                    'outlined dense dark color=grey-7 rows=3'
+                ).bind_value(self.raft_data, 'system_prompt')
+        
+        # Advanced Strategies section (collapsible)
+        with ui.expansion(
+            text='Advanced Strategies',
+            icon='psychology',
+            value=False
+        ).classes(
+            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-6'
+        ).props('dense dark'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                with ui.row().classes('w-full gap-4 flex-wrap'):
+                    # Curriculum learning
+                    with ui.column().classes('flex-1 min-w-[200px] gap-2'):
+                        ui.label('Curriculum').classes(
+                            f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.select(
+                            options={
+                                'none': 'None (default)',
+                                'complexity': 'Complexity (easy → hard)',
+                                'progressive': 'Progressive',
+                                'adaptive': 'Adaptive',
+                            },
+                            value=self.raft_data.curriculum
+                        ).classes('w-full').props(
+                            'outlined dense dark color=grey-7'
+                        ).bind_value(self.raft_data, 'curriculum')
+                    
+                    # Reward shaping
+                    with ui.column().classes('flex-1 min-w-[200px] gap-2'):
+                        ui.label('Reward Shaping').classes(
+                            f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.select(
+                            options={
+                                'fixed': 'Fixed (default)',
+                                'annealing': 'Annealing',
+                                'adaptive': 'Adaptive',
+                                'warmup': 'Warmup',
+                            },
+                            value=self.raft_data.reward_shaping
+                        ).classes('w-full').props(
+                            'outlined dense dark color=grey-7'
+                        ).bind_value(self.raft_data, 'reward_shaping')
+        
+        # Hardware Options section (collapsible)
+        with ui.expansion(
+            text='Hardware Options',
+            icon='memory',
+            value=False
+        ).classes(
+            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-7'
+        ).props('dense dark'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                with ui.row().classes('w-full items-center gap-4'):
+                    ui.label('Experimental Attention').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    ui.switch(value=self.raft_data.experimental_attention).props(
+                        'color=primary'
+                    ).bind_value(self.raft_data, 'experimental_attention')
+                ui.label('Enable for LFM2.5 and other models requiring ROCm experimental attention').classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
         
         # Launch button
         self._render_launch_button("Start RAFT Training", self._launch_raft)
+    
+    def _browse_checkpoint(self):
+        """Open file picker for checkpoint directory."""
+        self._open_file_picker(
+            title="Select SFT Checkpoint",
+            path_type="directory",
+            start_path="models/",
+            on_select=lambda path: setattr(self.raft_data, 'checkpoint', path)
+        )
     
     def _render_model_selector(self, label: str, data_obj, model_type: str = "code"):
         """Render model selection with dropdown + custom option."""
@@ -985,17 +1135,38 @@ class Training:
             model = self._get_effective_model(self.raft_data)
             prompts = self._get_effective_prompts()
             
+            # Get checkpoint if enabled
+            checkpoint = None
+            if self.raft_data.use_checkpoint and self.raft_data.checkpoint:
+                checkpoint = self.raft_data.checkpoint
+            
             # Launch actual training subprocess via TrainingService
             job_id = await self.training_service.launch_raft(
                 model=model,
                 prompts=prompts,
                 output_dir=self.raft_data.output_dir,
                 verifier=self.raft_data.verifier,
+                # RAFT parameters
                 cycles=self.raft_data.cycles,
                 samples_per_prompt=self.raft_data.samples_per_prompt,
                 temperature=self.raft_data.temperature,
                 keep_percent=self.raft_data.keep_percent,
                 reward_threshold=self.raft_data.reward_threshold,
+                min_samples=self.raft_data.min_samples,
+                max_new_tokens=self.raft_data.max_new_tokens,
+                # Learning rate schedule
+                learning_rate=self.raft_data.learning_rate,
+                lr_decay=self.raft_data.lr_decay,
+                min_lr=self.raft_data.min_lr,
+                # Checkpoint resume
+                checkpoint=checkpoint,
+                # Advanced strategies
+                curriculum=self.raft_data.curriculum,
+                reward_shaping=self.raft_data.reward_shaping,
+                # Generation options
+                system_prompt=self.raft_data.system_prompt,
+                # Hardware options
+                experimental_attention=self.raft_data.experimental_attention,
             )
             
             notify_job_started(f"RAFT: {self.raft_data.verifier}")

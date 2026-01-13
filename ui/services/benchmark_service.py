@@ -201,6 +201,8 @@ class BenchmarkService:
         benchmark_name: str,
         limit: Optional[int] = None,
         output_dir: Optional[str] = None,
+        samples_per_prompt: int = 5,
+        verifier: Optional[str] = None,
         on_log: Optional[Callable[[str], None]] = None,
         **kwargs
     ) -> str:
@@ -213,6 +215,8 @@ class BenchmarkService:
             benchmark_name: Benchmark/dataset name
             limit: Max samples to evaluate
             output_dir: Output directory for results
+            samples_per_prompt: Samples per prompt for pass@k (code benchmarks)
+            verifier: Verifier type for code benchmarks
             on_log: Optional callback for log lines
             **kwargs: Additional CLI arguments
             
@@ -244,6 +248,8 @@ class BenchmarkService:
             benchmark_name=benchmark_name,
             limit=limit,
             output_dir=output_dir,
+            samples_per_prompt=samples_per_prompt,
+            verifier=verifier,
             **kwargs
         )
         
@@ -259,6 +265,8 @@ class BenchmarkService:
         benchmark_name: str,
         limit: Optional[int],
         output_dir: str,
+        samples_per_prompt: int = 5,
+        verifier: Optional[str] = None,
         **kwargs
     ) -> list[str]:
         """Build CLI command for benchmark type."""
@@ -269,9 +277,11 @@ class BenchmarkService:
                 "--model", model,
                 "--benchmark", benchmark_name,
                 "--output", output_dir,
+                "--samples-per-prompt", str(samples_per_prompt),
             ]
             if limit:
                 cmd.extend(["--limit", str(limit)])
+            # Verifier is determined by benchmark type (humaneval/mbpp use their own)
         
         elif benchmark_type == BenchmarkType.VLM:
             cmd = [
