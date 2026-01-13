@@ -7,6 +7,7 @@ Real-time job monitoring with loss charts and log viewer.
 from nicegui import ui
 from datetime import datetime
 from typing import Optional, Callable, List
+from pathlib import Path
 import asyncio
 import json
 
@@ -27,10 +28,14 @@ class Monitor:
         self.job_id = job_id
         self.job: Optional[JobState] = None
         self.update_timer = None
-        self.log_lines: list[str] = []
+        self.log_lines: list[str] = []  # Legacy - kept for event handler compatibility
         self.training_service = TrainingService(state)
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
+        
+        # Persistent log handling
+        self._all_log_lines: list[str] = []  # Full log history
+        self._displayed_log_count: int = 0   # Track what's already displayed
         
         # References to dynamic UI elements for live updates
         self._duration_label = None
@@ -46,6 +51,43 @@ class Monitor:
         
         if job_id:
             self.job = state.get_job(job_id)
+            # Load existing logs from file on mount
+            self._load_logs_from_file()
+    
+    def _load_logs_from_file(self):
+        """Load existing logs from persistent log file."""
+        if not self.job:
+            return
+        
+        # Try job's log_file_path first
+        log_file_path = self.job.log_file_path
+        
+        # Fallback: construct path from output_dir
+        if not log_file_path and self.job.output_dir:
+            log_file_path = Path(self.job.output_dir) / f"{self.job_id}_training.log"
+        
+        if log_file_path and Path(log_file_path).exists():
+            try:
+                with open(log_file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.rstrip('\n')
+                        if line:
+                            self._all_log_lines.append(line)
+            except Exception as e:
+                print(f"[Monitor] Error loading log file: {e}")
+    
+    def _get_log_file_path(self) -> Optional[Path]:
+        """Get the path to the persistent log file."""
+        if not self.job:
+            return None
+        
+        if self.job.log_file_path:
+            return Path(self.job.log_file_path)
+        
+        if self.job.output_dir:
+            return Path(self.job.output_dir) / f"{self.job_id}_training.log"
+        
+        return None
     
     def render(self):
         """Render the monitor page."""
@@ -336,31 +378,24 @@ class Monitor:
                     'flat round dense size=sm'
                 ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Download logs')
         
-        # Log container - with data attribute for scroll targeting
+        # Log container - with data attribute for scroll targeting, increased height
         self.log_container = ui.column().classes(
-            f'w-full h-64 overflow-y-auto p-4 rounded-lg bg-[{COLORS["bg_primary"]}] '
+            f'w-full h-96 overflow-y-auto p-4 rounded-lg bg-[{COLORS["bg_primary"]}] '
             f'font-mono text-xs leading-relaxed'
         ).props('data-log-container')
         
         with self.log_container:
-            # Demo log lines
-            demo_logs = [
-                (f'[{datetime.now().strftime("%H:%M:%S")}] Starting training...', 'info'),
-                (f'[{datetime.now().strftime("%H:%M:%S")}] Loading model: Qwen/Qwen2.5-Coder-3B', 'info'),
-                (f'[{datetime.now().strftime("%H:%M:%S")}] Epoch 1/3 | Step 10/500 | Loss: 2.4521', 'normal'),
-                (f'[{datetime.now().strftime("%H:%M:%S")}] Epoch 1/3 | Step 20/500 | Loss: 2.3104', 'normal'),
-                (f'[{datetime.now().strftime("%H:%M:%S")}] Checkpoint saved: checkpoint-20', 'success'),
-            ]
-            
-            for line, level in demo_logs:
-                color = {
-                    'info': COLORS['info'],
-                    'success': COLORS['success'],
-                    'error': COLORS['error'],
-                    'normal': COLORS['text_secondary'],
-                }.get(level, COLORS['text_secondary'])
-                
-                ui.label(line).classes(f'text-[{color}]')
+            # Display existing logs (loaded from file or empty)
+            if self._all_log_lines:
+                for line in self._all_log_lines:
+                    color = self._get_log_color(line)
+                    ui.label(line).classes(f'text-[{color}]')
+                    self._displayed_log_count += 1
+            else:
+                # Show placeholder if no logs yet
+                ui.label('Waiting for logs...').classes(
+                    f'text-[{COLORS["text_muted"]}] italic'
+                )
     
     async def _refresh(self):
         """Refresh the monitor data."""
@@ -419,8 +454,12 @@ class Monitor:
             return
         
         line = event.data.get('line', '')
+        timestamp = event.data.get('timestamp', '')
         if line:
-            self.log_lines.append(line)
+            # Format with timestamp for consistency with file logs
+            formatted_line = f"[{timestamp}] {line}" if timestamp else line
+            self._all_log_lines.append(formatted_line)
+            self.log_lines.append(line)  # Keep legacy for compatibility
             self._update_logs_display()
     
     def _on_job_completed(self, event: Event):
@@ -475,8 +514,26 @@ class Monitor:
     
     def _tick_duration(self):
         """Timer callback to update duration every second."""
+        if not self.job_id:
+            return
+        
+        # Always fetch fresh job state to get accurate duration
+        self.job = state.get_job(self.job_id)
+        
         if self._duration_label and self.job:
-            self._duration_label.set_text(f'Duration: {self.job.duration_str}')
+            try:
+                self._duration_label.set_text(f'Duration: {self.job.duration_str}')
+            except Exception:
+                pass  # UI element may have been destroyed
+        
+        # Stop timer if job is no longer running
+        if self.job and self.job.status not in ('running', 'pending'):
+            if self._duration_timer:
+                try:
+                    self._duration_timer.cancel()
+                    self._duration_timer = None
+                except Exception:
+                    pass
     
     def _update_metrics_display(self):
         """Update all dynamic UI elements with current job state."""
@@ -533,24 +590,34 @@ class Monitor:
             self.chart.update()
     
     def _update_logs_display(self):
-        """Update the logs display with new entries."""
+        """Update the logs display with new entries (append-only for performance)."""
         if not hasattr(self, 'log_container') or not self.log_container:
             return
         
-        # Use event-driven log lines if available, otherwise fetch from service
-        if self.log_lines:
-            lines_to_display = self.log_lines[-30:]  # Show last 30
-        else:
-            # Fallback: Get logs from training service (e.g., if page loaded after job started)
-            logs = self.training_service.get_logs(self.job_id, last_n=50)
-            lines_to_display = [entry.get('line', '') for entry in logs[-30:]]
+        # On first render, load from _all_log_lines (includes file-loaded logs)
+        # Then append only new lines
+        new_lines = self._all_log_lines[self._displayed_log_count:]
         
-        if lines_to_display:
-            self.log_container.clear()
+        if not new_lines and self._displayed_log_count == 0:
+            # Fallback: Get logs from training service if no logs loaded
+            logs = self.training_service.get_logs(self.job_id, last_n=100)
+            for entry in logs:
+                line = entry.get('line', '')
+                timestamp = entry.get('timestamp', '')
+                formatted = f"[{timestamp}] {line}" if timestamp else line
+                if formatted not in self._all_log_lines:
+                    self._all_log_lines.append(formatted)
+            new_lines = self._all_log_lines[self._displayed_log_count:]
+        
+        if new_lines:
             with self.log_container:
-                for line in lines_to_display:
+                for line in new_lines:
                     color = self._get_log_color(line)
                     ui.label(line).classes(f'text-[{color}]')
+                    self._displayed_log_count += 1
+            
+            # Auto-scroll to bottom
+            self._scroll_to_bottom()
     
     def _get_log_color(self, line: str) -> str:
         """Determine log line color."""
@@ -608,17 +675,28 @@ class Monitor:
             ui.run_javascript(f'document.querySelector("[data-log-container]").scrollTop = 999999')
     
     def _copy_logs(self):
-        """Copy logs to clipboard with error handling."""
-        logs = self.training_service.get_logs(self.job_id, last_n=500)
+        """Copy ALL logs to clipboard from persistent file or memory."""
+        log_text = ""
         
-        if not logs:
-            ui.notify('No logs available to copy', type='warning', timeout=1500)
-            return
+        # Try to read from persistent log file first (has full history)
+        log_file = self._get_log_file_path()
+        if log_file and log_file.exists():
+            try:
+                log_text = log_file.read_text(encoding='utf-8')
+            except Exception:
+                pass
         
-        log_text = '\n'.join([entry.get('line', '') for entry in logs])
+        # Fallback to in-memory logs
+        if not log_text:
+            log_text = '\n'.join(self._all_log_lines)
+        
+        # Final fallback to service buffer
+        if not log_text:
+            logs = self.training_service.get_logs(self.job_id, last_n=1000)
+            log_text = '\n'.join([entry.get('line', '') for entry in logs])
         
         if not log_text.strip():
-            ui.notify('Logs are empty', type='warning', timeout=1500)
+            ui.notify('No logs available to copy', type='warning', timeout=1500)
             return
         
         # Use json.dumps for proper JS string escaping with error handling
@@ -636,22 +714,41 @@ class Monitor:
                     document.body.removeChild(ta);
                 }});
         ''')
-        ui.notify('Logs copied to clipboard', type='positive', timeout=1500)
+        line_count = len(log_text.strip().split('\n'))
+        ui.notify(f'Copied {line_count} log lines to clipboard', type='positive', timeout=1500)
     
     async def _download_logs(self):
-        """Download logs as a text file."""
-        logs = self.training_service.get_logs(self.job_id, last_n=1000)
+        """Download ALL logs as a text file from persistent file or memory."""
+        log_text = ""
         
-        if not logs:
+        # Try to read from persistent log file first (has full history)
+        log_file = self._get_log_file_path()
+        if log_file and log_file.exists():
+            try:
+                log_text = log_file.read_text(encoding='utf-8')
+            except Exception:
+                pass
+        
+        # Fallback to in-memory logs
+        if not log_text:
+            log_text = '\n'.join(self._all_log_lines)
+        
+        # Final fallback to service buffer
+        if not log_text:
+            logs = self.training_service.get_logs(self.job_id, last_n=1000)
+            log_text = '\n'.join([entry.get('line', '') for entry in logs])
+        
+        if not log_text.strip():
             ui.notify('No logs available to download', type='warning', timeout=1500)
             return
         
-        log_text = '\n'.join([entry.get('line', '') for entry in logs])
         job_name = self.job.name.replace(' ', '_').replace(':', '-') if self.job else 'training'
         filename = f"{job_name}_logs.txt"
         
         # Trigger browser download
+        line_count = len(log_text.strip().split('\n'))
         ui.download(log_text.encode('utf-8'), filename)
+        ui.notify(f'Downloading {line_count} log lines', type='positive', timeout=1500)
 
 
 class MonitorList:

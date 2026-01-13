@@ -51,6 +51,9 @@ class JobState:
     # Process handle (not serializable)
     process: Any = None
     
+    # Log file path for persistent logging
+    log_file_path: Optional[Path] = None
+    
     @property
     def progress_percent(self) -> float:
         """Calculate overall progress percentage."""

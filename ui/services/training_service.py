@@ -389,6 +389,19 @@ class TrainingService:
         callbacks = self._callbacks.get(job_id, [])
         event_bus = get_event_bus()
         
+        # Set up persistent log file
+        log_file_path = None
+        log_file = None
+        if job.output_dir:
+            log_file_path = Path(job.output_dir) / f"{job_id}_training.log"
+            job.log_file_path = log_file_path
+            try:
+                log_file_path.parent.mkdir(parents=True, exist_ok=True)
+                log_file = open(log_file_path, 'a', encoding='utf-8')
+            except Exception as e:
+                print(f"[TrainingService] Could not open log file: {e}")
+                log_file = None
+        
         try:
             async for line_bytes in job.process.stdout:
                 line = line_bytes.decode('utf-8', errors='replace').strip()
@@ -397,11 +410,19 @@ class TrainingService:
                 
                 timestamp = datetime.now().isoformat()
                 
-                # Store log line
+                # Store log line in memory buffer
                 log_buffer.append({
                     'timestamp': timestamp,
                     'line': line,
                 })
+                
+                # Write to persistent log file
+                if log_file:
+                    try:
+                        log_file.write(f"[{timestamp}] {line}\n")
+                        log_file.flush()
+                    except Exception:
+                        pass
                 
                 # Emit log line event
                 await event_bus.emit(Event(
@@ -458,6 +479,13 @@ class TrainingService:
         
         except Exception as e:
             job.error_message = str(e)
+        finally:
+            # Close persistent log file
+            if log_file:
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
         
         # Process completed
         return_code = await job.process.wait()
