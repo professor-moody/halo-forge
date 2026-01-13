@@ -866,6 +866,16 @@ def cmd_benchmark_eval(args):
     print(f"Benchmark: {args.benchmark}")
     if args.limit:
         print(f"Limit: {args.limit}")
+    
+    # Show verification mode
+    run_after_compile = getattr(args, 'run_after_compile', False)
+    mode = "MVR (full verification)" if run_after_compile else "MVP (compile-only)"
+    print(f"Mode: {mode}")
+    
+    if getattr(args, 'language', None):
+        print(f"Language: {args.language}")
+    if getattr(args, 'verifier', None):
+        print(f"Verifier: {args.verifier}")
     print("=" * 60)
     
     output = Path(args.output) if args.output else None
@@ -876,6 +886,9 @@ def cmd_benchmark_eval(args):
         limit=args.limit,
         output=output,
         samples_per_prompt=getattr(args, 'samples_per_prompt', 5),
+        run_after_compile=run_after_compile,
+        language=getattr(args, 'language', None),
+        verifier=getattr(args, 'verifier', None),
     )
     
     if 'error' in result:
@@ -2348,12 +2361,20 @@ def main():
     bench_eval_parser = bench_subparsers.add_parser('eval', help='Evaluate model on standard code benchmarks')
     bench_eval_parser.add_argument('--model', '-m', required=True, help='Model name or path')
     bench_eval_parser.add_argument('--benchmark', '-b', default='humaneval',
-                                   choices=['humaneval', 'mbpp', 'livecodebench'],
+                                   choices=['humaneval', 'mbpp', 'livecodebench', 'cpp', 'rust', 'go'],
                                    help='Benchmark dataset (default: humaneval)')
     bench_eval_parser.add_argument('--limit', type=int, help='Max samples to evaluate')
     bench_eval_parser.add_argument('--output', '-o', help='Output file path')
     bench_eval_parser.add_argument('--samples-per-prompt', type=int, default=5,
                                    help='Samples per prompt for pass@k (default: 5)')
+    bench_eval_parser.add_argument('--run-after-compile', action='store_true',
+                                   help='Run compiled code (MVR mode). Default: compile-only (MVP)')
+    bench_eval_parser.add_argument('--language',
+                                   choices=['cpp', 'rust', 'go', 'python'],
+                                   help='Target language for native benchmarks')
+    bench_eval_parser.add_argument('--verifier',
+                                   choices=['gcc', 'mingw', 'clang', 'rust', 'go', 'humaneval', 'mbpp'],
+                                   help='Verifier type')
     
     # inference command
     inference_parser = subparsers.add_parser('inference', help='Inference optimization')

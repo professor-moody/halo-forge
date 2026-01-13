@@ -212,9 +212,13 @@ def _run_native_benchmark(
     # Check for language-specific benchmarks (cpp, rust, go)
     language = kwargs.pop('language', None)
     verifier_type = kwargs.pop('verifier', None)
+    run_after_compile = kwargs.pop('run_after_compile', True)
     
     if language or benchmark in ('cpp', 'rust', 'go', 'c++'):
-        return _run_language_benchmark(model, benchmark, language, verifier_type, limit, output, **kwargs)
+        return _run_language_benchmark(
+            model, benchmark, language, verifier_type, limit, output,
+            run_after_compile=run_after_compile, **kwargs
+        )
     
     # Use existing benchmark runner for Python benchmarks
     # Pop samples_per_prompt to avoid duplicate argument error
@@ -267,6 +271,7 @@ def _run_language_benchmark(
     verifier_type: Optional[str] = None,
     limit: Optional[int] = None,
     output: Optional[Path] = None,
+    run_after_compile: bool = True,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -274,6 +279,10 @@ def _run_language_benchmark(
     
     This exposes our RAFT verifiers as a benchmark tool for evaluating models
     on compiled language generation.
+    
+    Args:
+        run_after_compile: If True (MVR), run the compiled code and check output.
+                          If False (MVP), only verify compilation.
     """
     from halo_forge.benchmark.prompts import get_prompts_for_language
     from halo_forge.benchmark.pass_at_k import Benchmark
@@ -301,9 +310,11 @@ def _run_language_benchmark(
         prompts = prompts[:limit]
     
     print(f"Evaluating on {len(prompts)} {language.upper()} prompts")
+    mode = "MVR (full verification)" if run_after_compile else "MVP (compile-only)"
+    print(f"Verification mode: {mode}")
     
     # Select verifier based on language and verifier_type
-    verifier = _get_verifier_for_language(language, verifier_type)
+    verifier = _get_verifier_for_language(language, verifier_type, run_after_compile)
     
     if verifier is None:
         return {
@@ -369,8 +380,23 @@ def _run_language_benchmark(
     return output_result
 
 
-def _get_verifier_for_language(language: str, verifier_type: Optional[str] = None):
-    """Get the appropriate verifier for a language."""
+def _get_verifier_for_language(
+    language: str,
+    verifier_type: Optional[str] = None,
+    run_after_compile: bool = True
+):
+    """
+    Get the appropriate verifier for a language.
+    
+    Args:
+        language: Target language (cpp, rust, go, python)
+        verifier_type: Specific verifier (gcc, mingw, clang, rust, go)
+        run_after_compile: If True, use MVR mode (run and check output).
+                          If False, use MVP mode (compile-only).
+    
+    Returns:
+        Configured verifier instance
+    """
     from halo_forge.rlvr.verifiers import (
         GCCVerifier, MinGWVerifier, ClangVerifier,
         RustVerifier, GoVerifier,
@@ -381,18 +407,18 @@ def _get_verifier_for_language(language: str, verifier_type: Optional[str] = Non
     
     if language in ('cpp', 'c++', 'c'):
         if verifier_type == 'mingw':
-            return MinGWVerifier(run_after_compile=True, timeout=30)
+            return MinGWVerifier(run_after_compile=run_after_compile, timeout=30)
         elif verifier_type == 'clang':
-            return ClangVerifier(run_after_compile=True, timeout=30)
+            return ClangVerifier(run_after_compile=run_after_compile, timeout=30)
         else:
             # Default to GCC
-            return GCCVerifier(run_after_compile=True, timeout=30)
+            return GCCVerifier(run_after_compile=run_after_compile, timeout=30)
     
     elif language == 'rust':
-        return RustVerifier(run_after_compile=True, timeout=60)
+        return RustVerifier(run_after_compile=run_after_compile, timeout=60)
     
     elif language == 'go':
-        return GoVerifier(run_after_compile=True, timeout=30)
+        return GoVerifier(run_after_compile=run_after_compile, timeout=30)
     
     return None
 

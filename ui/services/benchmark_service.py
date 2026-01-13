@@ -239,6 +239,7 @@ class BenchmarkService:
         output_dir: Optional[str] = None,
         samples_per_prompt: int = 5,
         verifier: Optional[str] = None,
+        run_after_compile: bool = True,
         on_log: Optional[Callable[[str], None]] = None,
         **kwargs
     ) -> str:
@@ -253,6 +254,7 @@ class BenchmarkService:
             output_dir: Output directory for results
             samples_per_prompt: Samples per prompt for pass@k (code benchmarks)
             verifier: Verifier type for code benchmarks
+            run_after_compile: MVR mode (run after compile) vs MVP (compile-only)
             on_log: Optional callback for log lines
             **kwargs: Additional CLI arguments
             
@@ -286,6 +288,7 @@ class BenchmarkService:
             output_dir=output_dir,
             samples_per_prompt=samples_per_prompt,
             verifier=verifier,
+            run_after_compile=run_after_compile,
             **kwargs
         )
         
@@ -303,6 +306,7 @@ class BenchmarkService:
         output_dir: str,
         samples_per_prompt: int = 5,
         verifier: Optional[str] = None,
+        run_after_compile: bool = True,
         **kwargs
     ) -> list[str]:
         """Build CLI command for benchmark type."""
@@ -317,7 +321,12 @@ class BenchmarkService:
             ]
             if limit:
                 cmd.extend(["--limit", str(limit)])
-            # Verifier is determined by benchmark type (humaneval/mbpp use their own)
+            # Add verification mode (MVR = run after compile, MVP = compile-only)
+            if run_after_compile:
+                cmd.append("--run-after-compile")
+            # Add verifier if specified for compiled languages
+            if verifier and verifier not in ('humaneval', 'mbpp', 'python', 'auto'):
+                cmd.extend(["--verifier", verifier])
         
         elif benchmark_type == BenchmarkType.VLM:
             cmd = [

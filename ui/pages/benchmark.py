@@ -42,6 +42,7 @@ class BenchmarkFormData:
     # Code benchmark specific
     samples_per_prompt: int = 5  # For pass@k calculation
     verifier: str = "humaneval"  # Code verifier type
+    run_after_compile: bool = True  # MVR (full verification) by default for benchmarks
 
 
 class Benchmark:
@@ -481,6 +482,10 @@ class Benchmark:
                                 'humaneval': 'HumanEval (Python tests)',
                                 'mbpp': 'MBPP (Python tests)',
                                 'gcc': 'GCC (C/C++ compile)',
+                                'mingw': 'MinGW (Windows C/C++)',
+                                'clang': 'Clang (C/C++ compile)',
+                                'rust': 'Rust (cargo)',
+                                'go': 'Go (go build)',
                                 'python': 'Python (generic)',
                                 'auto': 'Auto-detect',
                             },
@@ -488,6 +493,24 @@ class Benchmark:
                         ).classes('w-full').props(
                             'outlined dense dark color=grey-7'
                         ).bind_value(self.data, 'verifier')
+                
+                # Verification mode toggle (for compiled language benchmarks)
+                with ui.row().classes('w-full gap-4 items-center mt-2'):
+                    with ui.column().classes('flex-1 gap-1'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.switch(value=self.data.run_after_compile).bind_value(
+                                self.data, 'run_after_compile'
+                            ).props('color=primary dense')
+                            ui.label('Full Verification (MVR)').classes(
+                                f'text-sm text-[{COLORS["text_primary"]}]'
+                            )
+                        # Description based on mode
+                        with ui.row().classes('gap-2'):
+                            ui.icon('info', size='14px').classes(f'text-[{COLORS["text_muted"]}]')
+                            ui.label(
+                                'MVR: Run code and check output (max reward 1.0) | '
+                                'MVP: Compile-only (max reward 0.5)'
+                            ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
             
             # Output directory
             with ui.column().classes('w-full gap-2'):
@@ -613,6 +636,7 @@ class Benchmark:
                 output_dir=output_dir,
                 samples_per_prompt=self.data.samples_per_prompt,
                 verifier=self.data.verifier if self.data.benchmark_type == BenchmarkType.CODE else None,
+                run_after_compile=self.data.run_after_compile,
                 **extra_args,
             )
             
