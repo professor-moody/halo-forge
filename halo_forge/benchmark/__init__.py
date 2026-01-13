@@ -209,7 +209,14 @@ def _run_native_benchmark(
     print(f"Model: {model}")
     print(f"Backend: halo-forge native")
     
-    # Use existing benchmark runner
+    # Check for language-specific benchmarks (cpp, rust, go)
+    language = kwargs.pop('language', None)
+    verifier_type = kwargs.pop('verifier', None)
+    
+    if language or benchmark in ('cpp', 'rust', 'go', 'c++'):
+        return _run_language_benchmark(model, benchmark, language, verifier_type, limit, output, **kwargs)
+    
+    # Use existing benchmark runner for Python benchmarks
     # Pop samples_per_prompt to avoid duplicate argument error
     samples = kwargs.pop('samples_per_prompt', 5)
     # Pop output_dir if passed, otherwise derive from output path or use default
@@ -251,6 +258,143 @@ def _run_native_benchmark(
             json.dump(output_result, f, indent=2)
     
     return output_result
+
+
+def _run_language_benchmark(
+    model: str,
+    benchmark: str,
+    language: Optional[str] = None,
+    verifier_type: Optional[str] = None,
+    limit: Optional[int] = None,
+    output: Optional[Path] = None,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Run benchmark for compiled languages (C++, Rust, Go) using internal verifiers.
+    
+    This exposes our RAFT verifiers as a benchmark tool for evaluating models
+    on compiled language generation.
+    """
+    from halo_forge.benchmark.prompts import get_prompts_for_language
+    from halo_forge.benchmark.pass_at_k import Benchmark
+    
+    # Determine language from benchmark name if not specified
+    if not language:
+        language = benchmark.lower()
+        if language == 'c++':
+            language = 'cpp'
+    
+    print(f"Running {language.upper()} benchmark with internal verifiers")
+    
+    # Get prompts for the language
+    prompts = get_prompts_for_language(language)
+    if not prompts:
+        return {
+            'error': f'No prompts available for language: {language}',
+            'model': model,
+            'benchmark': benchmark,
+            'backend': 'native',
+        }
+    
+    # Apply limit if specified
+    if limit and limit < len(prompts):
+        prompts = prompts[:limit]
+    
+    print(f"Evaluating on {len(prompts)} {language.upper()} prompts")
+    
+    # Select verifier based on language and verifier_type
+    verifier = _get_verifier_for_language(language, verifier_type)
+    
+    if verifier is None:
+        return {
+            'error': f'No verifier available for language: {language}',
+            'model': model,
+            'benchmark': benchmark,
+            'backend': 'native',
+        }
+    
+    print(f"Using verifier: {verifier.__class__.__name__}")
+    
+    # Run benchmark using pass@k calculator
+    samples_per_prompt = kwargs.pop('samples_per_prompt', 5)
+    
+    benchmark_runner = Benchmark(
+        model_path=model,
+        verifier=verifier,
+        system_prompt=f"You are an expert {language.upper()} programmer. Write clean, correct code.",
+    )
+    
+    # Build output path
+    output_path = None
+    if output:
+        output_path = str(output)
+    
+    # Run full benchmark
+    result = benchmark_runner.run(
+        prompts=prompts,
+        samples_per_prompt=samples_per_prompt,
+        k_values=[1, 5, 10],
+        max_new_tokens=1024,
+        temperature=0.7,
+        output_path=output_path,
+    )
+    
+    output_result = {
+        'model': model,
+        'benchmark': benchmark,
+        'language': language,
+        'backend': 'native-internal',
+        'verifier': verifier.__class__.__name__,
+        'metrics': {
+            'pass_at_1': result.pass_at_k.get(1, 0.0),
+            'pass_at_5': result.pass_at_k.get(5, 0.0),
+            'pass_at_10': result.pass_at_k.get(10, 0.0),
+            'pass_rate': result.pass_rate,
+            'total_prompts': result.total,
+            'passed': result.passed,
+        },
+        'by_category': result.by_category,
+        'samples': result.total,
+    }
+    
+    print(f"Results: {result.pass_rate:.1%} pass rate, pass@1={result.pass_at_k.get(1, 0):.1%}")
+    
+    # Save if output specified (already saved by benchmark_runner.run if output_path provided)
+    if output and not output_path:
+        import json
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, 'w') as f:
+            json.dump(output_result, f, indent=2)
+    
+    return output_result
+
+
+def _get_verifier_for_language(language: str, verifier_type: Optional[str] = None):
+    """Get the appropriate verifier for a language."""
+    from halo_forge.rlvr.verifiers import (
+        GCCVerifier, MinGWVerifier, ClangVerifier,
+        RustVerifier, GoVerifier,
+    )
+    
+    language = language.lower()
+    verifier_type = (verifier_type or '').lower()
+    
+    if language in ('cpp', 'c++', 'c'):
+        if verifier_type == 'mingw':
+            return MinGWVerifier(run_after_compile=True, timeout=30)
+        elif verifier_type == 'clang':
+            return ClangVerifier(run_after_compile=True, timeout=30)
+        else:
+            # Default to GCC
+            return GCCVerifier(run_after_compile=True, timeout=30)
+    
+    elif language == 'rust':
+        return RustVerifier(run_after_compile=True, timeout=60)
+    
+    elif language == 'go':
+        return GoVerifier(run_after_compile=True, timeout=30)
+    
+    return None
 
 
 __all__ = [

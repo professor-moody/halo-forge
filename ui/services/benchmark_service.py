@@ -47,6 +47,7 @@ class BenchmarkPreset:
 
 # Preset benchmarks for each type
 CODE_PRESETS = [
+    # Python benchmarks
     BenchmarkPreset(
         name="HumanEval",
         type=BenchmarkType.CODE,
@@ -67,6 +68,41 @@ CODE_PRESETS = [
         dataset="livecodebench",
         description="Competitive programming from recent contests",
         default_limit=200,
+    ),
+    # C++ benchmarks (using internal verifiers)
+    BenchmarkPreset(
+        name="C++ (Native)",
+        type=BenchmarkType.CODE,
+        dataset="cpp",
+        description="C++ code generation with GCC verification",
+        default_limit=16,
+        cli_args={"language": "cpp", "verifier": "gcc"},
+    ),
+    BenchmarkPreset(
+        name="C++ (Windows)",
+        type=BenchmarkType.CODE,
+        dataset="cpp",
+        description="C++ code generation with MinGW (Windows cross-compile)",
+        default_limit=16,
+        cli_args={"language": "cpp", "verifier": "mingw"},
+    ),
+    # Rust benchmarks
+    BenchmarkPreset(
+        name="Rust (Native)",
+        type=BenchmarkType.CODE,
+        dataset="rust",
+        description="Rust code generation with cargo verification",
+        default_limit=10,
+        cli_args={"language": "rust", "verifier": "rust"},
+    ),
+    # Go benchmarks
+    BenchmarkPreset(
+        name="Go (Native)",
+        type=BenchmarkType.CODE,
+        dataset="go",
+        description="Go code generation with go build verification",
+        default_limit=10,
+        cli_args={"language": "go", "verifier": "go"},
     ),
 ]
 
