@@ -212,8 +212,17 @@ def _run_native_benchmark(
     # Use existing benchmark runner
     # Pop samples_per_prompt to avoid duplicate argument error
     samples = kwargs.pop('samples_per_prompt', 5)
+    # Pop output_dir if passed, otherwise derive from output path or use default
+    output_dir = kwargs.pop('output_dir', None)
+    if output_dir is None:
+        if output:
+            output_dir = str(output.parent)
+        else:
+            output_dir = f"results/benchmarks/{Path(model).name}"
+    
     runner = BenchmarkRunner(
         model_name=model,
+        output_dir=output_dir,
         n_cycles=0,  # Just evaluation, no training
         samples_per_prompt=samples,
         **kwargs
