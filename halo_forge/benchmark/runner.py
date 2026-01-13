@@ -319,6 +319,83 @@ class BenchmarkRunner:
         
         self.log(f"Model loaded: {total_params / 1e6:.0f}M params, {trainable_params / 1e6:.1f}M trainable ({100 * trainable_params / total_params:.2f}%)")
     
+    def _load_model_for_eval(self):
+        """
+        Load model for evaluation only (no new LoRA layers).
+        
+        Properly handles:
+        - PEFT/LoRA checkpoints (loads base + adapters)
+        - Full models (loads directly)
+        - final_model subdirectory pattern from SFT
+        """
+        self.log(f"Loading model for evaluation: {self.model_name}")
+        
+        import torch
+        import json
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from peft import PeftModel
+        
+        model_path = Path(self.model_name)
+        adapter_config_path = model_path / "adapter_config.json"
+        
+        # If adapter_config.json not in root, check final_model subdirectory
+        if not adapter_config_path.exists():
+            final_model_path = model_path / "final_model" / "adapter_config.json"
+            if final_model_path.exists():
+                adapter_config_path = final_model_path
+                model_path = model_path / "final_model"
+                self.log(f"Using final_model subdirectory: {model_path}")
+        
+        if adapter_config_path.exists():
+            # LoRA checkpoint - read base_model from adapter config (authoritative source)
+            with open(adapter_config_path) as f:
+                adapter_config = json.load(f)
+            base_model_name = adapter_config.get("base_model_name_or_path", self.model_name)
+            self.log(f"Loading as LoRA checkpoint (base: {base_model_name})...")
+            
+            # Load tokenizer from base model
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                base_model_name,
+                trust_remote_code=True,
+                padding_side='left'
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            # Load base model
+            self.base_model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                attn_implementation="eager",
+                trust_remote_code=True
+            )
+            
+            # Load trained adapters (no new LoRA layers!)
+            self.model = PeftModel.from_pretrained(self.base_model, str(model_path))
+        else:
+            # Full model - load directly
+            self.log("Loading as full model...")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                trust_remote_code=True,
+                padding_side='left'
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                attn_implementation="eager",
+                trust_remote_code=True
+            )
+        
+        self.model.eval()
+        total_params = sum(p.numel() for p in self.model.parameters())
+        self.log(f"Model loaded for eval: {total_params / 1e6:.0f}M params")
+    
     def _generate_samples(self, prompts: List[Dict]) -> List[Dict]:
         """Generate code samples for prompts with batch processing."""
         import torch
@@ -519,9 +596,9 @@ class BenchmarkRunner:
             self.prompts = self.prompts[:limit]
             self.log(f"Limited to {len(self.prompts)} prompts")
         
-        # Load model if not already loaded
+        # Load model for eval if not already loaded (uses proper PEFT loading)
         if self.model is None:
-            self._load_model()
+            self._load_model_for_eval()
         
         return self.run_baseline_eval()
     
