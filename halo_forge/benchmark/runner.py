@@ -519,6 +519,10 @@ class BenchmarkRunner:
             self.prompts = self.prompts[:limit]
             self.log(f"Limited to {len(self.prompts)} prompts")
         
+        # Load model if not already loaded
+        if self.model is None:
+            self._load_model()
+        
         return self.run_baseline_eval()
     
     def run_raft_cycle(self, cycle: int, checkpoint: Optional[str] = None) -> CycleResult:
