@@ -42,33 +42,87 @@ RECOMMENDED_MODELS = {
 
 
 # =============================================================================
-# Datasets (expanded from datasets page)
+# All Available Datasets
 # =============================================================================
 
 SFT_DATASETS = [
-    # Code datasets
+    # --- Code Datasets ---
     ("codealpaca", "CodeAlpaca (20K code instructions)"),
     ("evol_instruct_code", "Evol-Instruct-Code (100K evolved)"),
-    # Math datasets
+    ("codeforces_cpp", "CodeForces C++ (~5000 competitive)"),
+    ("codeforces_python", "CodeForces Python (~1000 competitive)"),
+    ("codeforces_rust", "CodeForces Rust (~500 competitive)"),
+    # --- Python Benchmarks ---
+    ("mbpp", "MBPP (974 Python basics)"),
+    ("humaneval", "HumanEval (164 Python problems)"),
+    ("humaneval_plus", "HumanEval+ (164 + extended tests)"),
+    # --- Math Datasets ---
     ("metamath", "MetaMath (395K math problems)"),
     ("gsm8k", "GSM8K (8.5K grade-school math)"),
     ("math", "MATH (12.5K competition math)"),
-    # General instruction datasets  
+    # --- General Instruction ---
     ("alpaca", "Alpaca (52K instruction-following)"),
     ("dolly", "Databricks Dolly (15K human-written)"),
     ("oasst", "OpenAssistant (161K conversations)"),
-    # Function calling
+    # --- Function Calling ---
     ("xlam", "xLAM (60K function calling)"),
     ("glaive", "Glaive (100K function calling)"),
-    # Custom
+    # --- Multi-language ---
+    ("livecodebench", "LiveCodeBench (contamination-free)"),
+    # --- Custom ---
     ("custom", "Custom JSONL file..."),
 ]
 
+# =============================================================================
+# RAFT Prompt Files (available in data/rlvr/)
+# =============================================================================
+
 RAFT_PROMPT_PRESETS = [
-    ("data/rlvr/humaneval_prompts.jsonl", "HumanEval (164 Python problems)"),
-    ("data/rlvr/mbpp_prompts.jsonl", "MBPP (974 Python basics)"),
-    ("data/rlvr/livecodebench_prompts.jsonl", "LiveCodeBench (Multi-language)"),
+    # HumanEval variants
+    ("data/rlvr/humaneval_prompts.jsonl", "HumanEval Prompts (164 Python)"),
+    ("data/rlvr/humaneval_full.jsonl", "HumanEval Full (with solutions)"),
+    ("data/rlvr/humaneval_validation.jsonl", "HumanEval Validation"),
+    # MBPP variants
+    ("data/rlvr/mbpp_train_prompts.jsonl", "MBPP Train Prompts"),
+    ("data/rlvr/mbpp_train_full.jsonl", "MBPP Train Full"),
+    ("data/rlvr/mbpp_sanitized_prompts.jsonl", "MBPP Sanitized Prompts"),
+    ("data/rlvr/mbpp_sanitized_full.jsonl", "MBPP Sanitized Full"),
+    ("data/rlvr/mbpp_validation.jsonl", "MBPP Validation"),
+    # Custom
     ("custom", "Custom prompts file..."),
+]
+
+# =============================================================================
+# All Available Verifiers (grouped by category)
+# =============================================================================
+
+VERIFIERS = [
+    # --- Python Test Verifiers ---
+    ("humaneval", "HumanEval (Python test execution)"),
+    ("mbpp", "MBPP (Python test execution)"),
+    ("pytest", "Pytest (generic Python tests)"),
+    ("unittest", "Unittest (Python unittest)"),
+    # --- Compile Verifiers (C/C++) ---
+    ("gcc", "GCC (C/C++ compile)"),
+    ("clang", "Clang (C/C++ compile)"),
+    ("mingw", "MinGW (Windows cross-compile)"),
+    ("msvc", "MSVC Remote (Windows via SSH)"),
+    # --- Execution Verifiers (compile + run) ---
+    ("execution", "Execution (compile + test I/O)"),
+    ("gcc_execution", "GCC Execution (compile + run)"),
+    ("clang_execution", "Clang Execution (compile + run)"),
+    ("mingw_execution", "MinGW Execution (cross-compile + run)"),
+    # --- Other Language Verifiers ---
+    ("rust", "Rust (Cargo build + run)"),
+    ("go", "Go (go build + run)"),
+    ("dotnet", "DotNet (C# compile)"),
+    ("powershell", "PowerShell (syntax check)"),
+    # --- Multi-Language ---
+    ("auto", "Auto-detect (route to appropriate verifier)"),
+    # --- Math ---
+    ("math", "Math (numerical answer verification)"),
+    # --- Chained ---
+    ("chained", "Chained (multi-stage verification)"),
 ]
 
 
@@ -132,15 +186,6 @@ class Training:
         },
         "custom": {},
     }
-    
-    VERIFIERS = [
-        ("humaneval", "HumanEval (Python coding)"),
-        ("mbpp", "MBPP (Python basics)"),
-        ("livecodebench", "LiveCodeBench (Multi-language)"),
-        ("math", "Math (Numerical verification)"),
-        ("gcc", "GCC (C/C++ compilation)"),
-        ("pytest", "Pytest (Python tests)"),
-    ]
     
     def __init__(self):
         self.mode: Literal["sft", "raft"] = "sft"
@@ -342,8 +387,9 @@ class Training:
                     ui.label('Verifier').classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    verifier_options = {k: v for k, v in VERIFIERS}
                     ui.select(
-                        options={k: v for k, v in self.VERIFIERS},
+                        options=verifier_options,
                         value=self.raft_data.verifier
                     ).classes('w-full').props(
                         'outlined dense dark color=grey-7'
@@ -418,15 +464,26 @@ class Training:
         
         models = RECOMMENDED_MODELS.get(model_type, RECOMMENDED_MODELS["code"])
         
-        # Add custom option
+        # Build options dict
         model_options = {k: v for k, v in models}
         model_options["custom"] = "Custom HuggingFace model or local path..."
+        
+        # Determine select value - MUST be a valid option key
+        # Fix: Check if value exists in options before using it
+        if data_obj.model_source == "preset" and data_obj.model in model_options:
+            select_value = data_obj.model
+        else:
+            select_value = "custom"
+            # Also update source if we're forcing custom
+            if data_obj.model_source == "preset" and data_obj.model not in model_options:
+                data_obj.model_source = "custom"
+                data_obj.custom_model = data_obj.model
         
         with ui.row().classes('w-full gap-2'):
             # Main dropdown
             model_select = ui.select(
                 options=model_options,
-                value=data_obj.model if data_obj.model_source == "preset" else "custom"
+                value=select_value
             ).classes('flex-1').props('outlined dense dark color=grey-7')
             
             def on_model_change(e):
@@ -464,10 +521,20 @@ class Training:
         
         dataset_options = {k: v for k, v in SFT_DATASETS}
         
+        # Determine select value - MUST be a valid option key
+        if self.sft_data.dataset_source == "preset" and self.sft_data.dataset in dataset_options:
+            select_value = self.sft_data.dataset
+        else:
+            select_value = "custom"
+            # Update source if forcing custom
+            if self.sft_data.dataset_source == "preset" and self.sft_data.dataset not in dataset_options:
+                self.sft_data.dataset_source = "custom"
+                self.sft_data.custom_dataset = self.sft_data.dataset
+        
         with ui.row().classes('w-full gap-2'):
             dataset_select = ui.select(
                 options=dataset_options,
-                value=self.sft_data.dataset if self.sft_data.dataset_source == "preset" else "custom"
+                value=select_value
             ).classes('flex-1').props('outlined dense dark color=grey-7')
             
             def on_dataset_change(e):
@@ -504,10 +571,20 @@ class Training:
         
         prompts_options = {k: v for k, v in RAFT_PROMPT_PRESETS}
         
+        # Determine select value - MUST be a valid option key
+        if self.raft_data.prompts_source == "preset" and self.raft_data.prompts in prompts_options:
+            select_value = self.raft_data.prompts
+        else:
+            select_value = "custom"
+            # Update source if forcing custom
+            if self.raft_data.prompts_source == "preset" and self.raft_data.prompts not in prompts_options:
+                self.raft_data.prompts_source = "custom"
+                self.raft_data.custom_prompts = self.raft_data.prompts
+        
         with ui.row().classes('w-full gap-2'):
             prompts_select = ui.select(
                 options=prompts_options,
-                value=self.raft_data.prompts if self.raft_data.prompts_source == "preset" else "custom"
+                value=select_value
             ).classes('flex-1').props('outlined dense dark color=grey-7')
             
             def on_prompts_change(e):
