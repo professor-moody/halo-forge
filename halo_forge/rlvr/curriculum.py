@@ -11,7 +11,9 @@ Strategies:
 """
 
 import json
+import math
 import re
+import warnings
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Callable
@@ -222,6 +224,22 @@ class CurriculumScheduler:
         # Performance tracking for adaptive curriculum
         self.cycle_performance: Dict[int, float] = {}
         self.current_difficulty = 0.5  # Start in the middle
+        
+        # Per-prompt success tracking for historical curriculum
+        self.prompt_success_rates: Dict[str, float] = {p: 0.0 for p in prompts}
+        self.prompt_attempt_counts: Dict[str, int] = {p: 0 for p in prompts}
+        
+        # Validate progressive curriculum configuration
+        if self.config.strategy == CurriculumStrategy.PROGRESSIVE:
+            start = self.config.progressive_start
+            increment = self.config.progressive_increment
+            if increment > 0:
+                cycles_to_full = math.ceil((1.0 - start) / increment) + 1
+                if cycles_to_full > 10:
+                    warnings.warn(
+                        f"Progressive curriculum won't reach 100% until cycle {cycles_to_full}. "
+                        f"Consider increasing --curriculum-increment or decreasing --curriculum-start."
+                    )
     
     def get_prompts_for_cycle(
         self,
@@ -312,6 +330,39 @@ class CurriculumScheduler:
             success_rate: Success rate for this cycle (0.0 to 1.0)
         """
         self.cycle_performance[cycle] = success_rate
+    
+    def update_prompt_stats(self, prompt: str, success_rate: float):
+        """
+        Update per-prompt success statistics.
+        
+        Args:
+            prompt: The prompt text
+            success_rate: Success rate for this prompt (0.0 to 1.0)
+        """
+        if prompt in self.prompt_success_rates:
+            # Running average
+            count = self.prompt_attempt_counts[prompt]
+            old_rate = self.prompt_success_rates[prompt]
+            new_count = count + 1
+            self.prompt_success_rates[prompt] = (old_rate * count + success_rate) / new_count
+            self.prompt_attempt_counts[prompt] = new_count
+    
+    def get_all_prompt_stats(self) -> List[Dict]:
+        """
+        Get per-prompt statistics for saving to file.
+        
+        Returns:
+            List of dicts with prompt, complexity, and success_rate
+        """
+        return [
+            {
+                "prompt": p[:200],  # Truncated for storage
+                "complexity": round(self.complexity_scores.get(p, 0.5), 3),
+                "success_rate": round(self.prompt_success_rates.get(p, 0.0), 3),
+                "attempts": self.prompt_attempt_counts.get(p, 0),
+            }
+            for p in self.original_prompts
+        ]
     
     def get_curriculum_info(self, cycle: int, total_cycles: int) -> Dict:
         """Get information about curriculum state for logging."""

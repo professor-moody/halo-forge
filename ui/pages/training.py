@@ -209,7 +209,10 @@ class RAFTFormData:
     min_lr: float = 1e-6
     
     # Advanced strategies
-    curriculum: str = "none"  # none, complexity, progressive, adaptive
+    curriculum: str = "none"  # none, complexity, progressive, adaptive, historical
+    curriculum_stats_path: str = ""  # Path to stats JSON for historical curriculum
+    curriculum_start: float = 0.2   # Progressive: start with this fraction
+    curriculum_increment: float = 0.2  # Progressive: add this fraction per cycle
     reward_shaping: str = "fixed"  # fixed, annealing, adaptive, warmup
     
     # Generation options
@@ -719,17 +722,27 @@ class Training:
                         ui.label('Curriculum').classes(
                             f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                         )
+                        
+                        def on_curriculum_change(e):
+                            self.raft_data.curriculum = e.value
+                            # Refresh form to show/hide conditional fields
+                            self.form_container.clear()
+                            with self.form_container:
+                                self._render_form()
+                        
                         ui.select(
                             options={
                                 'none': 'None (default)',
                                 'complexity': 'Complexity (easy → hard)',
-                                'progressive': 'Progressive',
-                                'adaptive': 'Adaptive',
+                                'progressive': 'Progressive (gradual)',
+                                'adaptive': 'Adaptive (performance-based)',
+                                'historical': 'Historical (from past runs)',
                             },
-                            value=self.raft_data.curriculum
+                            value=self.raft_data.curriculum,
+                            on_change=on_curriculum_change
                         ).classes('w-full').props(
                             'outlined dense dark color=grey-7'
-                        ).bind_value(self.raft_data, 'curriculum')
+                        )
                     
                     # Reward shaping
                     with ui.column().classes('flex-1 min-w-[200px] gap-2'):
@@ -747,6 +760,58 @@ class Training:
                         ).classes('w-full').props(
                             'outlined dense dark color=grey-7'
                         ).bind_value(self.raft_data, 'reward_shaping')
+                
+                # Conditional fields based on curriculum strategy
+                if self.raft_data.curriculum == 'historical':
+                    with ui.column().classes('w-full gap-2 mt-2'):
+                        ui.label('Historical Stats File').classes(
+                            f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        with ui.row().classes('w-full gap-2'):
+                            ui.input(
+                                value=self.raft_data.curriculum_stats_path,
+                                placeholder='Path to curriculum_stats.json from previous run'
+                            ).classes('flex-1').props(
+                                'outlined dense dark color=grey-7'
+                            ).bind_value(self.raft_data, 'curriculum_stats_path')
+                            ui.button(icon='folder_open', on_click=lambda: self._browse_curriculum_stats()).props(
+                                'flat dense'
+                            ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Browse...')
+                        ui.label('Uses success rates from previous training runs to order prompts').classes(
+                            f'text-xs text-[{COLORS["text_muted"]}]'
+                        )
+                
+                elif self.raft_data.curriculum == 'progressive':
+                    with ui.row().classes('w-full gap-4 mt-2'):
+                        with ui.column().classes('flex-1 gap-2'):
+                            ui.label('Start Fraction').classes(
+                                f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                            )
+                            ui.number(
+                                value=self.raft_data.curriculum_start,
+                                min=0.1, max=0.9, step=0.1,
+                                format='%.1f'
+                            ).classes('w-full').props(
+                                'outlined dense dark color=grey-7'
+                            ).bind_value(self.raft_data, 'curriculum_start')
+                        
+                        with ui.column().classes('flex-1 gap-2'):
+                            ui.label('Increment per Cycle').classes(
+                                f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                            )
+                            ui.number(
+                                value=self.raft_data.curriculum_increment,
+                                min=0.05, max=0.5, step=0.05,
+                                format='%.2f'
+                            ).classes('w-full').props(
+                                'outlined dense dark color=grey-7'
+                            ).bind_value(self.raft_data, 'curriculum_increment')
+                    
+                    # Calculate when 100% will be reached
+                    cycles_to_full = int((1.0 - self.raft_data.curriculum_start) / self.raft_data.curriculum_increment) + 1
+                    ui.label(f'Reaches 100% of prompts at cycle {cycles_to_full}').classes(
+                        f'text-xs text-[{COLORS["text_muted"]}] mt-1'
+                    )
         
         # Hardware Options section (collapsible)
         with ui.expansion(
@@ -776,6 +841,23 @@ class Training:
             path_type="directory",
             start_path="models/",
             on_select=lambda path: setattr(self.raft_data, 'checkpoint', path)
+        )
+    
+    def _browse_curriculum_stats(self):
+        """Open file picker for curriculum stats JSON file."""
+        def on_select(path):
+            self.raft_data.curriculum_stats_path = path
+            # Refresh form
+            self.form_container.clear()
+            with self.form_container:
+                self._render_form()
+        
+        self._open_file_picker(
+            title="Select Curriculum Stats File",
+            path_type="file",
+            start_path="models/",
+            extensions=[".json"],
+            on_select=on_select
         )
     
     def _render_model_selector(self, label: str, data_obj, model_type: str = "code"):
@@ -1162,6 +1244,9 @@ class Training:
                 checkpoint=checkpoint,
                 # Advanced strategies
                 curriculum=self.raft_data.curriculum,
+                curriculum_stats=self.raft_data.curriculum_stats_path if self.raft_data.curriculum == "historical" else None,
+                curriculum_start=self.raft_data.curriculum_start,
+                curriculum_increment=self.raft_data.curriculum_increment,
                 reward_shaping=self.raft_data.reward_shaping,
                 # Generation options
                 system_prompt=self.raft_data.system_prompt,

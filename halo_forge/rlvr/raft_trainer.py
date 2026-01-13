@@ -91,6 +91,7 @@ class RAFTConfig:
     curriculum_strategy: str = "none"
     curriculum_progressive_start: float = 0.2   # Start with easiest 20%
     curriculum_progressive_increment: float = 0.2  # Add 20% more each cycle
+    curriculum_stats_path: Optional[str] = None  # Path to stats JSON for historical curriculum
     
     # Reward shaping: adjust thresholds over cycles
     # Options: "fixed", "annealing", "adaptive", "warmup"
@@ -909,6 +910,7 @@ class RAFTTrainer:
                 strategy=CurriculumStrategy(cfg.curriculum_strategy),
                 progressive_start=cfg.curriculum_progressive_start,
                 progressive_increment=cfg.curriculum_progressive_increment,
+                historical_stats_path=cfg.curriculum_stats_path,
             )
             curriculum_scheduler = CurriculumScheduler(prompts, curriculum_config)
             print(f"  Curriculum: {cfg.curriculum_strategy}")
@@ -978,6 +980,14 @@ class RAFTTrainer:
         
         # Save statistics
         self.save_statistics()
+        
+        # Save curriculum stats for future historical runs
+        if curriculum_scheduler:
+            from halo_forge.rlvr.curriculum import save_prompt_stats
+            stats_path = output_dir / "curriculum_stats.json"
+            prompt_stats = curriculum_scheduler.get_all_prompt_stats()
+            save_prompt_stats(str(stats_path), prompt_stats)
+            self._log(f"Saved curriculum stats to {stats_path} for future historical runs", "success")
         
         # Summary (plain text, works through pipes)
         print("\n" + "=" * 70)

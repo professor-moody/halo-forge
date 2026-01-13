@@ -54,7 +54,26 @@ class RewardLevel(Enum):
 
 @dataclass
 class VerifyResult:
-    """Result from verifying a code sample."""
+    """
+    Result from verifying a code sample.
+    
+    Reward Semantics (graduated rewards for RAFT training):
+        0.0  - Complete failure: doesn't compile, syntax errors, wrong language
+        0.1  - Minimal: compiles but fails all tests or crashes immediately
+        0.3  - Compiles with warnings, partial progress
+        0.5  - Compiles clean, runs but produces wrong output
+        0.7  - Runs without crash, passes some tests (< 75%)
+        0.85 - Passes most tests (> 75%)
+        1.0  - Perfect: passes all tests and compiles cleanly
+    
+    Graduated rewards are critical for RAFT training because they provide
+    learning signal even from imperfect samples. A threshold of 0.1 filters
+    out complete garbage while keeping partially-correct samples that the
+    model can learn from.
+    
+    The `success` field indicates whether the code met the minimum passing
+    criteria (typically reward >= 0.5 or passing all tests).
+    """
     
     success: bool
     reward: float  # 0.0 to 1.0 (see RewardLevel for standard values)

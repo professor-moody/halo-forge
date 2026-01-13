@@ -615,6 +615,9 @@ def cmd_raft_train(args):
     reward_threshold = getattr(args, 'reward_threshold', None) or cfg_dict.get('reward_threshold', 0.5)
     
     curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
+    curriculum_stats = getattr(args, 'curriculum_stats', None) or cfg_dict.get('curriculum_stats_path', None)
+    curriculum_start = getattr(args, 'curriculum_start', None) or cfg_dict.get('curriculum_progressive_start', 0.2)
+    curriculum_increment = getattr(args, 'curriculum_increment', None) or cfg_dict.get('curriculum_progressive_increment', 0.2)
     reward_shaping = getattr(args, 'reward_shaping', None) or cfg_dict.get('reward_shaping_strategy', 'fixed')
     system_prompt = getattr(args, 'system_prompt', None) or cfg_dict.get('system_prompt', 'You are an expert Windows systems programmer.')
     lr_decay = getattr(args, 'lr_decay', None) or cfg_dict.get('lr_decay_per_cycle', 0.85)
@@ -653,6 +656,9 @@ def cmd_raft_train(args):
         keep_top_percent=keep_percent,
         reward_threshold=reward_threshold,
         curriculum_strategy=curriculum,
+        curriculum_stats_path=curriculum_stats,
+        curriculum_progressive_start=curriculum_start,
+        curriculum_progressive_increment=curriculum_increment,
         reward_shaping_strategy=reward_shaping,
         system_prompt=system_prompt,
         lr_decay_per_cycle=lr_decay,
@@ -2271,8 +2277,14 @@ def main():
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
                                    help='Minimum reward to consider sample passing (default: 0.5)')
     raft_train_parser.add_argument('--curriculum', default='none',
-                                   choices=['none', 'complexity', 'progressive', 'adaptive'],
+                                   choices=['none', 'complexity', 'progressive', 'adaptive', 'historical'],
                                    help='Curriculum learning strategy (default: none)')
+    raft_train_parser.add_argument('--curriculum-stats', type=str, default=None,
+                                   help='Path to historical stats JSON for historical curriculum')
+    raft_train_parser.add_argument('--curriculum-start', type=float, default=0.2,
+                                   help='Progressive curriculum: start with this fraction of prompts (default: 0.2)')
+    raft_train_parser.add_argument('--curriculum-increment', type=float, default=0.2,
+                                   help='Progressive curriculum: add this fraction each cycle (default: 0.2)')
     raft_train_parser.add_argument('--reward-shaping', default='fixed',
                                    choices=['fixed', 'annealing', 'adaptive', 'warmup'],
                                    help='Reward shaping strategy (default: fixed)')

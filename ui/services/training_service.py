@@ -231,6 +231,9 @@ class TrainingService:
         min_lr: float = 1e-6,
         checkpoint: Optional[str] = None,
         curriculum: str = "none",
+        curriculum_stats: Optional[str] = None,
+        curriculum_start: float = 0.2,
+        curriculum_increment: float = 0.2,
         reward_shaping: str = "fixed",
         system_prompt: str = "You are an expert programmer.",
         experimental_attention: bool = False,
@@ -301,6 +304,15 @@ class TrainingService:
             "--reward-shaping", reward_shaping,
             "--system-prompt", system_prompt,
         ]
+        
+        # Curriculum-specific options
+        if curriculum == "historical" and curriculum_stats:
+            cmd.extend(["--curriculum-stats", curriculum_stats])
+        elif curriculum == "progressive":
+            cmd.extend([
+                "--curriculum-start", str(curriculum_start),
+                "--curriculum-increment", str(curriculum_increment),
+            ])
         
         # Optional checkpoint for resume
         if checkpoint:

@@ -34,12 +34,12 @@ class RewardShapingConfig:
     base_keep_percent: float = 0.5
     
     # Annealing settings
-    annealing_start_threshold: float = 0.0    # Start accepting any reward
+    annealing_start_threshold: float = 0.1    # Start lenient but require partial credit
     annealing_start_keep_percent: float = 0.8  # Keep more samples initially
     
     # Warmup settings (number of cycles with lenient thresholds)
     warmup_cycles: int = 1
-    warmup_threshold: float = 0.0
+    warmup_threshold: float = 0.1             # Require partial credit even in warmup
     warmup_keep_percent: float = 0.8
     
     # Adaptive settings
@@ -136,8 +136,10 @@ class RewardShaper:
     def _get_adaptive_thresholds(self, cycle: int) -> tuple[float, float]:
         """Get thresholds using adaptive strategy."""
         if cycle == 1:
-            # Start lenient
-            return (0.0, 0.8)
+            # Start lenient but require partial credit - also update internal state
+            self._current_threshold = 0.1
+            self._current_keep_percent = 0.8
+            return (self._current_threshold, self._current_keep_percent)
         
         # Check last cycle's stats
         last_stats = self.cycle_stats.get(cycle - 1, {})
@@ -147,9 +149,9 @@ class RewardShaper:
         target_rate = self.config.adaptive_target_keep_rate
         adjustment = self.config.adaptive_adjustment_rate
         
-        # If keeping too few samples, lower threshold
+        # If keeping too few samples, lower threshold (floor at 0.1)
         if samples_kept < self.config.adaptive_min_samples or pass_rate < target_rate * 0.5:
-            self._current_threshold = max(0.0, self._current_threshold - adjustment)
+            self._current_threshold = max(0.1, self._current_threshold - adjustment)
             self._current_keep_percent = min(1.0, self._current_keep_percent + adjustment)
         
         # If keeping too many (high pass rate), raise threshold
@@ -180,6 +182,16 @@ class RewardShaper:
             'samples_kept': samples_kept,
             'total_samples': total_samples,
         }
+        
+        # Warn if adaptive strategy can't reach target sample count
+        if self.config.strategy == RewardShapingStrategy.ADAPTIVE:
+            if samples_kept < self.config.adaptive_min_samples:
+                import warnings
+                warnings.warn(
+                    f"Cycle {cycle}: Only {samples_kept} samples kept "
+                    f"(target: {self.config.adaptive_min_samples}). "
+                    f"Threshold will be lowered next cycle."
+                )
     
     def get_shaping_info(self, cycle: int, total_cycles: int) -> Dict:
         """Get information about current shaping state for logging."""
