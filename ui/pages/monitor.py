@@ -624,14 +624,19 @@ class Monitor:
             new_lines = self._all_log_lines[self._displayed_log_count:]
         
         if new_lines:
-            with self.log_container:
-                for line in new_lines:
-                    color = self._get_log_color(line)
-                    ui.label(line).classes(f'text-[{color}]')
-                    self._displayed_log_count += 1
-            
-            # Auto-scroll to bottom
-            self._scroll_to_bottom()
+            try:
+                # Wrap in try/except to handle background task context issues
+                with self.log_container:
+                    for line in new_lines:
+                        color = self._get_log_color(line)
+                        ui.label(line).classes(f'text-[{color}]')
+                        self._displayed_log_count += 1
+                
+                # Auto-scroll to bottom
+                self._scroll_to_bottom()
+            except Exception:
+                # UI context may be invalid (e.g., called from background task or user navigated away)
+                pass
     
     def _get_log_color(self, line: str) -> str:
         """Determine log line color."""

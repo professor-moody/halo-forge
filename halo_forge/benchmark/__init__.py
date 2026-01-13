@@ -210,10 +210,12 @@ def _run_native_benchmark(
     print(f"Backend: halo-forge native")
     
     # Use existing benchmark runner
+    # Pop samples_per_prompt to avoid duplicate argument error
+    samples = kwargs.pop('samples_per_prompt', 5)
     runner = BenchmarkRunner(
         model_name=model,
         n_cycles=0,  # Just evaluation, no training
-        samples_per_prompt=kwargs.get('samples_per_prompt', 5),
+        samples_per_prompt=samples,
         **kwargs
     )
     
