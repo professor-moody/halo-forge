@@ -32,7 +32,7 @@ class JobState:
     completed_at: Optional[datetime] = None
     
     # Progress tracking
-    current_epoch: int = 0
+    current_epoch: float = 0.0  # Use float for fractional epochs (e.g., 2.75)
     total_epochs: int = 0
     current_step: int = 0
     total_steps: int = 0

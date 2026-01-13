@@ -229,7 +229,15 @@ class Monitor:
             # Epoch/Cycle
             with ui.row().classes('items-center gap-2'):
                 epoch_label = 'Cycle' if self.job.type == 'raft' else 'Epoch'
-                current = self.job.current_cycle if self.job.type == 'raft' else self.job.current_epoch
+                if self.job.type == 'raft':
+                    current = self.job.current_cycle
+                else:
+                    # Display epoch as float if fractional, int otherwise
+                    current = self.job.current_epoch
+                    if isinstance(current, float) and current % 1 != 0:
+                        current = f'{current:.1f}'
+                    else:
+                        current = int(current)
                 total = self.job.total_cycles if self.job.type == 'raft' else self.job.total_epochs
                 ui.label(f'{epoch_label}:').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
@@ -560,7 +568,13 @@ class Monitor:
             if self.job.type == 'raft':
                 self._epoch_label.set_text(f'{self.job.current_cycle}/{self.job.total_cycles}')
             else:
-                self._epoch_label.set_text(f'{self.job.current_epoch}/{self.job.total_epochs}')
+                # Display epoch as float if fractional, int otherwise
+                current = self.job.current_epoch
+                if isinstance(current, float) and current % 1 != 0:
+                    epoch_str = f'{current:.1f}'
+                else:
+                    epoch_str = str(int(current))
+                self._epoch_label.set_text(f'{epoch_str}/{self.job.total_epochs}')
         
         # Step
         if self._step_label:
@@ -682,20 +696,20 @@ class Monitor:
         log_file = self._get_log_file_path()
         if log_file and log_file.exists():
             try:
-                log_text = log_file.read_text(encoding='utf-8')
+                log_text = log_file.read_text(encoding='utf-8').strip()
             except Exception:
                 pass
         
-        # Fallback to in-memory logs
+        # Fallback to in-memory logs (use strip() check, not truthiness)
         if not log_text:
-            log_text = '\n'.join(self._all_log_lines)
+            log_text = '\n'.join(self._all_log_lines).strip()
         
         # Final fallback to service buffer
         if not log_text:
             logs = self.training_service.get_logs(self.job_id, last_n=1000)
-            log_text = '\n'.join([entry.get('line', '') for entry in logs])
+            log_text = '\n'.join([entry.get('line', '') for entry in logs]).strip()
         
-        if not log_text.strip():
+        if not log_text:
             ui.notify('No logs available to copy', type='warning', timeout=1500)
             return
         
@@ -725,20 +739,20 @@ class Monitor:
         log_file = self._get_log_file_path()
         if log_file and log_file.exists():
             try:
-                log_text = log_file.read_text(encoding='utf-8')
+                log_text = log_file.read_text(encoding='utf-8').strip()
             except Exception:
                 pass
         
-        # Fallback to in-memory logs
+        # Fallback to in-memory logs (use strip() check, not truthiness)
         if not log_text:
-            log_text = '\n'.join(self._all_log_lines)
+            log_text = '\n'.join(self._all_log_lines).strip()
         
         # Final fallback to service buffer
         if not log_text:
             logs = self.training_service.get_logs(self.job_id, last_n=1000)
-            log_text = '\n'.join([entry.get('line', '') for entry in logs])
+            log_text = '\n'.join([entry.get('line', '') for entry in logs]).strip()
         
-        if not log_text.strip():
+        if not log_text:
             ui.notify('No logs available to download', type='warning', timeout=1500)
             return
         

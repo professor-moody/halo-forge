@@ -528,7 +528,7 @@ class TrainingService:
             job.latest_lr = metrics.learning_rate
         
         if metrics.epoch is not None:
-            job.current_epoch = int(metrics.epoch)
+            job.current_epoch = metrics.epoch  # Keep as float for accurate progress
         
         if metrics.step is not None:
             job.current_step = metrics.step

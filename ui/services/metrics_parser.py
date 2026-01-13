@@ -55,6 +55,11 @@ class MetricsParser:
             r'\{[^}]*"loss":\s*([\d.]+)[^}]*"learning_rate":\s*([\d.e\-+]+)'
         ),
         
+        # tqdm progress bar format: 100%|##########| 33/33 or 50%|#####     | 16/33
+        'tqdm_progress': re.compile(
+            r'(\d+)%\|[#\s\-=]*\|\s*(\d+)/(\d+)'
+        ),
+        
         # Step progress: Step 100/500 | Loss: 2.3456
         'step_progress': re.compile(
             r'[Ss]tep\s+(\d+)\s*/\s*(\d+).*?[Ll]oss[:\s]+([\d.]+)'
@@ -163,6 +168,15 @@ class MetricsParser:
             metrics.loss = float(match.group(3))
             self._last_step = metrics.step
             return metrics
+        
+        # Try tqdm progress bar format: 100%|##########| 33/33
+        match = self.PATTERNS['tqdm_progress'].search(line)
+        if match:
+            # Group 1: percent, Group 2: current, Group 3: total
+            metrics.step = int(match.group(2))
+            metrics.total_steps = int(match.group(3))
+            self._last_step = metrics.step
+            # Note: tqdm doesn't include loss, so we continue parsing
         
         # Check for checkpoint
         if self.PATTERNS['checkpoint'].search(line):
