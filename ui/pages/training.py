@@ -366,11 +366,11 @@ class Training:
             f'border border-[#2d343c] animate-in stagger-2'
         ):
             self._section_header("Presets", "flash_on")
-            with ui.row().classes('w-full gap-2 flex-wrap'):
+            with ui.row().classes('w-full gap-3'):
                 for preset_name in self.SFT_PRESETS.keys():
                     is_selected = self.selected_sft_preset == preset_name
-                    with ui.button().props('flat').classes(
-                        'px-4 py-2 rounded-lg transition-all '
+                    with ui.element('div').classes(
+                        f'flex-1 flex items-center justify-center py-3 rounded-lg cursor-pointer transition-all '
                         + (f'bg-[{COLORS["accent"]}]/20 border border-[{COLORS["accent"]}]' if is_selected
                            else f'bg-[{COLORS["bg_secondary"]}] border border-[#2d343c] hover:bg-[{COLORS["bg_hover"]}]')
                     ).on('click', lambda p=preset_name: self._apply_sft_preset(p)):

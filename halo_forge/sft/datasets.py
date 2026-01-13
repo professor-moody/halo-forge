@@ -322,6 +322,40 @@ def format_glaive(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokeni
         return {"text": text}
 
 
+def format_messages(example: Dict[str, Any], tokenizer: Optional["PreTrainedTokenizer"] = None) -> Dict[str, str]:
+    """
+    Format a dataset with 'messages' column (list of {role, content} dicts).
+    
+    This is the standard format used by many SFT datasets including:
+    - OpenAI fine-tuning format
+    - ShareGPT-style datasets
+    - Many HuggingFace chat datasets
+    """
+    messages = example.get("messages", [])
+    
+    if not messages:
+        return {"text": ""}
+    
+    # Try to use tokenizer's chat template if available
+    if tokenizer is not None and hasattr(tokenizer, 'apply_chat_template'):
+        try:
+            text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+            return {"text": text}
+        except Exception:
+            pass  # Fall back to manual formatting
+    
+    # Manual ChatML formatting
+    bos = getattr(tokenizer, 'bos_token', '') if tokenizer else ''
+    parts = [bos] if bos else []
+    
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        parts.append(f"<|im_start|>{role}\n{content}<|im_end|>")
+    
+    return {"text": "\n".join(parts)}
+
+
 # Formatter registry
 FORMATTERS: Dict[str, Callable] = {
     "format_alpaca": format_alpaca,
@@ -331,6 +365,7 @@ FORMATTERS: Dict[str, Callable] = {
     "format_asr": format_asr,
     "format_xlam": format_xlam,
     "format_glaive": format_glaive,
+    "format_messages": format_messages,
 }
 
 
@@ -349,7 +384,23 @@ def get_sft_dataset_spec(name: str) -> Optional[SFTDatasetSpec]:
 
 def is_huggingface_id(name: str) -> bool:
     """Check if name looks like a HuggingFace dataset ID (contains /)."""
-    return "/" in name
+    # HuggingFace IDs look like "owner/dataset" but NOT like file paths
+    if "/" not in name:
+        return False
+    # File paths typically have extensions or multiple slashes
+    if name.endswith(('.json', '.jsonl', '.csv', '.parquet')):
+        return False
+    # Check if it looks more like a path than a HF ID
+    if name.count('/') > 1 or name.startswith(('.', '/')):
+        return False
+    return True
+
+
+def is_local_file(path: str) -> bool:
+    """Check if path is a local file that exists."""
+    import os
+    from pathlib import Path as FilePath
+    return os.path.isfile(path) or FilePath(path).is_file()
 
 
 def load_sft_dataset(
@@ -417,6 +468,51 @@ def load_sft_dataset(
             else:
                 ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
         
+    elif is_local_file(name_or_id):
+        # Local JSONL/JSON file
+        logger.info(f"Loading local dataset file: {name_or_id}")
+        
+        if name_or_id.endswith('.jsonl') or name_or_id.endswith('.json'):
+            ds = load_dataset("json", data_files=name_or_id, split="train")
+        elif name_or_id.endswith('.csv'):
+            ds = load_dataset("csv", data_files=name_or_id, split="train")
+        elif name_or_id.endswith('.parquet'):
+            ds = load_dataset("parquet", data_files=name_or_id, split="train")
+        else:
+            raise ValueError(
+                f"Unsupported local file format: {name_or_id}\n"
+                f"Supported formats: .json, .jsonl, .csv, .parquet"
+            )
+        
+        # Try to auto-detect format and apply formatter
+        if len(ds) > 0:
+            sample = ds[0]
+            # Check if already has 'text' column (pre-formatted)
+            if "text" in sample:
+                logger.info("Dataset already has 'text' column, using as-is")
+            elif "instruction" in sample and "output" in sample:
+                logger.info("Detected Alpaca format, applying formatter")
+                formatter_with_tok = partial(format_alpaca, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
+            elif "query" in sample and "response" in sample:
+                logger.info("Detected MetaMath format, applying formatter")
+                formatter_with_tok = partial(format_metamath, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
+            elif "question" in sample and "answer" in sample:
+                logger.info("Detected QA format, applying formatter")
+                formatter_with_tok = partial(format_gsm8k, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
+            elif "messages" in sample:
+                logger.info("Detected messages format (ChatML), applying formatter")
+                formatter_with_tok = partial(format_messages, tokenizer=tokenizer)
+                ds = ds.map(formatter_with_tok, remove_columns=ds.column_names)
+            else:
+                logger.warning(
+                    f"Could not auto-detect format for local file. "
+                    f"Available columns: {list(sample.keys())}. "
+                    f"Expected one of: text, instruction+output, query+response, question+answer, messages"
+                )
+    
     elif is_huggingface_id(name_or_id):
         # Direct HuggingFace ID
         logger.info(f"Loading HuggingFace dataset: {name_or_id}")
@@ -447,8 +543,10 @@ def load_sft_dataset(
     else:
         raise ValueError(
             f"Unknown dataset: {name_or_id}\n"
-            f"Use a short name (e.g., 'codealpaca') or HuggingFace ID (e.g., 'sahil2801/CodeAlpaca-20k')\n"
-            f"Available short names: {list(SFT_DATASETS.keys())}"
+            f"Options:\n"
+            f"  - Short name: {list(SFT_DATASETS.keys())[:5]}...\n"
+            f"  - HuggingFace ID: e.g., 'sahil2801/CodeAlpaca-20k'\n"
+            f"  - Local file: e.g., 'data/train.jsonl'"
         )
     
     # Limit samples if requested

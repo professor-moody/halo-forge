@@ -331,6 +331,10 @@ class Monitor:
                 ui.button(icon='content_copy', on_click=self._copy_logs).props(
                     'flat round dense size=sm'
                 ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Copy logs')
+                
+                ui.button(icon='download', on_click=self._download_logs).props(
+                    'flat round dense size=sm'
+                ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Download logs')
         
         # Log container - with data attribute for scroll targeting
         self.log_container = ui.column().classes(
@@ -604,12 +608,50 @@ class Monitor:
             ui.run_javascript(f'document.querySelector("[data-log-container]").scrollTop = 999999')
     
     def _copy_logs(self):
-        """Copy logs to clipboard."""
-        logs = self.training_service.get_logs(self.job_id, last_n=100)
+        """Copy logs to clipboard with error handling."""
+        logs = self.training_service.get_logs(self.job_id, last_n=500)
+        
+        if not logs:
+            ui.notify('No logs available to copy', type='warning', timeout=1500)
+            return
+        
         log_text = '\n'.join([entry.get('line', '') for entry in logs])
-        # Use json.dumps for proper JS string escaping
-        ui.run_javascript(f'navigator.clipboard.writeText({json.dumps(log_text)})')
+        
+        if not log_text.strip():
+            ui.notify('Logs are empty', type='warning', timeout=1500)
+            return
+        
+        # Use json.dumps for proper JS string escaping with error handling
+        ui.run_javascript(f'''
+            navigator.clipboard.writeText({json.dumps(log_text)})
+                .then(() => {{ /* success */ }})
+                .catch((err) => {{ 
+                    console.error("Clipboard copy failed:", err);
+                    // Fallback: create a temporary textarea
+                    const ta = document.createElement('textarea');
+                    ta.value = {json.dumps(log_text)};
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }});
+        ''')
         ui.notify('Logs copied to clipboard', type='positive', timeout=1500)
+    
+    async def _download_logs(self):
+        """Download logs as a text file."""
+        logs = self.training_service.get_logs(self.job_id, last_n=1000)
+        
+        if not logs:
+            ui.notify('No logs available to download', type='warning', timeout=1500)
+            return
+        
+        log_text = '\n'.join([entry.get('line', '') for entry in logs])
+        job_name = self.job.name.replace(' ', '_').replace(':', '-') if self.job else 'training'
+        filename = f"{job_name}_logs.txt"
+        
+        # Trigger browser download
+        ui.download(log_text.encode('utf-8'), filename)
 
 
 class MonitorList:
