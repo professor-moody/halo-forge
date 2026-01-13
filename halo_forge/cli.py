@@ -330,6 +330,24 @@ def cmd_sft_train(args):
         print("  Run 'halo-forge sft datasets' to see all options")
         sys.exit(1)
     
+    # Extract all CLI arguments with defaults
+    batch_size = getattr(args, 'batch_size', 2)
+    learning_rate = getattr(args, 'learning_rate', 2e-4)
+    warmup_ratio = getattr(args, 'warmup_ratio', 0.03)
+    weight_decay = getattr(args, 'weight_decay', 0.01)
+    max_grad_norm = getattr(args, 'max_grad_norm', 0.3)
+    gradient_accumulation = getattr(args, 'gradient_accumulation', 16)
+    lora_rank = getattr(args, 'lora_rank', 16)
+    lora_alpha = getattr(args, 'lora_alpha', 32)
+    lora_dropout = getattr(args, 'lora_dropout', 0.05)
+    no_lora = getattr(args, 'no_lora', False)
+    save_steps = getattr(args, 'save_steps', 500)
+    eval_steps = getattr(args, 'eval_steps', 250)
+    save_total_limit = getattr(args, 'save_total_limit', 3)
+    early_stopping_patience = getattr(args, 'early_stopping_patience', 5)
+    validation_split = getattr(args, 'validation_split', 0.05)
+    max_seq_length = getattr(args, 'max_seq_length', 2048)
+    
     if args.config:
         config = SFTConfig.from_yaml(args.config)
         # CLI args override config file
@@ -345,6 +363,22 @@ def cmd_sft_train(args):
             config.output_dir = args.output
         if args.epochs:
             config.num_epochs = args.epochs
+        # Apply other overrides
+        config.batch_size = batch_size
+        config.learning_rate = learning_rate
+        config.warmup_ratio = warmup_ratio
+        config.weight_decay = weight_decay
+        config.max_grad_norm = max_grad_norm
+        config.gradient_accumulation_steps = gradient_accumulation
+        config.lora_r = lora_rank
+        config.lora_alpha = lora_alpha
+        config.lora_dropout = lora_dropout
+        config.save_steps = save_steps
+        config.eval_steps = eval_steps
+        config.save_total_limit = save_total_limit
+        config.early_stopping_patience = early_stopping_patience
+        config.validation_split = validation_split
+        config.max_seq_length = max_seq_length
     else:
         config = SFTConfig(
             model_name=args.model or "Qwen/Qwen2.5-Coder-7B",
@@ -352,8 +386,27 @@ def cmd_sft_train(args):
             train_file=data,
             max_samples=max_samples,
             output_dir=args.output,
-            num_epochs=args.epochs
+            num_epochs=args.epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            warmup_ratio=warmup_ratio,
+            weight_decay=weight_decay,
+            max_grad_norm=max_grad_norm,
+            gradient_accumulation_steps=gradient_accumulation,
+            lora_r=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            save_steps=save_steps,
+            eval_steps=eval_steps,
+            save_total_limit=save_total_limit,
+            early_stopping_patience=early_stopping_patience,
+            validation_split=validation_split,
+            max_seq_length=max_seq_length,
         )
+    
+    # Disable LoRA if requested (full fine-tuning)
+    if no_lora:
+        config.lora_r = 0  # Trainer will skip LoRA setup if rank is 0
     
     print(f"Model: {config.model_name}")
     if config.dataset:
@@ -364,6 +417,12 @@ def cmd_sft_train(args):
         print(f"Max samples: {config.max_samples}")
     print(f"Output: {config.output_dir}")
     print(f"Epochs: {config.num_epochs}")
+    print(f"Batch size: {config.batch_size} (x{config.gradient_accumulation_steps} accum = {config.batch_size * config.gradient_accumulation_steps} effective)")
+    print(f"Learning rate: {config.learning_rate}")
+    if config.lora_r > 0:
+        print(f"LoRA: rank={config.lora_r}, alpha={config.lora_alpha}")
+    else:
+        print(f"LoRA: disabled (full fine-tuning)")
     print()
     
     if dry_run:
@@ -2155,11 +2214,39 @@ def main():
     sft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
     sft_train_parser.add_argument('--dataset', '-d', help='HuggingFace dataset ID or short name (e.g., codealpaca, metamath)')
     sft_train_parser.add_argument('--data', help='Local training data file (JSONL)')
-    sft_train_parser.add_argument('--max-samples', type=int, help='Limit number of training samples')
     sft_train_parser.add_argument('--output', '-o', default='models/sft', help='Output directory')
-    sft_train_parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
     sft_train_parser.add_argument('--resume', help='Resume from checkpoint')
     sft_train_parser.add_argument('--dry-run', action='store_true', help='Validate config without training')
+    
+    # Training hyperparameters
+    sft_train_parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
+    sft_train_parser.add_argument('--batch-size', type=int, default=2, help='Per-device batch size')
+    sft_train_parser.add_argument('--learning-rate', type=float, default=2e-4, help='Learning rate')
+    sft_train_parser.add_argument('--warmup-ratio', type=float, default=0.03, help='Warmup ratio for LR scheduler')
+    sft_train_parser.add_argument('--weight-decay', type=float, default=0.01, help='Weight decay for regularization')
+    sft_train_parser.add_argument('--max-grad-norm', type=float, default=0.3, help='Max gradient norm for clipping')
+    sft_train_parser.add_argument('--gradient-accumulation', type=int, default=16, 
+                                  help='Gradient accumulation steps (effective batch = batch_size * accum)')
+    
+    # LoRA options
+    sft_train_parser.add_argument('--lora-rank', type=int, default=16, help='LoRA rank')
+    sft_train_parser.add_argument('--lora-alpha', type=int, default=32, help='LoRA alpha')
+    sft_train_parser.add_argument('--lora-dropout', type=float, default=0.05, help='LoRA dropout')
+    sft_train_parser.add_argument('--no-lora', action='store_true', help='Disable LoRA (full fine-tuning)')
+    
+    # Checkpointing
+    sft_train_parser.add_argument('--save-steps', type=int, default=500, help='Save checkpoint every N steps')
+    sft_train_parser.add_argument('--eval-steps', type=int, default=250, help='Evaluate every N steps')
+    sft_train_parser.add_argument('--save-total-limit', type=int, default=3, help='Max checkpoints to keep')
+    
+    # Early stopping
+    sft_train_parser.add_argument('--early-stopping-patience', type=int, default=5, 
+                                  help='Stop if no improvement for N evals')
+    
+    # Data options
+    sft_train_parser.add_argument('--max-samples', type=int, help='Limit number of training samples')
+    sft_train_parser.add_argument('--validation-split', type=float, default=0.05, help='Validation set fraction')
+    sft_train_parser.add_argument('--max-seq-length', type=int, default=2048, help='Maximum sequence length')
     
     # sft datasets
     sft_datasets_parser = sft_subparsers.add_parser('datasets', help='List available SFT datasets')

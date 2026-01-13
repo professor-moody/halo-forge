@@ -129,20 +129,47 @@ VERIFIERS = [
 @dataclass
 class SFTFormData:
     """SFT training form data."""
+    # Model selection
     model: str = "Qwen/Qwen2.5-Coder-3B"
     model_source: str = "preset"  # "preset" or "custom"
     custom_model: str = ""
+    
+    # Dataset selection
     dataset: str = "codealpaca"
     dataset_source: str = "preset"  # "preset" or "custom"
     custom_dataset: str = ""
+    
+    # Output
     output_dir: str = "models/sft_run"
+    
+    # Training hyperparameters
     epochs: int = 3
-    batch_size: int = 4
-    learning_rate: float = 2e-5
-    lora_rank: int = 32
-    lora_alpha: int = 64
-    max_length: int = 2048
+    batch_size: int = 2
+    gradient_accumulation_steps: int = 16
+    learning_rate: float = 2e-4
+    warmup_ratio: float = 0.03
+    weight_decay: float = 0.01
+    max_grad_norm: float = 0.3
+    
+    # LoRA configuration
     use_lora: bool = True
+    lora_rank: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    
+    # Data options
+    max_length: int = 2048
+    validation_split: float = 0.05
+    max_samples: Optional[int] = None
+    
+    # Checkpointing
+    save_steps: int = 500
+    eval_steps: int = 250
+    
+    # Early stopping
+    early_stopping_patience: int = 5
+    
+    # Hardware
     gradient_checkpointing: bool = True
 
 
@@ -170,7 +197,46 @@ class RAFTFormData:
 class Training:
     """Training launch page component."""
     
-    # Available presets
+    # SFT presets
+    SFT_PRESETS = {
+        "quick_test": {
+            "epochs": 1,
+            "max_samples": 100,
+            "save_steps": 50,
+            "eval_steps": 25,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 4,
+        },
+        "standard": {
+            "epochs": 3,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 16,
+            "learning_rate": 2e-4,
+            "warmup_ratio": 0.03,
+            "lora_rank": 16,
+            "lora_alpha": 32,
+        },
+        "quality": {
+            "epochs": 5,
+            "learning_rate": 1e-4,
+            "warmup_ratio": 0.1,
+            "weight_decay": 0.05,
+            "early_stopping_patience": 10,
+            "lora_rank": 32,
+            "lora_alpha": 64,
+        },
+        "large_model": {
+            "batch_size": 1,
+            "gradient_accumulation_steps": 32,
+            "gradient_checkpointing": True,
+            "max_length": 1024,
+            "lora_rank": 8,
+            "lora_alpha": 16,
+        },
+        "custom": {},
+    }
+    
+    # RAFT presets
     RAFT_PRESETS = {
         "conservative": {
             "samples_per_prompt": 8,
@@ -191,7 +257,8 @@ class Training:
         self.mode: Literal["sft", "raft"] = "sft"
         self.sft_data = SFTFormData()
         self.raft_data = RAFTFormData()
-        self.selected_preset = "conservative"
+        self.selected_sft_preset = "standard"
+        self.selected_raft_preset = "conservative"
         self.is_running = False
         self.training_service = TrainingService(state)
         
@@ -264,11 +331,30 @@ class Training:
             self._render_raft_form()
     
     def _render_sft_form(self):
-        """Render the SFT training form."""
+        """Render the SFT training form with presets and organized sections."""
+        # Presets section
+        with ui.column().classes(
+            f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+            f'border border-[#2d343c] animate-in stagger-2'
+        ):
+            self._section_header("Presets", "flash_on")
+            with ui.row().classes('w-full gap-2 flex-wrap'):
+                for preset_name in self.SFT_PRESETS.keys():
+                    is_selected = self.selected_sft_preset == preset_name
+                    with ui.button().props('flat').classes(
+                        'px-4 py-2 rounded-lg transition-all '
+                        + (f'bg-[{COLORS["accent"]}]/20 border border-[{COLORS["accent"]}]' if is_selected
+                           else f'bg-[{COLORS["bg_secondary"]}] border border-[#2d343c] hover:bg-[{COLORS["bg_hover"]}]')
+                    ).on('click', lambda p=preset_name: self._apply_sft_preset(p)):
+                        ui.label(preset_name.replace('_', ' ').title()).classes(
+                            f'text-sm font-medium '
+                            + (f'text-[{COLORS["accent"]}]' if is_selected else f'text-[{COLORS["text_secondary"]}]')
+                        )
+        
         # Model & Dataset section
         with ui.column().classes(
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
-            f'border border-[#2d343c] animate-in stagger-2'
+            f'border border-[#2d343c] animate-in stagger-3'
         ):
             self._section_header("Model & Dataset", "database")
             
@@ -300,7 +386,7 @@ class Training:
         # Training Parameters section
         with ui.column().classes(
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
-            f'border border-[#2d343c] animate-in stagger-3'
+            f'border border-[#2d343c] animate-in stagger-4'
         ):
             self._section_header("Training Parameters", "tune")
             
@@ -313,36 +399,122 @@ class Training:
                                    lambda v: setattr(self.sft_data, 'batch_size', int(v)),
                                    min_val=1, max_val=32)
                 
+                self._number_input("Grad Accum", self.sft_data.gradient_accumulation_steps,
+                                   lambda v: setattr(self.sft_data, 'gradient_accumulation_steps', int(v)),
+                                   min_val=1, max_val=64)
+                
                 self._number_input("Learning Rate", self.sft_data.learning_rate,
                                    lambda v: setattr(self.sft_data, 'learning_rate', float(v)),
-                                   format_val="2e-5")
+                                   format_val="2e-4")
+            
+            with ui.row().classes('w-full gap-4 flex-wrap mt-2'):
+                self._number_input("Warmup Ratio", self.sft_data.warmup_ratio,
+                                   lambda v: setattr(self.sft_data, 'warmup_ratio', float(v)),
+                                   format_val="0.03")
+                
+                self._number_input("Max Grad Norm", self.sft_data.max_grad_norm,
+                                   lambda v: setattr(self.sft_data, 'max_grad_norm', float(v)),
+                                   format_val="0.3")
                 
                 self._number_input("Max Length", self.sft_data.max_length,
                                    lambda v: setattr(self.sft_data, 'max_length', int(v)),
                                    min_val=512, max_val=8192)
-        
-        # LoRA Settings section
-        with ui.column().classes(
-            f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
-            f'border border-[#2d343c] animate-in stagger-4'
-        ):
-            with ui.row().classes('w-full items-center justify-between'):
-                self._section_header("LoRA Settings", "layers")
-                ui.switch(value=self.sft_data.use_lora).props(
-                    f'color=primary'
-                ).bind_value(self.sft_data, 'use_lora')
             
-            with ui.row().classes('w-full gap-4 flex-wrap'):
-                self._number_input("LoRA Rank", self.sft_data.lora_rank,
-                                   lambda v: setattr(self.sft_data, 'lora_rank', int(v)),
-                                   min_val=4, max_val=256)
+            # Show effective batch size
+            effective_batch = self.sft_data.batch_size * self.sft_data.gradient_accumulation_steps
+            ui.label(f'Effective batch size: {effective_batch}').classes(
+                f'text-xs text-[{COLORS["text_muted"]}] mt-2'
+            )
+        
+        # LoRA Settings section (collapsible)
+        with ui.expansion(
+            text='LoRA Configuration',
+            icon='layers',
+            value=True  # Open by default
+        ).classes(
+            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-5'
+        ).props('dense dark'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                with ui.row().classes('w-full items-center gap-4'):
+                    ui.label('Enable LoRA').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    ui.switch(value=self.sft_data.use_lora).props(
+                        f'color=primary'
+                    ).bind_value(self.sft_data, 'use_lora')
                 
-                self._number_input("LoRA Alpha", self.sft_data.lora_alpha,
-                                   lambda v: setattr(self.sft_data, 'lora_alpha', int(v)),
-                                   min_val=4, max_val=512)
+                with ui.row().classes('w-full gap-4 flex-wrap'):
+                    self._number_input("Rank", self.sft_data.lora_rank,
+                                       lambda v: setattr(self.sft_data, 'lora_rank', int(v)),
+                                       min_val=4, max_val=256)
+                    
+                    self._number_input("Alpha", self.sft_data.lora_alpha,
+                                       lambda v: setattr(self.sft_data, 'lora_alpha', int(v)),
+                                       min_val=4, max_val=512)
+                    
+                    self._number_input("Dropout", self.sft_data.lora_dropout,
+                                       lambda v: setattr(self.sft_data, 'lora_dropout', float(v)),
+                                       format_val="0.05")
+        
+        # Advanced Settings section (collapsible)
+        with ui.expansion(
+            text='Advanced Settings',
+            icon='settings',
+            value=False  # Collapsed by default
+        ).classes(
+            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-6'
+        ).props('dense dark'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                with ui.row().classes('w-full gap-4 flex-wrap'):
+                    self._number_input("Weight Decay", self.sft_data.weight_decay,
+                                       lambda v: setattr(self.sft_data, 'weight_decay', float(v)),
+                                       format_val="0.01")
+                    
+                    self._number_input("Val Split", self.sft_data.validation_split,
+                                       lambda v: setattr(self.sft_data, 'validation_split', float(v)),
+                                       format_val="0.05")
+                    
+                    self._number_input("Max Samples", self.sft_data.max_samples or 0,
+                                       lambda v: setattr(self.sft_data, 'max_samples', int(v) if int(v) > 0 else None),
+                                       min_val=0)
+                
+                with ui.row().classes('w-full gap-4 flex-wrap mt-2'):
+                    self._number_input("Save Steps", self.sft_data.save_steps,
+                                       lambda v: setattr(self.sft_data, 'save_steps', int(v)),
+                                       min_val=50, max_val=5000)
+                    
+                    self._number_input("Eval Steps", self.sft_data.eval_steps,
+                                       lambda v: setattr(self.sft_data, 'eval_steps', int(v)),
+                                       min_val=25, max_val=2500)
+                    
+                    self._number_input("Early Stop", self.sft_data.early_stopping_patience,
+                                       lambda v: setattr(self.sft_data, 'early_stopping_patience', int(v)),
+                                       min_val=1, max_val=20)
+                
+                # Hardware options
+                with ui.row().classes('w-full items-center gap-4 mt-2'):
+                    ui.label('Gradient Checkpointing').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    ui.switch(value=self.sft_data.gradient_checkpointing).props(
+                        f'color=primary'
+                    ).bind_value(self.sft_data, 'gradient_checkpointing')
         
         # Launch button
         self._render_launch_button("Start SFT Training", self._launch_sft)
+    
+    def _apply_sft_preset(self, preset_name: str):
+        """Apply an SFT preset configuration."""
+        self.selected_sft_preset = preset_name
+        preset = self.SFT_PRESETS.get(preset_name, {})
+        
+        for key, value in preset.items():
+            if hasattr(self.sft_data, key):
+                setattr(self.sft_data, key, value)
+        
+        # Notify before clearing
+        ui.notify(f'Applied "{preset_name.replace("_", " ").title()}" preset', type='positive', timeout=1500)
+        
+        # Re-render form
+        self.form_container.clear()
+        with self.form_container:
+            self._render_form()
     
     def _render_raft_form(self):
         """Render the RAFT training form."""
@@ -355,7 +527,7 @@ class Training:
             
             with ui.row().classes('w-full gap-3'):
                 for preset_name in self.RAFT_PRESETS.keys():
-                    is_selected = self.selected_preset == preset_name
+                    is_selected = self.selected_raft_preset == preset_name
                     with ui.element('div').classes(
                         f'flex-1 flex items-center justify-center py-3 rounded-lg cursor-pointer transition-all '
                         + (f'bg-[{COLORS["accent"]}]/20 border border-[{COLORS["accent"]}]' if is_selected
@@ -720,7 +892,7 @@ class Training:
     
     def _apply_preset(self, preset_name: str):
         """Apply a RAFT preset configuration."""
-        self.selected_preset = preset_name
+        self.selected_raft_preset = preset_name
         preset = self.RAFT_PRESETS.get(preset_name, {})
         
         for key, value in preset.items():
@@ -769,11 +941,27 @@ class Training:
                 model=model,
                 dataset=dataset,
                 output_dir=self.sft_data.output_dir,
+                # Training hyperparameters
                 epochs=self.sft_data.epochs,
                 batch_size=self.sft_data.batch_size,
+                gradient_accumulation_steps=self.sft_data.gradient_accumulation_steps,
                 learning_rate=self.sft_data.learning_rate,
+                warmup_ratio=self.sft_data.warmup_ratio,
+                weight_decay=self.sft_data.weight_decay,
+                max_grad_norm=self.sft_data.max_grad_norm,
+                # LoRA config
                 use_lora=self.sft_data.use_lora,
                 lora_rank=self.sft_data.lora_rank,
+                lora_alpha=self.sft_data.lora_alpha,
+                lora_dropout=self.sft_data.lora_dropout,
+                # Data options
+                max_seq_length=self.sft_data.max_length,
+                validation_split=self.sft_data.validation_split,
+                max_samples=self.sft_data.max_samples,
+                # Checkpointing
+                save_steps=self.sft_data.save_steps,
+                eval_steps=self.sft_data.eval_steps,
+                early_stopping_patience=self.sft_data.early_stopping_patience,
             )
             
             notify_job_started(f"SFT: {Path(dataset).stem if '/' in dataset else dataset}")

@@ -105,10 +105,22 @@ class TrainingService:
         dataset: str,
         output_dir: str,
         epochs: int = 3,
-        batch_size: int = 4,
-        learning_rate: float = 2e-5,
+        batch_size: int = 2,
+        gradient_accumulation_steps: int = 16,
+        learning_rate: float = 2e-4,
+        warmup_ratio: float = 0.03,
+        weight_decay: float = 0.01,
+        max_grad_norm: float = 0.3,
         use_lora: bool = True,
-        lora_rank: int = 32,
+        lora_rank: int = 16,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.05,
+        max_seq_length: int = 2048,
+        validation_split: float = 0.05,
+        max_samples: Optional[int] = None,
+        save_steps: int = 500,
+        eval_steps: int = 250,
+        early_stopping_patience: int = 5,
         on_log: Optional[Callable[[str], None]] = None,
         **kwargs
     ) -> str:
@@ -120,10 +132,22 @@ class TrainingService:
             dataset: Dataset name or path
             output_dir: Output directory for checkpoints
             epochs: Number of training epochs
-            batch_size: Training batch size
+            batch_size: Per-device batch size
+            gradient_accumulation_steps: Gradient accumulation steps
             learning_rate: Learning rate
+            warmup_ratio: Warmup ratio for LR scheduler
+            weight_decay: Weight decay for regularization
+            max_grad_norm: Max gradient norm for clipping
             use_lora: Whether to use LoRA
-            lora_rank: LoRA rank if using LoRA
+            lora_rank: LoRA rank
+            lora_alpha: LoRA alpha
+            lora_dropout: LoRA dropout
+            max_seq_length: Maximum sequence length
+            validation_split: Validation set fraction
+            max_samples: Limit training samples (None = all)
+            save_steps: Save checkpoint every N steps
+            eval_steps: Evaluate every N steps
+            early_stopping_patience: Stop if no improvement for N evals
             on_log: Optional callback for log lines
             **kwargs: Additional CLI arguments
             
@@ -153,11 +177,31 @@ class TrainingService:
             "--output", output_dir,
             "--epochs", str(epochs),
             "--batch-size", str(batch_size),
+            "--gradient-accumulation", str(gradient_accumulation_steps),
             "--learning-rate", str(learning_rate),
+            "--warmup-ratio", str(warmup_ratio),
+            "--weight-decay", str(weight_decay),
+            "--max-grad-norm", str(max_grad_norm),
+            "--max-seq-length", str(max_seq_length),
+            "--validation-split", str(validation_split),
+            "--save-steps", str(save_steps),
+            "--eval-steps", str(eval_steps),
+            "--early-stopping-patience", str(early_stopping_patience),
         ]
         
+        # LoRA options
         if use_lora:
-            cmd.extend(["--lora-rank", str(lora_rank)])
+            cmd.extend([
+                "--lora-rank", str(lora_rank),
+                "--lora-alpha", str(lora_alpha),
+                "--lora-dropout", str(lora_dropout),
+            ])
+        else:
+            cmd.append("--no-lora")
+        
+        # Optional max samples limit
+        if max_samples is not None and max_samples > 0:
+            cmd.extend(["--max-samples", str(max_samples)])
         
         # Add any extra arguments
         for key, value in kwargs.items():
