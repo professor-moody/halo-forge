@@ -6,8 +6,8 @@ Configure and launch Code, VLM, Audio, and Agentic benchmarks.
 
 from nicegui import ui
 from pathlib import Path
-from typing import Optional
-from dataclasses import dataclass
+from typing import Optional, Literal
+from dataclasses import dataclass, field
 
 from ui.theme import COLORS
 from ui.state import state
@@ -23,12 +23,18 @@ from ui.services.benchmark_service import (
     get_benchmark_service,
 )
 from ui.components.notifications import notify_job_started, notify_job_failed
+from ui.components.file_picker import FilePicker
+
+
+ModelSource = Literal["preset", "local", "custom"]
 
 
 @dataclass
 class BenchmarkFormData:
     """Benchmark form data."""
     model: str = "Qwen/Qwen2.5-Coder-3B"
+    model_source: ModelSource = "preset"
+    custom_model_path: str = ""
     benchmark_type: BenchmarkType = BenchmarkType.CODE
     preset: Optional[BenchmarkPreset] = None
     limit: int = 500
@@ -78,6 +84,62 @@ class Benchmark:
         self.benchmark_service = get_benchmark_service(state)
         self._tabs_container = None
         self._config_container = None
+        # Cache for discovered local models
+        self._local_models_cache: list[tuple[str, str]] = []
+        self._refresh_local_models()
+    
+    def _refresh_local_models(self):
+        """Refresh the cache of locally trained models."""
+        self._local_models_cache = self._discover_local_models()
+    
+    def _discover_local_models(self) -> list[tuple[str, str]]:
+        """
+        Discover locally trained models in models/ directory.
+        
+        Returns:
+            List of (path, display_name) tuples for local models.
+        """
+        local_models = []
+        models_dir = Path("models")
+        
+        if not models_dir.exists():
+            return local_models
+        
+        try:
+            for run_dir in sorted(models_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                if not run_dir.is_dir():
+                    continue
+                
+                # Skip hidden directories
+                if run_dir.name.startswith('.'):
+                    continue
+                
+                # Look for final_model directory (SFT/RAFT output)
+                final_model = run_dir / "final_model"
+                if final_model.exists() and final_model.is_dir():
+                    display_name = f"{run_dir.name} (local)"
+                    local_models.append((str(final_model), display_name))
+                
+                # Look for checkpoints (show last 2)
+                checkpoints = sorted(
+                    run_dir.glob("checkpoint-*"),
+                    key=lambda p: int(p.name.split('-')[-1]) if p.name.split('-')[-1].isdigit() else 0,
+                    reverse=True
+                )
+                for ckpt in checkpoints[:2]:
+                    if ckpt.is_dir():
+                        display_name = f"{run_dir.name}/{ckpt.name}"
+                        local_models.append((str(ckpt), display_name))
+                
+                # Also check for direct model files (adapter_config.json indicates LoRA)
+                if (run_dir / "adapter_config.json").exists() or (run_dir / "config.json").exists():
+                    if str(run_dir) not in [m[0] for m in local_models]:
+                        display_name = f"{run_dir.name} (local)"
+                        local_models.append((str(run_dir), display_name))
+        except Exception as e:
+            print(f"[Benchmark] Error scanning models directory: {e}")
+        
+        return local_models
     
     def render(self):
         """Render the benchmark page."""
@@ -138,7 +200,9 @@ class Benchmark:
         presets = get_presets_for_type(btype)
         self.data.preset = presets[0] if presets else None
         
-        # Update model based on type
+        # Reset model source to preset and select first base model for this type
+        self.data.model_source = "preset"
+        self.data.custom_model_path = ""
         models = self._get_models_for_type(btype)
         if models:
             self.data.model = models[0]
@@ -179,48 +243,145 @@ class Benchmark:
                 self._render_launch_section()
     
     def _render_model_section(self):
-        """Render model selection section."""
+        """Render model selection section with dropdown for local and base models."""
         with ui.column().classes(
             f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-2'
         ):
-            with ui.row().classes('w-full items-center gap-2'):
-                ui.icon('psychology', size='20px').classes(f'text-[{COLORS["primary"]}]')
-                ui.label('Model').classes(f'text-base font-semibold text-[{COLORS["text_primary"]}]')
+            with ui.row().classes('w-full items-center justify-between'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.icon('psychology', size='20px').classes(f'text-[{COLORS["primary"]}]')
+                    ui.label('Model').classes(f'text-base font-semibold text-[{COLORS["text_primary"]}]')
+                
+                # Refresh local models button
+                ui.button(icon='refresh', on_click=self._on_refresh_local_models).props(
+                    'flat round dense size=sm'
+                ).classes(f'text-[{COLORS["text_muted"]}]').tooltip('Refresh local models')
             
-            # Model input with autocomplete
-            models = self._get_models_for_type(self.data.benchmark_type)
+            # Build dropdown options
+            model_options = {}
+            
+            # Add local models first (most relevant for benchmarking trained models)
+            if self._local_models_cache:
+                for path, display_name in self._local_models_cache:
+                    model_options[path] = f"📁 {display_name}"
+            
+            # Add base models for current benchmark type
+            base_models = self._get_models_for_type(self.data.benchmark_type)
+            for model in base_models:
+                short_name = Path(model).name
+                model_options[model] = f"🤗 {short_name}"
+            
+            # Add custom option
+            model_options["custom"] = "📂 Custom path..."
+            
+            # Determine current value for dropdown
+            if self.data.model_source == "custom":
+                current_value = "custom"
+            else:
+                current_value = self.data.model
             
             with ui.column().classes('w-full gap-2'):
-                ui.label('Model Name').classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                ui.label('Select Model').classes(f'text-xs text-[{COLORS["text_muted"]}]')
                 
-                model_input = ui.input(
-                    placeholder='Enter HuggingFace model name or path...',
-                    value=self.data.model,
-                ).classes('w-full').props('outlined dense')
-                model_input.bind_value(self.data, 'model')
+                def on_model_change(e):
+                    selected = e.value
+                    if selected == "custom":
+                        self.data.model_source = "custom"
+                        # Don't change model yet, wait for custom input
+                    else:
+                        self.data.model_source = "local" if selected.startswith("models/") else "preset"
+                        self.data.model = selected
+                    # Refresh form to show/hide custom input
+                    self._config_container.clear()
+                    with self._config_container:
+                        self._render_form()
                 
-                # Quick select buttons
-                ui.label('Popular models:').classes(f'text-xs text-[{COLORS["text_muted"]}] mt-2')
+                ui.select(
+                    options=model_options,
+                    value=current_value,
+                    on_change=on_model_change
+                ).classes('w-full').props('outlined dense dark color=grey-7')
+                
+                # Show custom input when "custom" is selected
+                if self.data.model_source == "custom":
+                    with ui.column().classes('w-full gap-2 mt-2'):
+                        ui.label('Custom Model Path').classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                        with ui.row().classes('w-full gap-2'):
+                            custom_input = ui.input(
+                                placeholder='HuggingFace model ID or local path...',
+                                value=self.data.custom_model_path
+                            ).classes('flex-1').props('outlined dense dark color=grey-7')
+                            
+                            def on_custom_input(e):
+                                self.data.custom_model_path = e.value
+                                self.data.model = e.value
+                            
+                            custom_input.on('update:model-value', on_custom_input)
+                            
+                            ui.button(
+                                icon='folder_open',
+                                on_click=self._browse_model
+                            ).props('flat dense').classes(
+                                f'text-[{COLORS["text_muted"]}]'
+                            ).tooltip('Browse local models...')
+                        
+                        ui.label('Enter a HuggingFace model ID (e.g., Qwen/Qwen2.5-Coder-7B) or local path').classes(
+                            f'text-xs text-[{COLORS["text_muted"]}]'
+                        )
+                
+                # Quick select buttons for popular base models
+                ui.label('Quick select:').classes(f'text-xs text-[{COLORS["text_muted"]}] mt-3')
                 
                 with ui.row().classes('w-full flex-wrap gap-2'):
-                    for model in models[:4]:  # Show first 4
+                    for model in base_models[:4]:
                         short_name = Path(model).name
-                        is_selected = self.data.model == model
+                        is_selected = self.data.model == model and self.data.model_source != "custom"
                         
                         ui.button(
                             short_name,
-                            on_click=lambda m=model: self._select_model(m)
+                            on_click=lambda m=model: self._select_model(m, "preset")
                         ).props(
                             f'{"" if is_selected else "outline"} dense size=sm'
                         ).classes(
                             f'text-xs {"bg-[" + COLORS["primary"] + "]/20" if is_selected else ""}'
                         )
     
-    def _select_model(self, model: str):
-        """Select a model."""
+    def _select_model(self, model: str, source: ModelSource = "preset"):
+        """Select a model from presets or local models."""
         self.data.model = model
+        self.data.model_source = source
+        if source != "custom":
+            self.data.custom_model_path = ""
         # Refresh form to update UI
+        self._config_container.clear()
+        with self._config_container:
+            self._render_form()
+    
+    def _browse_model(self):
+        """Open file picker for local model directory."""
+        FilePicker(
+            title="Select Model Directory",
+            path_type="directory",
+            start_path="models/",
+            on_select=self._set_custom_model
+        )
+    
+    def _set_custom_model(self, path: str):
+        """Set a custom model path from file picker."""
+        self.data.model = path
+        self.data.model_source = "custom"
+        self.data.custom_model_path = path
+        # Refresh form to update UI
+        self._config_container.clear()
+        with self._config_container:
+            self._render_form()
+    
+    def _on_refresh_local_models(self):
+        """Refresh local models list and update UI."""
+        self._refresh_local_models()
+        ui.notify(f'Found {len(self._local_models_cache)} local models', type='info', timeout=1500)
+        # Refresh form to update dropdown
         self._config_container.clear()
         with self._config_container:
             self._render_form()
@@ -372,11 +533,17 @@ class Benchmark:
                 ui.icon('rocket_launch', size='20px').classes(f'text-[{COLORS["success"]}]')
                 ui.label('Launch').classes(f'text-base font-semibold text-[{COLORS["text_primary"]}]')
             
-            # Summary
+            # Summary - determine effective model for display
+            if self.data.model_source == "custom":
+                display_model = self.data.custom_model_path or self.data.model
+            else:
+                display_model = self.data.model
+            display_model_name = Path(display_model).name if display_model else "-"
+            
             with ui.column().classes(f'w-full gap-2 p-4 rounded-lg bg-[{COLORS["bg_primary"]}]'):
                 with ui.row().classes('w-full justify-between'):
                     ui.label('Model').classes(f'text-xs text-[{COLORS["text_muted"]}]')
-                    ui.label(Path(self.data.model).name).classes(
+                    ui.label(display_model_name).classes(
                         f'text-xs font-mono text-[{COLORS["text_secondary"]}]'
                     )
                 
@@ -413,7 +580,13 @@ class Benchmark:
     
     async def _launch_benchmark(self):
         """Launch the benchmark."""
-        if not self.data.model:
+        # Get the effective model path
+        if self.data.model_source == "custom":
+            model = self.data.custom_model_path or self.data.model
+        else:
+            model = self.data.model
+        
+        if not model:
             notify_job_failed("Benchmark", "Please select a model")
             return
         
@@ -425,7 +598,7 @@ class Benchmark:
         
         try:
             # Build output path
-            model_name = Path(self.data.model).name
+            model_name = Path(model).name
             output_dir = f"{self.data.output_dir}/{model_name}-{self.data.preset.dataset}"
             
             # Merge preset CLI args with form values
@@ -433,7 +606,7 @@ class Benchmark:
             
             # Launch benchmark
             job_id = await self.benchmark_service.launch_benchmark(
-                model=self.data.model,
+                model=model,
                 benchmark_type=self.data.benchmark_type,
                 benchmark_name=self.data.preset.dataset,
                 limit=self.data.limit,
