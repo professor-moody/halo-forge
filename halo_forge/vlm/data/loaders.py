@@ -31,7 +31,8 @@ class VLMSample:
         
         if isinstance(self.image, str):
             if self.image.startswith(('http://', 'https://')):
-                response = requests.get(self.image)
+                response = requests.get(self.image, timeout=30)
+                response.raise_for_status()
                 return Image.open(BytesIO(response.content))
             else:
                 return Image.open(self.image)

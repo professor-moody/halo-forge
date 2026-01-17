@@ -604,6 +604,25 @@ trainer = RAFTTrainer(verifier=verifier, ...)
 
 ---
 
+## Verifier Safety
+
+Verifiers execute model-generated code. Treat verifier runs as untrusted execution.
+
+### Current Safety Characteristics
+
+- `SubprocessVerifier` uses `shell=True` and inherits the host environment.
+- Python verifiers (`PytestVerifier`, `RLVRPytestVerifier`) execute code without OS-level resource limits.
+- C/C++ execution applies `setrlimit` for CPU and memory in `CompileVerifier`.
+
+### Operational Guardrails (Recommended)
+
+1. **Isolate execution**: Run verifiers in VMs/containers and avoid host mounts.
+2. **Non-privileged user**: Do not run verifiers as root.
+3. **Constrain resources**: Use OS limits or container quotas where possible.
+4. **Restrict network access**: Prefer offline execution or blocked egress.
+
+---
+
 ## Best Practices
 
 ### Performance

@@ -99,7 +99,7 @@ class SFTConfig:
         
         # Flatten nested config
         flat = {}
-        for section in ['model', 'data', 'qlora', 'training']:
+        for section in ['model', 'data', 'lora', 'qlora', 'training']:
             if section in data:
                 flat.update(data[section])
         
@@ -109,6 +109,9 @@ class SFTConfig:
             'train_file': 'train_file',
             'per_device_train_batch_size': 'batch_size',
             'num_train_epochs': 'num_epochs',
+            'r': 'lora_r',
+            'alpha': 'lora_alpha',
+            'dropout': 'lora_dropout',
         }
         
         mapped = {}

@@ -182,45 +182,69 @@ def cmd_config_validate(args):
         else:
             config_type = 'auto'
     
+    def _get_nested(cfg: dict, path: str):
+        """Fetch nested config value by dot-delimited path."""
+        current = cfg
+        for key in path.split("."):
+            if not isinstance(current, dict) or key not in current:
+                return None
+            current = current[key]
+        return current
+
     if config_type == 'raft':
-        required = ['base_model', 'output_dir']
+        required = ['output_dir', 'prompts']
     elif config_type == 'sft':
-        required = ['model', 'data_path', 'output_dir']
+        required = ['model.name', 'data.train_file', 'training.output_dir']
     else:
         required = []
     
     # Check required fields
     for field in required:
-        if field not in config:
-            errors.append(f"Missing required field: {field}")
+        if "." in field:
+            value = _get_nested(config, field)
+            if value is None:
+                errors.append(f"Missing required field: {field}")
+        else:
+            if field not in config:
+                errors.append(f"Missing required field: {field}")
     
     # Validate specific fields
-    if 'learning_rate' in config:
-        lr = config['learning_rate']
+    lr = config.get('learning_rate')
+    if lr is None:
+        lr = _get_nested(config, "training.learning_rate")
+    if lr is not None:
         if not isinstance(lr, (int, float)) or lr <= 0:
             errors.append(f"Invalid learning_rate: {lr} (must be positive number)")
         elif lr > 1e-3:
             warnings.append(f"learning_rate={lr} seems high (typical: 1e-5 to 5e-5)")
     
-    if 'lr_decay_per_cycle' in config:
-        decay = config['lr_decay_per_cycle']
+    decay = config.get('lr_decay_per_cycle')
+    if decay is None:
+        decay = _get_nested(config, "lr_decay_per_cycle")
+    if decay is not None:
         if not 0 < decay <= 1:
             errors.append(f"Invalid lr_decay_per_cycle: {decay} (must be 0 < x <= 1)")
     
-    if 'num_cycles' in config:
-        cycles = config['num_cycles']
+    cycles = config.get('num_cycles')
+    if cycles is None:
+        cycles = _get_nested(config, "raft.num_cycles")
+    if cycles is not None:
         if not isinstance(cycles, int) or cycles < 1:
             errors.append(f"Invalid num_cycles: {cycles} (must be positive integer)")
         elif cycles > 10:
             warnings.append(f"num_cycles={cycles} is high (typical: 3-6)")
     
-    if 'temperature' in config:
-        temp = config['temperature']
+    temp = config.get('temperature')
+    if temp is None:
+        temp = _get_nested(config, "generation.temperature")
+    if temp is not None:
         if not 0 < temp <= 2:
             errors.append(f"Invalid temperature: {temp} (must be 0 < x <= 2)")
     
-    if 'reward_threshold' in config:
-        threshold = config['reward_threshold']
+    threshold = config.get('reward_threshold')
+    if threshold is None:
+        threshold = _get_nested(config, "raft.reward_threshold")
+    if threshold is not None:
         if not 0 <= threshold <= 1:
             errors.append(f"Invalid reward_threshold: {threshold} (must be 0 <= x <= 1)")
     
@@ -519,6 +543,28 @@ def _resolve_model_path(model_path: str) -> tuple:
     return (model_path, None)
 
 
+def _load_prompts_jsonl(prompts_file: str) -> tuple:
+    """
+    Load prompts from a JSONL file.
+
+    Returns:
+        (prompts, invalid_lines)
+    """
+    prompts = []
+    invalid_lines = []
+    with open(prompts_file) as f:
+        for line_num, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError as e:
+                invalid_lines.append((line_num, str(e)))
+                continue
+            prompts.append(data.get('prompt', data.get('text', '')))
+    return prompts, invalid_lines
+
+
 def cmd_raft_train(args):
     """Run RAFT training."""
     # Note: --experimental-attention is handled at script startup (before imports)
@@ -536,8 +582,12 @@ def cmd_raft_train(args):
     
     # Load config
     if args.config:
-        with open(args.config) as f:
-            cfg_dict = yaml.safe_load(f)
+        try:
+            with open(args.config) as f:
+                cfg_dict = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            print(f"Error: Invalid YAML syntax in {args.config}: {e}")
+            sys.exit(1)
     else:
         cfg_dict = {}
     
@@ -611,8 +661,35 @@ def cmd_raft_train(args):
         sys.exit(1)
     
     # Create config
-    keep_percent = getattr(args, 'keep_percent', None) or cfg_dict.get('keep_top_percent', 0.5)
-    reward_threshold = getattr(args, 'reward_threshold', None) or cfg_dict.get('reward_threshold', 0.5)
+    raft_cfg = cfg_dict.get('raft', {}) if isinstance(cfg_dict.get('raft', {}), dict) else {}
+    generation_cfg = cfg_dict.get('generation', {}) if isinstance(cfg_dict.get('generation', {}), dict) else {}
+
+    def _prefer_nested(nested, top_level, default, name: str):
+        if nested is not None and top_level is not None and nested != top_level:
+            print(f"[!] Using raft.{name} ({nested}) over top-level {name} ({top_level})")
+        if nested is not None:
+            return nested
+        if top_level is not None:
+            return top_level
+        return default
+
+    keep_percent = getattr(args, 'keep_percent', None)
+    if keep_percent is None:
+        keep_percent = _prefer_nested(
+            raft_cfg.get('keep_top_percent'),
+            cfg_dict.get('keep_top_percent'),
+            0.5,
+            "keep_top_percent"
+        )
+
+    reward_threshold = getattr(args, 'reward_threshold', None)
+    if reward_threshold is None:
+        reward_threshold = _prefer_nested(
+            raft_cfg.get('reward_threshold'),
+            cfg_dict.get('reward_threshold'),
+            0.5,
+            "reward_threshold"
+        )
     
     curriculum = getattr(args, 'curriculum', None) or cfg_dict.get('curriculum_strategy', 'none')
     curriculum_stats = getattr(args, 'curriculum_stats', None) or cfg_dict.get('curriculum_stats_path', None)
@@ -624,10 +701,21 @@ def cmd_raft_train(args):
     min_lr = getattr(args, 'min_lr', None) or cfg_dict.get('min_lr', 1e-6)
     
     # New generation parameters
-    samples_per_prompt = getattr(args, 'samples_per_prompt', None) or cfg_dict.get('raft', {}).get('samples_per_prompt', 8)
-    temperature = getattr(args, 'temperature', None) or cfg_dict.get('generation', {}).get('temperature', 0.7)
-    max_new_tokens = getattr(args, 'max_new_tokens', None) or cfg_dict.get('generation', {}).get('max_new_tokens', 1024)
-    min_samples = getattr(args, 'min_samples', None) or cfg_dict.get('raft', {}).get('min_samples')
+    samples_per_prompt = getattr(args, 'samples_per_prompt', None)
+    if samples_per_prompt is None:
+        samples_per_prompt = raft_cfg.get('samples_per_prompt', 8)
+
+    temperature = getattr(args, 'temperature', None)
+    if temperature is None:
+        temperature = generation_cfg.get('temperature', 0.7)
+
+    max_new_tokens = getattr(args, 'max_new_tokens', None)
+    if max_new_tokens is None:
+        max_new_tokens = generation_cfg.get('max_new_tokens', 1024)
+
+    min_samples = getattr(args, 'min_samples', None)
+    if min_samples is None:
+        min_samples = raft_cfg.get('min_samples')
     
     # Resolve model path - handles SFT output directories automatically
     # This allows: --model models/code_sft (where adapters are in models/code_sft/final_model)
@@ -648,11 +736,20 @@ def cmd_raft_train(args):
             # No adapter found - will train from scratch
             sft_checkpoint = cfg_dict.get('sft_checkpoint', 'models/sft/final_model')
     
+    num_cycles = args.cycles
+    if num_cycles is None:
+        num_cycles = _prefer_nested(
+            raft_cfg.get('num_cycles'),
+            cfg_dict.get('num_cycles'),
+            3,
+            "num_cycles"
+        )
+
     config = RAFTConfig(
         base_model=base_model,
         sft_checkpoint=sft_checkpoint,
         output_dir=args.output or cfg_dict.get('output_dir', 'models/raft'),
-        num_cycles=args.cycles or cfg_dict.get('num_cycles', 3),
+        num_cycles=num_cycles,
         keep_top_percent=keep_percent,
         reward_threshold=reward_threshold,
         curriculum_strategy=curriculum,
@@ -673,10 +770,14 @@ def cmd_raft_train(args):
     prompts = []
     prompts_file = args.prompts or cfg_dict.get('prompts')
     if prompts_file:
-        with open(prompts_file) as f:
-            for line in f:
-                data = json.loads(line)
-                prompts.append(data.get('prompt', data.get('text', '')))
+        prompts, invalid_lines = _load_prompts_jsonl(prompts_file)
+        if invalid_lines:
+            print(f"Error: Invalid JSONL in prompts file: {prompts_file}")
+            for line_num, err in invalid_lines[:5]:
+                print(f"  Line {line_num}: {err}")
+            if len(invalid_lines) > 5:
+                print(f"  ... {len(invalid_lines) - 5} more invalid lines")
+            sys.exit(1)
     
     if not prompts:
         print("Error: No prompts provided")
