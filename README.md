@@ -10,14 +10,24 @@
 </p>
 
 <p align="center">
-  <a href="https://halo-forge.io/docs/getting-started/quickstart/"><strong>Get Started →</strong></a>
+  <a href="https://halo-forge.io/docs/getting-started/quickstart/"><img src="https://img.shields.io/badge/Get_Started-→-0A66C2?style=for-the-badge" alt="Get Started"></a>
+  <a href="https://halo-forge.io/docs"><img src="https://img.shields.io/badge/Documentation-halo--forge.io-0A192F?style=for-the-badge" alt="Docs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Apache_2.0-License-blue?style=for-the-badge" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/AMD_Strix_Halo-Optimized-ED1C24?style=flat-square&logo=amd&logoColor=white" alt="Strix Halo">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/ROCm-7.0+-663399?style=flat-square&logo=amd&logoColor=white" alt="ROCm">
+  <img src="https://img.shields.io/github/stars/professor-moody/halo-forge?style=flat-square&logo=github" alt="Stars">
 </p>
 
 ---
 
 ## Documentation
 
-**Start here:** [halo-forge.io/docs](https://halo-forge.io/docs)
+**[halo-forge.io/docs](https://halo-forge.io/docs)**
 
 | | |
 |---|---|
