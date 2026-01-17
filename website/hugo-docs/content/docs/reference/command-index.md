@@ -222,9 +222,13 @@ Run RAFT (Reward-Ranked Fine-Tuning).
 | `--reward-threshold` | - | float | No | 0.5 | Minimum reward to pass |
 | `--min-samples` | - | int | No | - | Auto-adjust threshold if fewer pass |
 | `--curriculum` | - | string | No | `none` | Curriculum strategy |
+| `--curriculum-stats` | - | path | No | - | Historical stats file (for `historical` curriculum) |
+| `--curriculum-start` | - | float | No | 0.2 | Start fraction (for `progressive` curriculum) |
+| `--curriculum-increment` | - | float | No | 0.2 | Increment per cycle (for `progressive` curriculum) |
 | `--reward-shaping` | - | string | No | `fixed` | Reward shaping strategy |
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
 | `--min-lr` | - | float | No | 1e-6 | Minimum learning rate |
+| `--experimental-attention` | - | flag | No | false | Enable experimental ROCm attention |
 | `--system-prompt` | - | string | No | (Windows prompt) | System prompt |
 | `--host` | - | string | No | - | MSVC verifier host |
 | `--user` | - | string | No | - | MSVC verifier user |
@@ -232,7 +236,7 @@ Run RAFT (Reward-Ranked Fine-Tuning).
 
 **Verifier choices:** `gcc`, `mingw`, `msvc`, `rust`, `go`, `dotnet`, `powershell`, `humaneval`, `mbpp`, `python`, `auto`
 
-**Curriculum choices:** `none`, `complexity`, `progressive`, `adaptive`
+**Curriculum choices:** `none`, `complexity`, `progressive`, `adaptive`, `historical`
 
 **Reward shaping choices:** `fixed`, `annealing`, `adaptive`, `warmup`
 
@@ -284,6 +288,7 @@ Run pass@k benchmark.
 | `--ssh-key` | - | path | No | - | MSVC SSH key |
 | `--cross-compile` | - | flag | No | false | Windows cross-compile (rust/go) |
 | `--run-after-compile` | - | flag | No | false | Run after compile |
+| `--experimental-attention` | - | flag | No | false | Enable experimental ROCm attention |
 
 ```bash
 halo-forge benchmark run \
@@ -315,6 +320,30 @@ Run comprehensive RAFT benchmark.
 ```bash
 halo-forge benchmark full --model Qwen/Qwen2.5-Coder-0.5B --cycles 2
 halo-forge benchmark full --suite all --output results/full_benchmark
+```
+
+---
+
+### halo-forge benchmark eval
+
+Evaluate a model on standard benchmarks (HumanEval, MBPP, LiveCodeBench, etc.).
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--model` | `-m` | string | Yes | - | Model name or path |
+| `--benchmark` | `-b` | string | No | `humaneval` | Benchmark name |
+| `--limit` | - | int | No | - | Max samples to evaluate |
+| `--output` | `-o` | path | No | - | Output file path |
+| `--samples-per-prompt` | - | int | No | 5 | Samples per prompt for pass@k |
+| `--run-after-compile` | - | flag | No | false | Run compiled code |
+| `--language` | - | string | No | - | Language (cpp, rust, go) |
+| `--verifier` | - | string | No | - | Verifier type |
+
+**Benchmark choices:** `humaneval`, `mbpp`, `livecodebench`, `cpp`, `rust`, `go`
+
+```bash
+halo-forge benchmark eval --model models/raft/final --benchmark humaneval --limit 164
+halo-forge benchmark eval --model models/raft/final --benchmark cpp --language cpp --run-after-compile
 ```
 
 ---

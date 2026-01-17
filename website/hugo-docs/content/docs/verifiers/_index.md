@@ -170,3 +170,26 @@ finally:
 with GCCVerifier() as verifier:
     results = verifier.verify_batch(codes)
 ```
+
+---
+
+## Verifier Safety
+
+Verifiers execute model-generated code. Treat verifier runs as untrusted execution.
+
+### Current Safety Characteristics
+
+| Verifier Type | Safety Notes |
+|---------------|--------------|
+| `SubprocessVerifier` | Uses `shell=True`, inherits host environment |
+| Python verifiers | Execute without OS-level resource limits |
+| C/C++ verifiers | Apply `setrlimit` for CPU and memory during execution |
+
+### Operational Guardrails (Recommended)
+
+1. **Isolate execution**: Run verifiers in VMs or containers, avoid host mounts
+2. **Non-privileged user**: Do not run verifiers as root
+3. **Constrain resources**: Use OS limits or container quotas where possible
+4. **Restrict network**: Prefer offline execution or blocked egress
+
+These are operational recommendations, not enforced by halo-forge itself.
