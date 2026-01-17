@@ -336,32 +336,16 @@ fn main() {
         solution: str,
         test_cases: Optional[List[Dict]] = None,
     ) -> VerifyResult:
-        """Verify Python code by execution."""
-        try:
-            # Try to import actual halo-forge verifier
-            from halo_forge.rlvr.verifiers import HumanEvalVerifier
-            
-            verifier = HumanEvalVerifier()
-            
-            # Combine prompt and solution
-            full_code = f"{prompt}\n{solution}"
-            
-            result = verifier.verify(full_code, test_cases=test_cases)
-            
-            return VerifyResult(
-                passed=result.success,
-                reward=result.reward,
-                message="All tests passed" if result.success else "Tests failed",
-                output=getattr(result, 'output', ''),
-                error=result.error or '',
-            )
-            
-        except ImportError:
-            # Fallback: Simple execution test
-            return await self._simple_execution_test(prompt, solution)
-        except Exception as e:
-            # Fallback on any error
-            return await self._simple_execution_test(prompt, solution)
+        """Verify Python code by execution.
+        
+        For interactive UI testing, we run the combined prompt+solution code
+        directly. This checks for syntax errors and runtime crashes.
+        
+        Note: HumanEvalVerifier requires task_ids from a dataset, which the
+        interactive UI doesn't have. For full test-case verification during
+        training, use the RLVR verifiers directly.
+        """
+        return await self._simple_execution_test(prompt, solution)
     
     async def _simple_execution_test(self, prompt: str, solution: str) -> VerifyResult:
         """Simple Python execution test (fallback)."""
