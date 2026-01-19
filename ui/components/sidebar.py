@@ -30,12 +30,10 @@ class Sidebar:
         with ui.column().classes('w-full h-full p-0 m-0'):
             # Logo area
             with ui.row().classes('w-full items-center gap-3 px-4 py-5 border-b border-[#2d343c]'):
-                # Logo icon (forge/anvil concept)
-                with ui.element('div').classes(
-                    f'w-10 h-10 rounded-lg flex items-center justify-center '
-                    f'bg-gradient-to-br from-[{COLORS["primary"]}] to-[{COLORS["secondary"]}]'
-                ):
-                    ui.icon('hardware', size='24px').classes('text-white')
+                # Logo image (halo-forge branding)
+                ui.image('/static/favicon.svg').classes(
+                    'w-10 h-10 rounded-lg'
+                ).props('fit=contain')
                 
                 with ui.column().classes('gap-0'):
                     ui.label('HALO-FORGE').classes(

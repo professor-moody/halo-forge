@@ -12,6 +12,12 @@ from ui.components.sidebar import Sidebar
 from ui.components.header import Header
 
 
+# Serve static files from ui/static/ at /static URL path
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.add_static_files('/static', _static_dir)
+
+
 def create_layout(page_title: str = "Dashboard"):
     """Create the base page layout with sidebar and header."""
     apply_theme()
@@ -115,17 +121,25 @@ def benchmark_page():
 
 def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
     """Run the halo-forge web UI."""
-    from pathlib import Path
+    static_dir = Path(__file__).parent / "static"
     
-    # Serve favicon from ui/static (use logo.png which matches website)
-    favicon_path = Path(__file__).parent / "static" / "favicon.png"
+    # Prefer SVG favicon, fall back to PNG, then emoji
+    favicon_svg = static_dir / "favicon.svg"
+    favicon_png = static_dir / "favicon.png"
+    
+    if favicon_svg.exists():
+        favicon = favicon_svg
+    elif favicon_png.exists():
+        favicon = favicon_png
+    else:
+        favicon = "🔥"
     
     ui.run(
         host=host,
         port=port,
         reload=reload,
         title="halo-forge",
-        favicon=favicon_path if favicon_path.exists() else "🔥",
+        favicon=favicon,
         dark=True,
         binding_refresh_interval=0.1,
         storage_secret='halo-forge-storage-secret',  # Required for app.storage.user

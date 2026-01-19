@@ -12,6 +12,7 @@ from typing import Optional
 from dataclasses import dataclass
 
 from ui.theme import COLORS
+from ui.services.verifier_service import get_verifier_service
 
 
 @dataclass
@@ -24,6 +25,7 @@ class VerifierInfo:
     languages: list[str]
     example_prompt: str
     example_solution: str
+    ground_truth: Optional[str] = None
 
 
 class Verifiers:
@@ -65,6 +67,7 @@ class Verifiers:
             languages=["Natural Language"],
             example_prompt='What is 15% of 80?',
             example_solution='12',
+            ground_truth='12',
         ),
         VerifierInfo(
             name="GSM8K",
@@ -74,6 +77,7 @@ class Verifiers:
             languages=["Natural Language"],
             example_prompt='James has 3 boxes of apples. Each box contains 12 apples. How many apples does James have in total?',
             example_solution='James has 3 boxes × 12 apples = 36 apples in total.\n#### 36',
+            ground_truth='36',
         ),
     ]
     
@@ -81,6 +85,12 @@ class Verifiers:
         self.selected_verifier: Optional[VerifierInfo] = None
         self.test_code: str = ""
         self.test_result: Optional[dict] = None
+        
+        # Initialize verifier service and availability map
+        self._verifier_service = get_verifier_service()
+        self._availability = {
+            v.name: v.available for v in self._verifier_service.get_verifiers()
+        }
         
         # UI container references for dynamic updates
         self._test_panel_container = None
@@ -119,13 +129,20 @@ class Verifiers:
     def _render_verifier_card(self, verifier: VerifierInfo, index: int):
         """Render a verifier card."""
         is_selected = self.selected_verifier == verifier
+        available = self._availability.get(verifier.name, True)
         
-        with ui.card().classes(
-            f'min-w-[200px] flex-1 p-4 rounded-xl cursor-pointer card-hover '
+        card = ui.card().classes(
+            f'min-w-[200px] flex-1 p-4 rounded-xl card-hover '
             f'animate-in stagger-{index + 1} '
             + (f'border-2 border-[{COLORS["primary"]}] bg-[{COLORS["primary"]}]/5' if is_selected
                else f'border border-[#2d343c] bg-[{COLORS["bg_card"]}]')
-        ).on('click', lambda v=verifier: self._select_verifier(v)):
+            + (' opacity-50' if not available else ' cursor-pointer')
+        )
+        
+        if available:
+            card.on('click', lambda v=verifier: self._select_verifier(v))
+        
+        with card:
             with ui.column().classes('gap-3'):
                 # Header
                 with ui.row().classes('items-center gap-2'):
@@ -139,6 +156,10 @@ class Verifiers:
                     ui.label(verifier.name).classes(
                         f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
                     )
+                    if not available:
+                        ui.label('Unavailable').classes(
+                            f'px-2 py-0.5 rounded text-xs bg-[{COLORS["error"]}]/10 text-[{COLORS["error"]}]'
+                        )
                 
                 # Description
                 ui.label(verifier.description).classes(
@@ -162,6 +183,11 @@ class Verifiers:
         
         FIXED: Updates UI dynamically instead of navigating (which killed state).
         """
+        # Check availability
+        if not self._availability.get(verifier.name, True):
+            ui.notify('Verifier not available on this system', type='warning')
+            return
+        
         self.selected_verifier = verifier
         self.test_code = verifier.example_solution
         self.test_result = None
@@ -251,15 +277,29 @@ class Verifiers:
                     f'text-base font-semibold text-[{color}]'
                 )
             
-            # Details
+            # Message
             if 'message' in self.test_result:
                 ui.label(self.test_result['message']).classes(
                     f'text-sm text-[{COLORS["text_secondary"]}]'
                 )
             
-            if 'output' in self.test_result:
+            # Error output (in red)
+            if self.test_result.get('error'):
+                ui.html(f'''<pre class="w-full p-3 rounded font-mono text-xs overflow-x-auto"
+                             style="background: {COLORS["bg_primary"]}; color: {COLORS["error"]}; white-space: pre-wrap;">{self.test_result['error']}</pre>''', sanitize=False)
+            
+            # Standard output
+            if self.test_result.get('output'):
                 ui.html(f'''<pre class="w-full p-3 rounded font-mono text-xs overflow-x-auto"
                              style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.test_result['output']}</pre>''', sanitize=False)
+            
+            # Reward and duration footer
+            reward = self.test_result.get('reward')
+            duration = self.test_result.get('duration_ms', 0.0)
+            if reward is not None:
+                ui.label(f'Reward: {reward:.2f} • {duration:.0f}ms').classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
     
     async def _run_test(self):
         """Run the verification test."""
@@ -267,17 +307,30 @@ class Verifiers:
             ui.notify('Please select a verifier first', type='warning')
             return
         
+        # Check availability
+        if not self._availability.get(self.selected_verifier.name, True):
+            ui.notify('Verifier not available on this system', type='warning')
+            return
+        
         ui.notify('Running verification...', type='info')
         
-        # Simulate verification (replace with actual verifier call)
-        import asyncio
-        await asyncio.sleep(1)
+        # Call the real verifier service
+        result = await self._verifier_service.verify(
+            verifier_name=self.selected_verifier.name,
+            prompt=self.selected_verifier.example_prompt,
+            solution=self.test_code,
+            ground_truth=self.selected_verifier.ground_truth,
+        )
         
-        # Demo result - in production, call actual verifier
+        # Map VerifyResult to dict for rendering
         self.test_result = {
-            'passed': True,
-            'message': 'All tests passed',
-            'output': 'Test 1: ✓ add(1, 2) == 3\nTest 2: ✓ add(-1, 1) == 0\nTest 3: ✓ add(0, 0) == 0',
+            'passed': result.passed,
+            'message': result.message,
+            'output': result.output,
+            'error': result.error,
+            'reward': result.reward,
+            'duration_ms': result.duration_ms,
+            'verifier_type': result.verifier_type,
         }
         
         # Update the result display
@@ -286,4 +339,7 @@ class Verifiers:
             with self._result_container:
                 self._render_result()
         
-        ui.notify('Verification complete', type='positive')
+        ui.notify(
+            'Verification complete',
+            type='positive' if result.passed else 'negative'
+        )

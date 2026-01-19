@@ -80,6 +80,9 @@ Repository = "https://github.com/professor-moody/halo-forge"
 where = ["."]
 include = ["halo_forge*", "ui*"]
 
+[tool.setuptools.package-data]
+"ui" = ["static/*"]
+
 [tool.black]
 line-length = 100
 target-version = ['py310', 'py311']
