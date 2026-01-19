@@ -348,8 +348,30 @@ fn main() {
         return await self._simple_execution_test(prompt, solution)
     
     async def _simple_execution_test(self, prompt: str, solution: str) -> VerifyResult:
-        """Simple Python execution test (fallback)."""
-        full_code = f"{prompt}\n{solution}"
+        """Simple Python execution test (fallback).
+        
+        Intelligently combines prompt + solution:
+        - If prompt looks like Python code (def, class, import, etc.), combine them
+        - If prompt is natural language (MBPP-style), only run the solution
+        """
+        # Check if prompt looks like Python code
+        prompt_stripped = prompt.strip()
+        is_code_prompt = (
+            prompt_stripped.startswith('def ') or
+            prompt_stripped.startswith('class ') or
+            prompt_stripped.startswith('import ') or
+            prompt_stripped.startswith('from ') or
+            prompt_stripped.startswith('#') or
+            prompt_stripped.startswith('"""') or
+            prompt_stripped.startswith("'''")
+        )
+        
+        if is_code_prompt:
+            # HumanEval-style: prompt is a function signature, combine with solution
+            full_code = f"{prompt}\n{solution}"
+        else:
+            # MBPP-style: prompt is natural language, only run solution
+            full_code = solution
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(full_code)
