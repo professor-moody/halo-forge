@@ -121,6 +121,7 @@ class TrainingService:
         save_steps: int = 500,
         eval_steps: int = 250,
         early_stopping_patience: int = 5,
+        gradient_checkpointing: bool = True,
         on_log: Optional[Callable[[str], None]] = None,
         **kwargs
     ) -> str:
@@ -173,7 +174,16 @@ class TrainingService:
         cmd = [
             "python", "-m", "halo_forge.cli", "sft", "train",
             "--model", model,
-            "--dataset", dataset,
+        ]
+        
+        # Route dataset: use --data for local files, --dataset for HuggingFace IDs
+        # Check if it's an actual local file (HF IDs like "user/dataset" also contain "/")
+        if dataset and Path(dataset).exists():
+            cmd.extend(["--data", dataset])
+        else:
+            cmd.extend(["--dataset", dataset])
+        
+        cmd.extend([
             "--output", output_dir,
             "--epochs", str(epochs),
             "--batch-size", str(batch_size),
@@ -187,7 +197,7 @@ class TrainingService:
             "--save-steps", str(save_steps),
             "--eval-steps", str(eval_steps),
             "--early-stopping-patience", str(early_stopping_patience),
-        ]
+        ])
         
         # LoRA options
         if use_lora:
@@ -202,6 +212,10 @@ class TrainingService:
         # Optional max samples limit
         if max_samples is not None and max_samples > 0:
             cmd.extend(["--max-samples", str(max_samples)])
+        
+        # Hardware options
+        if not gradient_checkpointing:
+            cmd.append("--no-gradient-checkpointing")
         
         # Add any extra arguments
         for key, value in kwargs.items():
@@ -226,7 +240,6 @@ class TrainingService:
         reward_threshold: float = 0.5,
         min_samples: int = 64,
         max_new_tokens: int = 1024,
-        learning_rate: float = 1e-5,
         lr_decay: float = 0.85,
         min_lr: float = 1e-6,
         checkpoint: Optional[str] = None,
@@ -255,7 +268,6 @@ class TrainingService:
             reward_threshold: Minimum reward threshold
             min_samples: Minimum samples per cycle
             max_new_tokens: Maximum tokens to generate
-            learning_rate: Initial learning rate
             lr_decay: Learning rate decay per cycle
             min_lr: Minimum learning rate floor
             checkpoint: Optional SFT checkpoint path

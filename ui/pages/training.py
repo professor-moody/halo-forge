@@ -93,25 +93,18 @@ RAFT_PROMPT_PRESETS = [
 ]
 
 # =============================================================================
-# All Available Verifiers (grouped by category)
+# RAFT Verifiers (must match CLI --verifier choices)
 # =============================================================================
 
 VERIFIERS = [
     # --- Python Test Verifiers ---
     ("humaneval", "HumanEval (Python test execution)"),
     ("mbpp", "MBPP (Python test execution)"),
-    ("pytest", "Pytest (generic Python tests)"),
-    ("unittest", "Unittest (Python unittest)"),
-    # --- Compile Verifiers (C/C++) ---
+    ("python", "Python (generic pytest)"),
+    # --- Compile Verifiers ---
     ("gcc", "GCC (C/C++ compile)"),
-    ("clang", "Clang (C/C++ compile)"),
     ("mingw", "MinGW (Windows cross-compile)"),
     ("msvc", "MSVC Remote (Windows via SSH)"),
-    # --- Execution Verifiers (compile + run) ---
-    ("execution", "Execution (compile + test I/O)"),
-    ("gcc_execution", "GCC Execution (compile + run)"),
-    ("clang_execution", "Clang Execution (compile + run)"),
-    ("mingw_execution", "MinGW Execution (cross-compile + run)"),
     # --- Other Language Verifiers ---
     ("rust", "Rust (Cargo build + run)"),
     ("go", "Go (go build + run)"),
@@ -119,10 +112,6 @@ VERIFIERS = [
     ("powershell", "PowerShell (syntax check)"),
     # --- Multi-Language ---
     ("auto", "Auto-detect (route to appropriate verifier)"),
-    # --- Math ---
-    ("math", "Math (numerical answer verification)"),
-    # --- Chained ---
-    ("chained", "Chained (multi-stage verification)"),
 ]
 
 
@@ -203,8 +192,7 @@ class RAFTFormData:
     max_new_tokens: int = 1024
     verifier: str = "humaneval"
     
-    # Learning rate schedule
-    learning_rate: float = 1e-5
+    # Learning rate schedule (decay and floor only - initial LR is internal to RAFT)
     lr_decay: float = 0.85
     min_lr: float = 1e-6
     
@@ -671,12 +659,8 @@ class Training:
                                    lambda v: setattr(self.raft_data, 'max_new_tokens', int(v)),
                                    min_val=256, max_val=4096)
             
-            # Learning rate section
+            # Learning rate decay section
             with ui.row().classes('w-full gap-4 flex-wrap mt-2'):
-                self._number_input("Learning Rate", self.raft_data.learning_rate,
-                                   lambda v: setattr(self.raft_data, 'learning_rate', float(v)),
-                                   format_val="1e-5")
-                
                 self._number_input("LR Decay", self.raft_data.lr_decay,
                                    lambda v: setattr(self.raft_data, 'lr_decay', float(v)),
                                    format_val="0.85")
@@ -1194,6 +1178,8 @@ class Training:
                 save_steps=self.sft_data.save_steps,
                 eval_steps=self.sft_data.eval_steps,
                 early_stopping_patience=self.sft_data.early_stopping_patience,
+                # Hardware options
+                gradient_checkpointing=self.sft_data.gradient_checkpointing,
             )
             
             notify_job_started(f"SFT: {Path(dataset).stem if '/' in dataset else dataset}")
@@ -1237,7 +1223,6 @@ class Training:
                 min_samples=self.raft_data.min_samples,
                 max_new_tokens=self.raft_data.max_new_tokens,
                 # Learning rate schedule
-                learning_rate=self.raft_data.learning_rate,
                 lr_decay=self.raft_data.lr_decay,
                 min_lr=self.raft_data.min_lr,
                 # Checkpoint resume

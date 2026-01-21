@@ -365,6 +365,7 @@ def cmd_sft_train(args):
     lora_alpha = getattr(args, 'lora_alpha', 32)
     lora_dropout = getattr(args, 'lora_dropout', 0.05)
     no_lora = getattr(args, 'no_lora', False)
+    no_gradient_checkpointing = getattr(args, 'no_gradient_checkpointing', False)
     save_steps = getattr(args, 'save_steps', 500)
     eval_steps = getattr(args, 'eval_steps', 250)
     save_total_limit = getattr(args, 'save_total_limit', 3)
@@ -403,6 +404,8 @@ def cmd_sft_train(args):
         config.early_stopping_patience = early_stopping_patience
         config.validation_split = validation_split
         config.max_seq_length = max_seq_length
+        if no_gradient_checkpointing:
+            config.gradient_checkpointing = False
     else:
         config = SFTConfig(
             model_name=args.model or "Qwen/Qwen2.5-Coder-7B",
@@ -426,6 +429,7 @@ def cmd_sft_train(args):
             early_stopping_patience=early_stopping_patience,
             validation_split=validation_split,
             max_seq_length=max_seq_length,
+            gradient_checkpointing=not no_gradient_checkpointing,
         )
     
     # Disable LoRA if requested (full fine-tuning)
@@ -2367,6 +2371,10 @@ def main():
     sft_train_parser.add_argument('--max-samples', type=int, help='Limit number of training samples')
     sft_train_parser.add_argument('--validation-split', type=float, default=0.05, help='Validation set fraction')
     sft_train_parser.add_argument('--max-seq-length', type=int, default=2048, help='Maximum sequence length')
+    
+    # Hardware options
+    sft_train_parser.add_argument('--no-gradient-checkpointing', action='store_true',
+                                  help='Disable gradient checkpointing (uses more memory)')
     
     # sft datasets
     sft_datasets_parser = sft_subparsers.add_parser('datasets', help='List available SFT datasets')
