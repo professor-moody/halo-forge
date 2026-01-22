@@ -23,7 +23,7 @@ A compiler provides **deterministic feedback** — objective, reproducible resul
 
 ```
 ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌───────────┐
-│   Data   │ → │   SFT    │ → │   RAFT   │ → │ Benchmark │
+│   Data   │ ─► │   SFT    │ ─► │   RAFT   │ ─► │ Benchmark │
 └──────────┘    └──────────┘    └──────────┘    └───────────┘
 ```
 
