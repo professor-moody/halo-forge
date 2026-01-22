@@ -6,6 +6,7 @@ Left navigation drawer with animated hover effects.
 
 from nicegui import ui
 from ui.theme import COLORS
+from ui import __version__
 
 
 class Sidebar:
@@ -50,8 +51,8 @@ class Sidebar:
             
             # Footer
             with ui.column().classes('w-full px-4 py-4 border-t border-[#2d343c] gap-2'):
-                # Version info
-                ui.label('v1.3.0').classes(
+                # Version info (imported from ui package)
+                ui.label(f'v{__version__}').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
                 

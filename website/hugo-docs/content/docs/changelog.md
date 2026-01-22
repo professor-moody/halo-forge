@@ -3,6 +3,24 @@ title: "Changelog"
 description: "All notable changes to halo forge"
 ---
 
+## [1.3.0] - 2026-01-21
+
+### Added
+- **Web UI Verifier Integration** - Verifier test page now calls real backend verifiers instead of returning hardcoded results
+- **Branding** - Halo-forge favicon and sidebar logo integrated into web UI
+- **Static Asset Serving** - UI properly serves static files from `ui/static/`
+- **SFT `--no-gradient-checkpointing` CLI flag** - Control gradient checkpointing from UI and CLI
+
+### Fixed
+- **SFT Dataset Routing** - Local `.jsonl` files now correctly use `--data` flag; HuggingFace IDs use `--dataset`
+- **RAFT Verifier Alignment** - UI verifier choices now match CLI `--verifier` options exactly
+- **MBPP Verifier** - Natural language prompts no longer cause syntax errors during execution
+
+### Changed
+- Removed unused RAFT learning rate UI field (CLI uses lr-decay schedule, not initial LR)
+
+---
+
 ## [1.2.0] - 2026-01-10
 
 ### Added
