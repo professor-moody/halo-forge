@@ -82,6 +82,12 @@ class RAFTConfig:
     # Learning rate decay across cycles (prevents degradation at cycles 7-8)
     lr_decay_per_cycle: float = 0.85  # Multiply LR by this each cycle
     min_lr: float = 1e-6              # Floor for learning rate
+    warmup_steps: int = 10            # LR warmup steps per cycle
+    
+    # LoRA configuration (used when creating new adapters)
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
     
     # System prompt for generation (matches Windows curriculum SFT data)
     system_prompt: str = "You are an expert Windows systems programmer."
@@ -313,16 +319,16 @@ class RAFTTrainer:
             # Create new LoRA adapters (fresh start from base model)
             self._log("No SFT checkpoint found, creating new LoRA adapters...", "warning")
             lora_config = LoraConfig(
-                r=16,
-                lora_alpha=32,
+                r=cfg.lora_r,
+                lora_alpha=cfg.lora_alpha,
                 target_modules=["q_proj", "k_proj", "v_proj", "o_proj", 
                                "gate_proj", "up_proj", "down_proj"],
-                lora_dropout=0.05,
+                lora_dropout=cfg.lora_dropout,
                 bias="none",
                 task_type="CAUSAL_LM"
             )
             self.model = get_peft_model(self.base_model, lora_config)
-            self._log(f"Created LoRA adapters with rank={lora_config.r}", "dim")
+            self._log(f"Created LoRA adapters with rank={cfg.lora_r}, alpha={cfg.lora_alpha}", "dim")
         
         self.model.enable_input_require_grads()
         self._log("Model loaded", "success")
@@ -672,7 +678,7 @@ class RAFTTrainer:
             per_device_train_batch_size=cfg.train_batch_size,
             gradient_accumulation_steps=cfg.gradient_accumulation_steps,
             learning_rate=cycle_lr,
-            warmup_steps=0,  # No warmup - prevents LR=0 with few training steps
+            warmup_steps=cfg.warmup_steps,
             bf16=True,
             gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -984,7 +990,7 @@ class RAFTTrainer:
         # Save curriculum stats for future historical runs
         if curriculum_scheduler:
             from halo_forge.rlvr.curriculum import save_prompt_stats
-            stats_path = output_dir / "curriculum_stats.json"
+            stats_path = self.output_dir / "curriculum_stats.json"
             prompt_stats = curriculum_scheduler.get_all_prompt_stats()
             save_prompt_stats(str(stats_path), prompt_stats)
             self._log(f"Saved curriculum stats to {stats_path} for future historical runs", "success")

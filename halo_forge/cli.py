@@ -667,6 +667,8 @@ def cmd_raft_train(args):
     # Create config
     raft_cfg = cfg_dict.get('raft', {}) if isinstance(cfg_dict.get('raft', {}), dict) else {}
     generation_cfg = cfg_dict.get('generation', {}) if isinstance(cfg_dict.get('generation', {}), dict) else {}
+    training_cfg = cfg_dict.get('training', {}) if isinstance(cfg_dict.get('training', {}), dict) else {}
+    lora_cfg = cfg_dict.get('lora', {}) if isinstance(cfg_dict.get('lora', {}), dict) else {}
 
     def _prefer_nested(nested, top_level, default, name: str):
         if nested is not None and top_level is not None and nested != top_level:
@@ -721,6 +723,40 @@ def cmd_raft_train(args):
     if min_samples is None:
         min_samples = raft_cfg.get('min_samples')
     
+    # Training hyperparameters from training.* section
+    learning_rate = getattr(args, 'learning_rate', None)
+    if learning_rate is None:
+        learning_rate = training_cfg.get('learning_rate') or training_cfg.get('base_learning_rate') or 5e-5
+    
+    batch_size = getattr(args, 'batch_size', None)
+    if batch_size is None:
+        batch_size = training_cfg.get('batch_size') or 2
+    
+    gradient_accumulation = getattr(args, 'gradient_accumulation', None)
+    if gradient_accumulation is None:
+        gradient_accumulation = training_cfg.get('gradient_accumulation_steps') or 16
+    
+    warmup_steps = getattr(args, 'warmup_steps', None)
+    if warmup_steps is None:
+        warmup_steps = training_cfg.get('warmup_steps') or 10
+    
+    # Support training.lr_decay_factor as alias for lr_decay_per_cycle
+    if lr_decay == 0.85:  # default value, check if config has different
+        config_lr_decay = training_cfg.get('lr_decay_factor')
+        if config_lr_decay is not None:
+            lr_decay = config_lr_decay
+    
+    # LoRA configuration from lora.* section
+    lora_rank = getattr(args, 'lora_rank', None)
+    if lora_rank is None:
+        lora_rank = lora_cfg.get('r') or 16
+    
+    lora_alpha = getattr(args, 'lora_alpha', None)
+    if lora_alpha is None:
+        lora_alpha = lora_cfg.get('alpha') or 32
+    
+    lora_dropout = lora_cfg.get('dropout') or 0.05
+    
     # Resolve model path - handles SFT output directories automatically
     # This allows: --model models/code_sft (where adapters are in models/code_sft/final_model)
     model_arg = args.model or cfg_dict.get('base_model', 'Qwen/Qwen2.5-Coder-3B')
@@ -762,8 +798,18 @@ def cmd_raft_train(args):
         curriculum_progressive_increment=curriculum_increment,
         reward_shaping_strategy=reward_shaping,
         system_prompt=system_prompt,
+        # Training hyperparameters
+        learning_rate=learning_rate,
+        train_batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation,
+        warmup_steps=warmup_steps,
         lr_decay_per_cycle=lr_decay,
         min_lr=min_lr,
+        # LoRA configuration
+        lora_r=lora_rank,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+        # Generation
         samples_per_prompt=samples_per_prompt,
         temperature=temperature,
         max_new_tokens=max_new_tokens,
@@ -2427,6 +2473,21 @@ def main():
                                    help='Maximum tokens to generate (default: 1024)')
     raft_train_parser.add_argument('--min-samples', type=int,
                                    help='Minimum samples per cycle (auto-adjusts threshold if needed)')
+    # Training hyperparameters
+    raft_train_parser.add_argument('--learning-rate', type=float,
+                                   help='Base learning rate (default: 5e-5)')
+    raft_train_parser.add_argument('--batch-size', type=int,
+                                   help='Per-device batch size (default: 2)')
+    raft_train_parser.add_argument('--gradient-accumulation', type=int,
+                                   help='Gradient accumulation steps (default: 16)')
+    raft_train_parser.add_argument('--warmup-steps', type=int,
+                                   help='LR warmup steps (default: 10)')
+    # LoRA configuration
+    raft_train_parser.add_argument('--lora-rank', type=int,
+                                   help='LoRA rank (default: 16)')
+    raft_train_parser.add_argument('--lora-alpha', type=int,
+                                   help='LoRA alpha (default: 32)')
+    # Verifier options
     raft_train_parser.add_argument('--host', help='MSVC verifier host')
     raft_train_parser.add_argument('--user', help='MSVC verifier user')
     raft_train_parser.add_argument('--ssh-key', help='MSVC verifier SSH key')
