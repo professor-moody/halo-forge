@@ -474,6 +474,7 @@ halo-forge vlm sft --dataset llava --model Qwen/Qwen2-VL-2B-Instruct --output mo
 ### halo-forge vlm train
 
 Train VLM with RAFT.
+Prototype-gated: pass `--allow-prototype-train`.
 
 | Flag | Short | Type | Required | Default | Description |
 |------|-------|------|----------|---------|-------------|
@@ -488,15 +489,18 @@ Train VLM with RAFT.
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
 | `--temperature` | - | float | No | 0.7 | Generation temperature |
 | `--limit` | - | int | No | - | Limit dataset samples |
+| `--allow-prototype-train` | - | flag | No | false | Required while capability is prototype-gated |
 
 **Dataset choices:** `textvqa`, `docvqa`, `chartqa`, `realworldqa`, `mathvista`
+**Supported model families:** `qwen2-vl`, `qwen-vl`, `llava`
 
 ```bash
 halo-forge vlm train \
   --model Qwen/Qwen2-VL-7B-Instruct \
   --dataset textvqa \
   --cycles 6 \
-  --output models/vlm_textvqa
+  --output models/vlm_textvqa \
+  --allow-prototype-train
 ```
 
 ---
@@ -555,6 +559,7 @@ halo-forge audio sft --dataset librispeech_sft --model openai/whisper-small --ou
 ### halo-forge audio train
 
 Train audio model with RAFT.
+Prototype-gated: pass `--allow-prototype-train`.
 
 | Flag | Short | Type | Required | Default | Description |
 |------|-------|------|----------|---------|-------------|
@@ -566,8 +571,10 @@ Train audio model with RAFT.
 | `--lr` | - | float | No | 1e-5 | Learning rate |
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
 | `--limit` | - | int | No | - | Limit dataset samples |
+| `--allow-prototype-train` | - | flag | No | false | Required while capability is prototype-gated |
 
 **Dataset choices:** `librispeech`, `common_voice`, `audioset`, `speech_commands`
+**Supported model families:** `whisper`
 
 ```bash
 halo-forge audio train \
@@ -575,7 +582,8 @@ halo-forge audio train \
   --dataset librispeech \
   --task asr \
   --cycles 4 \
-  --output models/audio_asr
+  --output models/audio_asr \
+  --allow-prototype-train
 ```
 
 ---
@@ -636,6 +644,7 @@ halo-forge reasoning sft --dataset metamath --model Qwen/Qwen2.5-3B-Instruct --o
 ### halo-forge reasoning train
 
 Train on math/reasoning datasets with RAFT.
+Prototype-gated: pass `--allow-prototype-train`.
 
 | Flag | Short | Type | Required | Default | Description |
 |------|-------|------|----------|---------|-------------|
@@ -646,6 +655,7 @@ Train on math/reasoning datasets with RAFT.
 | `--lr` | - | float | No | 1e-5 | Learning rate |
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
 | `--limit` | - | int | No | - | Limit dataset samples |
+| `--allow-prototype-train` | - | flag | No | false | Required while capability is prototype-gated |
 
 **RAFT Dataset choices:** `gsm8k`, `math`, `aime`
 
@@ -654,7 +664,8 @@ halo-forge reasoning train \
   --model Qwen/Qwen2.5-7B-Instruct \
   --dataset gsm8k \
   --cycles 4 \
-  --output models/reasoning_gsm8k
+  --output models/reasoning_gsm8k \
+  --allow-prototype-train
 ```
 
 ---
@@ -716,6 +727,7 @@ halo-forge agentic sft --dataset xlam_sft --model Qwen/Qwen2.5-7B-Instruct --out
 ### halo-forge agentic train
 
 Train on tool calling datasets with RAFT.
+Prototype-gated: pass `--allow-prototype-train`.
 
 | Flag | Short | Type | Required | Default | Description |
 |------|-------|------|----------|---------|-------------|
@@ -727,13 +739,15 @@ Train on tool calling datasets with RAFT.
 | `--lr-decay` | - | float | No | 0.85 | LR decay per cycle |
 | `--limit` | - | int | No | - | Limit dataset samples |
 | `--dry-run` | - | flag | No | false | Validate config only |
+| `--allow-prototype-train` | - | flag | No | false | Required while capability is prototype-gated |
 
 ```bash
 halo-forge agentic train \
   --model Qwen/Qwen2.5-7B-Instruct \
   --dataset xlam \
   --cycles 5 \
-  --output models/agentic_raft
+  --output models/agentic_raft \
+  --allow-prototype-train
 ```
 
 ---

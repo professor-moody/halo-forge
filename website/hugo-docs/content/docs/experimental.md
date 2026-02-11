@@ -8,6 +8,15 @@ This section contains features that are currently in development and testing. Th
 
 **Status**: These features are functional but may change significantly as we iterate.
 
+## Modality Training Capability Matrix
+
+| Modality | Runtime Status | Gate | Supported Model Families |
+|----------|----------------|------|--------------------------|
+| VLM | Prototype rollout | `--allow-prototype-train` required | `qwen2-vl`, `qwen-vl`, `llava` |
+| Audio | Prototype rollout | `--allow-prototype-train` required | `whisper` |
+| Reasoning | Prototype rollout | `--allow-prototype-train` required | Text CausalLM families |
+| Agentic | Prototype rollout | `--allow-prototype-train` required | Text CausalLM families |
+
 ---
 
 ## Vision-Language (VLM)
@@ -25,11 +34,11 @@ Train vision-language models using RLVR with perception-aware verification.
 ```bash
 # Full pipeline
 halo-forge vlm sft --dataset llava --model Qwen/Qwen2-VL-2B-Instruct --output models/vlm_sft
-halo-forge vlm train --model models/vlm_sft --dataset textvqa --cycles 6 --output models/vlm_raft
+halo-forge vlm train --model models/vlm_sft --dataset textvqa --cycles 6 --output models/vlm_raft --allow-prototype-train
 halo-forge vlm benchmark --model models/vlm_raft --dataset docvqa --limit 100
 
 # Quick RAFT (skip SFT)
-halo-forge vlm train --model Qwen/Qwen2-VL-7B-Instruct --dataset textvqa --cycles 6
+halo-forge vlm train --model Qwen/Qwen2-VL-7B-Instruct --dataset textvqa --cycles 6 --allow-prototype-train
 ```
 
 ### Supported Models
@@ -73,11 +82,11 @@ Train audio models (ASR, TTS, Classification) using RLVR with task-specific veri
 ```bash
 # Full pipeline
 halo-forge audio sft --dataset librispeech_sft --model openai/whisper-small --output models/audio_sft
-halo-forge audio train --model models/audio_sft --dataset librispeech --task asr --cycles 4
+halo-forge audio train --model models/audio_sft --dataset librispeech --task asr --cycles 4 --allow-prototype-train
 halo-forge audio benchmark --model models/audio_raft --dataset librispeech --limit 100
 
 # Quick RAFT
-halo-forge audio train --model openai/whisper-small --dataset librispeech --task asr --cycles 4
+halo-forge audio train --model openai/whisper-small --dataset librispeech --task asr --cycles 4 --allow-prototype-train
 ```
 
 ### Supported Models
@@ -114,11 +123,11 @@ Train models on mathematical reasoning with SymPy-based verification.
 ```bash
 # Full pipeline
 halo-forge reasoning sft --dataset metamath --model Qwen/Qwen2.5-3B-Instruct --output models/reasoning_sft
-halo-forge reasoning train --model models/reasoning_sft --dataset gsm8k --cycles 4
+halo-forge reasoning train --model models/reasoning_sft --dataset gsm8k --cycles 4 --allow-prototype-train
 halo-forge reasoning benchmark --model models/reasoning_raft --dataset gsm8k --limit 100
 
 # Quick RAFT
-halo-forge reasoning train --model Qwen/Qwen2.5-7B-Instruct --dataset gsm8k --cycles 4
+halo-forge reasoning train --model Qwen/Qwen2.5-7B-Instruct --dataset gsm8k --cycles 4 --allow-prototype-train
 ```
 
 ### Datasets
@@ -155,11 +164,11 @@ Train models for reliable function/tool calling with schema-aware verification.
 ```bash
 # Full pipeline
 halo-forge agentic sft --dataset xlam_sft --model Qwen/Qwen2.5-7B-Instruct --output models/agentic_sft
-halo-forge agentic train --model models/agentic_sft --dataset xlam --cycles 5
+halo-forge agentic train --model models/agentic_sft --dataset xlam --cycles 5 --allow-prototype-train
 halo-forge agentic benchmark --model models/agentic_raft --dataset xlam --limit 100
 
 # Quick RAFT
-halo-forge agentic train --model Qwen/Qwen2.5-7B-Instruct --dataset xlam --cycles 5
+halo-forge agentic train --model Qwen/Qwen2.5-7B-Instruct --dataset xlam --cycles 5 --allow-prototype-train
 ```
 
 ### Reward Structure

@@ -29,6 +29,8 @@ import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+from halo_forge.capabilities import check_modality_train_capability
+
 # ANSI color codes
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -50,6 +52,24 @@ RAFT_TRAIN_SUPPORTED_VERIFIERS = (
     "auto",
     "execution",
 )
+
+MODALITY_TRAIN_COMMANDS = ("vlm", "audio", "reasoning", "agentic")
+
+
+def _enforce_modality_train_contract(modality: str, args) -> None:
+    """Validate modality train gating/model support contract."""
+    if modality not in MODALITY_TRAIN_COMMANDS:
+        return
+
+    check = check_modality_train_capability(
+        modality=modality,
+        model_name=getattr(args, "model", ""),
+        allow_prototype_train=getattr(args, "allow_prototype_train", False),
+        dry_run=getattr(args, "dry_run", False),
+    )
+    if not check.allowed:
+        print(f"{RED}{check.message}{NC}")
+        sys.exit(2)
 
 
 # =============================================================================
@@ -1903,6 +1923,8 @@ def cmd_vlm_train(args):
     print(f"Output:      {args.output}")
     print(f"Cycles:      {args.cycles}")
     print("=" * 60)
+
+    _enforce_modality_train_contract("vlm", args)
     
     # Handle --dry-run
     if getattr(args, 'dry_run', False):
@@ -1984,9 +2006,22 @@ def cmd_vlm_train(args):
         trainer.train(dataset_path)
     finally:
         trainer.cleanup()
+
+    total_steps = sum(
+        int(cycle.get("train_steps_executed", 0))
+        for cycle in trainer.training_history
+    )
+    final_loss = (
+        trainer.training_history[-1].get("train_loss")
+        if trainer.training_history
+        else None
+    )
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Output: {args.output}")
+    print(f"Train steps executed: {total_steps}")
+    if isinstance(final_loss, (int, float)):
+        print(f"Final train loss: {final_loss:.4f}")
 
 
 def cmd_vlm_sft(args):
@@ -2180,7 +2215,7 @@ def cmd_audio_datasets(args):
     print()
     print("Usage:")
     print("  halo-forge audio benchmark --model openai/whisper-small --dataset librispeech")
-    print("  halo-forge audio train --model openai/whisper-small --dataset librispeech")
+    print("  halo-forge audio train --model openai/whisper-small --dataset librispeech --allow-prototype-train")
 
 
 def cmd_audio_sft(args):
@@ -2294,6 +2329,8 @@ def cmd_audio_train(args):
     print(f"Task: {args.task}")
     print(f"Cycles: {args.cycles}")
     print(f"Output: {args.output}")
+
+    _enforce_modality_train_contract("audio", args)
     
     if args.dry_run:
         print(f"\n{YELLOW}Dry run mode - validating configuration only{NC}")
@@ -2334,12 +2371,20 @@ def cmd_audio_train(args):
     # Run training
     trainer = AudioRAFTTrainer(config)
     results = trainer.train(args.dataset)
+    total_steps = sum(
+        int(cycle.metrics.get("train_steps_executed", 0))
+        for cycle in results
+    )
+    final_loss = results[-1].metrics.get("train_loss") if results else None
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final model saved to: {args.output}")
+    print(f"Train steps executed: {total_steps}")
+    if isinstance(final_loss, (int, float)):
+        print(f"Final train loss: {final_loss:.4f}")
     
     print("\nUsage:")
-    print("  halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct")
+    print("  halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct --allow-prototype-train")
     print("  halo-forge vlm benchmark --dataset docvqa --model path/to/model")
 
 
@@ -2605,7 +2650,7 @@ def main():
     vlm_subparsers = vlm_parser.add_subparsers(dest='vlm_command', required=True)
     
     # vlm train
-    vlm_train_parser = vlm_subparsers.add_parser('train', help='Train VLM with RAFT')
+    vlm_train_parser = vlm_subparsers.add_parser('train', help='Train VLM with RAFT (capability-gated)')
     vlm_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2-VL-7B-Instruct',
                                   help='VLM model name')
     vlm_train_parser.add_argument('--dataset', '-d', required=True,
@@ -2633,6 +2678,11 @@ def main():
     vlm_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     vlm_train_parser.add_argument('--dry-run', action='store_true',
                                   help='Validate config and datasets without running training')
+    vlm_train_parser.add_argument(
+        '--allow-prototype-train',
+        action='store_true',
+        help='Required while VLM training capability is prototype-gated',
+    )
     
     # vlm benchmark
     vlm_bench_parser = vlm_subparsers.add_parser('benchmark', help='Benchmark VLM')
@@ -2678,7 +2728,7 @@ def main():
     audio_bench_parser.add_argument('--output', '-o', help='Output file for results')
     
     # audio train
-    audio_train_parser = audio_subparsers.add_parser('train', help='Train audio model with RAFT')
+    audio_train_parser = audio_subparsers.add_parser('train', help='Train audio model with RAFT (capability-gated)')
     audio_train_parser.add_argument('--model', '-m', default='openai/whisper-small',
                                     help='Audio model (default: openai/whisper-small)')
     audio_train_parser.add_argument('--dataset', '-d', default='librispeech',
@@ -2704,6 +2754,11 @@ def main():
                                     help='Output directory (default: models/audio_raft)')
     audio_train_parser.add_argument('--dry-run', action='store_true',
                                     help='Validate config without running training')
+    audio_train_parser.add_argument(
+        '--allow-prototype-train',
+        action='store_true',
+        help='Required while audio training capability is prototype-gated',
+    )
     
     # audio sft
     audio_sft_parser = audio_subparsers.add_parser('sft', help='SFT training for audio')
@@ -2736,7 +2791,7 @@ def main():
     reasoning_bench_parser.add_argument('--output', '-o', help='Output file for results')
     
     # reasoning train
-    reasoning_train_parser = reasoning_subparsers.add_parser('train', help='Train with RAFT')
+    reasoning_train_parser = reasoning_subparsers.add_parser('train', help='Train with RAFT (capability-gated)')
     reasoning_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
                                         help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
     reasoning_train_parser.add_argument('--dataset', '-d', default='gsm8k',
@@ -2758,6 +2813,11 @@ def main():
     reasoning_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     reasoning_train_parser.add_argument('--dry-run', action='store_true',
                                         help='Validate config without running training')
+    reasoning_train_parser.add_argument(
+        '--allow-prototype-train',
+        action='store_true',
+        help='Required while reasoning training capability is prototype-gated',
+    )
     
     # reasoning sft
     reasoning_sft_parser = reasoning_subparsers.add_parser('sft', help='SFT training for reasoning')
@@ -2788,7 +2848,7 @@ def main():
     agentic_bench_parser.add_argument('--output', '-o', help='Output file for results')
     
     # agentic train
-    agentic_train_parser = agentic_subparsers.add_parser('train', help='Train tool calling with RAFT')
+    agentic_train_parser = agentic_subparsers.add_parser('train', help='Train tool calling with RAFT (capability-gated)')
     agentic_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
                                       help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
     agentic_train_parser.add_argument('--dataset', '-d', default='xlam',
@@ -2810,6 +2870,11 @@ def main():
     agentic_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     agentic_train_parser.add_argument('--dry-run', action='store_true',
                                       help='Validate config without running training')
+    agentic_train_parser.add_argument(
+        '--allow-prototype-train',
+        action='store_true',
+        help='Required while agentic training capability is prototype-gated',
+    )
     
     # agentic sft
     agentic_sft_parser = agentic_subparsers.add_parser('sft', help='SFT training for tool calling')
@@ -2903,7 +2968,7 @@ def cmd_reasoning_datasets(args):
     print()
     print("Usage:")
     print("  halo-forge reasoning benchmark --dataset gsm8k")
-    print("  halo-forge reasoning train --dataset gsm8k --cycles 4")
+    print("  halo-forge reasoning train --dataset gsm8k --cycles 4 --allow-prototype-train")
 
 
 def cmd_reasoning_sft(args):
@@ -3072,6 +3137,8 @@ def cmd_reasoning_train(args):
     print(f"Dataset: {args.dataset}")
     print(f"Cycles: {args.cycles}")
     print(f"Output: {args.output}")
+
+    _enforce_modality_train_contract("reasoning", args)
     
     if args.dry_run:
         print(f"\n{YELLOW}Dry run mode - validating configuration only{NC}")
@@ -3115,6 +3182,11 @@ def cmd_reasoning_train(args):
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final accuracy: {summary.get('final_accuracy', 0):.1%}")
+    total_steps = sum(
+        int(c.get("train_steps_executed", 0))
+        for c in summary.get("cycles", [])
+    )
+    print(f"Train steps executed: {total_steps}")
     print(f"Results saved to: {args.output}")
 
 
@@ -3256,6 +3328,8 @@ def cmd_agentic_train(args):
     print(f"Dataset: {args.dataset}")
     print(f"Cycles: {args.cycles}")
     print(f"Output: {args.output}")
+
+    _enforce_modality_train_contract("agentic", args)
     
     if args.dry_run:
         print(f"\n{YELLOW}Dry run mode - validating configuration only{NC}")
@@ -3298,10 +3372,24 @@ def cmd_agentic_train(args):
     # Train
     trainer = AgenticRAFTTrainer(config)
     results = trainer.train(samples)
+    total_steps = sum(
+        int(c.get("metrics", {}).get("train_steps_executed", 0))
+        for c in results.get("cycle_results", [])
+    )
+    final_loss = (
+        results.get("cycle_results", [{}])[-1]
+        .get("metrics", {})
+        .get("train_loss")
+        if results.get("cycle_results")
+        else None
+    )
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final accuracy: {results.get('final_success_rate', 0):.1%}")
     print(f"Final avg reward: {results.get('final_avg_reward', 0):.3f}")
+    print(f"Train steps executed: {total_steps}")
+    if isinstance(final_loss, (int, float)):
+        print(f"Final train loss: {final_loss:.4f}")
     print(f"Results saved to: {args.output}")
 
 

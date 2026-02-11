@@ -16,7 +16,11 @@ from tqdm import tqdm
 
 from halo_forge.audio.data import AudioSample, AudioProcessor, load_audio_dataset
 from halo_forge.audio.verifiers import AudioVerifier, AudioVerifyConfig
-from halo_forge.audio.models import get_audio_adapter, AudioAdapter
+from halo_forge.audio.models import (
+    AudioAdapter,
+    get_audio_adapter,
+    supports_audio_training,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +194,16 @@ class AudioRAFTTrainer:
             logger.info(f"  Samples kept: {result.samples_kept}/{result.samples_verified}")
             logger.info(f"  Average reward: {result.average_reward:.3f}")
             logger.info(f"  Learning rate: {result.learning_rate:.2e}")
+            logger.info(
+                "  Update: steps=%d, weights_updated=%s, loss=%s",
+                result.metrics.get("train_steps_executed", 0),
+                result.metrics.get("weights_updated", False),
+                (
+                    f"{result.metrics['train_loss']:.4f}"
+                    if isinstance(result.metrics.get("train_loss"), (float, int))
+                    else "n/a"
+                ),
+            )
         
         # Save final model
         self._save_checkpoint(self.config.num_cycles - 1, final=True)
@@ -229,12 +243,19 @@ class AudioRAFTTrainer:
         # 4. Calculate metrics
         rewards = [v["reward"] for v in verified]
         avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
-        
-        # 5. Train on kept samples (placeholder - actual training would happen here)
+        train_metrics: Dict[str, Any]
+
         if kept:
             logger.info(f"Training on {len(kept)} samples...")
-            # self._train_on_samples(kept, lr)
-        
+            train_metrics = self._train_on_samples(kept, lr)
+        else:
+            train_metrics = {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "no_filtered_samples",
+            }
+
         return AudioRAFTCycleResult(
             cycle=cycle,
             samples_generated=len(predictions),
@@ -245,6 +266,7 @@ class AudioRAFTTrainer:
             metrics={
                 "min_reward": min(rewards) if rewards else 0.0,
                 "max_reward": max(rewards) if rewards else 0.0,
+                **train_metrics,
             }
         )
     
@@ -299,6 +321,7 @@ class AudioRAFTTrainer:
                 "reward": result.reward,
                 "success": result.success,
                 "details": result.details,
+                "sample": sample,
             })
         
         return verified
@@ -319,6 +342,103 @@ class AudioRAFTTrainer:
         kept = [s for s in kept if s["reward"] >= self.config.reward_threshold]
         
         return kept
+
+    def _train_on_samples(self, kept: List[Dict[str, Any]], lr: float) -> Dict[str, Any]:
+        """Run real optimizer updates for supported audio model families."""
+        if not supports_audio_training(self.config.model_name):
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "unsupported_model_family",
+            }
+
+        if not kept:
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "no_filtered_samples",
+            }
+
+        model = getattr(self.adapter, "model", None)
+        processor = getattr(self.adapter, "processor", None)
+        if model is None or processor is None:
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "adapter_not_loaded",
+            }
+
+        model.train()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+        optimizer.zero_grad(set_to_none=True)
+
+        total_loss = 0.0
+        optimizer_steps = 0
+        micro_steps = 0
+        grad_accum = max(1, self.config.gradient_accumulation_steps)
+
+        for item in kept:
+            sample: AudioSample = item["sample"]
+            try:
+                if sample.audio_array is not None:
+                    processed = self.processor.load_array(
+                        sample.audio_array,
+                        sample.sample_rate or self.config.sample_rate,
+                    )
+                else:
+                    processed = self.processor.load(sample.audio_path)
+            except Exception as e:
+                logger.warning("Skipping sample during train update: %s", e)
+                continue
+
+            inputs = processor(
+                processed.waveform.cpu().numpy(),
+                sampling_rate=self.config.sample_rate,
+                return_tensors="pt",
+            )
+            labels = processor(text=sample.text, return_tensors="pt").input_ids
+
+            model_dtype = next(model.parameters()).dtype
+            device = model.device
+            input_features = inputs.input_features.to(device=device, dtype=model_dtype)
+            labels = labels.to(device)
+
+            outputs = model(input_features=input_features, labels=labels)
+            loss = outputs.loss
+            if loss is None:
+                continue
+
+            (loss / grad_accum).backward()
+            micro_steps += 1
+
+            if micro_steps % grad_accum == 0:
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                optimizer_steps += 1
+                total_loss += float(loss.detach().item())
+
+        if micro_steps % grad_accum != 0:
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_steps += 1
+
+        if optimizer_steps == 0:
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "no_optimizer_steps",
+            }
+
+        return {
+            "train_steps_executed": optimizer_steps,
+            "train_loss": total_loss / optimizer_steps if total_loss else 0.0,
+            "weights_updated": True,
+            "update_reason": "updated",
+        }
     
     def _save_checkpoint(self, cycle: int, final: bool = False) -> None:
         """Save model checkpoint."""
@@ -345,6 +465,9 @@ class AudioRAFTTrainer:
                     "samples_kept": r.samples_kept,
                     "average_reward": r.average_reward,
                     "learning_rate": r.learning_rate,
+                    "train_steps_executed": r.metrics.get("train_steps_executed", 0),
+                    "train_loss": r.metrics.get("train_loss"),
+                    "weights_updated": r.metrics.get("weights_updated", False),
                 }
                 for r in self.cycle_results
             ]

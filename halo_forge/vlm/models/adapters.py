@@ -12,6 +12,8 @@ from pathlib import Path
 import torch
 from PIL import Image
 
+VLM_TRAINING_SUPPORTED_FAMILIES = ("qwen2-vl", "qwen-vl", "llava")
+
 
 @dataclass
 class VLMOutput:
@@ -813,3 +815,9 @@ def list_supported_vlms() -> Dict[str, List[str]]:
             'Salesforce/blip2-flan-t5-xl',
         ]
     }
+
+
+def supports_vlm_training(model_name: str) -> bool:
+    """Return True when model name is in a supported VLM training family."""
+    model_lower = model_name.lower()
+    return any(token in model_lower for token in VLM_TRAINING_SUPPORTED_FAMILIES)

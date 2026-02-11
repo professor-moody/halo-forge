@@ -14,6 +14,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+AUDIO_TRAINING_SUPPORTED_FAMILIES = ("whisper",)
+
 
 @dataclass
 class TranscriptionResult:
@@ -267,3 +269,9 @@ def get_audio_adapter(model_name: str, device: Optional[str] = None) -> AudioAda
         # Default to Whisper
         logger.warning(f"Unknown model type: {model_name}, defaulting to Whisper")
         return WhisperAdapter(model_name, device)
+
+
+def supports_audio_training(model_name: str) -> bool:
+    """Return True when model name is in a supported audio training family."""
+    model_lower = model_name.lower()
+    return any(token in model_lower for token in AUDIO_TRAINING_SUPPORTED_FAMILIES)

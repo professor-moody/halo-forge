@@ -13,6 +13,7 @@ import time
 
 from halo_forge.reasoning.verifiers import MathVerifier, ReasoningVerifyResult
 from halo_forge.reasoning.data import MathSample
+from halo_forge.training_updates import run_text_supervised_updates
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,9 @@ class ReasoningRAFTConfig:
     # Learning rate
     learning_rate: float = 1e-5
     lr_decay_per_cycle: float = 0.85
+    train_batch_size: int = 1
+    gradient_accumulation_steps: int = 1
+    train_max_steps_per_cycle: int = 8
     
     # Generation
     temperature: float = 0.7
@@ -277,7 +281,8 @@ class ReasoningRAFTTrainer:
         # 4. Calculate metrics
         accuracy = sum(1 for c in completions if c.verified) / len(completions)
         avg_reward = sum(c.reward for c in completions) / len(completions)
-        
+        train_metrics = self._train_on_filtered(filtered, cycle)
+
         metrics = {
             "cycle": cycle,
             "total_completions": len(completions),
@@ -286,6 +291,7 @@ class ReasoningRAFTTrainer:
             "avg_reward": avg_reward,
             "learning_rate": self.get_learning_rate(cycle),
             "duration_seconds": time.time() - start_time,
+            **train_metrics,
         }
         
         # Update tracking
@@ -301,6 +307,16 @@ class ReasoningRAFTTrainer:
         logger.info(f"  Accuracy: {accuracy:.1%}")
         logger.info(f"  Avg Reward: {avg_reward:.3f}")
         logger.info(f"  Filtered Samples: {len(filtered)}")
+        logger.info(
+            "  Update: steps=%d, weights_updated=%s, loss=%s",
+            metrics["train_steps_executed"],
+            metrics["weights_updated"],
+            (
+                f"{metrics['train_loss']:.4f}"
+                if isinstance(metrics["train_loss"], (float, int))
+                else "n/a"
+            ),
+        )
         
         return metrics
     
@@ -336,6 +352,9 @@ class ReasoningRAFTTrainer:
             "cycles": all_metrics,
             "final_accuracy": self.metrics["cycle_accuracy"][-1] if self.metrics["cycle_accuracy"] else 0,
             "final_reward": self.metrics["cycle_rewards"][-1] if self.metrics["cycle_rewards"] else 0,
+            "total_train_steps_executed": sum(
+                int(c.get("train_steps_executed", 0)) for c in all_metrics
+            ),
         }
         
         with open(self.output_dir / "training_summary.json", "w") as f:
@@ -382,3 +401,35 @@ class ReasoningRAFTTrainer:
         with open(path / "completions.jsonl", "w") as f:
             for item in comp_data:
                 f.write(json.dumps(item) + "\n")
+
+    def _train_on_filtered(
+        self,
+        completions: List[ReasoningCompletion],
+        cycle: int,
+    ) -> Dict[str, Any]:
+        """Run real supervised updates on filtered completions."""
+        if not completions:
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "no_filtered_samples",
+            }
+        if self.model is None or self.tokenizer is None:
+            self.load_model()
+
+        training_texts = []
+        for item in completions:
+            prompt = self._format_prompt(item.sample.question)
+            training_texts.append(f"{prompt}\n{item.completion}")
+
+        return run_text_supervised_updates(
+            model=self.model,
+            tokenizer=self.tokenizer,
+            texts=training_texts,
+            learning_rate=self.get_learning_rate(cycle),
+            batch_size=self.config.train_batch_size,
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
+            max_steps=self.config.train_max_steps_per_cycle,
+            max_length=1024,
+        )

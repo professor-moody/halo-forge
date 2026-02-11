@@ -17,8 +17,13 @@ from PIL import Image
 from tqdm import tqdm
 
 from halo_forge.vlm.verifiers import VisionVerifier
-from halo_forge.vlm.models import VLMAdapter, get_vlm_adapter
+from halo_forge.vlm.models import (
+    VLMAdapter,
+    get_vlm_adapter,
+    supports_vlm_training,
+)
 from halo_forge.vlm.data import VLMSample, load_vlm_dataset
+from halo_forge.training_updates import run_text_supervised_updates
 
 
 @dataclass
@@ -233,7 +238,7 @@ class VLMRAFTTrainer:
         self,
         samples: List[VLMSampleResult],
         cycle: int
-    ):
+    ) -> Dict[str, Any]:
         """
         Train model on filtered samples.
         
@@ -272,16 +277,117 @@ class VLMRAFTTrainer:
         lr = self.get_learning_rate_for_cycle(cycle)
         self._log(f"Learning rate: {lr:.2e}", "step")
         
-        # Note: Actual VLM fine-tuning would require:
-        # 1. Setting up LoRA adapters
-        # 2. Creating proper DataLoader with image processing
-        # 3. Running gradient descent
-        #
-        # For now, we save the data and log the training step.
-        # Full implementation would integrate with trl or similar.
-        
+        if not supports_vlm_training(self.config.model_name):
+            self._log("Model family not supported for VLM training updates", "warn")
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "unsupported_model_family",
+            }
+
+        model = getattr(self.adapter, "model", None)
+        tokenizer = getattr(self.adapter, "tokenizer", None)
+        processor = getattr(self.adapter, "processor", None)
+        if model is None:
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "adapter_model_missing",
+            }
+
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+        optimizer.zero_grad(set_to_none=True)
+        model.train()
+
+        total_loss = 0.0
+        optimizer_steps = 0
+        grad_accum = 1
+        micro_steps = 0
+
+        for sample in samples[:8]:
+            image = self.adapter._load_image(sample.image)
+            full_text = f"{sample.prompt}\n{sample.completion}"
+
+            try:
+                if processor is not None:
+                    inputs = processor(
+                        text=[full_text],
+                        images=[image],
+                        return_tensors="pt",
+                        padding=True,
+                    )
+                elif tokenizer is not None:
+                    inputs = tokenizer(
+                        full_text,
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=1024,
+                    )
+                else:
+                    continue
+            except Exception:
+                continue
+
+            if "input_ids" not in inputs:
+                continue
+
+            model_device = getattr(model, "device", None)
+            if model_device is None:
+                try:
+                    model_device = next(model.parameters()).device
+                except StopIteration:
+                    model_device = torch.device("cpu")
+            inputs = {
+                key: value.to(model_device)
+                for key, value in inputs.items()
+                if hasattr(value, "to")
+            }
+            labels = inputs["input_ids"].clone()
+            outputs = model(**inputs, labels=labels)
+            loss = outputs.loss
+            if loss is None:
+                continue
+
+            (loss / grad_accum).backward()
+            micro_steps += 1
+
+            if micro_steps % grad_accum == 0:
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                optimizer_steps += 1
+                total_loss += float(loss.detach().item())
+
+        if micro_steps % grad_accum != 0:
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_steps += 1
+
+        if optimizer_steps == 0 and tokenizer is not None:
+            # Fallback to text-only update path if processor-based batches
+            # were unavailable for this adapter/runtime.
+            text_train_metrics = run_text_supervised_updates(
+                model=model,
+                tokenizer=tokenizer,
+                texts=[f"{s.prompt}\n{s.completion}" for s in samples[:8]],
+                learning_rate=lr,
+                batch_size=1,
+                gradient_accumulation_steps=1,
+                max_steps=8,
+                max_length=1024,
+            )
+            self._log("Applied text-only fallback updates for VLM cycle", "warn")
+            self._log(f"Training data saved to {data_path}", "ok")
+            return text_train_metrics
+
         self._log(f"Training data saved to {data_path}", "ok")
-        self._log("Note: Full VLM fine-tuning requires LoRA setup", "info")
+        return {
+            "train_steps_executed": optimizer_steps,
+            "train_loss": (total_loss / optimizer_steps) if total_loss else 0.0,
+            "weights_updated": optimizer_steps > 0,
+            "update_reason": "updated" if optimizer_steps > 0 else "no_optimizer_steps",
+        }
     
     def save_checkpoint(self, cycle: int):
         """Save checkpoint for this cycle."""
@@ -345,7 +451,7 @@ class VLMRAFTTrainer:
         self._log(f"Filtered to {len(filtered)} samples", "ok")
         
         # 3. Train
-        self.train_on_samples(filtered, cycle)
+        train_metrics = self.train_on_samples(filtered, cycle)
         
         # 4. Save checkpoint
         if self.config.save_every_cycle:
@@ -363,10 +469,23 @@ class VLMRAFTTrainer:
             'max_reward': max(rewards),
             'learning_rate': self.get_learning_rate_for_cycle(cycle),
             'cycle_time_min': cycle_time / 60,
+            **train_metrics,
         }
         
         self.training_history.append(metrics)
-        
+
+        self._log(
+            "Update: steps=%d, weights_updated=%s, loss=%s" % (
+                metrics.get("train_steps_executed", 0),
+                metrics.get("weights_updated", False),
+                (
+                    f"{metrics['train_loss']:.4f}"
+                    if isinstance(metrics.get("train_loss"), (float, int))
+                    else "n/a"
+                ),
+            ),
+            "info",
+        )
         self._log(f"Cycle {cycle + 1} complete in {cycle_time/60:.1f} min", "ok")
         
         return metrics

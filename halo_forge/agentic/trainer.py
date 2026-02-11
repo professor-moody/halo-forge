@@ -17,6 +17,7 @@ from tqdm import tqdm
 from halo_forge.agentic.verifiers import ToolCallingVerifier, ToolCallVerifyResult
 from halo_forge.agentic.data import ToolCallSample, XLAMLoader
 from halo_forge.agentic.data.formatters import HermesFormatter, create_training_sample
+from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.utils.metrics import MetricsTracker
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,9 @@ class AgenticRAFTTrainer:
                 "kept_samples": cycle_result.training_samples,
                 "total_samples": cycle_result.total_samples,
                 "learning_rate": self.get_learning_rate(cycle),
+                "train_steps_executed": cycle_result.metrics.get("train_steps_executed", 0),
+                "weights_updated": float(cycle_result.metrics.get("weights_updated", False)),
+                "train_loss": cycle_result.metrics.get("train_loss", 0.0) or 0.0,
             })
             
             # Log cycle results
@@ -245,6 +249,10 @@ class AgenticRAFTTrainer:
             "total_time_seconds": total_time,
             "final_avg_reward": self.cycle_results[-1].avg_reward if self.cycle_results else 0.0,
             "final_success_rate": self.cycle_results[-1].success_rate if self.cycle_results else 0.0,
+            "total_train_steps_executed": sum(
+                int(r.metrics.get("train_steps_executed", 0))
+                for r in self.cycle_results
+            ),
             "cycle_results": [vars(r) for r in self.cycle_results],
         }
         
@@ -317,9 +325,16 @@ class AgenticRAFTTrainer:
         self.metrics["cycle_accuracy"].append(success_rate)
         self.metrics["cycle_samples"].append(len(filtered))
         
-        # Train on filtered samples
+        train_metrics: Dict[str, Any]
         if filtered:
-            self._train_on_samples(filtered, cycle)
+            train_metrics = self._train_on_samples(filtered, cycle)
+        else:
+            train_metrics = {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "no_filtered_samples",
+            }
         
         return AgenticRAFTCycleResult(
             cycle=cycle,
@@ -330,6 +345,7 @@ class AgenticRAFTTrainer:
             training_samples=len(filtered),
             metrics={
                 "lr": self.get_learning_rate(cycle),
+                **train_metrics,
             },
         )
     
@@ -409,7 +425,7 @@ class AgenticRAFTTrainer:
         self,
         completions: List[AgenticCompletion],
         cycle: int,
-    ) -> None:
+    ) -> Dict[str, Any]:
         """Train on filtered completions.
         
         Args:
@@ -429,16 +445,28 @@ class AgenticRAFTTrainer:
         lr = self.get_learning_rate(cycle)
         logger.info(f"Learning rate: {lr}")
         
-        # Training would use HuggingFace Trainer or similar
-        # This is a simplified placeholder
-        
-        # In production, this would:
-        # 1. Tokenize training_texts
-        # 2. Create Dataset
-        # 3. Configure Trainer with LoRA
-        # 4. Run training
-        
-        logger.info("Training step complete")
+        train_metrics = run_text_supervised_updates(
+            model=self.model,
+            tokenizer=self.tokenizer,
+            texts=training_texts,
+            learning_rate=lr,
+            batch_size=self.config.batch_size,
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
+            max_steps=8,
+            max_length=4096,
+        )
+
+        logger.info(
+            "Training step complete: steps=%d, weights_updated=%s, loss=%s",
+            train_metrics["train_steps_executed"],
+            train_metrics["weights_updated"],
+            (
+                f"{train_metrics['train_loss']:.4f}"
+                if isinstance(train_metrics["train_loss"], (float, int))
+                else "n/a"
+            ),
+        )
+        return train_metrics
     
     def _save_checkpoint(self, cycle: int) -> None:
         """Save checkpoint for current cycle.
