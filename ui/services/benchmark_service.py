@@ -16,6 +16,7 @@ Supports Code, VLM, Audio, and Agentic benchmark types.
 import asyncio
 import os
 import signal
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -236,6 +237,7 @@ class BenchmarkService:
         benchmark_type: BenchmarkType,
         benchmark_name: str,
         limit: Optional[int] = None,
+        output_path: Optional[str] = None,
         output_dir: Optional[str] = None,
         samples_per_prompt: int = 5,
         verifier: Optional[str] = None,
@@ -251,7 +253,8 @@ class BenchmarkService:
             benchmark_type: Type of benchmark (CODE, VLM, AUDIO, AGENTIC)
             benchmark_name: Benchmark/dataset name
             limit: Max samples to evaluate
-            output_dir: Output directory for results
+            output_path: Output JSON path for results
+            output_dir: Legacy output directory (will append benchmark.json)
             samples_per_prompt: Samples per prompt for pass@k (code benchmarks)
             verifier: Verifier type for code benchmarks
             run_after_compile: MVR mode (run after compile) vs MVP (compile-only)
@@ -261,15 +264,27 @@ class BenchmarkService:
         Returns:
             Job ID
         """
-        # Create output dir if not specified
-        if output_dir is None:
-            output_dir = f"results/benchmarks/{Path(model).name}-{benchmark_name}"
-        
+        # Backward compatibility: older callers may pass output_dir positionally,
+        # which now lands in output_path.
+        if output_path and output_dir is None and not str(output_path).lower().endswith(".json"):
+            output_dir = output_path
+            output_path = None
+
+        # Normalize to a concrete output file path.
+        if output_path is None:
+            if output_dir is not None:
+                output_root = Path(output_dir)
+            else:
+                output_root = Path("results/benchmarks") / f"{Path(model).name}-{benchmark_name}"
+            output_path = str(output_root / "benchmark.json")
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
         # Create job in state
         job = self.state.create_job(
             job_type="benchmark",
             name=f"Benchmark: {benchmark_name} ({Path(model).name})",
-            output_dir=Path(output_dir),
+            output_dir=output_file.parent,
         )
         
         # Emit job created event
@@ -285,7 +300,7 @@ class BenchmarkService:
             benchmark_type=benchmark_type,
             benchmark_name=benchmark_name,
             limit=limit,
-            output_dir=output_dir,
+            output_path=str(output_file),
             samples_per_prompt=samples_per_prompt,
             verifier=verifier,
             run_after_compile=run_after_compile,
@@ -303,7 +318,7 @@ class BenchmarkService:
         benchmark_type: BenchmarkType,
         benchmark_name: str,
         limit: Optional[int],
-        output_dir: str,
+        output_path: str,
         samples_per_prompt: int = 5,
         verifier: Optional[str] = None,
         run_after_compile: bool = True,
@@ -313,10 +328,10 @@ class BenchmarkService:
         
         if benchmark_type == BenchmarkType.CODE:
             cmd = [
-                "python", "-m", "halo_forge.cli", "benchmark", "eval",
+                sys.executable, "-m", "halo_forge.cli", "benchmark", "eval",
                 "--model", model,
                 "--benchmark", benchmark_name,
-                "--output", output_dir,
+                "--output", output_path,
                 "--samples-per-prompt", str(samples_per_prompt),
             ]
             if limit:
@@ -325,25 +340,25 @@ class BenchmarkService:
             if run_after_compile:
                 cmd.append("--run-after-compile")
             # Add verifier if specified for compiled languages
-            if verifier and verifier not in ('humaneval', 'mbpp', 'python', 'auto'):
+            if verifier and verifier not in ('humaneval', 'mbpp'):
                 cmd.extend(["--verifier", verifier])
         
         elif benchmark_type == BenchmarkType.VLM:
             cmd = [
-                "python", "-m", "halo_forge.cli", "vlm", "benchmark",
+                sys.executable, "-m", "halo_forge.cli", "vlm", "benchmark",
                 "--model", model,
                 "--dataset", benchmark_name,
-                "--output", output_dir,
+                "--output", output_path,
             ]
             if limit:
                 cmd.extend(["--limit", str(limit)])
         
         elif benchmark_type == BenchmarkType.AUDIO:
             cmd = [
-                "python", "-m", "halo_forge.cli", "audio", "benchmark",
+                sys.executable, "-m", "halo_forge.cli", "audio", "benchmark",
                 "--model", model,
                 "--dataset", benchmark_name,
-                "--output", output_dir,
+                "--output", output_path,
             ]
             if limit:
                 cmd.extend(["--limit", str(limit)])
@@ -353,10 +368,10 @@ class BenchmarkService:
         
         elif benchmark_type == BenchmarkType.AGENTIC:
             cmd = [
-                "python", "-m", "halo_forge.cli", "agentic", "benchmark",
+                sys.executable, "-m", "halo_forge.cli", "agentic", "benchmark",
                 "--model", model,
                 "--dataset", benchmark_name,
-                "--output", output_dir,
+                "--output", output_path,
             ]
             if limit:
                 cmd.extend(["--limit", str(limit)])

@@ -38,6 +38,19 @@ CYAN = "\033[36m"
 BOLD = "\033[1m"
 NC = "\033[0m"  # No Color
 
+# RAFT verifier choices must stay in sync with cmd_raft_train dispatch.
+RAFT_TRAIN_SUPPORTED_VERIFIERS = (
+    "gcc",
+    "mingw",
+    "msvc",
+    "humaneval",
+    "mbpp",
+    "rust",
+    "go",
+    "auto",
+    "execution",
+)
+
 
 # =============================================================================
 # Auto-Logging System
@@ -661,7 +674,7 @@ def cmd_raft_train(args):
         )
     else:
         print(f"Unknown verifier: {verifier_type}")
-        print("Available: gcc, mingw, msvc, humaneval, mbpp, rust, go")
+        print(f"Available: {', '.join(RAFT_TRAIN_SUPPORTED_VERIFIERS)}")
         sys.exit(1)
     
     # Create config
@@ -1018,15 +1031,17 @@ def cmd_benchmark_eval(args):
     if args.limit:
         print(f"Limit: {args.limit}")
     
-    # Show verification mode
     run_after_compile = getattr(args, 'run_after_compile', False)
-    mode = "MVR (full verification)" if run_after_compile else "MVP (compile-only)"
-    print(f"Mode: {mode}")
-    
-    if getattr(args, 'language', None):
-        print(f"Language: {args.language}")
-    if getattr(args, 'verifier', None):
-        print(f"Verifier: {args.verifier}")
+    is_compiled_language = args.benchmark in {"cpp", "rust", "go"}
+    if is_compiled_language:
+        mode = "MVR (full verification)" if run_after_compile else "MVP (compile-only)"
+        print(f"Mode: {mode}")
+        if getattr(args, 'language', None):
+            print(f"Language: {args.language}")
+        if getattr(args, 'verifier', None):
+            print(f"Verifier: {args.verifier}")
+    else:
+        print("Mode: dataset-faithful Python benchmark evaluation")
     print("=" * 60)
     
     output = Path(args.output) if args.output else None
@@ -1047,6 +1062,9 @@ def cmd_benchmark_eval(args):
         sys.exit(1)
     
     print(f"\n{GREEN}Results:{NC}")
+    execution_path = result.get("execution_path")
+    if execution_path:
+        print(f"  execution_path: {execution_path}")
     for key, value in result.get('metrics', {}).items():
         if isinstance(value, float):
             print(f"  {key}: {value:.4f}")
@@ -1078,7 +1096,7 @@ def cmd_plot_training(args):
     except ImportError:
         # Fallback: run as subprocess
         import subprocess
-        cmd = ["python", "scripts/plot_training.py"] + args.log_dirs
+        cmd = [sys.executable, "scripts/plot_training.py"] + args.log_dirs
         if args.output:
             cmd.extend(["--output", args.output])
         if args.compare:
@@ -1140,7 +1158,7 @@ def cmd_plot_training(args):
 def cmd_plot_benchmarks(args):
     """Generate charts from benchmark results."""
     import subprocess
-    cmd = ["python", "scripts/plot_benchmarks.py", args.results_dir]
+    cmd = [sys.executable, "scripts/plot_benchmarks.py", args.results_dir]
     if args.output:
         cmd.extend(["--output", args.output])
     subprocess.run(cmd)
@@ -2438,8 +2456,8 @@ def main():
     raft_train_parser.add_argument('--output', '-o', default='models/raft', help='Output directory')
     raft_train_parser.add_argument('--cycles', type=int, help='Number of RAFT cycles')
     raft_train_parser.add_argument('--verifier', default='gcc',
-                                   choices=['gcc', 'mingw', 'msvc', 'rust', 'go', 'dotnet', 'powershell', 'auto', 'humaneval', 'mbpp', 'python'],
-                                   help='Verifier type (humaneval/mbpp/python for Python, auto=multi-language)')
+                                   choices=list(RAFT_TRAIN_SUPPORTED_VERIFIERS),
+                                   help='Verifier type (parser matches runtime-supported options)')
     raft_train_parser.add_argument('--keep-percent', type=float, default=0.5, 
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
@@ -3426,4 +3444,3 @@ def _dispatch_commands(args):
 
 if __name__ == '__main__':
     main()
-

@@ -217,7 +217,12 @@ class InferenceOptimizer:
         self.config = config or OptimizationConfig()
         self.model = None
         self.tokenizer = None
-        self.baseline_model = None
+        # Immutable baseline identity (first model loaded in lifecycle).
+        self.original_baseline_model_name: Optional[str] = None
+        # Mutable identity for the currently loaded model.
+        self.current_model_name: Optional[str] = None
+        # Backward-compatible alias for baseline identity.
+        self.baseline_model: Optional[str] = None
         self._validated = False
         
         # Validate on init
@@ -283,8 +288,14 @@ class InferenceOptimizer:
             trust_remote_code=True
         )
         
-        # Keep a reference to original for baseline comparison
-        self.baseline_model = model_path
+        # Track model identities:
+        # - original_baseline_model_name never changes once set
+        # - current_model_name updates on each load
+        model_name = str(model_path)
+        self.current_model_name = model_name
+        if self.original_baseline_model_name is None:
+            self.original_baseline_model_name = model_name
+        self.baseline_model = self.original_baseline_model_name
         
         return self.model
     
@@ -309,13 +320,18 @@ class InferenceOptimizer:
             QATConfig
         )
         from halo_forge.inference.calibration import CalibrationDataset
+
+        self._ensure_model_loaded()
         
         if method == "post_training":
             # Simple post-training quantization
             output_path = Path(self.config.output_dir) / "quantized"
+            source_model = self.current_model_name or self.original_baseline_model_name
+            if source_model is None:
+                raise ModelNotLoadedError("No source model available for quantization")
             
             quantize_model_simple(
-                model_path=self.baseline_model,
+                model_path=source_model,
                 output_path=str(output_path),
                 precision=self.config.target_precision,
                 calibration_data=calibration_data
@@ -339,8 +355,11 @@ class InferenceOptimizer:
             dataloader = cal_dataset.get_dataloader()
             
             # Setup verifier
+            baseline_name = self.original_baseline_model_name or self.current_model_name
+            if baseline_name is None:
+                raise ModelNotLoadedError("No baseline model available for QAT verification")
             verifier = InferenceOptimizationVerifier(
-                baseline_model=self.model,
+                baseline_model_name=baseline_name,
                 target_latency_ms=self.config.target_latency_ms,
                 quality_threshold=self.config.quality_threshold
             )
@@ -374,8 +393,12 @@ class InferenceOptimizer:
         """
         from halo_forge.inference.verifier import InferenceOptimizationVerifier
         
+        baseline_name = self.original_baseline_model_name or self.current_model_name
+        if baseline_name is None:
+            raise ModelNotLoadedError("No baseline model available for verification")
+
         verifier = InferenceOptimizationVerifier(
-            baseline_model_name=self.baseline_model,
+            baseline_model_name=baseline_name,
             target_latency_ms=self.config.target_latency_ms,
             quality_threshold=self.config.quality_threshold
         )
@@ -491,9 +514,9 @@ class InferenceOptimizer:
             del self.model
             self.model = None
         
-        if self.baseline_model is not None and hasattr(self.baseline_model, 'parameters'):
-            del self.baseline_model
-            self.baseline_model = None
+        self.baseline_model = None
+        self.original_baseline_model_name = None
+        self.current_model_name = None
         
         gc.collect()
         if torch.cuda.is_available():

@@ -169,6 +169,7 @@ class ResultsService:
             file_path=path,
             raw_data=data,
         )
+        metrics = data.get('metrics', {}) if isinstance(data.get('metrics'), dict) else {}
         
         # Parse pass@k metrics (code benchmarks)
         if 'pass_at_k' in data:
@@ -180,12 +181,18 @@ class ResultsService:
             result.pass_at_1 = data['pass@1']
             result.pass_at_5 = data.get('pass@5')
             result.pass_at_10 = data.get('pass@10')
+        elif metrics:
+            result.pass_at_1 = metrics.get('pass_at_1')
+            result.pass_at_5 = metrics.get('pass_at_5')
+            result.pass_at_10 = metrics.get('pass_at_10')
         
         # Parse accuracy (VLM benchmarks)
         if 'accuracy' in data:
             result.accuracy = data['accuracy']
         elif 'avg_reward' in data:
             result.accuracy = data['avg_reward']
+        elif metrics:
+            result.accuracy = metrics.get('accuracy')
         
         # Parse sample count
         result.samples = data.get('total_samples', data.get('samples', 0))

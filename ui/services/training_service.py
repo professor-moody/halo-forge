@@ -8,6 +8,7 @@ This is the bridge between the UI and actual training processes.
 import asyncio
 import os
 import signal
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -172,7 +173,7 @@ class TrainingService:
         
         # Build command
         cmd = [
-            "python", "-m", "halo_forge.cli", "sft", "train",
+            sys.executable, "-m", "halo_forge.cli", "sft", "train",
             "--model", model,
         ]
         
@@ -298,7 +299,7 @@ class TrainingService:
         
         # Build command
         cmd = [
-            "python", "-m", "halo_forge.cli", "raft", "train",
+            sys.executable, "-m", "halo_forge.cli", "raft", "train",
             "--model", model,
             "--prompts", prompts,
             "--output", output_dir,

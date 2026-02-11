@@ -8,6 +8,7 @@ Supports pytest, unittest, and custom test runners.
 import subprocess
 import tempfile
 import os
+import sys
 from pathlib import Path
 from typing import Optional, List
 
@@ -170,7 +171,7 @@ class UnittestVerifier(Verifier):
             code_file = Path(tmpdir) / "test_solution.py"
             code_file.write_text(extracted)
             
-            cmd = ['python', '-m', 'unittest', 'discover', '-s', tmpdir, '-v']
+            cmd = [sys.executable, '-m', 'unittest', 'discover', '-s', tmpdir, '-v']
             
             try:
                 result = subprocess.run(
@@ -208,4 +209,3 @@ class UnittestVerifier(Verifier):
                     details="Test error",
                     error=str(e)
                 )
-

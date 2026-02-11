@@ -100,7 +100,6 @@ VERIFIERS = [
     # --- Python Test Verifiers ---
     ("humaneval", "HumanEval (Python test execution)"),
     ("mbpp", "MBPP (Python test execution)"),
-    ("python", "Python (generic pytest)"),
     # --- Compile Verifiers ---
     ("gcc", "GCC (C/C++ compile)"),
     ("mingw", "MinGW (Windows cross-compile)"),
@@ -108,10 +107,9 @@ VERIFIERS = [
     # --- Other Language Verifiers ---
     ("rust", "Rust (Cargo build + run)"),
     ("go", "Go (go build + run)"),
-    ("dotnet", "DotNet (C# compile)"),
-    ("powershell", "PowerShell (syntax check)"),
     # --- Multi-Language ---
     ("auto", "Auto-detect (route to appropriate verifier)"),
+    ("execution", "Execution verifier (I/O test cases from config)"),
 ]
 
 

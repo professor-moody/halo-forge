@@ -486,8 +486,6 @@ class Benchmark:
                                 'clang': 'Clang (C/C++ compile)',
                                 'rust': 'Rust (cargo)',
                                 'go': 'Go (go build)',
-                                'python': 'Python (generic)',
-                                'auto': 'Auto-detect',
                             },
                             value=self.data.verifier
                         ).classes('w-full').props(
@@ -620,9 +618,10 @@ class Benchmark:
         self.is_running = True
         
         try:
-            # Build output path
+            # Build canonical output file path:
+            # <output_root>/<model>-<benchmark>/benchmark.json
             model_name = Path(model).name
-            output_dir = f"{self.data.output_dir}/{model_name}-{self.data.preset.dataset}"
+            output_path = f"{self.data.output_dir}/{model_name}-{self.data.preset.dataset}/benchmark.json"
             
             # Merge preset CLI args with form values
             extra_args = dict(self.data.preset.cli_args)
@@ -633,7 +632,7 @@ class Benchmark:
                 benchmark_type=self.data.benchmark_type,
                 benchmark_name=self.data.preset.dataset,
                 limit=self.data.limit,
-                output_dir=output_dir,
+                output_path=output_path,
                 samples_per_prompt=self.data.samples_per_prompt,
                 verifier=self.data.verifier if self.data.benchmark_type == BenchmarkType.CODE else None,
                 run_after_compile=self.data.run_after_compile,

@@ -27,9 +27,14 @@ Usage:
 See docs/BENCHMARKS.md for the full benchmarking guide.
 """
 
+import json
+import subprocess
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from halo_forge.benchmark.pass_at_k import Benchmark, BenchmarkResult
 from halo_forge.benchmark.runner import (
@@ -49,6 +54,7 @@ from halo_forge.benchmark.prompts import (
     get_all_prompts,
     ALL_LANGUAGES,
 )
+from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
 
 
 class BenchmarkBackend(Enum):
@@ -71,6 +77,165 @@ VLM_MODEL_PATTERNS = [
     'vl', 'vision', 'llava', 'qwen2-vl', 'lfm', 'pixtral', 
     'cogvlm', 'internvl', 'cambrian', 'phi-3-vision',
 ]
+
+PYTHON_DATASET_BENCHMARKS = {"humaneval", "mbpp", "livecodebench"}
+
+
+def _prompt_key(prompt: str) -> str:
+    """Stable key used to map prompts to benchmark records."""
+    return prompt[:200].strip()
+
+
+def _load_jsonl_records(path: str) -> List[Dict[str, Any]]:
+    """Load JSONL benchmark records."""
+    records: List[Dict[str, Any]] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            records.append(json.loads(line))
+    return records
+
+
+class LiveCodeBenchPythonVerifier(Verifier):
+    """
+    Lightweight verifier for Python LiveCodeBench-style stdin/stdout tasks.
+
+    Expects records with `prompt` and `test_cases` where each test case has
+    `input` and `expected`.
+    """
+
+    def __init__(
+        self,
+        records: List[Dict[str, Any]],
+        timeout: int = 10,
+        max_workers: int = 8,
+        max_test_cases: int = 20,
+    ):
+        super().__init__(max_workers=max_workers)
+        self.timeout = timeout
+        self.max_test_cases = max_test_cases
+        self.prompt_to_tests: Dict[str, List[Dict[str, Any]]] = {}
+        for record in records:
+            prompt = str(record.get("prompt", "")).strip()
+            if prompt:
+                self.prompt_to_tests[_prompt_key(prompt)] = list(record.get("test_cases", []))
+
+    def verify(self, code: str) -> VerifyResult:
+        return VerifyResult(
+            success=False,
+            reward=0.0,
+            details="Prompt-aware verification required",
+            error="LiveCodeBench verifier requires prompt context",
+        )
+
+    def verify_batch(
+        self,
+        codes: List[str],
+        prompts: Optional[List[str]] = None
+    ) -> List[VerifyResult]:
+        if not prompts or len(prompts) != len(codes):
+            return [
+                VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Missing prompt context",
+                    error="prompts required for LiveCodeBench verification",
+                )
+                for _ in codes
+            ]
+
+        results: List[Optional[VerifyResult]] = [None] * len(codes)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {
+                executor.submit(self._verify_with_prompt, code, prompt): i
+                for i, (code, prompt) in enumerate(zip(codes, prompts))
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:  # pragma: no cover - safety fallback
+                    results[idx] = VerifyResult(
+                        success=False,
+                        reward=0.0,
+                        details="Verification exception",
+                        error=str(e),
+                    )
+        return [
+            r if r is not None else VerifyResult(
+                success=False,
+                reward=0.0,
+                details="Verification missing result",
+                error="internal verifier error",
+            )
+            for r in results
+        ]
+
+    def _verify_with_prompt(self, code: str, prompt: str) -> VerifyResult:
+        tests = self.prompt_to_tests.get(_prompt_key(prompt), [])
+        if not tests:
+            return VerifyResult(
+                success=False,
+                reward=0.0,
+                details="No test cases for prompt",
+                error="unknown prompt",
+            )
+        return self._run_test_cases(code, tests)
+
+    def _run_test_cases(self, code: str, tests: List[Dict[str, Any]]) -> VerifyResult:
+        extracted = self.extract_code(code)
+        selected = tests[:self.max_test_cases]
+        if not selected:
+            return VerifyResult(
+                success=False,
+                reward=0.0,
+                details="No executable test cases",
+                error="empty test set",
+            )
+
+        passed = 0
+        failures: List[str] = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            script_path = tmp_path / "candidate.py"
+            script_path.write_text(extracted, encoding="utf-8")
+
+            for i, test_case in enumerate(selected, 1):
+                test_input = str(test_case.get("input", ""))
+                expected = str(test_case.get("expected", "")).strip()
+                try:
+                    proc = subprocess.run(
+                        [sys.executable, str(script_path)],
+                        input=test_input,
+                        text=True,
+                        capture_output=True,
+                        timeout=self.timeout,
+                        cwd=tmpdir,
+                    )
+                except subprocess.TimeoutExpired:
+                    failures.append(f"test_{i}: timeout")
+                    continue
+                except Exception as e:  # pragma: no cover - safety fallback
+                    failures.append(f"test_{i}: {e}")
+                    continue
+
+                actual = (proc.stdout or "").strip()
+                if proc.returncode == 0 and actual == expected:
+                    passed += 1
+                else:
+                    details = (proc.stderr or proc.stdout or "").strip()
+                    snippet = details[:200] if details else "output mismatch"
+                    failures.append(f"test_{i}: {snippet}")
+
+        total = len(selected)
+        success = passed == total
+        reward = passed / total if total else 0.0
+        details = f"Passed {passed}/{total} test cases"
+        error = None if success else "; ".join(failures[:3])
+        return VerifyResult(success=success, reward=reward, details=details, error=error)
 
 
 def _select_backend(model: str, benchmark: str) -> BenchmarkBackend:
@@ -219,8 +384,17 @@ def _run_native_benchmark(
             model, benchmark, language, verifier_type, limit, output,
             run_after_compile=run_after_compile, **kwargs
         )
-    
-    # Use existing benchmark runner for Python benchmarks
+
+    if benchmark.lower() in PYTHON_DATASET_BENCHMARKS:
+        return _run_python_dataset_benchmark(
+            model=model,
+            benchmark=benchmark,
+            limit=limit,
+            output=output,
+            **kwargs,
+        )
+
+    # Keep internal prompt runner reserved for internal/native suite only.
     # Pop samples_per_prompt to avoid duplicate argument error
     samples = kwargs.pop('samples_per_prompt', 5)
     # Pop output_dir if passed, otherwise derive from output path or use default
@@ -246,6 +420,7 @@ def _run_native_benchmark(
         'model': model,
         'benchmark': benchmark,
         'backend': 'native',
+        'execution_path': 'native-internal-prompts',
         'metrics': {
             'pass_at_1': result.pass_at_1,
             'compile_rate': result.compile_rate,
@@ -262,6 +437,141 @@ def _run_native_benchmark(
             json.dump(output_result, f, indent=2)
     
     return output_result
+
+
+def _load_python_benchmark_records(
+    benchmark: str,
+    limit: Optional[int],
+    dataset_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Load benchmark records for Python benchmark datasets."""
+    benchmark = benchmark.lower()
+
+    if benchmark == "humaneval":
+        path = Path(dataset_path or "data/rlvr/humaneval_full.jsonl")
+        if not path.exists():
+            raise FileNotFoundError(
+                f"HumanEval dataset not found at {path}. "
+                "Prepare it first (expected RLVR JSONL format)."
+            )
+        records = _load_jsonl_records(str(path))
+    elif benchmark == "mbpp":
+        path = Path(dataset_path or "data/rlvr/mbpp_train_full.jsonl")
+        if not path.exists():
+            raise FileNotFoundError(
+                f"MBPP dataset not found at {path}. "
+                "Prepare it first (expected RLVR JSONL format)."
+            )
+        records = _load_jsonl_records(str(path))
+    elif benchmark == "livecodebench":
+        candidates = [dataset_path] if dataset_path else []
+        candidates.extend([
+            "data/rlvr/livecodebench_full.jsonl",
+            "data/livecodebench_rlvr.jsonl",
+        ])
+        records = []
+        for candidate in candidates:
+            if not candidate:
+                continue
+            candidate_path = Path(candidate)
+            if candidate_path.exists():
+                records = _load_jsonl_records(str(candidate_path))
+                break
+        if not records:
+            try:
+                from halo_forge.data.datasets.livecodebench import LiveCodeBenchLoader
+                loader = LiveCodeBenchLoader(max_problems=limit or 500)
+                records = loader.to_rlvr_format(language="python")
+            except Exception as e:
+                raise RuntimeError(
+                    "Unable to load LiveCodeBench dataset records. "
+                    "Provide a local RLVR JSONL dataset path to run_benchmark(...) "
+                    "or install dataset dependencies."
+                ) from e
+    else:
+        raise ValueError(f"Unsupported Python benchmark: {benchmark}")
+
+    if limit is not None:
+        records = records[:limit]
+    return records
+
+
+def _get_python_dataset_verifier(
+    benchmark: str,
+    records: List[Dict[str, Any]],
+    dataset_path: Optional[str] = None,
+):
+    """Create verifier matching benchmark dataset semantics."""
+    benchmark = benchmark.lower()
+    if benchmark == "humaneval":
+        from halo_forge.rlvr.verifiers import HumanEvalVerifier
+        return HumanEvalVerifier(dataset_path or "data/rlvr/humaneval_full.jsonl")
+    if benchmark == "mbpp":
+        from halo_forge.rlvr.verifiers import MBPPVerifier
+        return MBPPVerifier(dataset_path or "data/rlvr/mbpp_train_full.jsonl")
+    if benchmark == "livecodebench":
+        return LiveCodeBenchPythonVerifier(records)
+    raise ValueError(f"Unsupported Python benchmark: {benchmark}")
+
+
+def _run_python_dataset_benchmark(
+    model: str,
+    benchmark: str,
+    limit: Optional[int] = None,
+    output: Optional[Path] = None,
+    **kwargs
+) -> Dict[str, Any]:
+    """Run dataset-faithful Python benchmark evaluation."""
+    benchmark_lower = benchmark.lower()
+    dataset_path = kwargs.pop("dataset_path", None)
+    samples_per_prompt = kwargs.pop("samples_per_prompt", 5)
+    max_new_tokens = kwargs.pop("max_new_tokens", 1024)
+    temperature = kwargs.pop("temperature", 0.7)
+    batch_size = kwargs.pop("batch_size", 4)
+
+    records = _load_python_benchmark_records(
+        benchmark=benchmark_lower,
+        limit=limit,
+        dataset_path=dataset_path,
+    )
+    prompts = records
+    verifier = _get_python_dataset_verifier(
+        benchmark=benchmark_lower,
+        records=records,
+        dataset_path=dataset_path,
+    )
+
+    benchmark_runner = Benchmark(
+        model_path=model,
+        verifier=verifier,
+        system_prompt="You are an expert Python programmer. Write clean, correct code.",
+    )
+    output_path = str(output) if output else None
+
+    result = benchmark_runner.run(
+        prompts=prompts,
+        samples_per_prompt=samples_per_prompt,
+        k_values=[1, 5, 10],
+        max_prompts=limit,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        batch_size=batch_size,
+        output_path=output_path,
+    )
+
+    return {
+        "model": model,
+        "benchmark": benchmark_lower,
+        "backend": "native",
+        "execution_path": "native-python-dataset",
+        "metrics": {
+            "pass_at_1": result.pass_at_k.get(1, 0.0),
+            "pass_at_5": result.pass_at_k.get(5, 0.0),
+            "pass_at_10": result.pass_at_k.get(10, 0.0),
+            "pass_rate": result.pass_rate,
+        },
+        "samples": result.total,
+    }
 
 
 def _run_language_benchmark(
@@ -355,6 +665,7 @@ def _run_language_benchmark(
         'benchmark': benchmark,
         'language': language,
         'backend': 'native-internal',
+        'execution_path': 'native-compiled-language',
         'verifier': verifier.__class__.__name__,
         'metrics': {
             'pass_at_1': result.pass_at_k.get(1, 0.0),
@@ -446,4 +757,3 @@ __all__ = [
     "get_all_prompts",
     "ALL_LANGUAGES",
 ]
-

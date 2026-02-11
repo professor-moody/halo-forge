@@ -19,6 +19,7 @@ Usage:
 import json
 import tempfile
 import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
@@ -243,9 +244,9 @@ test_solution()
             test_file = Path(tmpdir) / "test_solution.py"
             test_file.write_text(test_file_content)
             
-            # HumanEval uses check(candidate) - run directly with python
-            # MBPP uses assertions - also works with direct python execution
-            cmd = ["python", str(test_file)]
+            # HumanEval uses check(candidate) - run directly with interpreter
+            # MBPP uses assertions - also works with direct interpreter execution
+            cmd = [sys.executable, str(test_file)]
             
             try:
                 result = subprocess.run(

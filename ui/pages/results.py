@@ -110,7 +110,7 @@ class Results:
                 
                 # Skip if this doesn't look like a benchmark result
                 # Must have at least one of these fields
-                if not any(k in data for k in ['pass_at_k', 'pass_rate', 'accuracy', 'model_path', 'model_name', 'baseline']):
+                if not any(k in data for k in ['pass_at_k', 'pass_rate', 'accuracy', 'metrics', 'model', 'model_path', 'model_name', 'baseline']):
                     continue
                 
                 # Extract benchmark info
@@ -149,6 +149,7 @@ class Results:
             # Direct format (baseline_*.json, *_test.json)
             model = data.get('model_path') or data.get('model_name') or data.get('model') or 'Unknown'
             benchmark = data.get('benchmark') or data.get('dataset') or json_file.stem
+            metrics = data.get('metrics', {}) if isinstance(data.get('metrics'), dict) else {}
             
             # Handle pass_at_k as nested dict
             pass_at_k = data.get('pass_at_k', {})
@@ -157,9 +158,16 @@ class Results:
                 pass_at_5 = pass_at_k.get('5') or pass_at_k.get(5)
                 pass_at_10 = pass_at_k.get('10') or pass_at_k.get(10)
             else:
-                pass_at_1 = data.get('pass@1') or data.get('pass_at_1') or data.get('accuracy') or 0
-                pass_at_5 = data.get('pass@5') or data.get('pass_at_5')
-                pass_at_10 = data.get('pass@10') or data.get('pass_at_10')
+                pass_at_1 = (
+                    data.get('pass@1')
+                    or data.get('pass_at_1')
+                    or metrics.get('pass_at_1')
+                    or data.get('accuracy')
+                    or metrics.get('accuracy')
+                    or 0
+                )
+                pass_at_5 = data.get('pass@5') or data.get('pass_at_5') or metrics.get('pass_at_5')
+                pass_at_10 = data.get('pass@10') or data.get('pass_at_10') or metrics.get('pass_at_10')
             
             samples = data.get('total') or data.get('samples') or data.get('n_samples') or 0
             
