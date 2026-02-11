@@ -129,11 +129,29 @@ class PerceptionChecker:
         
         try:
             import easyocr
-            self._ocr = easyocr.Reader(['en'], gpu=True)
+            prefer_gpu = False
+            try:
+                import torch
+                prefer_gpu = bool(torch.cuda.is_available())
+            except Exception:
+                prefer_gpu = False
+
+            try:
+                self._ocr = easyocr.Reader(['en'], gpu=prefer_gpu)
+            except Exception:
+                if prefer_gpu:
+                    # GPU initialization can fail on unsupported runtimes; retry on CPU.
+                    self._ocr = easyocr.Reader(['en'], gpu=False)
+                else:
+                    raise
             self._ocr_loaded = True
         except ImportError:
             print("Warning: easyocr not installed. OCR verification disabled.")
             print("Install with: pip install easyocr")
+            self._ocr = None
+            self._ocr_loaded = True
+        except Exception as e:
+            print(f"Warning: easyocr initialization failed ({e}). OCR verification disabled.")
             self._ocr = None
             self._ocr_loaded = True
     

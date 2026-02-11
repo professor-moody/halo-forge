@@ -42,36 +42,53 @@ RECOMMENDED_MODELS = {
 
 
 # =============================================================================
-# All Available Datasets
+# SFT Datasets (canonical registry-driven)
 # =============================================================================
 
-SFT_DATASETS = [
-    # --- Code Datasets ---
-    ("codealpaca", "CodeAlpaca (20K code instructions)"),
-    ("evol_instruct_code", "Evol-Instruct-Code (100K evolved)"),
-    ("codeforces_cpp", "CodeForces C++ (~5000 competitive)"),
-    ("codeforces_python", "CodeForces Python (~1000 competitive)"),
-    ("codeforces_rust", "CodeForces Rust (~500 competitive)"),
-    # --- Python Benchmarks ---
-    ("mbpp", "MBPP (974 Python basics)"),
-    ("humaneval", "HumanEval (164 Python problems)"),
-    ("humaneval_plus", "HumanEval+ (164 + extended tests)"),
-    # --- Math Datasets ---
-    ("metamath", "MetaMath (395K math problems)"),
-    ("gsm8k", "GSM8K (8.5K grade-school math)"),
-    ("math", "MATH (12.5K competition math)"),
-    # --- General Instruction ---
-    ("alpaca", "Alpaca (52K instruction-following)"),
-    ("dolly", "Databricks Dolly (15K human-written)"),
-    ("oasst", "OpenAssistant (161K conversations)"),
-    # --- Function Calling ---
-    ("xlam", "xLAM (60K function calling)"),
-    ("glaive", "Glaive (100K function calling)"),
-    # --- Multi-language ---
-    ("livecodebench", "LiveCodeBench (contamination-free)"),
-    # --- Custom ---
-    ("custom", "Custom JSONL file..."),
-]
+def _build_sft_dataset_options() -> list[tuple[str, str]]:
+    """Build UI dataset options from canonical SFT registry."""
+    try:
+        from halo_forge.sft.datasets import list_sft_datasets
+    except ModuleNotFoundError:
+        # Keep UI importable even if optional dataset deps are unavailable.
+        return [
+            ("codealpaca", "codealpaca [code] - 20K instruction-following code examples"),
+            ("metamath", "metamath [reasoning] - 395K math problems with chain-of-thought solutions"),
+            ("xlam_sft", "xlam_sft [agentic] - 60K function calling examples"),
+            ("custom", "Custom JSONL file..."),
+        ]
+
+    domain_order = {
+        "code": 0,
+        "reasoning": 1,
+        "vlm": 2,
+        "audio": 3,
+        "agentic": 4,
+    }
+    specs = sorted(
+        list_sft_datasets(),
+        key=lambda s: (domain_order.get(s.domain, 99), s.name),
+    )
+
+    options: list[tuple[str, str]] = []
+    for spec in specs:
+        size = f" ({spec.size_hint})" if spec.size_hint else ""
+        label = f"{spec.name} [{spec.domain}] - {spec.description}{size}"
+        options.append((spec.name, label))
+    options.append(("custom", "Custom JSONL file..."))
+    return options
+
+
+SFT_DATASETS = _build_sft_dataset_options()
+
+
+def _resolve_dataset_alias(name: str) -> str:
+    """Resolve known SFT dataset aliases without hard-failing UI imports."""
+    try:
+        from halo_forge.sft.datasets import resolve_sft_dataset_name
+        return resolve_sft_dataset_name(name)
+    except ModuleNotFoundError:
+        return name
 
 # =============================================================================
 # RAFT Prompt Files (available in data/rlvr/)
@@ -901,6 +918,12 @@ class Training:
         )
         
         dataset_options = {k: v for k, v in SFT_DATASETS}
+        canonical_dataset = _resolve_dataset_alias(self.sft_data.dataset)
+        if (
+            self.sft_data.dataset_source == "preset"
+            and canonical_dataset != self.sft_data.dataset
+        ):
+            self.sft_data.dataset = canonical_dataset
         
         # Determine select value - MUST be a valid option key
         if self.sft_data.dataset_source == "preset" and self.sft_data.dataset in dataset_options:
@@ -1131,7 +1154,7 @@ class Training:
         """Get the effective dataset path (handles custom vs preset)."""
         if self.sft_data.dataset_source == "custom" and self.sft_data.custom_dataset:
             return self.sft_data.custom_dataset
-        return self.sft_data.dataset
+        return _resolve_dataset_alias(self.sft_data.dataset)
     
     def _get_effective_prompts(self) -> str:
         """Get the effective prompts path (handles custom vs preset)."""

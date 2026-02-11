@@ -135,6 +135,14 @@ SFT_DATASETS: Dict[str, SFTDatasetSpec] = {
     ),
 }
 
+# Backward-compatible aliases for historical/UI dataset keys.
+SFT_DATASET_ALIASES: Dict[str, str] = {
+    "gsm8k": "gsm8k_sft",
+    "xlam": "xlam_sft",
+    "glaive": "glaive_sft",
+    "commonvoice_sft": "common_voice_sft",
+}
+
 
 def format_to_chatml(
     instruction: str,
@@ -377,9 +385,16 @@ def list_sft_datasets(domain: Optional[str] = None) -> List[SFTDatasetSpec]:
     return datasets
 
 
+def resolve_sft_dataset_name(name: str) -> str:
+    """Resolve dataset aliases to canonical registry keys."""
+    if not name:
+        return name
+    return SFT_DATASET_ALIASES.get(name, name)
+
+
 def get_sft_dataset_spec(name: str) -> Optional[SFTDatasetSpec]:
     """Get dataset specification by name."""
-    return SFT_DATASETS.get(name)
+    return SFT_DATASETS.get(resolve_sft_dataset_name(name))
 
 
 def is_huggingface_id(name: str) -> bool:
@@ -431,7 +446,12 @@ def load_sft_dataset(
             "For production training, pass the model's tokenizer."
         )
     
-    spec = get_sft_dataset_spec(name_or_id)
+    canonical_name = resolve_sft_dataset_name(name_or_id)
+    if canonical_name != name_or_id:
+        logger.warning(
+            f"Dataset alias '{name_or_id}' normalized to canonical '{canonical_name}'"
+        )
+    spec = get_sft_dataset_spec(canonical_name)
     
     if spec:
         # Known dataset with short name
@@ -545,6 +565,7 @@ def load_sft_dataset(
             f"Unknown dataset: {name_or_id}\n"
             f"Options:\n"
             f"  - Short name: {list(SFT_DATASETS.keys())[:5]}...\n"
+            f"  - Aliases: {', '.join(sorted(SFT_DATASET_ALIASES.keys()))}\n"
             f"  - HuggingFace ID: e.g., 'sahil2801/CodeAlpaca-20k'\n"
             f"  - Local file: e.g., 'data/train.jsonl'"
         )

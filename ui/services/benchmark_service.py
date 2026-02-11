@@ -123,13 +123,6 @@ VLM_PRESETS = [
         default_limit=500,
     ),
     BenchmarkPreset(
-        name="MMStar",
-        type=BenchmarkType.VLM,
-        dataset="mmstar",
-        description="Multi-modal evaluation benchmark",
-        default_limit=500,
-    ),
-    BenchmarkPreset(
         name="ChartQA",
         type=BenchmarkType.VLM,
         dataset="chartqa",
@@ -150,7 +143,7 @@ AUDIO_PRESETS = [
     BenchmarkPreset(
         name="CommonVoice",
         type=BenchmarkType.AUDIO,
-        dataset="commonvoice",
+        dataset="common_voice",
         description="Multi-language speech recognition",
         default_limit=500,
         cli_args={"task": "asr"},
@@ -168,6 +161,12 @@ AGENTIC_PRESETS = [
 ]
 
 ALL_PRESETS = CODE_PRESETS + VLM_PRESETS + AUDIO_PRESETS + AGENTIC_PRESETS
+
+BENCHMARK_DATASET_ALIASES: dict[BenchmarkType, dict[str, str]] = {
+    BenchmarkType.AUDIO: {
+        "commonvoice": "common_voice",
+    },
+}
 
 
 def get_presets_for_type(benchmark_type: BenchmarkType) -> list[BenchmarkPreset]:
@@ -230,6 +229,58 @@ class BenchmarkService:
         env.setdefault('OMP_NUM_THREADS', '1')
         
         return env
+
+    def _canonicalize_benchmark_name(
+        self,
+        benchmark_type: BenchmarkType,
+        benchmark_name: str,
+    ) -> str:
+        """Normalize benchmark aliases and validate dataset-backed benchmark names."""
+        normalized = (benchmark_name or "").strip().lower()
+        alias_map = BENCHMARK_DATASET_ALIASES.get(benchmark_type, {})
+        canonical = alias_map.get(normalized, normalized)
+
+        if canonical != normalized:
+            print(f"Normalized benchmark alias '{benchmark_name}' -> '{canonical}'")
+
+        if benchmark_type == BenchmarkType.VLM:
+            try:
+                from halo_forge.vlm.data import list_vlm_datasets
+                supported = set(list_vlm_datasets())
+            except Exception as e:
+                supported = None
+                print(f"Warning: skipping VLM dataset validation ({e})")
+            if supported is not None and canonical not in supported:
+                raise ValueError(
+                    f"Unsupported VLM benchmark dataset '{benchmark_name}' "
+                    f"(canonical '{canonical}'). Available: {sorted(supported)}"
+                )
+        elif benchmark_type == BenchmarkType.AUDIO:
+            try:
+                from halo_forge.audio.data import list_audio_datasets
+                supported = set(list_audio_datasets())
+            except Exception as e:
+                supported = None
+                print(f"Warning: skipping audio dataset validation ({e})")
+            if supported is not None and canonical not in supported:
+                raise ValueError(
+                    f"Unsupported audio benchmark dataset '{benchmark_name}' "
+                    f"(canonical '{canonical}'). Available: {sorted(supported)}"
+                )
+        elif benchmark_type == BenchmarkType.AGENTIC:
+            try:
+                from halo_forge.agentic.data import list_agentic_datasets
+                supported = set(list_agentic_datasets().keys())
+            except Exception as e:
+                supported = None
+                print(f"Warning: skipping agentic dataset validation ({e})")
+            if supported is not None and canonical not in supported:
+                raise ValueError(
+                    f"Unsupported agentic benchmark dataset '{benchmark_name}' "
+                    f"(canonical '{canonical}'). Available: {sorted(supported)}"
+                )
+
+        return canonical
     
     async def launch_benchmark(
         self,
@@ -264,6 +315,8 @@ class BenchmarkService:
         Returns:
             Job ID
         """
+        benchmark_name = self._canonicalize_benchmark_name(benchmark_type, benchmark_name)
+
         # Backward compatibility: older callers may pass output_dir positionally,
         # which now lands in output_path.
         if output_path and output_dir is None and not str(output_path).lower().endswith(".json"):
@@ -325,6 +378,7 @@ class BenchmarkService:
         **kwargs
     ) -> list[str]:
         """Build CLI command for benchmark type."""
+        benchmark_name = self._canonicalize_benchmark_name(benchmark_type, benchmark_name)
         
         if benchmark_type == BenchmarkType.CODE:
             cmd = [
@@ -419,14 +473,15 @@ class BenchmarkService:
         
         job.process = process
         job.started_at = datetime.now()
-        self.state.update_job_status(job_id, "running")
+        transitioned = self.state.update_job_status(job_id, "running")
         
         # Emit job started event
-        await get_event_bus().emit(Event(
-            type=EventType.JOB_STARTED,
-            job_id=job_id,
-            data={'name': job.name, 'type': 'benchmark'}
-        ))
+        if transitioned:
+            await get_event_bus().emit(Event(
+                type=EventType.JOB_STARTED,
+                job_id=job_id,
+                data={'name': job.name, 'type': 'benchmark'}
+            ))
         
         # Start log streaming task
         asyncio.create_task(self._stream_logs(job_id))
@@ -474,24 +529,38 @@ class BenchmarkService:
         
         # Process completed
         return_code = await job.process.wait()
-        
-        if return_code == 0:
-            self.state.update_job_status(job_id, "completed")
+
+        if job.stop_requested:
+            transitioned = self.state.update_job_status(job_id, "stopped")
+            if transitioned:
+                await event_bus.emit(Event(
+                    type=EventType.JOB_STOPPED,
+                    job_id=job_id,
+                    data={'return_code': return_code}
+                ))
+        elif return_code == 0:
+            transitioned = self.state.update_job_status(job_id, "completed")
+            if not transitioned:
+                return
             await event_bus.emit(Event(
                 type=EventType.JOB_COMPLETED,
                 job_id=job_id,
                 data={'return_code': return_code}
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
-            self.state.update_job_status(job_id, "stopped")
+            transitioned = self.state.update_job_status(job_id, "stopped")
+            if not transitioned:
+                return
             await event_bus.emit(Event(
                 type=EventType.JOB_STOPPED,
                 job_id=job_id,
                 data={'return_code': return_code}
             ))
         else:
-            self.state.update_job_status(job_id, "failed")
             job.error_message = f"Process exited with code {return_code}"
+            transitioned = self.state.update_job_status(job_id, "failed")
+            if not transitioned:
+                return
             await event_bus.emit(Event(
                 type=EventType.JOB_FAILED,
                 job_id=job_id,
@@ -515,6 +584,8 @@ class BenchmarkService:
         
         if job.status != "running":
             return False
+
+        job.stop_requested = True
         
         # Send SIGTERM first
         try:

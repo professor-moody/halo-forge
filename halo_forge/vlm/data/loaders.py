@@ -5,6 +5,7 @@ Load and format vision-language datasets for RLVR training.
 """
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,8 @@ from io import BytesIO
 import requests
 
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -391,6 +394,14 @@ VLM_DATASETS = {
     'mathvista': MathVistaLoader,
 }
 
+VLM_DATASET_ALIASES = {
+    'text-vqa': 'textvqa',
+    'doc-vqa': 'docvqa',
+    'chart-qa': 'chartqa',
+    'real_world_qa': 'realworldqa',
+    'math_vista': 'mathvista',
+}
+
 
 def load_vlm_dataset(
     name: str,
@@ -410,10 +421,18 @@ def load_vlm_dataset(
     Returns:
         VLMDataset instance
     """
-    if name not in VLM_DATASETS:
-        raise ValueError(f"Unknown dataset: {name}. Available: {list(VLM_DATASETS.keys())}")
+    canonical_name = VLM_DATASET_ALIASES.get(name.lower(), name.lower())
+    if canonical_name != name:
+        logger.warning("VLM dataset alias '%s' normalized to '%s'", name, canonical_name)
+
+    if canonical_name not in VLM_DATASETS:
+        raise ValueError(
+            f"Unknown dataset: {name}. "
+            f"Available: {list(VLM_DATASETS.keys())}. "
+            f"Aliases: {list(VLM_DATASET_ALIASES.keys())}"
+        )
     
-    loader_cls = VLM_DATASETS[name]
+    loader_cls = VLM_DATASETS[canonical_name]
     loader = loader_cls(split=split, limit=limit, **kwargs)
     loader.load()
     

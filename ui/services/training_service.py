@@ -379,14 +379,15 @@ class TrainingService:
         
         job.process = process
         job.started_at = datetime.now()
-        self.state.update_job_status(job_id, "running")
+        transitioned = self.state.update_job_status(job_id, "running")
         
         # Emit job started event
-        await get_event_bus().emit(Event(
-            type=EventType.JOB_STARTED,
-            job_id=job_id,
-            data={'name': job.name, 'type': job.type}
-        ))
+        if transitioned:
+            await get_event_bus().emit(Event(
+                type=EventType.JOB_STARTED,
+                job_id=job_id,
+                data={'name': job.name, 'type': job.type}
+            ))
         
         # Start log streaming task
         asyncio.create_task(self._stream_logs(job_id))
@@ -502,24 +503,38 @@ class TrainingService:
         
         # Process completed
         return_code = await job.process.wait()
-        
-        if return_code == 0:
-            self.state.update_job_status(job_id, "completed")
+
+        if job.stop_requested:
+            transitioned = self.state.update_job_status(job_id, "stopped")
+            if transitioned:
+                await event_bus.emit(Event(
+                    type=EventType.JOB_STOPPED,
+                    job_id=job_id,
+                    data={'return_code': return_code}
+                ))
+        elif return_code == 0:
+            transitioned = self.state.update_job_status(job_id, "completed")
+            if not transitioned:
+                return
             await event_bus.emit(Event(
                 type=EventType.JOB_COMPLETED,
                 job_id=job_id,
                 data={'return_code': return_code}
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
-            self.state.update_job_status(job_id, "stopped")
+            transitioned = self.state.update_job_status(job_id, "stopped")
+            if not transitioned:
+                return
             await event_bus.emit(Event(
                 type=EventType.JOB_STOPPED,
                 job_id=job_id,
                 data={'return_code': return_code}
             ))
         else:
-            self.state.update_job_status(job_id, "failed")
             job.error_message = f"Process exited with code {return_code}"
+            transitioned = self.state.update_job_status(job_id, "failed")
+            if not transitioned:
+                return
             await event_bus.emit(Event(
                 type=EventType.JOB_FAILED,
                 job_id=job_id,
@@ -582,6 +597,8 @@ class TrainingService:
         
         if job.status != "running":
             return False
+
+        job.stop_requested = True
         
         # Send SIGTERM first (allows checkpoint saving)
         try:

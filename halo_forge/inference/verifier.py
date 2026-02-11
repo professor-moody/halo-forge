@@ -227,6 +227,18 @@ class InferenceOptimizationVerifier(Verifier):
         Returns:
             VerifyResult with combined latency + quality reward
         """
+        if not test_prompts:
+            return VerifyResult(
+                success=False,
+                reward=0.0,
+                details="No test prompts provided",
+                error="Inference optimization verification requires at least one prompt",
+                metadata={
+                    "avg_latency_ms": None,
+                    "quality_score": None,
+                },
+            )
+
         self._ensure_baseline()
         
         if tokenizer is None:
@@ -241,6 +253,17 @@ class InferenceOptimizationVerifier(Verifier):
         
         # Measure latency
         latencies = self.measure_latency(optimized_model, tokenizer, test_prompts)
+        if not latencies:
+            return VerifyResult(
+                success=False,
+                reward=0.0,
+                details="Could not measure latency",
+                error="Latency measurement returned no samples",
+                metadata={
+                    "avg_latency_ms": None,
+                    "quality_score": None,
+                },
+            )
         avg_latency = sum(latencies) / len(latencies)
         
         # Measure quality (if baseline available)

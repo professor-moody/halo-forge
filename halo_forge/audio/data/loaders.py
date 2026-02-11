@@ -482,6 +482,10 @@ AUDIO_DATASETS = {
     "speech_commands": SpeechCommandsLoader,
 }
 
+AUDIO_DATASET_ALIASES = {
+    "commonvoice": "common_voice",
+}
+
 
 def load_audio_dataset(
     name: str,
@@ -501,10 +505,18 @@ def load_audio_dataset(
     Returns:
         AudioDataset instance
     """
-    if name not in AUDIO_DATASETS:
-        raise ValueError(f"Unknown dataset: {name}. Available: {list(AUDIO_DATASETS.keys())}")
+    canonical_name = AUDIO_DATASET_ALIASES.get(name.lower(), name.lower())
+    if canonical_name != name:
+        logger.warning("Audio dataset alias '%s' normalized to '%s'", name, canonical_name)
+
+    if canonical_name not in AUDIO_DATASETS:
+        raise ValueError(
+            f"Unknown dataset: {name}. "
+            f"Available: {list(AUDIO_DATASETS.keys())}. "
+            f"Aliases: {list(AUDIO_DATASET_ALIASES.keys())}"
+        )
     
-    loader_cls = AUDIO_DATASETS[name]
+    loader_cls = AUDIO_DATASETS[canonical_name]
     loader = loader_cls(split=split, limit=limit, **kwargs)
     loader.load()
     

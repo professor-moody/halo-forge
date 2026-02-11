@@ -83,7 +83,8 @@ class VerifyResult:
     
     def __repr__(self):
         status = "PASS" if self.success else "FAIL"
-        return f"VerifyResult({status}, reward={self.reward:.2f}, details='{self.details[:50]}...')"
+        details_text = self.details if isinstance(self.details, str) else str(self.details)
+        return f"VerifyResult({status}, reward={self.reward:.2f}, details='{details_text[:50]}...')"
 
 
 class Verifier(ABC):
@@ -302,4 +303,3 @@ class ChainedVerifier(Verifier):
         """Cleanup all verifiers."""
         for verifier in self.verifiers:
             verifier.cleanup()
-

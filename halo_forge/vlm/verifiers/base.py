@@ -212,8 +212,8 @@ class VisionVerifier(Verifier):
         # Determine success
         success = reward >= 0.5
         
-        # Build details
-        details = {
+        # Build structured details for metadata and a compact summary for VerifyResult.details.
+        structured_details = {
             'perception': {
                 'score': perception_result.overall_score,
                 'object_score': perception_result.object_score,
@@ -234,20 +234,28 @@ class VisionVerifier(Verifier):
         }
         
         if output_result:
-            details['output'] = {
+            structured_details['output'] = {
                 'score': output_result.overall_score,
                 'exact_match': output_result.exact_match,
                 'fuzzy_score': output_result.fuzzy_score,
             }
+
+        summary = (
+            f"Perception: {perception_result.overall_score:.2f}, "
+            f"Reasoning: {reasoning_result.overall_score:.2f}"
+        )
+        if output_result is not None:
+            summary += f", Output: {output_result.overall_score:.2f}"
         
         return VerifyResult(
             success=success,
             reward=reward,
-            details=details,
+            details=summary,
             metadata={
                 'perception_result': perception_result,
                 'reasoning_result': reasoning_result,
                 'output_result': output_result,
+                'details': structured_details,
             }
         )
     

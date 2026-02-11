@@ -47,6 +47,7 @@ class JobState:
     
     # Error handling
     error_message: Optional[str] = None
+    stop_requested: bool = False
     
     # Process handle (not serializable)
     process: Any = None
@@ -139,15 +140,35 @@ class AppState:
         """Get a job by ID."""
         return self.jobs.get(job_id)
     
-    def update_job_status(self, job_id: str, status: JobStatus):
-        """Update job status with timestamp."""
+    def update_job_status(self, job_id: str, status: JobStatus) -> bool:
+        """
+        Update job status with timestamp.
+
+        Returns:
+            True if the transition was applied, False if rejected or unchanged.
+        """
         job = self.jobs.get(job_id)
-        if job:
-            job.status = status
-            if status == "running" and job.started_at is None:
+        if not job:
+            return False
+
+        previous_status = job.status
+        terminal_statuses = {"completed", "failed", "stopped"}
+
+        # Keep terminal state idempotent and conflict-free.
+        if previous_status in terminal_statuses and status != previous_status:
+            return False
+        if previous_status == status:
+            return False
+
+        job.status = status
+        if status == "running":
+            if job.started_at is None:
                 job.started_at = datetime.now()
-            elif status in ("completed", "failed", "stopped"):
-                job.completed_at = datetime.now()
+            job.stop_requested = False
+        elif status in terminal_statuses:
+            job.completed_at = datetime.now()
+
+        return True
     
     def add_metric(self, job_id: str, metric_name: str, step: int, value: float):
         """Add a metric data point for a job."""

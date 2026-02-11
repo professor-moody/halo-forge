@@ -26,14 +26,14 @@ class GPUStats:
     @property
     def memory_percent(self) -> Optional[float]:
         """Get memory usage as percentage."""
-        if self.memory_used_gb is not None and self.memory_total_gb:
+        if self.memory_used_gb is not None and self.memory_total_gb is not None and self.memory_total_gb > 0:
             return (self.memory_used_gb / self.memory_total_gb) * 100
         return None
     
     @property
     def power_percent(self) -> Optional[float]:
         """Get power usage as percentage of cap."""
-        if self.power_draw_w is not None and self.power_cap_w:
+        if self.power_draw_w is not None and self.power_cap_w is not None and self.power_cap_w > 0:
             return (self.power_draw_w / self.power_cap_w) * 100
         return None
 
@@ -96,7 +96,7 @@ def _parse_rocm_json(output: str) -> Optional[GPUStats]:
         
         # Temperature
         temp = gpu.get('Temperature (Sensor junction)', gpu.get('Temperature', None))
-        if temp:
+        if temp is not None:
             # Extract number from string like "45.0c"
             match = re.search(r'([\d.]+)', str(temp))
             if match:
@@ -104,7 +104,7 @@ def _parse_rocm_json(output: str) -> Optional[GPUStats]:
         
         # GPU utilization
         util = gpu.get('GPU use (%)', gpu.get('GPU Utilization', None))
-        if util:
+        if util is not None:
             match = re.search(r'([\d.]+)', str(util))
             if match:
                 stats.utilization_percent = float(match.group(1))
@@ -113,20 +113,20 @@ def _parse_rocm_json(output: str) -> Optional[GPUStats]:
         mem_used = gpu.get('VRAM Total Used Memory (B)', None)
         mem_total = gpu.get('VRAM Total Memory (B)', None)
         
-        if mem_used:
+        if mem_used is not None:
             stats.memory_used_gb = float(mem_used) / (1024**3)
-        if mem_total:
+        if mem_total is not None:
             stats.memory_total_gb = float(mem_total) / (1024**3)
         
         # Power
         power = gpu.get('Average Graphics Package Power (W)', None)
         power_cap = gpu.get('Max Graphics Package Power (W)', None)
         
-        if power:
+        if power is not None:
             match = re.search(r'([\d.]+)', str(power))
             if match:
                 stats.power_draw_w = float(match.group(1))
-        if power_cap:
+        if power_cap is not None:
             match = re.search(r'([\d.]+)', str(power_cap))
             if match:
                 stats.power_cap_w = float(match.group(1))
@@ -203,10 +203,14 @@ def get_gpu_summary() -> dict:
     return {
         'available': True,
         'name': stats.name,
-        'util': f'{stats.utilization_percent:.0f}%' if stats.utilization_percent else '--',
-        'memory': f'{stats.memory_used_gb:.1f}/{stats.memory_total_gb:.0f}GB' if stats.memory_used_gb else '--',
-        'temp': f'{stats.temperature_c:.0f}°C' if stats.temperature_c else '--',
-        'power': f'{stats.power_draw_w:.0f}W' if stats.power_draw_w else '--',
+        'util': f'{stats.utilization_percent:.0f}%' if stats.utilization_percent is not None else '--',
+        'memory': (
+            f'{stats.memory_used_gb:.1f}/{stats.memory_total_gb:.0f}GB'
+            if stats.memory_used_gb is not None and stats.memory_total_gb is not None
+            else '--'
+        ),
+        'temp': f'{stats.temperature_c:.0f}°C' if stats.temperature_c is not None else '--',
+        'power': f'{stats.power_draw_w:.0f}W' if stats.power_draw_w is not None else '--',
         'memory_percent': stats.memory_percent,
         'util_percent': stats.utilization_percent,
     }
