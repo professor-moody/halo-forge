@@ -5,7 +5,7 @@ Template and examples for creating custom verifiers.
 Copy this file and modify for your specific verification needs.
 """
 
-from typing import Optional
+from typing import Optional, List
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
 
 
@@ -117,7 +117,7 @@ class SubprocessVerifier(Verifier):
     Example:
         # Verify Rust code with cargo check
         verifier = SubprocessVerifier(
-            command="cargo check",
+            command_args=["cargo", "check", "--manifest-path", "{file}"],
             success_pattern="Finished",
             file_extension=".rs"
         )
@@ -125,8 +125,10 @@ class SubprocessVerifier(Verifier):
     
     def __init__(
         self,
-        command: str,
+        command_args: List[str],
         success_pattern: Optional[str] = None,
+        file_placeholder: str = "{file}",
+        require_placeholder: bool = True,
         file_extension: str = ".txt",
         timeout: int = 60,
         max_workers: int = 4
@@ -135,15 +137,36 @@ class SubprocessVerifier(Verifier):
         Initialize subprocess verifier.
         
         Args:
-            command: Command to run (use {file} as placeholder for input file)
+            command_args: Tokenized argv command (shell strings are rejected)
             success_pattern: Pattern to search for in output (None = use exit code)
+            file_placeholder: Placeholder token to replace with temp file path
+            require_placeholder: If True, command_args must include file_placeholder
             file_extension: Extension for temp file
             timeout: Command timeout
             max_workers: Max parallel runs
         """
         super().__init__(max_workers=max_workers)
-        self.command = command
+        
+        if isinstance(command_args, str):
+            raise TypeError(
+                "SubprocessVerifier now requires tokenized command_args (list[str]); "
+                "string commands are not supported."
+            )
+        if not isinstance(command_args, (list, tuple)) or not command_args:
+            raise TypeError("command_args must be a non-empty list[str]")
+        if not all(isinstance(arg, str) and arg for arg in command_args):
+            raise TypeError("all command_args entries must be non-empty strings")
+        
+        if require_placeholder and not any(file_placeholder in arg for arg in command_args):
+            raise ValueError(
+                f"command_args must include placeholder '{file_placeholder}' when "
+                "require_placeholder=True"
+            )
+        
+        self.command_args = list(command_args)
         self.success_pattern = success_pattern
+        self.file_placeholder = file_placeholder
+        self.require_placeholder = require_placeholder
         self.file_extension = file_extension
         self.timeout = timeout
     
@@ -151,34 +174,50 @@ class SubprocessVerifier(Verifier):
         """Run command on code and check result."""
         import subprocess
         import tempfile
-        import os
+        from pathlib import Path
         
         extracted = self.extract_code(code)
         
-        # Write to temp file
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix=self.file_extension,
-            delete=False
-        ) as f:
-            f.write(extracted)
-            temp_file = f.name
-        
-        try:
-            # Substitute {file} placeholder
-            cmd = self.command.replace("{file}", temp_file)
+        # Run command in a controlled temp directory context.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_file = Path(tmpdir) / f"candidate{self.file_extension}"
+            temp_file.write_text(extracted, encoding="utf-8")
             
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout
-            )
+            cmd = [
+                arg.replace(self.file_placeholder, str(temp_file))
+                for arg in self.command_args
+            ]
+            
+            try:
+                result = subprocess.run(
+                    cmd,
+                    shell=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                    cwd=tmpdir,
+                )
+            except subprocess.TimeoutExpired:
+                return VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Command timeout",
+                    error=f"Exceeded {self.timeout}s",
+                    metadata={"command_args": cmd}
+                )
+            except Exception as e:
+                return VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Command error",
+                    error=str(e),
+                    metadata={"command_args": cmd}
+                )
             
             # Check success
+            combined_output = f"{result.stdout}\n{result.stderr}"
             if self.success_pattern:
-                success = self.success_pattern in result.stdout
+                success = self.success_pattern in combined_output
             else:
                 success = result.returncode == 0
             
@@ -186,31 +225,14 @@ class SubprocessVerifier(Verifier):
                 return VerifyResult(
                     success=True,
                     reward=1.0,
-                    details="Command succeeded"
+                    details="Command succeeded",
+                    metadata={"command_args": cmd}
                 )
-            else:
-                return VerifyResult(
-                    success=False,
-                    reward=0.0,
-                    details="Command failed",
-                    error=result.stderr[:500] or result.stdout[:500]
-                )
-                
-        except subprocess.TimeoutExpired:
+            
             return VerifyResult(
                 success=False,
                 reward=0.0,
-                details="Command timeout",
-                error=f"Exceeded {self.timeout}s"
+                details="Command failed",
+                error=(result.stderr[:500] or result.stdout[:500]),
+                metadata={"command_args": cmd}
             )
-        except Exception as e:
-            return VerifyResult(
-                success=False,
-                reward=0.0,
-                details="Command error",
-                error=str(e)
-            )
-        finally:
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
-

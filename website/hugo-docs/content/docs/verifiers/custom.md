@@ -49,7 +49,7 @@ from halo_forge.rlvr.verifiers import SubprocessVerifier
 
 # Verify Rust code with cargo check
 verifier = SubprocessVerifier(
-    command="cargo check --manifest-path {file}/../Cargo.toml",
+    command_args=["cargo", "check", "--manifest-path", "{file}"],
     success_pattern="Finished",
     file_extension=".rs",
     timeout=60
@@ -62,10 +62,14 @@ result = verifier.verify(rust_code)
 
 | Option | Description |
 |--------|-------------|
-| `command` | Command to run (`{file}` = temp file path) |
+| `command_args` | Tokenized argv command (`list[str]`) |
 | `success_pattern` | String that indicates success in output |
+| `file_placeholder` | Placeholder token replaced with temp file path |
+| `require_placeholder` | Require placeholder token in `command_args` |
 | `file_extension` | Extension for temp file |
 | `timeout` | Command timeout in seconds |
+
+`SubprocessVerifier` is shell-free (`shell=False`) and rejects string command input.
 
 ## API Verifier Example
 

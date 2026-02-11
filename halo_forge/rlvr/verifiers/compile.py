@@ -15,13 +15,17 @@ Graduated Rewards:
 import subprocess
 import tempfile
 import os
-import resource
 import shutil
 import uuid
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Callable
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult, RewardLevel
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    resource = None
 
 
 class CompileVerifier(Verifier):
@@ -303,13 +307,7 @@ class CompileVerifier(Verifier):
         Returns:
             dict with 'success', 'stdout', 'stderr', 'exit_code', 'error' keys
         """
-        def set_limits():
-            """Set resource limits for child process."""
-            # Memory limit
-            mem_bytes = self.memory_limit_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
-            # CPU time limit
-            resource.setrlimit(resource.RLIMIT_CPU, (self.run_timeout, self.run_timeout))
+        preexec_fn = self._build_limit_preexec(self.run_timeout)
         
         try:
             result = subprocess.run(
@@ -318,7 +316,7 @@ class CompileVerifier(Verifier):
                 capture_output=True,
                 text=True,
                 timeout=self.run_timeout,
-                preexec_fn=set_limits
+                preexec_fn=preexec_fn
             )
             
             if result.returncode == 0:
@@ -349,6 +347,30 @@ class CompileVerifier(Verifier):
                 'error': str(e),
                 'exit_code': -1
             }
+    
+    def _build_limit_preexec(self, timeout_seconds: Optional[int]) -> Optional[Callable[[], None]]:
+        """
+        Build a preexec hook that applies memory/CPU limits on POSIX.
+        
+        Returns None on platforms where resource limits/preexec are unavailable.
+        """
+        if os.name != 'posix' or resource is None:
+            return None
+        
+        mem_bytes = int(self.memory_limit_mb * 1024 * 1024)
+        cpu_limit = int(max(1, timeout_seconds or self.run_timeout or 1))
+        
+        def _set_limits():
+            try:
+                resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+            except Exception:
+                pass
+            try:
+                resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
+            except Exception:
+                pass
+        
+        return _set_limits
     
     def _cache_binary(self, output_file: str) -> Optional[Path]:
         """

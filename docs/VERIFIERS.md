@@ -416,23 +416,28 @@ from halo_forge.rlvr.verifiers import SubprocessVerifier
 
 # Rust cargo check
 rust_verifier = SubprocessVerifier(
-    command="cargo check --manifest-path /tmp/project/Cargo.toml",
+    command_args=["cargo", "check", "--manifest-path", "/tmp/project/Cargo.toml"],
     success_pattern="Finished",
     file_extension=".rs"
 )
 
 # Go build
 go_verifier = SubprocessVerifier(
-    command="go build -o /dev/null {file}",
+    command_args=["go", "build", "-o", "/dev/null", "{file}"],
     file_extension=".go"
 )
 
 # ESLint
 eslint_verifier = SubprocessVerifier(
-    command="eslint {file}",
+    command_args=["eslint", "{file}"],
     file_extension=".js"
 )
 ```
+
+Notes:
+- `command_args` is required and must be `list[str]` (string shell commands are rejected).
+- `file_placeholder` defaults to `"{file}"` and is replaced with the temp source path.
+- Commands execute with `shell=False`.
 
 ---
 
@@ -610,7 +615,7 @@ Verifiers execute model-generated code. Treat verifier runs as untrusted executi
 
 ### Current Safety Characteristics
 
-- `SubprocessVerifier` uses `shell=True` and inherits the host environment.
+- `SubprocessVerifier` executes argv with `shell=False` (no shell interpolation).
 - Python verifiers (`PytestVerifier`, `RLVRPytestVerifier`) execute code without OS-level resource limits.
 - C/C++ execution applies `setrlimit` for CPU and memory in `CompileVerifier`.
 

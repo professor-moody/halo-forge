@@ -620,7 +620,15 @@ def _run_language_benchmark(
         prompts = prompts[:limit]
     
     print(f"Evaluating on {len(prompts)} {language.upper()} prompts")
-    mode = "MVR (full verification)" if run_after_compile else "MVP (compile-only)"
+    is_mingw_compile_only = (
+        language in ("cpp", "c++", "c")
+        and (verifier_type or "").lower() == "mingw"
+    )
+    if is_mingw_compile_only and run_after_compile:
+        print("MinGW verifier is compile-only; ignoring run_after_compile=True.")
+    mode = "MVP (compile-only)" if is_mingw_compile_only else (
+        "MVR (full verification)" if run_after_compile else "MVP (compile-only)"
+    )
     print(f"Verification mode: {mode}")
     
     # Select verifier based on language and verifier_type
@@ -667,6 +675,7 @@ def _run_language_benchmark(
         'backend': 'native-internal',
         'execution_path': 'native-compiled-language',
         'verifier': verifier.__class__.__name__,
+        'verification_mode': mode,
         'metrics': {
             'pass_at_1': result.pass_at_k.get(1, 0.0),
             'pass_at_5': result.pass_at_k.get(5, 0.0),
@@ -718,7 +727,7 @@ def _get_verifier_for_language(
     
     if language in ('cpp', 'c++', 'c'):
         if verifier_type == 'mingw':
-            return MinGWVerifier(run_after_compile=run_after_compile, timeout=30)
+            return MinGWVerifier(timeout=30)
         elif verifier_type == 'clang':
             return ClangVerifier(run_after_compile=run_after_compile, timeout=30)
         else:

@@ -181,7 +181,7 @@ Verifiers execute model-generated code. Treat verifier runs as untrusted executi
 
 | Verifier Type | Safety Notes |
 |---------------|--------------|
-| `SubprocessVerifier` | Uses `shell=True`, inherits host environment |
+| `SubprocessVerifier` | Uses argv execution with `shell=False` |
 | Python verifiers | Execute without OS-level resource limits |
 | C/C++ verifiers | Apply `setrlimit` for CPU and memory during execution |
 

@@ -336,6 +336,7 @@ class Datasets:
                 f'text-sm font-medium text-[{COLORS["text_secondary"]}] mt-2'
             )
             
-            import json
-            ui.html(f'''<pre class="w-full p-4 rounded-lg font-mono text-xs overflow-x-auto" 
-                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{json.dumps(dataset.example, indent=2)}</pre>''', sanitize=False)
+            ui.label(json.dumps(dataset.example, indent=2)).classes(
+                f'w-full p-4 rounded-lg font-mono text-xs overflow-x-auto '
+                f'bg-[{COLORS["bg_primary"]}] text-[{COLORS["text_secondary"]}]'
+            ).style('white-space: pre-wrap;')

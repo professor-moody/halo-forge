@@ -232,8 +232,10 @@ class Verifiers:
             ui.label('Prompt').classes(
                 f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
             )
-            ui.html(f'''<pre class="w-full p-4 rounded-lg font-mono text-sm overflow-x-auto"
-                         style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.selected_verifier.example_prompt}</pre>''', sanitize=False)
+            ui.label(self.selected_verifier.example_prompt).classes(
+                f'w-full p-4 rounded-lg font-mono text-sm overflow-x-auto '
+                f'bg-[{COLORS["bg_primary"]}] text-[{COLORS["text_secondary"]}]'
+            ).style('white-space: pre-wrap;')
         
         # Code input - use binding for reactivity
         with ui.column().classes('w-full gap-2'):
@@ -285,13 +287,17 @@ class Verifiers:
             
             # Error output (in red)
             if self.test_result.get('error'):
-                ui.html(f'''<pre class="w-full p-3 rounded font-mono text-xs overflow-x-auto"
-                             style="background: {COLORS["bg_primary"]}; color: {COLORS["error"]}; white-space: pre-wrap;">{self.test_result['error']}</pre>''', sanitize=False)
+                ui.label(self.test_result['error']).classes(
+                    f'w-full p-3 rounded font-mono text-xs overflow-x-auto '
+                    f'bg-[{COLORS["bg_primary"]}] text-[{COLORS["error"]}]'
+                ).style('white-space: pre-wrap;')
             
             # Standard output
             if self.test_result.get('output'):
-                ui.html(f'''<pre class="w-full p-3 rounded font-mono text-xs overflow-x-auto"
-                             style="background: {COLORS["bg_primary"]}; color: {COLORS["text_secondary"]}; white-space: pre-wrap;">{self.test_result['output']}</pre>''', sanitize=False)
+                ui.label(self.test_result['output']).classes(
+                    f'w-full p-3 rounded font-mono text-xs overflow-x-auto '
+                    f'bg-[{COLORS["bg_primary"]}] text-[{COLORS["text_secondary"]}]'
+                ).style('white-space: pre-wrap;')
             
             # Reward and duration footer
             reward = self.test_result.get('reward')

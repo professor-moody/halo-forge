@@ -21,6 +21,7 @@ Usage:
 """
 
 import re
+import inspect
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, field
 
@@ -181,6 +182,7 @@ class MultiLanguageVerifier(Verifier):
         
         # Lazy-loaded verifiers
         self._verifiers: Dict[str, Verifier] = {}
+        self._verifier_init_metadata: Dict[str, Dict[str, Any]] = {}
     
     def _get_verifier(self, language: str) -> Verifier:
         """Get or create verifier for a language."""
@@ -190,12 +192,13 @@ class MultiLanguageVerifier(Verifier):
                 raise ValueError(f"Unknown language: {language}")
             
             # Import and instantiate the verifier
-            verifier = self._create_verifier(config)
+            verifier, init_metadata = self._create_verifier(config)
             self._verifiers[language] = verifier
+            self._verifier_init_metadata[language] = init_metadata
         
         return self._verifiers[language]
     
-    def _create_verifier(self, config: LanguageConfig) -> Verifier:
+    def _create_verifier(self, config: LanguageConfig) -> tuple[Verifier, Dict[str, Any]]:
         """Create a verifier instance from config."""
         from halo_forge.rlvr import verifiers
         
@@ -210,16 +213,47 @@ class MultiLanguageVerifier(Verifier):
             **config.verifier_kwargs,
             **self.verifier_kwargs
         }
-        
-        # Add run_after_compile for compile verifiers
-        if hasattr(verifier_class, 'run_after_compile'):
+
+        applied_optional_kwargs: Dict[str, Any] = {}
+        skipped_optional_kwargs: Dict[str, str] = {}
+
+        try:
+            signature = inspect.signature(verifier_class.__init__)
+            params = signature.parameters
+            accepts_var_kwargs = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+            )
+        except (TypeError, ValueError):
+            params = {}
+            accepts_var_kwargs = True
+
+        def _supports_kwarg(name: str) -> bool:
+            return accepts_var_kwargs or name in params
+
+        if _supports_kwarg('run_after_compile'):
             kwargs['run_after_compile'] = self.run_after_compile
-        
-        # Add binary caching for compile verifiers
-        if self.binary_cache_dir and hasattr(verifier_class, 'binary_cache_dir'):
-            kwargs['binary_cache_dir'] = self.binary_cache_dir
-        
-        return verifier_class(**kwargs)
+            applied_optional_kwargs['run_after_compile'] = self.run_after_compile
+        else:
+            skipped_optional_kwargs['run_after_compile'] = (
+                f"{config.verifier_class}.__init__ does not accept run_after_compile"
+            )
+
+        if self.binary_cache_dir:
+            if _supports_kwarg('binary_cache_dir'):
+                kwargs['binary_cache_dir'] = self.binary_cache_dir
+                applied_optional_kwargs['binary_cache_dir'] = self.binary_cache_dir
+            else:
+                skipped_optional_kwargs['binary_cache_dir'] = (
+                    f"{config.verifier_class}.__init__ does not accept binary_cache_dir"
+                )
+
+        verifier = verifier_class(**kwargs)
+        init_metadata = {
+            'verifier_class': config.verifier_class,
+            'applied_optional_kwargs': applied_optional_kwargs,
+            'skipped_optional_kwargs': skipped_optional_kwargs,
+        }
+        return verifier, init_metadata
     
     def detect_language(self, code: str) -> str:
         """
@@ -272,6 +306,11 @@ class MultiLanguageVerifier(Verifier):
                 result.metadata['detected_language'] = lang
             else:
                 result.metadata = {'detected_language': lang}
+            result.metadata['verifier_name'] = verifier.__class__.__name__
+            result.metadata['verifier_init'] = self._verifier_init_metadata.get(
+                lang,
+                {},
+            )
             
             return result
             

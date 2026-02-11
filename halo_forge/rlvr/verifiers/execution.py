@@ -275,13 +275,16 @@ class ExecutionVerifier(CompileVerifier):
         Returns:
             Dict with passed, actual, expected, error keys
         """
+        preexec_fn = self._build_limit_preexec(test_case.timeout)
+
         try:
             result = subprocess.run(
                 [binary_path],
                 input=test_case.input,
                 capture_output=True,
                 text=True,
-                timeout=test_case.timeout
+                timeout=test_case.timeout,
+                preexec_fn=preexec_fn,
             )
             
             actual = result.stdout.strip()
