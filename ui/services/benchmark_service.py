@@ -235,6 +235,30 @@ class BenchmarkService:
         
         return env
 
+    @staticmethod
+    def _validate_required_text(value: Optional[str], field_name: str) -> str:
+        """Validate a required string-like benchmark launch field."""
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError(f"{field_name} is required")
+        return text
+
+    def _validate_launch_payload(
+        self,
+        model: str,
+        benchmark_name: str,
+        limit: Optional[int],
+        samples_per_prompt: int,
+    ) -> tuple[str, str]:
+        """Validate benchmark launch inputs before creating a job."""
+        model = self._validate_required_text(model, "model")
+        benchmark_name = self._validate_required_text(benchmark_name, "benchmark_name")
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be greater than 0 when provided")
+        if samples_per_prompt <= 0:
+            raise ValueError("samples_per_prompt must be greater than 0")
+        return model, benchmark_name
+
     def _canonicalize_benchmark_name(
         self,
         benchmark_type: BenchmarkType,
@@ -320,6 +344,12 @@ class BenchmarkService:
         Returns:
             Job ID
         """
+        model, benchmark_name = self._validate_launch_payload(
+            model=model,
+            benchmark_name=benchmark_name,
+            limit=limit,
+            samples_per_prompt=samples_per_prompt,
+        )
         benchmark_name = self._canonicalize_benchmark_name(benchmark_type, benchmark_name)
 
         # Backward compatibility: older callers may pass output_dir positionally,

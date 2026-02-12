@@ -104,6 +104,70 @@ class TrainingService:
         env.setdefault('OMP_NUM_THREADS', '1')
         
         return env
+
+    @staticmethod
+    def _validate_required_text(value: Optional[str], field_name: str) -> str:
+        """Validate a required string-like launch field."""
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError(f"{field_name} is required")
+        return text
+
+    def _validate_sft_launch_payload(
+        self,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        epochs: int,
+        batch_size: int,
+        gradient_accumulation_steps: int,
+        max_samples: Optional[int],
+    ) -> tuple[str, str, str]:
+        """Validate user inputs before creating an SFT job."""
+        model = self._validate_required_text(model, "model")
+        dataset = self._validate_required_text(dataset, "dataset")
+        output_dir = self._validate_required_text(output_dir, "output_dir")
+        if epochs <= 0:
+            raise ValueError("epochs must be greater than 0")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+        if gradient_accumulation_steps <= 0:
+            raise ValueError("gradient_accumulation_steps must be greater than 0")
+        if max_samples is not None and max_samples <= 0:
+            raise ValueError("max_samples must be greater than 0 when provided")
+        return model, dataset, output_dir
+
+    def _validate_raft_launch_payload(
+        self,
+        model: str,
+        prompts: str,
+        output_dir: str,
+        cycles: int,
+        samples_per_prompt: int,
+        keep_percent: float,
+        reward_threshold: float,
+        min_samples: int,
+        max_new_tokens: int,
+    ) -> tuple[str, str, str]:
+        """Validate user inputs before creating a RAFT job."""
+        model = self._validate_required_text(model, "model")
+        prompts = self._validate_required_text(prompts, "prompts")
+        output_dir = self._validate_required_text(output_dir, "output_dir")
+        if not Path(prompts).exists():
+            raise ValueError(f"prompts file does not exist: {prompts}")
+        if cycles <= 0:
+            raise ValueError("cycles must be greater than 0")
+        if samples_per_prompt <= 0:
+            raise ValueError("samples_per_prompt must be greater than 0")
+        if keep_percent <= 0 or keep_percent > 1:
+            raise ValueError("keep_percent must be within (0, 1]")
+        if reward_threshold < 0:
+            raise ValueError("reward_threshold must be >= 0")
+        if min_samples <= 0:
+            raise ValueError("min_samples must be greater than 0")
+        if max_new_tokens <= 0:
+            raise ValueError("max_new_tokens must be greater than 0")
+        return model, prompts, output_dir
     
     async def launch_sft(
         self,
@@ -161,6 +225,16 @@ class TrainingService:
         Returns:
             Job ID
         """
+        model, dataset, output_dir = self._validate_sft_launch_payload(
+            model=model,
+            dataset=dataset,
+            output_dir=output_dir,
+            epochs=epochs,
+            batch_size=batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            max_samples=max_samples,
+        )
+
         # Create job in state
         job = self.state.create_job(
             job_type="sft",
@@ -300,6 +374,18 @@ class TrainingService:
         Returns:
             Job ID
         """
+        model, prompts, output_dir = self._validate_raft_launch_payload(
+            model=model,
+            prompts=prompts,
+            output_dir=output_dir,
+            cycles=cycles,
+            samples_per_prompt=samples_per_prompt,
+            keep_percent=keep_percent,
+            reward_threshold=reward_threshold,
+            min_samples=min_samples,
+            max_new_tokens=max_new_tokens,
+        )
+
         # Create job in state
         job = self.state.create_job(
             job_type="raft",

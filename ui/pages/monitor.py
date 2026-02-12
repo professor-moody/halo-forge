@@ -319,8 +319,7 @@ class Monitor:
     def _get_loss_data(self) -> list:
         """Get loss data for the chart."""
         if not self.job_id or self.job_id not in state.metrics_history:
-            # Demo data
-            return [[i, 2.5 - (i * 0.02) + (0.1 * (i % 5))] for i in range(100)]
+            return []
         
         loss_points = state.metrics_history[self.job_id].get('loss', [])
         return [[p.step, p.value] for p in loss_points]
@@ -335,7 +334,7 @@ class Monitor:
             # Loss
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label('Loss').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss else '--'
+                val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss is not None else '--'
                 self._loss_label = ui.label(val).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
@@ -343,7 +342,7 @@ class Monitor:
             # Learning Rate
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label('Learning Rate').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr else '--'
+                val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr is not None else '--'
                 self._lr_label = ui.label(val).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
@@ -351,7 +350,7 @@ class Monitor:
             # Grad Norm
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label('Grad Norm').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm else '--'
+                val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm is not None else '--'
                 self._grad_norm_label = ui.label(val).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
@@ -595,15 +594,15 @@ class Monitor:
             
             # Metrics
             if self._loss_label:
-                val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss else '--'
+                val = f'{self.job.latest_loss:.4f}' if self.job.latest_loss is not None else '--'
                 self._loss_label.set_text(val)
             
             if self._lr_label:
-                val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr else '--'
+                val = f'{self.job.latest_lr:.2e}' if self.job.latest_lr is not None else '--'
                 self._lr_label.set_text(val)
             
             if self._grad_norm_label:
-                val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm else '--'
+                val = f'{self.job.latest_grad_norm:.4f}' if self.job.latest_grad_norm is not None else '--'
                 self._grad_norm_label.set_text(val)
             
             if self._verification_label and self.job.verification_rate is not None:

@@ -204,7 +204,9 @@ def test_planning_docs_policy_guards():
     assert violations == []
 
     ignored_internal_docs = subprocess.run(
-        ["git", "check-ignore", ".internal_docs"],
+        # Use a child probe path so this check remains stable even when the
+        # ignored directory is absent in CI checkouts.
+        ["git", "check-ignore", ".internal_docs/.ci_probe"],
         capture_output=True,
         text=True,
         check=False,
