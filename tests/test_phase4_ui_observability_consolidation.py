@@ -40,6 +40,10 @@ def test_results_service_is_authoritative_for_domain_ingestion_and_dashboard_agg
             "metrics": {"function_correctness": 0.73},
             "samples": 100,
         },
+        tmp_path / "results/agentic/model-c/metadata.json": {
+            "foo": "bar",
+            "not_a_benchmark_result": True,
+        },
     }
     for path, payload in files.items():
         path.parent.mkdir(parents=True, exist_ok=True)

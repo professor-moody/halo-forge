@@ -256,7 +256,7 @@ class ResultsService:
         if any(fragment in path_str for fragment in excluded_fragments):
             return False
 
-        return True
+        return False
 
     def _parse_result_file(self, path: Path) -> Optional[BenchmarkResult]:
         with path.open(encoding="utf-8") as f:

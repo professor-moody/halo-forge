@@ -60,6 +60,24 @@ def test_unsupported_audio_model_fails_capability_check():
     assert "supported_families=whisper" in check.message
 
 
+def test_supported_audio_local_checkpoint_uses_metadata_family_hint(tmp_path):
+    """Local checkpoints should pass when metadata shows a supported family."""
+    adapter_dir = tmp_path / "audio_run" / "final_model"
+    adapter_dir.mkdir(parents=True)
+    (adapter_dir / "adapter_config.json").write_text(
+        '{"base_model_name_or_path":"openai/whisper-small"}',
+        encoding="utf-8",
+    )
+
+    check = check_modality_train_capability(
+        modality="audio",
+        model_name=str(adapter_dir),
+        allow_prototype_train=True,
+        dry_run=False,
+    )
+    assert check.allowed is True
+
+
 def test_reasoning_train_updates_reported(monkeypatch, tmp_path):
     """Reasoning trainer should report explicit weight-update telemetry."""
     try:

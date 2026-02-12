@@ -2,6 +2,7 @@
 Capability registry and validation for modality training commands.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Tuple
@@ -63,6 +64,75 @@ def _looks_like_local_path(model_name: str) -> bool:
         return False
 
 
+def _collect_local_model_hints(model_path: Path) -> list[str]:
+    """
+    Collect lower-cased identity hints from local checkpoint paths.
+
+    Reads common model metadata files to recover originating base model family
+    (for example `adapter_config.json` contains `base_model_name_or_path`).
+    """
+    hints: list[str] = []
+    candidate_dirs: list[Path] = []
+
+    if model_path.is_file():
+        candidate_dirs.append(model_path.parent)
+    else:
+        candidate_dirs.append(model_path)
+
+    # Check nearby folders as many runs point to final_model/checkpoint subdirs.
+    candidate_dirs.append(model_path.parent)
+    candidate_dirs.append(model_path.parent.parent)
+
+    for path_hint in (
+        model_path.name,
+        model_path.parent.name,
+        model_path.parent.parent.name,
+    ):
+        if path_hint:
+            hints.append(path_hint.lower())
+
+    hint_files = (
+        "adapter_config.json",
+        "config.json",
+        "tokenizer_config.json",
+    )
+    hint_keys = (
+        "base_model_name_or_path",
+        "_name_or_path",
+        "model_name",
+        "model_path",
+        "model",
+        "model_type",
+        "architectures",
+    )
+
+    for directory in candidate_dirs:
+        try:
+            if not directory or not directory.exists() or not directory.is_dir():
+                continue
+        except OSError:
+            continue
+
+        for filename in hint_files:
+            metadata_path = directory / filename
+            if not metadata_path.exists():
+                continue
+            try:
+                payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            for key in hint_keys:
+                value = payload.get(key)
+                if isinstance(value, str) and value:
+                    hints.append(value.lower())
+                elif isinstance(value, list):
+                    hints.extend(str(item).lower() for item in value if item)
+
+    return hints
+
+
 def _is_model_family_supported(model_name: str, capability: ModalityTrainCapability) -> bool:
     """Check model support against configured family patterns."""
     families = capability.supported_model_families
@@ -74,10 +144,10 @@ def _is_model_family_supported(model_name: str, capability: ModalityTrainCapabil
         return True
 
     if _looks_like_local_path(model_name):
-        # Local checkpoints are allowed only when the folder name itself
-        # still advertises a supported family token.
-        path_name = Path(model_name).name.lower()
-        return any(token in path_name for token in families)
+        # Use model metadata when available so generic local folder names still
+        # validate against supported family policies.
+        hints = _collect_local_model_hints(Path(model_name))
+        return any(token in hint for hint in hints for token in families)
 
     return False
 
