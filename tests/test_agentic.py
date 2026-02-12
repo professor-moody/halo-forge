@@ -6,6 +6,8 @@ import pytest
 import json
 from unittest.mock import Mock, patch, MagicMock
 
+pytest.importorskip("torch")
+
 # Test imports
 from halo_forge.agentic.data.loaders import (
     ToolCallSample,

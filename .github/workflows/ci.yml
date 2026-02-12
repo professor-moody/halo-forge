@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-and-core-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install test runner
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Syntax compile check
+        run: python -m compileall -q halo_forge ui tests
+
+      - name: Core framework and UI regression checks
+        run: |
+          pytest -q \
+            tests/test_pipeline.py \
+            tests/test_verifiers.py \
+            tests/test_inference.py \
+            tests/test_agentic.py \
+            tests/test_audio.py \
+            tests/test_reasoning.py \
+            tests/test_vlm.py \
+            tests/test_phase0_stabilization.py \
+            tests/test_phase1_hardening.py \
+            tests/test_phase2_consistency_cleanup.py \
+            tests/test_phase3_truth_in_advertising.py \
+            tests/test_phase4_ui_observability_consolidation.py \
+            tests/test_phase5_release_engineering.py

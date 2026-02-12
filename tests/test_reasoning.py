@@ -6,7 +6,9 @@ Unit tests for math verification, answer extraction, and dataset loading.
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-import numpy as np
+
+np = pytest.importorskip("numpy")
+pytest.importorskip("torch")
 
 
 # =============================================================================

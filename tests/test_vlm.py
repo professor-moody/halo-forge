@@ -16,8 +16,9 @@ from unittest.mock import Mock, MagicMock, patch
 from dataclasses import dataclass
 
 import pytest
-import numpy as np
-from PIL import Image
+np = pytest.importorskip("numpy")
+pytest.importorskip("torch")
+Image = pytest.importorskip("PIL.Image").Image
 
 from halo_forge.vlm.verifiers.base import VisionVerifier, VisionVerifyResult
 from halo_forge.vlm.verifiers.perception import (

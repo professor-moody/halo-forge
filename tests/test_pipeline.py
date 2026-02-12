@@ -153,6 +153,7 @@ class TestImports:
     
     def test_import_trainers(self):
         """Trainers should import without error."""
+        pytest.importorskip("torch")
         from halo_forge.rlvr.raft_trainer import RAFTTrainer, RAFTConfig
         from halo_forge.sft.trainer import SFTTrainer, SFTConfig
         
@@ -442,4 +443,3 @@ if __name__ == "__main__":
         sys.exit(0 if success else 1)
     else:
         pytest.main([__file__, "-v"])
-

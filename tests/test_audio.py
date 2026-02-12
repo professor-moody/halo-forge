@@ -7,8 +7,9 @@ Unit tests for audio processing, verifiers, and training components.
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from dataclasses import asdict
-import numpy as np
-import torch
+
+np = pytest.importorskip("numpy")
+torch = pytest.importorskip("torch")
 
 
 # =============================================================================

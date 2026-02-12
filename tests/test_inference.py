@@ -16,7 +16,7 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 from halo_forge.inference.optimizer import InferenceOptimizer, OptimizationConfig
 from halo_forge.inference.verifier import InferenceOptimizationVerifier, InferenceMetrics

@@ -41,10 +41,8 @@ jiwer>=3.0.0  # WER calculation
 # Reasoning (Phase 5)
 sympy>=1.12  # Symbolic math verification
 
-# Optional: TUI (Terminal User Interface)
-# textual>=0.50.0  # Install for TUI support: pip install textual
+# Note: legacy TUI is deprecated and not part of the supported runtime surface.
 
 # Optional: LLM backends for data generation
 # anthropic>=0.18.0
 # openai>=1.0.0
-
