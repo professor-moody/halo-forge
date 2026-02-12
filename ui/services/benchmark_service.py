@@ -24,7 +24,12 @@ from typing import Optional, Callable, Any
 from collections import deque
 from enum import Enum
 
-from .event_bus import get_event_bus, Event, EventType
+from .event_bus import (
+    get_event_bus,
+    Event,
+    EventType,
+    build_transition_payload,
+)
 
 
 class BenchmarkType(Enum):
@@ -341,10 +346,24 @@ class BenchmarkService:
         )
         
         # Emit job created event
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": "benchmark_service.launch_benchmark",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {"job_type": "benchmark"},
+        }
         get_event_bus().emit_sync(Event(
             type=EventType.JOB_CREATED,
             job_id=job.id,
-            data={'name': job.name, 'type': 'benchmark', 'benchmark_type': benchmark_type.value}
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type="benchmark",
+                benchmark_type=benchmark_type.value,
+            ),
         ))
         
         # Build command based on benchmark type
@@ -473,14 +492,25 @@ class BenchmarkService:
         
         job.process = process
         job.started_at = datetime.now()
-        transitioned = self.state.update_job_status(job_id, "running")
-        
+        transitioned = self.state.update_job_status(
+            job_id,
+            "running",
+            source="benchmark_service._launch_process",
+            reason="process_started",
+            metadata={"command": cmd},
+        )
+
         # Emit job started event
         if transitioned:
+            transition = self.state.get_last_transition(job_id)
             await get_event_bus().emit(Event(
                 type=EventType.JOB_STARTED,
                 job_id=job_id,
-                data={'name': job.name, 'type': 'benchmark'}
+                data=build_transition_payload(
+                    transition,
+                    name=job.name,
+                    type="benchmark",
+                ),
             ))
         
         # Start log streaming task
@@ -531,40 +561,81 @@ class BenchmarkService:
         return_code = await job.process.wait()
 
         if job.stop_requested:
-            transitioned = self.state.update_job_status(job_id, "stopped")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "stopped",
+                source="benchmark_service._stream_logs",
+                reason="stop_requested",
+                metadata={"return_code": return_code},
+            )
             if transitioned:
+                transition = self.state.get_last_transition(job_id)
                 await event_bus.emit(Event(
                     type=EventType.JOB_STOPPED,
                     job_id=job_id,
-                    data={'return_code': return_code}
+                    data=build_transition_payload(
+                        transition,
+                        return_code=return_code,
+                    ),
                 ))
         elif return_code == 0:
-            transitioned = self.state.update_job_status(job_id, "completed")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "completed",
+                source="benchmark_service._stream_logs",
+                reason="process_exit_ok",
+                metadata={"return_code": return_code},
+            )
             if not transitioned:
                 return
+            transition = self.state.get_last_transition(job_id)
             await event_bus.emit(Event(
                 type=EventType.JOB_COMPLETED,
                 job_id=job_id,
-                data={'return_code': return_code}
+                data=build_transition_payload(
+                    transition,
+                    return_code=return_code,
+                ),
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
-            transitioned = self.state.update_job_status(job_id, "stopped")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "stopped",
+                source="benchmark_service._stream_logs",
+                reason="terminated_signal",
+                metadata={"return_code": return_code},
+            )
             if not transitioned:
                 return
+            transition = self.state.get_last_transition(job_id)
             await event_bus.emit(Event(
                 type=EventType.JOB_STOPPED,
                 job_id=job_id,
-                data={'return_code': return_code}
+                data=build_transition_payload(
+                    transition,
+                    return_code=return_code,
+                ),
             ))
         else:
             job.error_message = f"Process exited with code {return_code}"
-            transitioned = self.state.update_job_status(job_id, "failed")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "failed",
+                source="benchmark_service._stream_logs",
+                reason="process_exit_error",
+                metadata={"return_code": return_code, "error": job.error_message},
+            )
             if not transitioned:
                 return
+            transition = self.state.get_last_transition(job_id)
             await event_bus.emit(Event(
                 type=EventType.JOB_FAILED,
                 job_id=job_id,
-                data={'return_code': return_code, 'error': job.error_message}
+                data=build_transition_payload(
+                    transition,
+                    return_code=return_code,
+                    error=job.error_message,
+                ),
             ))
     
     async def stop_job(self, job_id: str, timeout: float = 30.0) -> bool:
@@ -591,7 +662,12 @@ class BenchmarkService:
         try:
             job.process.terminate()
         except ProcessLookupError:
-            self.state.update_job_status(job_id, "stopped")
+            self.state.update_job_status(
+                job_id,
+                "stopped",
+                source="benchmark_service.stop_job",
+                reason="process_missing",
+            )
             return True
         
         try:
@@ -603,7 +679,12 @@ class BenchmarkService:
             except ProcessLookupError:
                 pass
         
-        self.state.update_job_status(job_id, "stopped")
+        self.state.update_job_status(
+            job_id,
+            "stopped",
+            source="benchmark_service.stop_job",
+            reason="stop_completed",
+        )
         return True
     
     def get_logs(self, job_id: str, last_n: Optional[int] = None) -> list[dict]:

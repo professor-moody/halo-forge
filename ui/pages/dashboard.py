@@ -164,7 +164,7 @@ class Dashboard:
                 with ui.row().classes('gap-3 flex-wrap'):
                     self._render_action_button('SFT Training', 'school', '/training?type=sft')
                     self._render_action_button('RAFT Training', 'autorenew', '/training?type=raft')
-                    self._render_action_button('Run Benchmark', 'speed', '/training?type=benchmark')
+                    self._render_action_button('Run Benchmark', 'speed', '/benchmark')
                     self._render_action_button('View Configs', 'settings', '/config')
                     self._render_action_button('Test Verifier', 'verified', '/verifiers')
     
@@ -468,55 +468,12 @@ class Dashboard:
         return result
     
     def _load_benchmark_data(self) -> dict:
-        """Load benchmark results from results directory."""
-        result = {'models': [], 'domains': ['Code', 'Reasoning', 'VLM', 'Audio']}
-        
-        results_dir = Path('results')
-        if not results_dir.exists():
-            return result
-        
-        # Aggregate scores by model
-        model_scores = {}
-        
-        for domain in ['code', 'reasoning', 'vlm', 'audio']:
-            domain_dir = results_dir / domain
-            if not domain_dir.exists():
-                continue
-            
-            for model_dir in domain_dir.iterdir():
-                if not model_dir.is_dir():
-                    continue
-                
-                model_name = model_dir.name
-                if model_name not in model_scores:
-                    model_scores[model_name] = {'Code': None, 'Reasoning': None, 'VLM': None, 'Audio': None}
-                
-                # Read first result file
-                result_files = list(model_dir.glob('*.json'))
-                for rf in result_files[:1]:
-                    try:
-                        with open(rf) as fp:
-                            data = json.load(fp)
-                            # Extract score (handle different formats)
-                            score = data.get('score') or data.get('accuracy') or data.get('pass_rate')
-                            if score is not None:
-                                # Convert to percentage if needed
-                                if score <= 1:
-                                    score *= 100
-                                model_scores[model_name][domain.capitalize()] = round(score, 1)
-                    except (json.JSONDecodeError, IOError):
-                        continue
-        
-        # Convert to series format
-        for model_name, scores in model_scores.items():
-            score_list = [scores.get(d) or 0 for d in result['domains']]
-            if any(s > 0 for s in score_list):  # Only include models with some data
-                result['models'].append({
-                    'name': model_name[:12],  # Truncate long names
-                    'scores': score_list
-                })
-        
-        return result
+        """Load benchmark chart data from canonical ResultsService aggregation."""
+        try:
+            return self.results_service.get_dashboard_benchmark_summary(max_models=5)
+        except Exception as e:
+            print(f"[Dashboard] Failed to load benchmark summary: {e}")
+            return {'models': [], 'domains': ['Code', 'Reasoning', 'VLM', 'Audio', 'Agentic']}
     
     async def _refresh_jobs(self):
         """Refresh jobs data."""

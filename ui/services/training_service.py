@@ -16,7 +16,12 @@ from typing import Optional, Callable, Any
 from collections import deque
 
 from .metrics_parser import MetricsParser, ParsedMetrics
-from .event_bus import get_event_bus, Event, EventType
+from .event_bus import (
+    get_event_bus,
+    Event,
+    EventType,
+    build_transition_payload,
+)
 
 # Import notification helpers (only used when UI is running)
 try:
@@ -165,10 +170,23 @@ class TrainingService:
         job.total_epochs = epochs
         
         # Emit job created event
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": "training_service.launch_sft",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {"job_type": "sft"},
+        }
         get_event_bus().emit_sync(Event(
             type=EventType.JOB_CREATED,
             job_id=job.id,
-            data={'name': job.name, 'type': 'sft'}
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type="sft",
+            ),
         ))
         
         # Build command
@@ -291,10 +309,23 @@ class TrainingService:
         job.total_cycles = cycles
         
         # Emit job created event
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": "training_service.launch_raft",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {"job_type": "raft"},
+        }
         get_event_bus().emit_sync(Event(
             type=EventType.JOB_CREATED,
             job_id=job.id,
-            data={'name': job.name, 'type': 'raft'}
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type="raft",
+            ),
         ))
         
         # Build command
@@ -379,14 +410,25 @@ class TrainingService:
         
         job.process = process
         job.started_at = datetime.now()
-        transitioned = self.state.update_job_status(job_id, "running")
-        
+        transitioned = self.state.update_job_status(
+            job_id,
+            "running",
+            source="training_service._launch_process",
+            reason="process_started",
+            metadata={"command": cmd},
+        )
+
         # Emit job started event
         if transitioned:
+            transition = self.state.get_last_transition(job_id)
             await get_event_bus().emit(Event(
                 type=EventType.JOB_STARTED,
                 job_id=job_id,
-                data={'name': job.name, 'type': job.type}
+                data=build_transition_payload(
+                    transition,
+                    name=job.name,
+                    type=job.type,
+                ),
             ))
         
         # Start log streaming task
@@ -505,40 +547,81 @@ class TrainingService:
         return_code = await job.process.wait()
 
         if job.stop_requested:
-            transitioned = self.state.update_job_status(job_id, "stopped")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "stopped",
+                source="training_service._stream_logs",
+                reason="stop_requested",
+                metadata={"return_code": return_code},
+            )
             if transitioned:
+                transition = self.state.get_last_transition(job_id)
                 await event_bus.emit(Event(
                     type=EventType.JOB_STOPPED,
                     job_id=job_id,
-                    data={'return_code': return_code}
+                    data=build_transition_payload(
+                        transition,
+                        return_code=return_code,
+                    ),
                 ))
         elif return_code == 0:
-            transitioned = self.state.update_job_status(job_id, "completed")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "completed",
+                source="training_service._stream_logs",
+                reason="process_exit_ok",
+                metadata={"return_code": return_code},
+            )
             if not transitioned:
                 return
+            transition = self.state.get_last_transition(job_id)
             await event_bus.emit(Event(
                 type=EventType.JOB_COMPLETED,
                 job_id=job_id,
-                data={'return_code': return_code}
+                data=build_transition_payload(
+                    transition,
+                    return_code=return_code,
+                ),
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
-            transitioned = self.state.update_job_status(job_id, "stopped")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "stopped",
+                source="training_service._stream_logs",
+                reason="terminated_signal",
+                metadata={"return_code": return_code},
+            )
             if not transitioned:
                 return
+            transition = self.state.get_last_transition(job_id)
             await event_bus.emit(Event(
                 type=EventType.JOB_STOPPED,
                 job_id=job_id,
-                data={'return_code': return_code}
+                data=build_transition_payload(
+                    transition,
+                    return_code=return_code,
+                ),
             ))
         else:
             job.error_message = f"Process exited with code {return_code}"
-            transitioned = self.state.update_job_status(job_id, "failed")
+            transitioned = self.state.update_job_status(
+                job_id,
+                "failed",
+                source="training_service._stream_logs",
+                reason="process_exit_error",
+                metadata={"return_code": return_code, "error": job.error_message},
+            )
             if not transitioned:
                 return
+            transition = self.state.get_last_transition(job_id)
             await event_bus.emit(Event(
                 type=EventType.JOB_FAILED,
                 job_id=job_id,
-                data={'return_code': return_code, 'error': job.error_message}
+                data=build_transition_payload(
+                    transition,
+                    return_code=return_code,
+                    error=job.error_message,
+                ),
             ))
     
     def _update_job_metrics(self, job_id: str, metrics: ParsedMetrics):
@@ -605,7 +688,12 @@ class TrainingService:
             job.process.terminate()
         except ProcessLookupError:
             # Process already dead
-            self.state.update_job_status(job_id, "stopped")
+            self.state.update_job_status(
+                job_id,
+                "stopped",
+                source="training_service.stop_job",
+                reason="process_missing",
+            )
             return True
         
         try:
@@ -619,7 +707,12 @@ class TrainingService:
             except ProcessLookupError:
                 pass
         
-        self.state.update_job_status(job_id, "stopped")
+        self.state.update_job_status(
+            job_id,
+            "stopped",
+            source="training_service.stop_job",
+            reason="stop_completed",
+        )
         return True
     
     def get_logs(self, job_id: str, last_n: Optional[int] = None) -> list[dict]:

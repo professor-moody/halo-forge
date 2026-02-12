@@ -195,3 +195,34 @@ class EventBus:
 def get_event_bus() -> EventBus:
     """Get the global EventBus instance."""
     return EventBus()
+
+
+def build_transition_payload(
+    transition: Optional[Dict[str, Any]] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    """
+    Build lifecycle event payload with normalized transition metadata.
+
+    Fields are present even when transition context is unavailable so consumers
+    can rely on a stable shape.
+    """
+    payload: Dict[str, Any] = {
+        "from_status": None,
+        "to_status": None,
+        "applied": False,
+        "source": None,
+        "reason": None,
+        "timestamp": None,
+    }
+    if transition:
+        payload["from_status"] = transition.get("from_status")
+        payload["to_status"] = transition.get("to_status")
+        payload["applied"] = bool(transition.get("applied", False))
+        payload["source"] = transition.get("source")
+        payload["reason"] = transition.get("reason")
+        payload["timestamp"] = transition.get("timestamp")
+        if transition.get("metadata") is not None:
+            payload["metadata"] = transition.get("metadata")
+    payload.update(extra)
+    return payload

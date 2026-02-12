@@ -119,6 +119,7 @@ from .event_bus import (
     Event,
     EventType,
     get_event_bus,
+    build_transition_payload,
 )
 
 # Benchmark service
@@ -207,6 +208,7 @@ __all__ = [
     'Event',
     'EventType',
     'get_event_bus',
+    'build_transition_payload',
     
     # Benchmark
     'BenchmarkService',

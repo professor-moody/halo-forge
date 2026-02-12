@@ -7,7 +7,7 @@ Global application state for job tracking and metrics.
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional, Any
+from typing import Literal, Optional, Any, Dict
 from collections import deque
 import uuid
 
@@ -111,6 +111,10 @@ class AppState:
     sidebar_collapsed: bool = False
     current_page: str = "dashboard"
     
+    # In-memory transition trace buffer for lifecycle observability
+    transition_trace: deque = field(default_factory=lambda: deque(maxlen=500))
+    last_transition_by_job: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
     def create_job(
         self,
         job_type: JobType,
@@ -140,7 +144,58 @@ class AppState:
         """Get a job by ID."""
         return self.jobs.get(job_id)
     
-    def update_job_status(self, job_id: str, status: JobStatus) -> bool:
+    def _record_transition(
+        self,
+        job_id: str,
+        from_status: Optional[str],
+        to_status: str,
+        applied: bool,
+        source: str,
+        reason: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Record a status transition attempt in the in-memory trace buffer."""
+        event = {
+            "job_id": job_id,
+            "from_status": from_status,
+            "to_status": to_status,
+            "applied": applied,
+            "source": source,
+            "reason": reason,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if metadata:
+            event["metadata"] = dict(metadata)
+        self.transition_trace.append(event)
+        self.last_transition_by_job[job_id] = event
+        return event
+
+    def get_last_transition(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Return the most recent recorded transition attempt for a job."""
+        return self.last_transition_by_job.get(job_id)
+
+    def get_transition_trace(
+        self,
+        job_id: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        """Return transition trace events, optionally filtered by job ID."""
+        events = list(self.transition_trace)
+        if job_id:
+            events = [event for event in events if event.get("job_id") == job_id]
+        if limit is not None:
+            events = events[-limit:]
+        return events
+
+    def update_job_status(
+        self,
+        job_id: str,
+        status: JobStatus,
+        *,
+        source: str = "unknown",
+        reason: str = "status_update",
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> bool:
         """
         Update job status with timestamp.
 
@@ -149,6 +204,15 @@ class AppState:
         """
         job = self.jobs.get(job_id)
         if not job:
+            self._record_transition(
+                job_id=job_id,
+                from_status=None,
+                to_status=status,
+                applied=False,
+                source=source,
+                reason="job_not_found",
+                metadata=metadata,
+            )
             return False
 
         previous_status = job.status
@@ -156,8 +220,26 @@ class AppState:
 
         # Keep terminal state idempotent and conflict-free.
         if previous_status in terminal_statuses and status != previous_status:
+            self._record_transition(
+                job_id=job_id,
+                from_status=previous_status,
+                to_status=status,
+                applied=False,
+                source=source,
+                reason="terminal_state_locked",
+                metadata=metadata,
+            )
             return False
         if previous_status == status:
+            self._record_transition(
+                job_id=job_id,
+                from_status=previous_status,
+                to_status=status,
+                applied=False,
+                source=source,
+                reason="no_status_change",
+                metadata=metadata,
+            )
             return False
 
         job.status = status
@@ -167,6 +249,16 @@ class AppState:
             job.stop_requested = False
         elif status in terminal_statuses:
             job.completed_at = datetime.now()
+
+        self._record_transition(
+            job_id=job_id,
+            from_status=previous_status,
+            to_status=status,
+            applied=True,
+            source=source,
+            reason=reason,
+            metadata=metadata,
+        )
 
         return True
     

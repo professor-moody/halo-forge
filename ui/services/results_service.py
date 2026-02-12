@@ -1,20 +1,22 @@
 """
 Results Service
 
-Scans the results directory for benchmark results and provides
-formatted data for the UI Results page.
+Canonical ingestion and normalization of benchmark result files for UI consumers.
 """
+
+from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class BenchmarkResult:
-    """A single benchmark result."""
+    """Normalized benchmark result entry."""
+
     id: str
     model: str
     benchmark: str
@@ -25,329 +27,563 @@ class BenchmarkResult:
     samples: int = 0
     duration_seconds: float = 0.0
     timestamp: datetime = field(default_factory=datetime.now)
-    domain: str = "code"  # code, vlm, audio, agentic
+    domain: str = "code"  # code, reasoning, vlm, audio, agentic
     notes: Optional[str] = None
     file_path: Optional[Path] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
-    
+    normalized_metrics: Dict[str, float] = field(default_factory=dict)
+
     @property
     def primary_metric(self) -> Optional[float]:
-        """Get the primary metric for display."""
+        """Primary score used for summary cards/charts."""
+        for key in ("pass_at_1", "accuracy", "avg_reward", "success_rate", "score"):
+            if key in self.normalized_metrics:
+                return self.normalized_metrics[key]
         if self.pass_at_1 is not None:
             return self.pass_at_1
         if self.accuracy is not None:
             return self.accuracy
         return None
-    
+
     @property
     def primary_metric_name(self) -> str:
-        """Get name of primary metric."""
+        """Name of the primary score."""
+        for key, label in (
+            ("pass_at_1", "pass@1"),
+            ("accuracy", "accuracy"),
+            ("avg_reward", "avg reward"),
+            ("success_rate", "success rate"),
+            ("score", "score"),
+        ):
+            if key in self.normalized_metrics:
+                return label
         if self.pass_at_1 is not None:
             return "pass@1"
         if self.accuracy is not None:
             return "accuracy"
         return "score"
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            'id': self.id,
-            'model': self.model,
-            'benchmark': self.benchmark,
-            'pass_at_1': self.pass_at_1,
-            'pass_at_5': self.pass_at_5,
-            'pass_at_10': self.pass_at_10,
-            'accuracy': self.accuracy,
-            'samples': self.samples,
-            'duration_seconds': self.duration_seconds,
-            'timestamp': self.timestamp.isoformat(),
-            'domain': self.domain,
-            'notes': self.notes,
+            "id": self.id,
+            "model": self.model,
+            "benchmark": self.benchmark,
+            "pass_at_1": self.pass_at_1,
+            "pass_at_5": self.pass_at_5,
+            "pass_at_10": self.pass_at_10,
+            "accuracy": self.accuracy,
+            "samples": self.samples,
+            "duration_seconds": self.duration_seconds,
+            "timestamp": self.timestamp.isoformat(),
+            "domain": self.domain,
+            "notes": self.notes,
+            "normalized_metrics": self.normalized_metrics,
         }
 
 
 class ResultsService:
-    """
-    Service for loading and managing benchmark results.
-    
-    Scans the results directory structure:
-        results/
-        ├── code/
-        │   └── model_name/
-        │       └── benchmark.json
-        ├── vlm/
-        │   └── model_name/
-        │       └── benchmark.json
-        ├── audio/
-        └── agentic/
-    """
-    
-    # Directories to scan for results
+    """Authoritative results ingestion/parsing and aggregation service."""
+
     RESULTS_DIRS = [
         Path("results"),
         Path("results/benchmarks"),
         Path("outputs"),
     ]
-    
-    # Domain mappings based on directory structure
-    DOMAIN_DIRS = {
-        "code": ["code", "humaneval", "mbpp", "livecodebench"],
-        "vlm": ["vlm", "vision", "vqa"],
-        "audio": ["audio", "speech", "asr"],
-        "agentic": ["agentic", "agent", "tool"],
+
+    DOMAIN_KEYWORDS = {
+        "code": ["code", "humaneval", "mbpp", "livecodebench", "cpp", "rust", "go"],
+        "reasoning": ["reasoning", "math", "gsm8k", "mmlu"],
+        "vlm": ["vlm", "vision", "vqa", "textvqa", "docvqa", "chartqa"],
+        "audio": ["audio", "speech", "asr", "librispeech", "common_voice"],
+        "agentic": ["agentic", "agent", "tool", "xlam", "function"],
     }
-    
+
+    DOMAIN_METRIC_COLUMNS: Dict[str, List[tuple[str, str]]] = {
+        "code": [("pass_at_1", "pass@1"), ("pass_at_5", "pass@5"), ("pass_at_10", "pass@10")],
+        "reasoning": [("accuracy", "Accuracy"), ("avg_reward", "Reward"), ("pass_at_1", "pass@1")],
+        "vlm": [("accuracy", "Accuracy"), ("avg_reward", "Reward"), ("score", "Score")],
+        "audio": [("success_rate", "Success"), ("wer", "WER"), ("avg_reward", "Reward")],
+        "agentic": [
+            ("accuracy", "Accuracy"),
+            ("json_valid_rate", "JSON Valid"),
+            ("function_correctness", "Fn Correct"),
+        ],
+    }
+
+    _TRACKED_JSON_FILENAMES = {
+        "benchmark.json",
+        "summary.json",
+    }
+
     def __init__(self, base_path: Optional[Path] = None):
-        """
-        Initialize results service.
-        
-        Args:
-            base_path: Base path to search for results. Defaults to cwd.
-        """
         self.base_path = base_path or Path.cwd()
         self._cache: List[BenchmarkResult] = []
         self._cache_time: Optional[datetime] = None
         self._cache_ttl = 30  # seconds
-    
+
     def scan_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
-        """
-        Scan results directories for benchmark JSON files.
-        
-        Args:
-            force_refresh: Force cache refresh
-            
-        Returns:
-            List of BenchmarkResult sorted by timestamp descending
-        """
-        # Check cache
+        """Scan results directories for parseable benchmark JSON files."""
         if not force_refresh and self._cache_time:
             age = (datetime.now() - self._cache_time).total_seconds()
             if age < self._cache_ttl:
                 return self._cache
-        
-        results = []
-        
+
+        results: List[BenchmarkResult] = []
+        seen_paths: set[Path] = set()
+
         for results_dir in self.RESULTS_DIRS:
             full_path = self.base_path / results_dir
             if not full_path.exists():
                 continue
-            
+
             for json_file in full_path.glob("**/*.json"):
+                if json_file in seen_paths:
+                    continue
+                seen_paths.add(json_file)
+                if not self._looks_like_result_file(json_file):
+                    continue
                 try:
-                    result = self._parse_result_file(json_file)
-                    if result:
-                        results.append(result)
+                    parsed = self._parse_result_file(json_file)
+                    if parsed:
+                        results.append(parsed)
                 except Exception as e:
-                    print(f"Failed to parse {json_file}: {e}")
-        
-        # Sort by timestamp descending
+                    print(f"[ResultsService] Failed to parse {json_file}: {e}")
+
         results.sort(key=lambda r: r.timestamp, reverse=True)
-        
-        # Update cache
         self._cache = results
         self._cache_time = datetime.now()
-        
         return results
-    
+
+    def list_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
+        """Public alias for canonical listing."""
+        return self.scan_results(force_refresh=force_refresh)
+
+    def list_results_by_domain(
+        self,
+        domain: str,
+        force_refresh: bool = False,
+    ) -> List[BenchmarkResult]:
+        """List results filtered by a domain key."""
+        return [r for r in self.scan_results(force_refresh=force_refresh) if r.domain == domain]
+
+    def get_results_grouped_by_domain(self, force_refresh: bool = False) -> Dict[str, List[BenchmarkResult]]:
+        """Return results grouped by domain for domain-specific UI tables."""
+        grouped: Dict[str, List[BenchmarkResult]] = {}
+        for result in self.scan_results(force_refresh=force_refresh):
+            grouped.setdefault(result.domain, []).append(result)
+        return grouped
+
+    def get_dashboard_benchmark_summary(self, max_models: int = 5) -> Dict[str, Any]:
+        """Aggregate latest domain scores per model for dashboard charting."""
+        domain_order = ["code", "reasoning", "vlm", "audio", "agentic"]
+        domain_labels = [self._display_domain_name(domain) for domain in domain_order]
+
+        latest_by_model_domain: Dict[str, Dict[str, BenchmarkResult]] = {}
+        for result in self.scan_results():
+            model_key = Path(str(result.model)).name or str(result.model)
+            latest_for_model = latest_by_model_domain.setdefault(model_key, {})
+            existing = latest_for_model.get(result.domain)
+            if existing is None or result.timestamp > existing.timestamp:
+                latest_for_model[result.domain] = result
+
+        ranked_models: List[tuple[str, Dict[str, BenchmarkResult]]] = []
+        for model_key, domain_results in latest_by_model_domain.items():
+            non_zero_domains = 0
+            aggregate = 0.0
+            for domain in domain_order:
+                score = self._result_score_for_dashboard(domain_results.get(domain))
+                if score is not None and score > 0:
+                    non_zero_domains += 1
+                    aggregate += score
+            if non_zero_domains == 0:
+                continue
+            ranked_models.append((model_key, domain_results))
+
+        ranked_models.sort(
+            key=lambda item: (
+                sum(
+                    1
+                    for domain in domain_order
+                    if self._result_score_for_dashboard(item[1].get(domain)) not in (None, 0.0)
+                ),
+                sum(
+                    self._result_score_for_dashboard(item[1].get(domain)) or 0.0
+                    for domain in domain_order
+                ),
+            ),
+            reverse=True,
+        )
+
+        models: List[Dict[str, Any]] = []
+        for model_key, domain_results in ranked_models[:max_models]:
+            scores = []
+            for domain in domain_order:
+                score = self._result_score_for_dashboard(domain_results.get(domain))
+                scores.append(round(score, 1) if score is not None else 0.0)
+            models.append({"name": model_key[:20], "scores": scores})
+
+        return {"domains": domain_labels, "models": models}
+
+    def get_domain_metric_columns(self, domain: str) -> List[tuple[str, str]]:
+        """Metric columns for domain-specific result tables."""
+        return self.DOMAIN_METRIC_COLUMNS.get(domain, [("score", "Score")])
+
+    def _looks_like_result_file(self, path: Path) -> bool:
+        """Lightweight file-name filter to skip obvious non-result artifacts."""
+        name = path.name.lower()
+        if name in self._TRACKED_JSON_FILENAMES:
+            return True
+        if "benchmark" in name or "result" in name or "metrics" in name:
+            return True
+        if "test" in name or "verify" in name or "baseline" in name:
+            return True
+
+        excluded_names = {
+            "adapter_config.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "trainer_state.json",
+            "config.json",
+            "generation_config.json",
+        }
+        if name in excluded_names:
+            return False
+
+        path_str = str(path).lower()
+        excluded_fragments = ("/checkpoint-", "/cycle_", "/adapter", "tensorboard")
+        if any(fragment in path_str for fragment in excluded_fragments):
+            return False
+
+        return True
+
     def _parse_result_file(self, path: Path) -> Optional[BenchmarkResult]:
-        """Parse a single result JSON file."""
-        with open(path) as f:
-            data = json.load(f)
-        
-        # Determine domain from path
-        domain = self._detect_domain(path)
-        
-        # Extract common fields
-        model = data.get('model', data.get('model_name', 'unknown'))
-        benchmark = data.get('benchmark', data.get('dataset', path.stem))
-        
-        result = BenchmarkResult(
-            id=f"{path.parent.name}_{path.stem}",
+        with path.open(encoding="utf-8") as f:
+            raw = json.load(f)
+
+        if isinstance(raw, list):
+            if not raw or not isinstance(raw[0], dict):
+                return None
+            data = raw[0]
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            return None
+
+        sources = self._metric_sources(data)
+        model = str(self._first_non_empty(sources, "model", "model_name", "model_path") or "unknown")
+        benchmark = str(
+            self._first_non_empty(sources, "benchmark", "dataset", "task", "suite")
+            or (path.parent.name if path.name == "benchmark.json" else path.stem)
+        )
+        domain = self._detect_domain(path, data, benchmark)
+
+        pass_at_1 = self._normalize_ratio(
+            self._extract_pass_at_k_value(sources, 1)
+            or self._as_float(self._first_non_empty(sources, "pass_at_1", "pass@1"))
+        )
+        pass_at_5 = self._normalize_ratio(
+            self._extract_pass_at_k_value(sources, 5)
+            or self._as_float(self._first_non_empty(sources, "pass_at_5", "pass@5"))
+        )
+        pass_at_10 = self._normalize_ratio(
+            self._extract_pass_at_k_value(sources, 10)
+            or self._as_float(self._first_non_empty(sources, "pass_at_10", "pass@10"))
+        )
+
+        accuracy = self._normalize_ratio(
+            self._as_float(self._first_non_empty(sources, "accuracy", "acc"))
+        )
+        avg_reward = self._as_float(self._first_non_empty(sources, "avg_reward", "reward", "score"))
+        success_rate = self._normalize_ratio(
+            self._as_float(self._first_non_empty(sources, "success_rate", "pass_rate"))
+        )
+        wer = self._normalize_ratio(
+            self._as_float(self._first_non_empty(sources, "wer", "word_error_rate"))
+        )
+        json_valid_rate = self._normalize_ratio(
+            self._as_float(self._first_non_empty(sources, "json_valid_rate", "json_validity"))
+        )
+        function_correctness = self._normalize_ratio(
+            self._as_float(
+                self._first_non_empty(
+                    sources,
+                    "function_correctness",
+                    "function_call_accuracy",
+                )
+            )
+        )
+
+        samples = self._as_int(
+            self._first_non_empty(sources, "total_samples", "samples", "total", "n_samples", "count")
+        )
+        if samples == 0 and isinstance(data.get("results"), list):
+            samples = len(data["results"])
+
+        duration_seconds = self._extract_duration_seconds(sources)
+        timestamp = self._parse_timestamp(data, path)
+        notes = self._extract_notes(data, path)
+
+        normalized_metrics: Dict[str, float] = {}
+        if pass_at_1 is not None:
+            normalized_metrics["pass_at_1"] = pass_at_1
+        if pass_at_5 is not None:
+            normalized_metrics["pass_at_5"] = pass_at_5
+        if pass_at_10 is not None:
+            normalized_metrics["pass_at_10"] = pass_at_10
+        if accuracy is not None:
+            normalized_metrics["accuracy"] = accuracy
+        if avg_reward is not None:
+            normalized_metrics["avg_reward"] = avg_reward
+        if success_rate is not None:
+            normalized_metrics["success_rate"] = success_rate
+        if wer is not None:
+            normalized_metrics["wer"] = wer
+        if json_valid_rate is not None:
+            normalized_metrics["json_valid_rate"] = json_valid_rate
+        if function_correctness is not None:
+            normalized_metrics["function_correctness"] = function_correctness
+
+        try:
+            relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
+        except Exception:
+            relative_id = path.as_posix()
+        result_id = relative_id.replace("/", "_")
+        return BenchmarkResult(
+            id=result_id,
             model=model,
             benchmark=benchmark,
+            pass_at_1=pass_at_1,
+            pass_at_5=pass_at_5,
+            pass_at_10=pass_at_10,
+            accuracy=accuracy,
+            samples=samples,
+            duration_seconds=duration_seconds,
+            timestamp=timestamp,
             domain=domain,
+            notes=notes,
             file_path=path,
             raw_data=data,
+            normalized_metrics=normalized_metrics,
         )
-        metrics = data.get('metrics', {}) if isinstance(data.get('metrics'), dict) else {}
-        
-        # Parse pass@k metrics (code benchmarks)
-        if 'pass_at_k' in data:
-            pass_at = data['pass_at_k']
-            result.pass_at_1 = pass_at.get('1', pass_at.get(1))
-            result.pass_at_5 = pass_at.get('5', pass_at.get(5))
-            result.pass_at_10 = pass_at.get('10', pass_at.get(10))
-        elif 'pass@1' in data:
-            result.pass_at_1 = data['pass@1']
-            result.pass_at_5 = data.get('pass@5')
-            result.pass_at_10 = data.get('pass@10')
-        elif metrics:
-            result.pass_at_1 = metrics.get('pass_at_1')
-            result.pass_at_5 = metrics.get('pass_at_5')
-            result.pass_at_10 = metrics.get('pass_at_10')
-        
-        # Parse accuracy (VLM benchmarks)
-        if 'accuracy' in data:
-            result.accuracy = data['accuracy']
-        elif 'avg_reward' in data:
-            result.accuracy = data['avg_reward']
-        elif metrics:
-            result.accuracy = metrics.get('accuracy')
-        
-        # Parse sample count
-        result.samples = data.get('total_samples', data.get('samples', 0))
-        if 'results' in data and isinstance(data['results'], list):
-            result.samples = len(data['results'])
-        
-        # Parse duration
-        result.duration_seconds = data.get('duration', data.get('duration_seconds', 0))
-        
-        # Parse timestamp
-        result.timestamp = self._parse_timestamp(data, path)
-        
-        # Notes
-        if 'notes' in data:
-            result.notes = data['notes']
-        elif 'config' in data:
-            result.notes = f"Config: {data['config']}"
-        
-        return result
-    
-    def _detect_domain(self, path: Path) -> str:
-        """Detect domain from file path."""
-        path_str = str(path).lower()
-        
-        for domain, keywords in self.DOMAIN_DIRS.items():
-            for keyword in keywords:
-                if keyword in path_str:
-                    return domain
-        
-        return "code"  # Default
-    
-    def _parse_timestamp(self, data: dict, path: Path) -> datetime:
-        """Extract timestamp from data or file."""
-        if 'timestamp' in data:
-            try:
-                ts = data['timestamp']
-                if isinstance(ts, str):
-                    # Try ISO format
-                    return datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                elif isinstance(ts, (int, float)):
-                    return datetime.fromtimestamp(ts)
-            except Exception:
-                pass
-        
-        if 'created_at' in data:
-            try:
-                return datetime.fromisoformat(data['created_at'])
-            except Exception:
-                pass
-        
-        # Fall back to file modification time
+
+    def _metric_sources(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Return ordered dictionaries that may carry metric values."""
+        sources: List[Dict[str, Any]] = [data]
+        metrics = data.get("metrics")
+        if isinstance(metrics, dict):
+            sources.append(metrics)
+
+        baseline = data.get("baseline")
+        if isinstance(baseline, dict):
+            sources.append(baseline)
+            baseline_metrics = baseline.get("metrics")
+            if isinstance(baseline_metrics, dict):
+                sources.append(baseline_metrics)
+
+        return sources
+
+    def _extract_pass_at_k_value(self, sources: List[Dict[str, Any]], k: int) -> Optional[float]:
+        key_variants = (str(k), k)
+        for source in sources:
+            pass_at_k = source.get("pass_at_k")
+            if isinstance(pass_at_k, dict):
+                for key in key_variants:
+                    if key in pass_at_k:
+                        value = self._as_float(pass_at_k[key])
+                        if value is not None:
+                            return value
+        return None
+
+    def _extract_duration_seconds(self, sources: List[Dict[str, Any]]) -> float:
+        direct = self._as_float(
+            self._first_non_empty(
+                sources,
+                "duration_seconds",
+                "duration",
+                "total_time_sec",
+                "total_time",
+            )
+        )
+        if direct is not None:
+            return direct
+
+        for source in sources:
+            timing = source.get("timing")
+            if isinstance(timing, dict):
+                timing_value = self._as_float(
+                    timing.get("total_time_sec") or timing.get("total_time")
+                )
+                if timing_value is not None:
+                    return timing_value
+        return 0.0
+
+    def _extract_notes(self, data: Dict[str, Any], path: Path) -> Optional[str]:
+        note_value = data.get("notes")
+        if note_value:
+            return str(note_value)
+        config_value = data.get("config")
+        if config_value:
+            return f"Config: {config_value}"
+        try:
+            return str(path.relative_to(self.base_path))
+        except Exception:
+            return str(path)
+
+    def _first_non_empty(self, sources: List[Dict[str, Any]], *keys: str) -> Any:
+        for source in sources:
+            for key in keys:
+                if key in source and source[key] not in (None, "", []):
+                    return source[key]
+        return None
+
+    def _as_float(self, value: Any) -> Optional[float]:
+        try:
+            if value in (None, "", "nan"):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _as_int(self, value: Any) -> int:
+        try:
+            if value in (None, ""):
+                return 0
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _normalize_ratio(self, value: Optional[float]) -> Optional[float]:
+        """Normalize percentages to 0..1 range while preserving already-normalized values."""
+        if value is None:
+            return None
+        if value > 1.0 and value <= 100.0:
+            return value / 100.0
+        return value
+
+    def _detect_domain(self, path: Path, data: Dict[str, Any], benchmark: str) -> str:
+        domain_value = data.get("domain")
+        if isinstance(domain_value, str) and domain_value.lower() in self.DOMAIN_KEYWORDS:
+            return domain_value.lower()
+
+        text = f"{path} {benchmark}".lower()
+        for domain, keywords in self.DOMAIN_KEYWORDS.items():
+            if any(keyword in text for keyword in keywords):
+                return domain
+        return "code"
+
+    def _parse_timestamp(self, data: Dict[str, Any], path: Path) -> datetime:
+        for key in ("timestamp", "created_at", "completed_at"):
+            value = data.get(key)
+            if isinstance(value, str):
+                try:
+                    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+            if isinstance(value, (int, float)):
+                try:
+                    return datetime.fromtimestamp(value)
+                except Exception:
+                    continue
+
         try:
             return datetime.fromtimestamp(path.stat().st_mtime)
         except Exception:
             return datetime.now()
-    
+
+    def _display_domain_name(self, domain: str) -> str:
+        if domain == "vlm":
+            return "VLM"
+        return domain.capitalize()
+
+    def _result_score_for_dashboard(self, result: Optional[BenchmarkResult]) -> Optional[float]:
+        if result is None:
+            return None
+
+        metric_order = [metric for metric, _ in self.get_domain_metric_columns(result.domain)]
+        for key in metric_order:
+            value = result.normalized_metrics.get(key)
+            if value is None:
+                continue
+            if key == "wer":
+                value = max(0.0, 1.0 - value)
+            if key in {
+                "pass_at_1",
+                "pass_at_5",
+                "pass_at_10",
+                "accuracy",
+                "success_rate",
+                "json_valid_rate",
+                "function_correctness",
+                "wer",
+            }:
+                return max(0.0, min(100.0, value * 100.0))
+            return max(0.0, min(100.0, value))
+
+        primary = result.primary_metric
+        if primary is None:
+            return None
+        if primary <= 1.0:
+            return primary * 100.0
+        return primary
+
     def get_latest_results(self, n: int = 5) -> List[BenchmarkResult]:
-        """
-        Get the N most recent results.
-        
-        Args:
-            n: Number of results to return
-            
-        Returns:
-            List of most recent results
-        """
-        results = self.scan_results()
-        return results[:n]
-    
+        return self.scan_results()[:n]
+
     def get_results_by_model(self, model: str) -> List[BenchmarkResult]:
-        """Get all results for a specific model."""
-        results = self.scan_results()
         model_lower = model.lower()
-        return [r for r in results if model_lower in r.model.lower()]
-    
+        return [r for r in self.scan_results() if model_lower in r.model.lower()]
+
     def get_results_by_domain(self, domain: str) -> List[BenchmarkResult]:
-        """Get all results for a specific domain."""
-        results = self.scan_results()
-        return [r for r in results if r.domain == domain]
-    
+        return [r for r in self.scan_results() if r.domain == domain]
+
     def get_results_by_benchmark(self, benchmark: str) -> List[BenchmarkResult]:
-        """Get all results for a specific benchmark."""
-        results = self.scan_results()
         bench_lower = benchmark.lower()
-        return [r for r in results if bench_lower in r.benchmark.lower()]
-    
+        return [r for r in self.scan_results() if bench_lower in r.benchmark.lower()]
+
     def get_summary(self) -> Dict[str, Any]:
-        """
-        Get summary statistics of all results.
-        
-        Returns:
-            Dictionary with summary stats
-        """
         results = self.scan_results()
-        
-        domains = {}
+        domains: Dict[str, int] = {}
         models = set()
         benchmarks = set()
-        
-        for r in results:
-            domains[r.domain] = domains.get(r.domain, 0) + 1
-            models.add(r.model)
-            benchmarks.add(r.benchmark)
-        
+        for result in results:
+            domains[result.domain] = domains.get(result.domain, 0) + 1
+            models.add(result.model)
+            benchmarks.add(result.benchmark)
+
         return {
-            'total_results': len(results),
-            'unique_models': len(models),
-            'unique_benchmarks': len(benchmarks),
-            'by_domain': domains,
-            'latest_timestamp': results[0].timestamp if results else None,
+            "total_results": len(results),
+            "unique_models": len(models),
+            "unique_benchmarks": len(benchmarks),
+            "by_domain": domains,
+            "latest_timestamp": results[0].timestamp if results else None,
         }
-    
+
     def compare_results(self, result_ids: List[str]) -> Dict[str, Any]:
-        """
-        Compare multiple results.
-        
-        Args:
-            result_ids: List of result IDs to compare
-            
-        Returns:
-            Comparison data for charting
-        """
-        results = self.scan_results()
-        selected = [r for r in results if r.id in result_ids]
-        
+        selected = [r for r in self.scan_results() if r.id in result_ids]
         if not selected:
-            return {'error': 'No results found'}
-        
+            return {"error": "No results found"}
+
         comparison = {
-            'models': [r.model for r in selected],
-            'benchmarks': [r.benchmark for r in selected],
-            'metrics': {},
+            "models": [r.model for r in selected],
+            "benchmarks": [r.benchmark for r in selected],
+            "metrics": {},
         }
-        
-        # Collect metrics
-        for r in selected:
-            label = f"{r.model[:15]}..."
-            if r.pass_at_1 is not None:
-                if 'pass@1' not in comparison['metrics']:
-                    comparison['metrics']['pass@1'] = {}
-                comparison['metrics']['pass@1'][label] = r.pass_at_1
-            if r.accuracy is not None:
-                if 'accuracy' not in comparison['metrics']:
-                    comparison['metrics']['accuracy'] = {}
-                comparison['metrics']['accuracy'][label] = r.accuracy
-        
+        for result in selected:
+            label = f"{Path(result.model).name[:15]}..."
+            if result.pass_at_1 is not None:
+                comparison.setdefault("metrics", {}).setdefault("pass@1", {})[label] = result.pass_at_1
+            if result.accuracy is not None:
+                comparison.setdefault("metrics", {}).setdefault("accuracy", {})[label] = result.accuracy
         return comparison
 
 
-# Singleton instance
 _service: Optional[ResultsService] = None
 
 
 def get_results_service() -> ResultsService:
-    """Get the singleton results service."""
+    """Get singleton service."""
     global _service
     if _service is None:
         _service = ResultsService()
