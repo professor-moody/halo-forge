@@ -20,6 +20,11 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.modality_artifacts import (
+    persist_cycle_artifacts,
+    persist_final_artifacts,
+    resolve_resume_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +113,7 @@ class ReasoningRAFTTrainer:
             "cycle_accuracy": [],
             "cycle_samples": [],
         }
+        self._all_cycle_metrics: List[Dict[str, Any]] = []
         self.training_summary: Dict[str, Any] = {}
     
     def load_model(self) -> None:
@@ -336,7 +342,11 @@ class ReasoningRAFTTrainer:
         
         return metrics
     
-    def train(self, samples: List[MathSample]) -> Dict[str, Any]:
+    def train(
+        self,
+        samples: List[MathSample],
+        resume_from_cycle: int = 0,
+    ) -> Dict[str, Any]:
         """
         Run full RAFT training.
         
@@ -351,19 +361,32 @@ class ReasoningRAFTTrainer:
         logger.info(f"  Cycles: {self.config.num_cycles}")
         logger.info(f"  Model: {self.config.model_name}")
         
-        all_metrics = []
-        
-        for cycle in range(self.config.num_cycles):
+        start_cycle = int(resume_from_cycle or 0)
+        self._validate_resume_configuration(start_cycle)
+        if start_cycle > 0:
+            checkpoint = resolve_resume_checkpoint(
+                output_dir=self.output_dir,
+                resume_from_cycle=start_cycle,
+                max_cycles=self.config.num_cycles,
+            )
+            self.config.model_name = str(checkpoint.model_dir)
+            self._load_resume_history(start_cycle)
+
+        for cycle in range(start_cycle, self.config.num_cycles):
             self.current_cycle = cycle
             cycle_metrics = self.train_cycle(samples, cycle)
-            all_metrics.append(cycle_metrics)
+            self._all_cycle_metrics.append(cycle_metrics)
+            write_json_atomic(
+                self.output_dir / "training_history.json",
+                {"cycles": self._all_cycle_metrics},
+            )
         
         # Save final summary
         summary = build_training_summary(
             modality="reasoning",
             model_name=self.config.model_name,
             total_cycles_planned=self.config.num_cycles,
-            cycles=all_metrics,
+            cycles=self._all_cycle_metrics,
             extra={
                 "config": {
                     "model": self.config.model_name,
@@ -374,6 +397,14 @@ class ReasoningRAFTTrainer:
                 "final_reward": self.metrics["cycle_rewards"][-1] if self.metrics["cycle_rewards"] else 0,
             },
         )
+        final_state = persist_final_artifacts(
+            output_dir=self.output_dir,
+            modality="reasoning",
+            model_name=self.config.model_name,
+            model=self.model,
+            tokenizer=self.tokenizer,
+        )
+        summary["final_model_path"] = final_state["final_model_dir"]
         self.training_summary = summary
 
         write_json_atomic(self.output_dir / "training_summary.json", summary)
@@ -418,6 +449,15 @@ class ReasoningRAFTTrainer:
         with open(path / "completions.jsonl", "w") as f:
             for item in comp_data:
                 f.write(json.dumps(item) + "\n")
+        persist_cycle_artifacts(
+            output_dir=self.output_dir,
+            modality="reasoning",
+            model_name=self.config.model_name,
+            cycle=int(metrics.get("cycle", 0)),
+            update_metrics=metrics,
+            model=self.model,
+            tokenizer=self.tokenizer,
+        )
 
     def _train_on_filtered(
         self,
@@ -450,3 +490,45 @@ class ReasoningRAFTTrainer:
             max_steps=self.config.train_max_steps_per_cycle,
             max_length=1024,
         )
+
+    def _validate_resume_configuration(self, start_cycle: int) -> None:
+        """Validate resume prerequisites."""
+        if start_cycle < 0 or start_cycle >= self.config.num_cycles:
+            raise ValueError(
+                f"resume_from_cycle must be in [0, {self.config.num_cycles - 1}]"
+            )
+        if start_cycle == 0:
+            return
+        resolve_resume_checkpoint(
+            output_dir=self.output_dir,
+            resume_from_cycle=start_cycle,
+            max_cycles=self.config.num_cycles,
+        )
+        history_path = self.output_dir / "training_history.json"
+        if not history_path.exists():
+            raise ValueError(
+                f"resume_from_cycle={start_cycle} requires history file {history_path}"
+            )
+
+    def _load_resume_history(self, start_cycle: int) -> None:
+        """Load prior cycle metrics for resume mode."""
+        history_path = self.output_dir / "training_history.json"
+        with open(history_path, encoding="utf-8") as f:
+            payload = json.load(f)
+        cycles = payload.get("cycles") if isinstance(payload, dict) else payload
+        if not isinstance(cycles, list):
+            raise ValueError(f"Invalid training history format in {history_path}")
+        self._all_cycle_metrics = [dict(c) for c in cycles if isinstance(c, dict)]
+        if len(self._all_cycle_metrics) < start_cycle:
+            raise ValueError(
+                f"resume_from_cycle={start_cycle} exceeds available recorded cycles "
+                f"({len(self._all_cycle_metrics)}) in {history_path}"
+            )
+        self.metrics["cycle_accuracy"] = [
+            float(c.get("accuracy", 0.0))
+            for c in self._all_cycle_metrics
+        ]
+        self.metrics["cycle_rewards"] = [
+            float(c.get("avg_reward", 0.0))
+            for c in self._all_cycle_metrics
+        ]

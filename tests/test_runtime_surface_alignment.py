@@ -87,7 +87,7 @@ def test_training_page_declares_supported_and_deferred_runtime_modes():
     source = Path("ui/pages/training.py").read_text(encoding="utf-8")
     assert "UI_SUPPORTED_TRAINING_MODES" in source
     assert "UI_DEFERRED_TRAINING_MODES" in source
-    assert "remain CLI capability-gated" in source
+    assert "Capability-gated modes" in source
 
 
 def test_monitor_page_reads_canonical_training_summary_fields():

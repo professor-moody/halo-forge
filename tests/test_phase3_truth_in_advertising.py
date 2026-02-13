@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from halo_forge.capabilities import (
+    CAPABILITY_STATUS_PROTOTYPE,
     MODALITY_TRAIN_CAPABILITIES,
     check_modality_train_capability,
 )
@@ -23,17 +24,20 @@ def test_capability_registry_covers_all_modalities():
 
 
 def test_prototype_gating_requires_explicit_flag():
-    """Prototype-gated train calls must fail without explicit override flag."""
+    """Capability gate behavior should honor modality status."""
     check = check_modality_train_capability(
         modality="vlm",
         model_name="Qwen/Qwen2-VL-7B-Instruct",
         allow_prototype_train=False,
         dry_run=False,
     )
-    assert check.allowed is False
-    assert check.reason == "prototype_flag_required"
-    assert "CAPABILITY_ERROR" in check.message
-    assert "--allow-prototype-train" in check.message
+    if MODALITY_TRAIN_CAPABILITIES["vlm"].status == CAPABILITY_STATUS_PROTOTYPE:
+        assert check.allowed is False
+        assert check.reason == "prototype_flag_required"
+        assert "CAPABILITY_ERROR" in check.message
+        assert "--allow-prototype-train" in check.message
+    else:
+        assert check.allowed is True
 
 
 def test_dry_run_bypasses_prototype_gate():

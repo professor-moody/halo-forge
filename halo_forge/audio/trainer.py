@@ -27,6 +27,11 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.modality_artifacts import (
+    persist_cycle_artifacts,
+    persist_final_artifacts,
+    resolve_resume_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +128,7 @@ class AudioRAFTTrainer:
         
         # Track metrics
         self.cycle_results: List[AudioRAFTCycleResult] = []
+        self._all_cycle_metrics: List[Dict[str, Any]] = []
         self.training_summary: Dict[str, Any] = {}
     
     def _init_adapter(self) -> None:
@@ -160,6 +166,7 @@ class AudioRAFTTrainer:
         self,
         samples: Union[str, List[AudioSample]],
         validation_samples: Optional[List[AudioSample]] = None,
+        resume_from_cycle: int = 0,
     ) -> List[AudioRAFTCycleResult]:
         """
         Run RAFT training.
@@ -171,6 +178,17 @@ class AudioRAFTTrainer:
         Returns:
             List of cycle results
         """
+        start_cycle = int(resume_from_cycle or 0)
+        self._validate_resume_configuration(start_cycle)
+        if start_cycle > 0:
+            checkpoint = resolve_resume_checkpoint(
+                output_dir=self.output_dir,
+                resume_from_cycle=start_cycle,
+                max_cycles=self.config.num_cycles,
+            )
+            self.config.model_name = str(checkpoint.model_dir)
+            self._load_resume_history(start_cycle)
+
         self._init_adapter()
         self._init_verifier()
         
@@ -184,17 +202,22 @@ class AudioRAFTTrainer:
         logger.info(f"Model: {self.config.model_name}")
         logger.info(f"Cycles: {self.config.num_cycles}")
         
-        for cycle in range(self.config.num_cycles):
+        for cycle in range(start_cycle, self.config.num_cycles):
             logger.info(f"\n{'='*60}")
             logger.info(f"CYCLE {cycle + 1}/{self.config.num_cycles}")
             logger.info(f"{'='*60}")
             
             result = self._train_cycle(cycle, samples)
             self.cycle_results.append(result)
+            self._all_cycle_metrics.append(result.metrics)
+            write_json_atomic(
+                self.output_dir / "training_history.json",
+                {"cycles": self._all_cycle_metrics},
+            )
             
             # Save checkpoint
             if self.config.save_every_cycle:
-                self._save_checkpoint(cycle)
+                self._save_checkpoint(cycle, result.metrics)
             
             # Log progress
             logger.info(f"Cycle {cycle + 1} complete:")
@@ -212,14 +235,11 @@ class AudioRAFTTrainer:
                 ),
             )
         
-        # Save final model
-        self._save_checkpoint(self.config.num_cycles - 1, final=True)
-
         summary = build_training_summary(
             modality="audio",
             model_name=self.config.model_name,
             total_cycles_planned=self.config.num_cycles,
-            cycles=[result.metrics for result in self.cycle_results],
+            cycles=self._all_cycle_metrics,
             extra={
                 "task": self.config.task,
                 "samples": len(samples),
@@ -241,6 +261,16 @@ class AudioRAFTTrainer:
                 ],
             },
         )
+        final_state = persist_final_artifacts(
+            output_dir=self.output_dir,
+            modality="audio",
+            model_name=self.config.model_name,
+            model=getattr(self.adapter, "model", None),
+            tokenizer=getattr(self.adapter, "tokenizer", None),
+            processor=getattr(self.adapter, "processor", None),
+            extra_state={"task": self.config.task},
+        )
+        summary["final_model_path"] = final_state["final_model_dir"]
         self.training_summary = summary
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         
@@ -429,6 +459,7 @@ class AudioRAFTTrainer:
         optimizer_steps = 0
         micro_steps = 0
         grad_accum = max(1, self.config.gradient_accumulation_steps)
+        last_loss_value = 0.0
 
         for item in kept:
             sample: AudioSample = item["sample"]
@@ -462,18 +493,20 @@ class AudioRAFTTrainer:
                 continue
 
             (loss / grad_accum).backward()
+            last_loss_value = float(loss.detach().item())
             micro_steps += 1
 
             if micro_steps % grad_accum == 0:
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 optimizer_steps += 1
-                total_loss += float(loss.detach().item())
+                total_loss += last_loss_value
 
         if micro_steps % grad_accum != 0:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             optimizer_steps += 1
+            total_loss += last_loss_value
 
         if optimizer_steps == 0:
             return {
@@ -490,10 +523,9 @@ class AudioRAFTTrainer:
             "update_reason": "updated",
         }
     
-    def _save_checkpoint(self, cycle: int, final: bool = False) -> None:
+    def _save_checkpoint(self, cycle: int, cycle_metrics: Dict[str, Any]) -> None:
         """Save model checkpoint."""
-        suffix = "final" if final else f"cycle_{cycle + 1}"
-        checkpoint_dir = self.output_dir / suffix
+        checkpoint_dir = self.output_dir / f"cycle_{cycle}"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         # Save config
@@ -503,7 +535,7 @@ class AudioRAFTTrainer:
             {
                 "model_name": self.config.model_name,
                 "task": self.config.task,
-                "cycle": cycle + 1,
+                "cycle": cycle,
                 "learning_rate": self.get_learning_rate(cycle),
             },
         )
@@ -524,8 +556,53 @@ class AudioRAFTTrainer:
             for r in self.cycle_results
         ]
         write_json_atomic(metrics_path, {"cycles": results_data})
+        persist_cycle_artifacts(
+            output_dir=self.output_dir,
+            modality="audio",
+            model_name=self.config.model_name,
+            cycle=cycle,
+            update_metrics=cycle_metrics,
+            model=getattr(self.adapter, "model", None),
+            tokenizer=getattr(self.adapter, "tokenizer", None),
+            processor=getattr(self.adapter, "processor", None),
+            extra_state={"task": self.config.task},
+        )
         
         logger.info(f"Saved checkpoint to {checkpoint_dir}")
+
+    def _validate_resume_configuration(self, start_cycle: int) -> None:
+        """Validate resume inputs against checkpoint artifacts."""
+        if start_cycle < 0 or start_cycle >= self.config.num_cycles:
+            raise ValueError(
+                f"resume_from_cycle must be in [0, {self.config.num_cycles - 1}]"
+            )
+        if start_cycle == 0:
+            return
+        resolve_resume_checkpoint(
+            output_dir=self.output_dir,
+            resume_from_cycle=start_cycle,
+            max_cycles=self.config.num_cycles,
+        )
+        history_path = self.output_dir / "training_history.json"
+        if not history_path.exists():
+            raise ValueError(
+                f"resume_from_cycle={start_cycle} requires history file {history_path}"
+            )
+
+    def _load_resume_history(self, start_cycle: int) -> None:
+        """Load prior cycle metrics for resume mode."""
+        history_path = self.output_dir / "training_history.json"
+        with open(history_path, encoding="utf-8") as f:
+            payload = json.load(f)
+        cycles = payload.get("cycles") if isinstance(payload, dict) else payload
+        if not isinstance(cycles, list):
+            raise ValueError(f"Invalid training history format in {history_path}")
+        self._all_cycle_metrics = [dict(c) for c in cycles if isinstance(c, dict)]
+        if len(self._all_cycle_metrics) < start_cycle:
+            raise ValueError(
+                f"resume_from_cycle={start_cycle} exceeds available recorded cycles "
+                f"({len(self._all_cycle_metrics)}) in {history_path}"
+            )
     
     def benchmark(
         self,

@@ -12,10 +12,13 @@ This section contains features that are currently in development and testing. Th
 
 | Modality | Runtime Status | Gate | Supported Model Families |
 |----------|----------------|------|--------------------------|
-| VLM | Prototype rollout | `--allow-prototype-train` required | `qwen2-vl`, `qwen-vl`, `llava` |
-| Audio | Prototype rollout | `--allow-prototype-train` required | `whisper` |
-| Reasoning | Prototype rollout | `--allow-prototype-train` required | Text CausalLM families |
-| Agentic | Prototype rollout | `--allow-prototype-train` required | Text CausalLM families |
+| VLM | Real training | Optional compatibility flag if temporarily re-gated | `qwen2-vl`, `qwen-vl`, `llava` |
+| Audio | Real training | Optional compatibility flag if temporarily re-gated | `whisper` |
+| Reasoning | Real training | Optional compatibility flag if temporarily re-gated | `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral` |
+| Agentic | Real training | Optional compatibility flag if temporarily re-gated | `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral` |
+
+All modality train commands also support `--resume-from-cycle` and persist canonical artifacts:
+`cycle_<n>/model`, `cycle_<n>/checkpoint_state.json`, `latest_checkpoint.json`, `final_model`, and `training_summary.json`.
 
 ---
 

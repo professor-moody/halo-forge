@@ -24,6 +24,11 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.modality_artifacts import (
+    persist_cycle_artifacts,
+    persist_final_artifacts,
+    resolve_resume_checkpoint,
+)
 from halo_forge.utils.metrics import MetricsTracker
 
 logger = logging.getLogger(__name__)
@@ -146,6 +151,7 @@ class AgenticRAFTTrainer:
             "cycle_accuracy": [],
             "cycle_samples": [],
         }
+        self._all_cycle_metrics: List[Dict[str, Any]] = []
         self.training_summary: Dict[str, Any] = {}
         
         # Initialize MetricsTracker for TensorBoard and JSON logging
@@ -207,12 +213,21 @@ class AgenticRAFTTrainer:
         Returns:
             Training metrics dict.
         """
+        self._validate_resume_from_cycle(resume_from_cycle)
+        if resume_from_cycle > 0:
+            checkpoint = resolve_resume_checkpoint(
+                output_dir=self.output_dir,
+                resume_from_cycle=resume_from_cycle,
+                max_cycles=self.config.num_cycles,
+            )
+            self.config.model_name = str(checkpoint.model_dir)
+            self._load_resume_history(resume_from_cycle)
+
         if self.model is None:
             self.load_model()
-        
+
         logger.info(f"Starting RAFT training with {len(samples)} samples")
         logger.info(f"Cycles: {self.config.num_cycles}, Samples per prompt: {self.config.samples_per_prompt}")
-        self._validate_resume_from_cycle(resume_from_cycle)
         
         start_time = time.time()
         
@@ -224,6 +239,11 @@ class AgenticRAFTTrainer:
             
             cycle_result = self._run_cycle(samples, cycle)
             self.cycle_results.append(cycle_result)
+            self._all_cycle_metrics.append(cycle_result.metrics)
+            write_json_atomic(
+                self.output_dir / "training_history.json",
+                {"cycles": self._all_cycle_metrics},
+            )
             
             # Log cycle to MetricsTracker (TensorBoard + JSON)
             self.metrics_tracker.log_cycle(cycle, {
@@ -247,7 +267,7 @@ class AgenticRAFTTrainer:
             
             # Save checkpoint
             if self.config.save_every_cycle:
-                self._save_checkpoint(cycle)
+                self._save_checkpoint(cycle, cycle_result.metrics)
         
         total_time = time.time() - start_time
         
@@ -256,7 +276,7 @@ class AgenticRAFTTrainer:
             modality="agentic",
             model_name=self.config.model_name,
             total_cycles_planned=self.config.num_cycles,
-            cycles=[result.metrics for result in self.cycle_results],
+            cycles=self._all_cycle_metrics,
             extra={
                 "total_cycles": self.config.num_cycles,
                 "total_time_seconds": total_time,
@@ -266,6 +286,14 @@ class AgenticRAFTTrainer:
                 "cycle_results": [vars(r) for r in self.cycle_results],
             },
         )
+        final_state = persist_final_artifacts(
+            output_dir=self.output_dir,
+            modality="agentic",
+            model_name=self.config.model_name,
+            model=self.model,
+            tokenizer=self.tokenizer,
+        )
+        final_metrics["final_model_path"] = final_state["final_model_dir"]
         self.training_summary = final_metrics
         
         # Save metrics summary
@@ -274,6 +302,7 @@ class AgenticRAFTTrainer:
         # Also save standalone metrics file
         metrics_path = self.output_dir / "training_metrics.json"
         write_json_atomic(metrics_path, final_metrics)
+        write_json_atomic(self.output_dir / "training_summary.json", final_metrics)
         
         logger.info(f"Training complete. Metrics saved to {metrics_path}")
         logger.info(f"TensorBoard logs: {self.output_dir / 'tensorboard'}")
@@ -383,11 +412,15 @@ class AgenticRAFTTrainer:
             )
         if resume_from_cycle == 0:
             return
-        previous_cycle_dir = self.output_dir / f"cycle_{resume_from_cycle - 1}"
-        if not previous_cycle_dir.exists():
+        resolve_resume_checkpoint(
+            output_dir=self.output_dir,
+            resume_from_cycle=resume_from_cycle,
+            max_cycles=self.config.num_cycles,
+        )
+        history_path = self.output_dir / "training_history.json"
+        if not history_path.exists():
             raise ValueError(
-                f"resume_from_cycle={resume_from_cycle} requires checkpoint directory "
-                f"{previous_cycle_dir}"
+                f"resume_from_cycle={resume_from_cycle} requires history file {history_path}"
             )
     
     def _generate_completions(
@@ -509,7 +542,7 @@ class AgenticRAFTTrainer:
         )
         return train_metrics
     
-    def _save_checkpoint(self, cycle: int) -> None:
+    def _save_checkpoint(self, cycle: int, cycle_metrics: Dict[str, Any]) -> None:
         """Save checkpoint for current cycle.
         
         Args:
@@ -525,8 +558,40 @@ class AgenticRAFTTrainer:
         # Save metrics so far
         metrics_path = checkpoint_dir / "metrics.json"
         write_json_atomic(metrics_path, self.metrics)
+        persist_cycle_artifacts(
+            output_dir=self.output_dir,
+            modality="agentic",
+            model_name=self.config.model_name,
+            cycle=cycle,
+            update_metrics=cycle_metrics,
+            model=self.model,
+            tokenizer=self.tokenizer,
+        )
         
         logger.info(f"Checkpoint saved to {checkpoint_dir}")
+
+    def _load_resume_history(self, start_cycle: int) -> None:
+        """Load historical cycle metrics when resuming."""
+        history_path = self.output_dir / "training_history.json"
+        with open(history_path, encoding="utf-8") as f:
+            payload = json.load(f)
+        cycles = payload.get("cycles") if isinstance(payload, dict) else payload
+        if not isinstance(cycles, list):
+            raise ValueError(f"Invalid training history format in {history_path}")
+        self._all_cycle_metrics = [dict(c) for c in cycles if isinstance(c, dict)]
+        if len(self._all_cycle_metrics) < start_cycle:
+            raise ValueError(
+                f"resume_from_cycle={start_cycle} exceeds available recorded cycles "
+                f"({len(self._all_cycle_metrics)}) in {history_path}"
+            )
+        self.metrics["cycle_rewards"] = [
+            float(c.get("avg_reward", 0.0))
+            for c in self._all_cycle_metrics
+        ]
+        self.metrics["cycle_accuracy"] = [
+            float(c.get("success_rate", 0.0))
+            for c in self._all_cycle_metrics
+        ]
     
     def benchmark(
         self,

@@ -167,7 +167,7 @@ def test_agentic_resume_requires_previous_checkpoint(tmp_path):
     trainer.model = object()
     trainer.tokenizer = object()
 
-    with pytest.raises(ValueError, match="requires checkpoint directory"):
+    with pytest.raises(ValueError, match="requires checkpoint"):
         trainer.train(samples=[], resume_from_cycle=1)
 
 
@@ -186,7 +186,7 @@ def test_vlm_resume_requires_history_and_checkpoint(tmp_path):
     trainer._setup = lambda: None
     trainer.run_cycle = lambda prompts, cycle: {}
 
-    with pytest.raises(ValueError, match="requires checkpoint directory"):
+    with pytest.raises(ValueError, match="requires checkpoint"):
         trainer.train(prompts=[], resume_from=1)
 
 

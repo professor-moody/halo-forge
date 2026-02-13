@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Tuple
 
+CAPABILITY_STATUS_PROTOTYPE = "prototype"
+CAPABILITY_STATUS_REAL_TRAINING = "real_training"
+
 
 @dataclass(frozen=True)
 class ModalityTrainCapability:
@@ -30,28 +33,28 @@ class CapabilityCheckResult:
 
 MODALITY_TRAIN_CAPABILITIES: Dict[str, ModalityTrainCapability] = {
     "vlm": ModalityTrainCapability(
-        status="prototype",
+        status=CAPABILITY_STATUS_REAL_TRAINING,
         supported_model_families=("qwen2-vl", "qwen-vl", "llava"),
         prototype_requires_flag=True,
-        notes="Real update loop is implemented but still rollout-gated.",
+        notes="Real update loop is implemented with persisted cycle/final artifacts.",
     ),
     "audio": ModalityTrainCapability(
-        status="prototype",
+        status=CAPABILITY_STATUS_REAL_TRAINING,
         supported_model_families=("whisper",),
         prototype_requires_flag=True,
-        notes="Real update loop is implemented for Whisper-family adapters.",
+        notes="Real update loop is implemented for Whisper-family adapters with persistence.",
     ),
     "reasoning": ModalityTrainCapability(
-        status="prototype",
-        supported_model_families=("*",),
+        status=CAPABILITY_STATUS_REAL_TRAINING,
+        supported_model_families=("qwen2.5", "qwen2", "qwen", "llama-3", "llama3", "mistral"),
         prototype_requires_flag=True,
-        notes="Real update loop is implemented and rollout-gated.",
+        notes="Reasoning training is enabled for supported text CausalLM families.",
     ),
     "agentic": ModalityTrainCapability(
-        status="prototype",
-        supported_model_families=("*",),
+        status=CAPABILITY_STATUS_REAL_TRAINING,
+        supported_model_families=("qwen2.5", "qwen2", "qwen", "llama-3", "llama3", "mistral"),
         prototype_requires_flag=True,
-        notes="Real update loop is implemented and rollout-gated.",
+        notes="Agentic training is enabled for supported text CausalLM families.",
     ),
 }
 
@@ -164,7 +167,7 @@ def check_modality_train_capability(
     capability = MODALITY_TRAIN_CAPABILITIES[modality]
 
     if (
-        capability.status == "prototype"
+        capability.status == CAPABILITY_STATUS_PROTOTYPE
         and capability.prototype_requires_flag
         and not allow_prototype_train
         and not dry_run

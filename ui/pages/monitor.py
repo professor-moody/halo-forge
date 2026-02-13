@@ -20,6 +20,8 @@ from ui.components.notifications import (
     notify_job_failed,
 )
 
+CYCLE_BASED_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
+
 
 class Monitor:
     """Real-time job monitoring page component."""
@@ -232,8 +234,9 @@ class Monitor:
         with ui.row().classes('w-full gap-6 mt-2'):
             # Epoch/Cycle
             with ui.row().classes('items-center gap-2'):
-                epoch_label = 'Cycle' if self.job.type == 'raft' else 'Epoch'
-                if self.job.type == 'raft':
+                is_cycle_job = self.job.type in CYCLE_BASED_JOB_TYPES
+                epoch_label = 'Cycle' if is_cycle_job else 'Epoch'
+                if is_cycle_job:
                     current = self.job.current_cycle
                 else:
                     # Display epoch as float if fractional, int otherwise
@@ -242,7 +245,7 @@ class Monitor:
                         current = f'{current:.1f}'
                     else:
                         current = int(current)
-                total = self.job.total_cycles if self.job.type == 'raft' else self.job.total_epochs
+                total = self.job.total_cycles if is_cycle_job else self.job.total_epochs
                 ui.label(f'{epoch_label}:').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
@@ -359,8 +362,8 @@ class Monitor:
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
             
-            # Verification (RAFT only)
-            if self.job.type == 'raft':
+            # Verification (available when parser captured it)
+            if self.job.verification_rate is not None:
                 ui.separator().classes('my-2')
                 with ui.row().classes('w-full items-center justify-between'):
                     ui.label('Verification').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
@@ -688,7 +691,7 @@ class Monitor:
             
             # Epoch/Cycle
             if self._epoch_label:
-                if self.job.type == 'raft':
+                if self.job.type in CYCLE_BASED_JOB_TYPES:
                     self._epoch_label.set_text(f'{self.job.current_cycle}/{self.job.total_cycles}')
                 else:
                     # Display epoch as float if fractional, int otherwise

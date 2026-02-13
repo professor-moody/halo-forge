@@ -12,7 +12,7 @@ from collections import deque
 import uuid
 
 
-JobType = Literal["sft", "raft", "benchmark"]
+JobType = Literal["sft", "raft", "benchmark", "vlm", "audio", "reasoning", "agentic"]
 JobStatus = Literal["pending", "running", "completed", "failed", "stopped"]
 
 
@@ -58,7 +58,7 @@ class JobState:
     @property
     def progress_percent(self) -> float:
         """Calculate overall progress percentage."""
-        if self.type == "raft" and self.total_cycles > 0:
+        if self.type in {"raft", "vlm", "audio", "reasoning", "agentic"} and self.total_cycles > 0:
             return (self.current_cycle / self.total_cycles) * 100
         elif self.total_epochs > 0:
             return (self.current_epoch / self.total_epochs) * 100

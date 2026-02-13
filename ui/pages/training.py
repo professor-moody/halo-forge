@@ -17,6 +17,7 @@ from ui.services.launch_contracts import (
     UI_DEFERRED_TRAINING_MODES,
 )
 from ui.components.notifications import notify_job_started, notify_job_failed
+from halo_forge.capabilities import check_modality_train_capability
 
 
 # =============================================================================
@@ -229,6 +230,26 @@ class RAFTFormData:
     experimental_attention: bool = False
 
 
+@dataclass
+class ModalityFormData:
+    """Modality train launch form data."""
+
+    model: str
+    dataset: str
+    output_dir: str
+    cycles: int
+    learning_rate: float
+    lr_decay: float
+    samples_per_prompt: int = 4
+    temperature: float = 0.7
+    keep_percent: float = 0.5
+    reward_threshold: float = 0.5
+    task: str = "asr"
+    limit: Optional[int] = None
+    resume_from_cycle: int = 0
+    allow_prototype_train: bool = False
+
+
 class Training:
     """Training launch page component."""
     
@@ -289,9 +310,44 @@ class Training:
     }
     
     def __init__(self):
-        self.mode: Literal["sft", "raft"] = "sft"
+        self.mode: str = "sft"
         self.sft_data = SFTFormData()
         self.raft_data = RAFTFormData()
+        self.modality_data: dict[str, ModalityFormData] = {
+            "vlm": ModalityFormData(
+                model="Qwen/Qwen2-VL-7B-Instruct",
+                dataset="textvqa",
+                output_dir="models/vlm_raft",
+                cycles=6,
+                learning_rate=5e-5,
+                lr_decay=0.85,
+            ),
+            "audio": ModalityFormData(
+                model="openai/whisper-small",
+                dataset="librispeech",
+                output_dir="models/audio_raft",
+                cycles=6,
+                learning_rate=5e-5,
+                lr_decay=0.85,
+                task="asr",
+            ),
+            "reasoning": ModalityFormData(
+                model="Qwen/Qwen2.5-7B-Instruct",
+                dataset="gsm8k",
+                output_dir="models/reasoning_raft",
+                cycles=4,
+                learning_rate=1e-5,
+                lr_decay=0.85,
+            ),
+            "agentic": ModalityFormData(
+                model="Qwen/Qwen2.5-7B-Instruct",
+                dataset="xlam",
+                output_dir="models/agentic_raft",
+                cycles=5,
+                learning_rate=5e-5,
+                lr_decay=0.85,
+            ),
+        }
         self.selected_sft_preset = "standard"
         self.selected_raft_preset = "conservative"
         self.is_running = False
@@ -322,13 +378,21 @@ class Training:
                 f'w-full items-start gap-2 p-3 rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
             ):
                 ui.icon("info", size="16px").classes(f'text-[{COLORS["info"]}] mt-0.5')
-                ui.label(
-                    "UI launch supports "
-                    + ", ".join(mode.upper() for mode in UI_SUPPORTED_TRAINING_MODES)
-                    + ". Modality-specific train commands ("
-                    + ", ".join(mode for mode in UI_DEFERRED_TRAINING_MODES)
-                    + ") remain CLI capability-gated."
-                ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                if UI_DEFERRED_TRAINING_MODES:
+                    message = (
+                        "UI launch supports "
+                        + ", ".join(mode.upper() for mode in UI_SUPPORTED_TRAINING_MODES)
+                        + ". Deferred modes: "
+                        + ", ".join(mode for mode in UI_DEFERRED_TRAINING_MODES)
+                        + "."
+                    )
+                else:
+                    message = (
+                        "UI launch supports "
+                        + ", ".join(mode.upper() for mode in UI_SUPPORTED_TRAINING_MODES)
+                        + ". Capability-gated modes still require explicit override while in prototype."
+                    )
+                ui.label(message).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
             
             # Main form container
             self.form_container = ui.column().classes('w-full gap-6')
@@ -340,6 +404,10 @@ class Training:
         icon_by_mode = {
             "sft": "school",
             "raft": "autorenew",
+            "vlm": "image",
+            "audio": "graphic_eq",
+            "reasoning": "calculate",
+            "agentic": "extension",
         }
         for mode in UI_SUPPORTED_TRAINING_MODES:
             self._mode_button(mode.upper(), mode, icon_by_mode[mode])
@@ -378,8 +446,10 @@ class Training:
         """Render the current form based on mode."""
         if self.mode == "sft":
             self._render_sft_form()
-        else:
+        elif self.mode == "raft":
             self._render_raft_form()
+        elif self.mode in self.modality_data:
+            self._render_modality_form(self.mode)
     
     def _render_sft_form(self):
         """Render the SFT training form with presets and organized sections."""
@@ -859,7 +929,117 @@ class Training:
             title="Select SFT Checkpoint",
             path_type="directory",
             start_path="models/",
-            on_select=lambda path: setattr(self.raft_data, 'checkpoint', path)
+            callback=lambda path: setattr(self.raft_data, 'checkpoint', path)
+        )
+
+    def _render_modality_form(self, modality: str):
+        """Render compact modality training launch form."""
+        data = self.modality_data[modality]
+
+        with ui.column().classes(
+            f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
+            f'border border-[#2d343c] animate-in stagger-2'
+        ):
+            self._section_header(f"{modality.upper()} Training", "tune")
+
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                with ui.column().classes('flex-1 min-w-[280px] gap-2'):
+                    ui.label('Model').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=data.model).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'model')
+
+                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
+                    ui.label('Dataset').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=data.dataset).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'dataset')
+
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                with ui.column().classes('flex-1 min-w-[280px] gap-2'):
+                    ui.label('Output Directory').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=data.output_dir).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'output_dir')
+
+                with ui.column().classes('min-w-[140px] gap-2'):
+                    ui.label('Resume Cycle').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.number(value=data.resume_from_cycle, min=0, step=1).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'resume_from_cycle')
+
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32)
+                self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}")
+                self._number_input("LR Decay", data.lr_decay, lambda v: setattr(data, 'lr_decay', float(v)), format_val=f"{data.lr_decay:.2f}")
+
+            if modality in {"vlm", "audio"}:
+                with ui.row().classes('w-full gap-4 flex-wrap'):
+                    self._number_input("Samples/Prompt", data.samples_per_prompt, lambda v: setattr(data, 'samples_per_prompt', int(v)), min_val=1, max_val=64)
+                    self._number_input("Temperature", data.temperature, lambda v: setattr(data, 'temperature', float(v)), format_val=f"{data.temperature:.2f}")
+                    self._number_input("Keep %", data.keep_percent, lambda v: setattr(data, 'keep_percent', float(v)), format_val=f"{data.keep_percent:.2f}")
+
+            if modality == "audio":
+                with ui.column().classes('min-w-[220px] gap-2'):
+                    ui.label('Task').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.select(
+                        options={"asr": "ASR", "tts": "TTS", "classification": "Classification"},
+                        value=data.task,
+                    ).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'task')
+
+            if modality in {"reasoning", "agentic"}:
+                with ui.column().classes('min-w-[220px] gap-2'):
+                    ui.label('Limit (optional)').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    def _set_optional_limit(e, d=data):
+                        try:
+                            value = int(e.args)
+                        except (TypeError, ValueError):
+                            d.limit = None
+                            return
+                        d.limit = value if value > 0 else None
+
+                    ui.number(value=data.limit or 0, min=0, step=1).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).on('update:model-value', _set_optional_limit)
+
+            with ui.row().classes('w-full items-center gap-4'):
+                ui.switch(value=data.allow_prototype_train).props(
+                    'color=primary'
+                ).bind_value(data, 'allow_prototype_train')
+                ui.label('Allow prototype train override').classes(
+                    f'text-sm text-[{COLORS["text_secondary"]}]'
+                )
+
+            capability = check_modality_train_capability(
+                modality=modality,
+                model_name=data.model,
+                allow_prototype_train=data.allow_prototype_train,
+                dry_run=True,
+            )
+            with ui.row().classes('w-full items-center gap-2'):
+                ui.icon("shield", size="16px").classes(f'text-[{COLORS["info"]}]')
+                ui.label(
+                    f"Capability status: {capability.capability.status}; "
+                    f"supported families: {', '.join(capability.capability.supported_model_families)}"
+                ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+
+        self._render_launch_button(
+            f"Start {modality.upper()} Training",
+            lambda m=modality: self._launch_modality_train(m),
         )
     
     def _browse_curriculum_stats(self):
@@ -876,7 +1056,7 @@ class Training:
             path_type="file",
             start_path="models/",
             extensions=[".json"],
-            on_select=on_select
+            callback=on_select
         )
     
     def _render_model_selector(self, label: str, data_obj, model_type: str = "code"):
@@ -1104,13 +1284,25 @@ class Training:
         with self.form_container:
             self._render_form()
     
-    def _open_file_picker(self, title: str, path_type: str, callback, file_filter: str = None, start_path: str = "."):
+    def _open_file_picker(
+        self,
+        title: str,
+        path_type: str,
+        callback,
+        file_filter: str = None,
+        start_path: str = ".",
+        extensions: Optional[list[str]] = None,
+    ):
         """Open a file/directory picker dialog."""
         from ui.components.file_picker import FilePicker
+        resolved_filter = file_filter
+        if not resolved_filter and extensions:
+            first = extensions[0]
+            resolved_filter = f"*{first}" if first.startswith(".") else first
         FilePicker(
             title=title,
             path_type=path_type,
-            file_filter=file_filter,
+            file_filter=resolved_filter,
             start_path=start_path,
             on_select=callback
         ).open()
@@ -1287,5 +1479,37 @@ class Training:
             
         except Exception as e:
             notify_job_failed("RAFT Training", str(e))
+        finally:
+            self.is_running = False
+
+    async def _launch_modality_train(self, modality: str):
+        """Launch modality-specific training through TrainingService."""
+        if self.is_running:
+            return
+        self.is_running = True
+        data = self.modality_data[modality]
+
+        try:
+            job_id = await self.training_service.launch_modality_train(
+                modality=modality,
+                model=data.model,
+                dataset=data.dataset,
+                output_dir=data.output_dir,
+                cycles=data.cycles,
+                learning_rate=data.learning_rate,
+                lr_decay=data.lr_decay,
+                samples_per_prompt=data.samples_per_prompt,
+                temperature=data.temperature,
+                keep_percent=data.keep_percent,
+                reward_threshold=data.reward_threshold,
+                task=data.task if modality == "audio" else None,
+                limit=data.limit if modality in {"reasoning", "agentic"} else None,
+                resume_from_cycle=data.resume_from_cycle,
+                allow_prototype_train=data.allow_prototype_train,
+            )
+            notify_job_started(f"{modality.upper()}: {data.dataset}")
+            ui.navigate.to(f'/monitor/{job_id}')
+        except Exception as e:
+            notify_job_failed(f"{modality.upper()} Training", str(e))
         finally:
             self.is_running = False

@@ -43,9 +43,46 @@ BENCHMARK_LAUNCH_CONTRACT = LaunchContract(
     positive_int_fields=("samples_per_prompt",),
 )
 
+VLM_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "output_dir"),
+    positive_int_fields=("cycles", "samples_per_prompt"),
+)
+
+AUDIO_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "task", "output_dir"),
+    positive_int_fields=("cycles",),
+    optional_positive_int_fields=("limit",),
+)
+
+REASONING_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "output_dir"),
+    positive_int_fields=("cycles",),
+    optional_positive_int_fields=("limit",),
+)
+
+AGENTIC_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "output_dir"),
+    positive_int_fields=("cycles",),
+    optional_positive_int_fields=("limit",),
+)
+
+MODALITY_TRAIN_LAUNCH_CONTRACTS: dict[str, LaunchContract] = {
+    "vlm": VLM_TRAIN_LAUNCH_CONTRACT,
+    "audio": AUDIO_TRAIN_LAUNCH_CONTRACT,
+    "reasoning": REASONING_TRAIN_LAUNCH_CONTRACT,
+    "agentic": AGENTIC_TRAIN_LAUNCH_CONTRACT,
+}
+
 # UI supports launching these training modes end-to-end today.
-UI_SUPPORTED_TRAINING_MODES: tuple[str, ...] = ("sft", "raft")
-UI_DEFERRED_TRAINING_MODES: tuple[str, ...] = ("vlm", "audio", "reasoning", "agentic")
+UI_SUPPORTED_TRAINING_MODES: tuple[str, ...] = (
+    "sft",
+    "raft",
+    "vlm",
+    "audio",
+    "reasoning",
+    "agentic",
+)
+UI_DEFERRED_TRAINING_MODES: tuple[str, ...] = ()
 
 
 def validate_launch_payload(

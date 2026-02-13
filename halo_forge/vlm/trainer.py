@@ -30,6 +30,11 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.modality_artifacts import (
+    persist_cycle_artifacts,
+    persist_final_artifacts,
+    resolve_resume_checkpoint,
+)
 
 
 @dataclass
@@ -320,6 +325,7 @@ class VLMRAFTTrainer:
         optimizer_steps = 0
         grad_accum = 1
         micro_steps = 0
+        last_loss_value = 0.0
 
         for sample in samples[:8]:
             image = self.adapter._load_image(sample.image)
@@ -366,18 +372,20 @@ class VLMRAFTTrainer:
                 continue
 
             (loss / grad_accum).backward()
+            last_loss_value = float(loss.detach().item())
             micro_steps += 1
 
             if micro_steps % grad_accum == 0:
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 optimizer_steps += 1
-                total_loss += float(loss.detach().item())
+                total_loss += last_loss_value
 
         if micro_steps % grad_accum != 0:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             optimizer_steps += 1
+            total_loss += last_loss_value
 
         if optimizer_steps == 0 and tokenizer is not None:
             # Fallback to text-only update path if processor-based batches
@@ -404,7 +412,7 @@ class VLMRAFTTrainer:
             "update_reason": "updated" if optimizer_steps > 0 else "no_optimizer_steps",
         }
     
-    def save_checkpoint(self, cycle: int):
+    def save_checkpoint(self, cycle: int, cycle_metrics: Dict[str, Any]):
         """Save checkpoint for this cycle."""
         checkpoint_dir = self.output_dir / f"cycle_{cycle}"
         checkpoint_dir.mkdir(exist_ok=True)
@@ -424,6 +432,23 @@ class VLMRAFTTrainer:
         # Save training history
         history_path = checkpoint_dir / "history.json"
         write_json_atomic(history_path, {"cycles": self.training_history})
+
+        adapter_model = getattr(self.adapter, "model", None) if self.adapter else None
+        adapter_tokenizer = getattr(self.adapter, "tokenizer", None) if self.adapter else None
+        adapter_processor = getattr(self.adapter, "processor", None) if self.adapter else None
+        persist_cycle_artifacts(
+            output_dir=self.output_dir,
+            modality="vlm",
+            model_name=self.config.model_name,
+            cycle=cycle,
+            update_metrics=cycle_metrics,
+            model=adapter_model,
+            tokenizer=adapter_tokenizer,
+            processor=adapter_processor,
+            extra_state={
+                "adapter_type": self.config.adapter_type or self._infer_adapter_type(self.config.model_name),
+            },
+        )
         
         self._log(f"Checkpoint saved: {checkpoint_dir}", "ok")
     
@@ -473,10 +498,6 @@ class VLMRAFTTrainer:
         # 3. Train
         train_metrics = self.train_on_samples(filtered, cycle)
         
-        # 4. Save checkpoint
-        if self.config.save_every_cycle:
-            self.save_checkpoint(cycle)
-        
         cycle_time = time.time() - cycle_start
         
         # Record metrics
@@ -502,6 +523,14 @@ class VLMRAFTTrainer:
         )
         
         self.training_history.append(metrics)
+        write_json_atomic(
+            self.output_dir / "training_history.json",
+            {"cycles": self.training_history},
+        )
+
+        # 4. Save checkpoint artifacts
+        if self.config.save_every_cycle:
+            self.save_checkpoint(cycle, metrics)
 
         self._log(
             "Update: steps=%d, weights_updated=%s, loss=%s" % (
@@ -553,13 +582,20 @@ class VLMRAFTTrainer:
         self._log(f"Training with {len(prompts)} prompts", "info")
         
         # Setup
-        self._setup()
-        
         # Determine starting cycle
         start_cycle = resume_from if resume_from else 0
         self._validate_resume_configuration(start_cycle)
         if start_cycle > 0:
+            checkpoint = resolve_resume_checkpoint(
+                output_dir=self.output_dir,
+                resume_from_cycle=start_cycle,
+                max_cycles=self.config.num_cycles,
+            )
+            self.config.model_name = str(checkpoint.model_dir)
+            self.config.adapter_type = checkpoint.state.get("adapter_type") or self.config.adapter_type
             self._load_resume_history(start_cycle)
+
+        self._setup()
         
         # Run cycles
         for cycle in range(start_cycle, self.config.num_cycles):
@@ -590,6 +626,19 @@ class VLMRAFTTrainer:
 
         # Save final history and summary.
         write_json_atomic(self.output_dir / "training_history.json", {"cycles": self.training_history})
+        adapter_model = getattr(self.adapter, "model", None) if self.adapter else None
+        adapter_tokenizer = getattr(self.adapter, "tokenizer", None) if self.adapter else None
+        adapter_processor = getattr(self.adapter, "processor", None) if self.adapter else None
+        final_state = persist_final_artifacts(
+            output_dir=self.output_dir,
+            modality="vlm",
+            model_name=self.config.model_name,
+            model=adapter_model,
+            tokenizer=adapter_tokenizer,
+            processor=adapter_processor,
+            extra_state={"best_avg_reward": self.best_reward},
+        )
+        summary["final_model_path"] = final_state["final_model_dir"]
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         return summary
 
@@ -599,11 +648,11 @@ class VLMRAFTTrainer:
             raise ValueError(f"resume_from must be in [0, {self.config.num_cycles - 1}]")
         if start_cycle == 0:
             return
-        previous_cycle_dir = self.output_dir / f"cycle_{start_cycle - 1}"
-        if not previous_cycle_dir.exists():
-            raise ValueError(
-                f"resume_from={start_cycle} requires checkpoint directory {previous_cycle_dir}"
-            )
+        resolve_resume_checkpoint(
+            output_dir=self.output_dir,
+            resume_from_cycle=start_cycle,
+            max_cycles=self.config.num_cycles,
+        )
         history_path = self.output_dir / "training_history.json"
         if not history_path.exists():
             raise ValueError(
@@ -627,6 +676,23 @@ class VLMRAFTTrainer:
                 f"resume_from={start_cycle} exceeds available recorded cycles "
                 f"({len(self.training_history)}) in {history_path}"
             )
+        reward_values = [
+            float(cycle.get("avg_reward", 0.0))
+            for cycle in self.training_history
+            if isinstance(cycle, dict)
+        ]
+        self.best_reward = max(reward_values) if reward_values else 0.0
+
+    def _infer_adapter_type(self, model_name: str) -> str:
+        """Infer adapter type for checkpoint reload compatibility."""
+        model_lower = (model_name or "").lower()
+        if "qwen" in model_lower and ("vl" in model_lower or "vision" in model_lower):
+            return "qwen_vl"
+        if "llava" in model_lower:
+            return "llava"
+        if "lfm" in model_lower or "liquidai" in model_lower:
+            return "lfm_vl"
+        return "generic"
     
     def cleanup(self):
         """Clean up resources."""

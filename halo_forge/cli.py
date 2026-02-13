@@ -2021,7 +2021,10 @@ def cmd_vlm_train(args):
     trainer = VLMRAFTTrainer(config)
     
     try:
-        summary = trainer.train(dataset_path)
+        summary = trainer.train(
+            dataset_path,
+            resume_from=getattr(args, "resume_from_cycle", 0),
+        )
     except ValueError as e:
         print(f"{RED}Training error: {e}{NC}")
         sys.exit(2)
@@ -2034,6 +2037,8 @@ def cmd_vlm_train(args):
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Output: {args.output}")
+    if summary.get("final_model_path"):
+        print(f"Final model: {summary['final_model_path']}")
     print(f"Train steps executed: {total_steps}")
     if isinstance(final_loss, (int, float)):
         print(f"Final train loss: {final_loss:.4f}")
@@ -2386,7 +2391,10 @@ def cmd_audio_train(args):
     # Run training
     trainer = AudioRAFTTrainer(config)
     try:
-        results = trainer.train(args.dataset)
+        results = trainer.train(
+            args.dataset,
+            resume_from_cycle=getattr(args, "resume_from_cycle", 0),
+        )
     except ValueError as e:
         print(f"{RED}Training error: {e}{NC}")
         sys.exit(2)
@@ -2397,6 +2405,8 @@ def cmd_audio_train(args):
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final model saved to: {args.output}")
+    if summary.get("final_model_path"):
+        print(f"Final model: {summary['final_model_path']}")
     print(f"Train steps executed: {total_steps}")
     if isinstance(final_loss, (int, float)):
         print(f"Final train loss: {final_loss:.4f}")
@@ -2668,7 +2678,7 @@ def main():
     vlm_subparsers = vlm_parser.add_subparsers(dest='vlm_command', required=True)
     
     # vlm train
-    vlm_train_parser = vlm_subparsers.add_parser('train', help='Train VLM with RAFT (capability-gated)')
+    vlm_train_parser = vlm_subparsers.add_parser('train', help='Train VLM with RAFT')
     vlm_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2-VL-7B-Instruct',
                                   help='VLM model name')
     vlm_train_parser.add_argument('--dataset', '-d', required=True,
@@ -2694,6 +2704,8 @@ def main():
     vlm_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
                                   help='Minimum reward to consider passing (default: 0.5)')
     vlm_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    vlm_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
+                                  help='Resume training from this cycle index (default: 0)')
     vlm_train_parser.add_argument('--dry-run', action='store_true',
                                   help='Validate config and datasets without running training')
     vlm_train_parser.add_argument(
@@ -2746,7 +2758,7 @@ def main():
     audio_bench_parser.add_argument('--output', '-o', help='Output file for results')
     
     # audio train
-    audio_train_parser = audio_subparsers.add_parser('train', help='Train audio model with RAFT (capability-gated)')
+    audio_train_parser = audio_subparsers.add_parser('train', help='Train audio model with RAFT')
     audio_train_parser.add_argument('--model', '-m', default='openai/whisper-small',
                                     help='Audio model (default: openai/whisper-small)')
     audio_train_parser.add_argument('--dataset', '-d', default='librispeech',
@@ -2770,6 +2782,8 @@ def main():
                                     help='Minimum reward to consider passing (default: 0.5)')
     audio_train_parser.add_argument('--output', '-o', default='models/audio_raft',
                                     help='Output directory (default: models/audio_raft)')
+    audio_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
+                                    help='Resume training from this cycle index (default: 0)')
     audio_train_parser.add_argument('--dry-run', action='store_true',
                                     help='Validate config without running training')
     audio_train_parser.add_argument(
@@ -2809,7 +2823,7 @@ def main():
     reasoning_bench_parser.add_argument('--output', '-o', help='Output file for results')
     
     # reasoning train
-    reasoning_train_parser = reasoning_subparsers.add_parser('train', help='Train with RAFT (capability-gated)')
+    reasoning_train_parser = reasoning_subparsers.add_parser('train', help='Train with RAFT')
     reasoning_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
                                         help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
     reasoning_train_parser.add_argument('--dataset', '-d', default='gsm8k',
@@ -2829,6 +2843,8 @@ def main():
     reasoning_train_parser.add_argument('--output', '-o', default='models/reasoning_raft',
                                         help='Output directory (default: models/reasoning_raft)')
     reasoning_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    reasoning_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
+                                        help='Resume training from this cycle index (default: 0)')
     reasoning_train_parser.add_argument('--dry-run', action='store_true',
                                         help='Validate config without running training')
     reasoning_train_parser.add_argument(
@@ -2866,7 +2882,7 @@ def main():
     agentic_bench_parser.add_argument('--output', '-o', help='Output file for results')
     
     # agentic train
-    agentic_train_parser = agentic_subparsers.add_parser('train', help='Train tool calling with RAFT (capability-gated)')
+    agentic_train_parser = agentic_subparsers.add_parser('train', help='Train tool calling with RAFT')
     agentic_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
                                       help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
     agentic_train_parser.add_argument('--dataset', '-d', default='xlam',
@@ -2886,6 +2902,8 @@ def main():
     agentic_train_parser.add_argument('--output', '-o', default='models/agentic_raft',
                                       help='Output directory (default: models/agentic_raft)')
     agentic_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
+    agentic_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
+                                      help='Resume training from this cycle index (default: 0)')
     agentic_train_parser.add_argument('--dry-run', action='store_true',
                                       help='Validate config without running training')
     agentic_train_parser.add_argument(
@@ -3197,7 +3215,10 @@ def cmd_reasoning_train(args):
     # Train
     trainer = ReasoningRAFTTrainer(config)
     try:
-        summary = trainer.train(list(dataset))
+        summary = trainer.train(
+            list(dataset),
+            resume_from_cycle=getattr(args, "resume_from_cycle", 0),
+        )
     except ValueError as e:
         print(f"{RED}Training error: {e}{NC}")
         sys.exit(2)
@@ -3205,6 +3226,8 @@ def cmd_reasoning_train(args):
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final accuracy: {summary.get('final_accuracy', 0):.1%}")
+    if summary.get("final_model_path"):
+        print(f"Final model: {summary['final_model_path']}")
     total_steps = sum(
         int(c.get("train_steps_executed", 0))
         for c in summary.get("cycles", [])
@@ -3395,7 +3418,10 @@ def cmd_agentic_train(args):
     # Train
     trainer = AgenticRAFTTrainer(config)
     try:
-        results = trainer.train(samples)
+        results = trainer.train(
+            samples,
+            resume_from_cycle=getattr(args, "resume_from_cycle", 0),
+        )
     except ValueError as e:
         print(f"{RED}Training error: {e}{NC}")
         sys.exit(2)
@@ -3406,6 +3432,8 @@ def cmd_agentic_train(args):
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final accuracy: {results.get('final_success_rate', 0):.1%}")
     print(f"Final avg reward: {results.get('final_avg_reward', 0):.3f}")
+    if results.get("final_model_path"):
+        print(f"Final model: {results['final_model_path']}")
     print(f"Train steps executed: {total_steps}")
     if isinstance(final_loss, (int, float)):
         print(f"Final train loss: {final_loss:.4f}")

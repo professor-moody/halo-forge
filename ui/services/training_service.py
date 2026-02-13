@@ -25,9 +25,11 @@ from .event_bus import (
 from .launch_contracts import (
     SFT_LAUNCH_CONTRACT,
     RAFT_LAUNCH_CONTRACT,
+    MODALITY_TRAIN_LAUNCH_CONTRACTS,
     validate_launch_payload,
     ensure_local_path_exists_if_pathlike,
 )
+from halo_forge.capabilities import check_modality_train_capability
 
 # Import notification helpers (only used when UI is running)
 try:
@@ -174,6 +176,42 @@ class TrainingService:
         prompts = normalized["prompts"]
         output_dir = normalized["output_dir"]
         return model, prompts, output_dir
+
+    def _validate_modality_launch_payload(
+        self,
+        *,
+        modality: str,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        cycles: int,
+        resume_from_cycle: int = 0,
+        limit: Optional[int] = None,
+        task: Optional[str] = None,
+        samples_per_prompt: Optional[int] = None,
+    ) -> tuple[str, str, str]:
+        """Validate user inputs for modality-specific train launches."""
+        contract = MODALITY_TRAIN_LAUNCH_CONTRACTS[modality]
+        if modality == "vlm" and not samples_per_prompt:
+            samples_per_prompt = 4
+        payload = {
+            "model": model,
+            "dataset": dataset,
+            "output_dir": output_dir,
+            "cycles": cycles,
+            "resume_from_cycle": resume_from_cycle,
+            "limit": limit,
+            "task": task,
+            "samples_per_prompt": samples_per_prompt,
+        }
+        normalized = validate_launch_payload(payload, contract)
+        if resume_from_cycle < 0:
+            raise ValueError("resume_from_cycle must be >= 0")
+        return (
+            normalized["model"],
+            normalized["dataset"],
+            normalized["output_dir"],
+        )
     
     async def launch_sft(
         self,
@@ -469,6 +507,108 @@ class TrainingService:
         # Launch subprocess
         await self._launch_process(job.id, cmd, on_log)
         
+        return job.id
+
+    async def launch_modality_train(
+        self,
+        *,
+        modality: str,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        cycles: int,
+        learning_rate: Optional[float] = None,
+        lr_decay: Optional[float] = None,
+        samples_per_prompt: Optional[int] = None,
+        temperature: Optional[float] = None,
+        keep_percent: Optional[float] = None,
+        reward_threshold: Optional[float] = None,
+        task: Optional[str] = None,
+        limit: Optional[int] = None,
+        resume_from_cycle: int = 0,
+        allow_prototype_train: bool = False,
+        on_log: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """Launch modality-specific train command (vlm/audio/reasoning/agentic)."""
+        if modality not in MODALITY_TRAIN_LAUNCH_CONTRACTS:
+            raise ValueError(f"Unsupported modality: {modality}")
+
+        model, dataset, output_dir = self._validate_modality_launch_payload(
+            modality=modality,
+            model=model,
+            dataset=dataset,
+            output_dir=output_dir,
+            cycles=cycles,
+            resume_from_cycle=resume_from_cycle,
+            limit=limit,
+            task=task,
+            samples_per_prompt=samples_per_prompt,
+        )
+
+        capability = check_modality_train_capability(
+            modality=modality,
+            model_name=model,
+            allow_prototype_train=allow_prototype_train,
+            dry_run=False,
+        )
+        if not capability.allowed:
+            raise ValueError(capability.message.splitlines()[-1])
+
+        job = self.state.create_job(
+            job_type=modality,
+            name=f"{modality.upper()} Train: {Path(model).name} on {dataset}",
+            output_dir=Path(output_dir),
+        )
+        job.total_cycles = cycles
+
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": f"training_service.launch_{modality}_train",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {"job_type": modality},
+        }
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type=modality,
+            ),
+        ))
+
+        cmd = [
+            sys.executable, "-m", "halo_forge.cli",
+            modality, "train",
+            "--model", model,
+            "--dataset", dataset,
+            "--output", output_dir,
+            "--cycles", str(cycles),
+            "--resume-from-cycle", str(max(0, resume_from_cycle)),
+        ]
+        if learning_rate is not None:
+            cmd.extend(["--lr", str(learning_rate)])
+        if lr_decay is not None:
+            cmd.extend(["--lr-decay", str(lr_decay)])
+        if samples_per_prompt is not None:
+            cmd.extend(["--samples-per-prompt", str(samples_per_prompt)])
+        if temperature is not None:
+            cmd.extend(["--temperature", str(temperature)])
+        if keep_percent is not None:
+            cmd.extend(["--keep-percent", str(keep_percent)])
+        if reward_threshold is not None:
+            cmd.extend(["--reward-threshold", str(reward_threshold)])
+        if modality == "audio" and task:
+            cmd.extend(["--task", task])
+        if limit is not None and modality in {"reasoning", "agentic"}:
+            cmd.extend(["--limit", str(limit)])
+        if capability.capability.status == "prototype" and allow_prototype_train:
+            cmd.append("--allow-prototype-train")
+
+        await self._launch_process(job.id, cmd, on_log)
         return job.id
     
     async def _launch_process(

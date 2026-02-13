@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from halo_forge.capabilities import check_modality_train_capability
+from halo_forge.capabilities import (
+    CAPABILITY_STATUS_PROTOTYPE,
+    check_modality_train_capability,
+)
 from ui.services.benchmark_service import BenchmarkService, BenchmarkType
 from ui.services.training_service import TrainingService
 from ui.state import AppState
@@ -103,26 +106,25 @@ def test_benchmark_service_validates_launch_payload():
 
 def test_modality_train_capability_matrix_smoke_contract():
     """Each modality should resolve to explicit allow/fail contract behavior."""
-    # Prototype gating must fail without override.
+    # Capability behavior should match per-modality status + model-family policy.
     for modality in ("vlm", "audio", "reasoning", "agentic"):
         check = check_modality_train_capability(
             modality=modality,
-            model_name="dummy/model",
+            model_name=(
+                "Qwen/Qwen2-VL-7B-Instruct"
+                if modality == "vlm"
+                else "openai/whisper-small"
+                if modality == "audio"
+                else "Qwen/Qwen2.5-7B-Instruct"
+            ),
             allow_prototype_train=False,
             dry_run=False,
         )
-        assert check.allowed is False
-        assert check.reason == "prototype_flag_required"
-
-    # Supported wildcard modalities should allow with override.
-    for modality in ("reasoning", "agentic"):
-        check = check_modality_train_capability(
-            modality=modality,
-            model_name="any/model",
-            allow_prototype_train=True,
-            dry_run=False,
-        )
-        assert check.allowed is True
+        if check.capability.status == CAPABILITY_STATUS_PROTOTYPE:
+            assert check.allowed is False
+            assert check.reason == "prototype_flag_required"
+        else:
+            assert check.allowed is True
 
     # Restricted modalities should reject unsupported families even with override.
     vlm_check = check_modality_train_capability(
@@ -142,6 +144,15 @@ def test_modality_train_capability_matrix_smoke_contract():
     )
     assert audio_check.allowed is False
     assert audio_check.reason == "unsupported_model"
+
+    reasoning_check = check_modality_train_capability(
+        modality="reasoning",
+        model_name="acme/unsupported-reasoning-model",
+        allow_prototype_train=True,
+        dry_run=False,
+    )
+    assert reasoning_check.allowed is False
+    assert reasoning_check.reason == "unsupported_model"
 
 
 def test_monitor_page_avoids_demo_loss_data_and_preserves_zero_metrics_display_logic():

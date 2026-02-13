@@ -52,6 +52,7 @@ def run_text_supervised_updates(
     micro_steps = 0
     grad_accum = max(1, gradient_accumulation_steps)
     per_step_limit = max(1, max_steps)
+    last_loss_value = 0.0
 
     for batch in _chunk_texts(texts, max(1, batch_size)):
         encoded = tokenizer(
@@ -86,13 +87,14 @@ def run_text_supervised_updates(
             continue
 
         (loss / grad_accum).backward()
+        last_loss_value = float(loss.detach().item())
         micro_steps += 1
 
         if micro_steps % grad_accum == 0:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             optimizer_steps += 1
-            total_loss += float(loss.detach().item())
+            total_loss += last_loss_value
 
             if optimizer_steps >= per_step_limit:
                 break
@@ -102,6 +104,7 @@ def run_text_supervised_updates(
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         optimizer_steps += 1
+        total_loss += last_loss_value
 
     if optimizer_steps == 0:
         return {
