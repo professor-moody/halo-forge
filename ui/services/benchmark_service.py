@@ -30,6 +30,10 @@ from .event_bus import (
     EventType,
     build_transition_payload,
 )
+from .launch_contracts import (
+    BENCHMARK_LAUNCH_CONTRACT,
+    validate_launch_payload,
+)
 
 
 class BenchmarkType(Enum):
@@ -235,14 +239,6 @@ class BenchmarkService:
         
         return env
 
-    @staticmethod
-    def _validate_required_text(value: Optional[str], field_name: str) -> str:
-        """Validate a required string-like benchmark launch field."""
-        text = str(value or "").strip()
-        if not text:
-            raise ValueError(f"{field_name} is required")
-        return text
-
     def _validate_launch_payload(
         self,
         model: str,
@@ -251,12 +247,18 @@ class BenchmarkService:
         samples_per_prompt: int,
     ) -> tuple[str, str]:
         """Validate benchmark launch inputs before creating a job."""
-        model = self._validate_required_text(model, "model")
-        benchmark_name = self._validate_required_text(benchmark_name, "benchmark_name")
+        normalized = validate_launch_payload(
+            {
+                "model": model,
+                "benchmark_name": benchmark_name,
+                "samples_per_prompt": samples_per_prompt,
+            },
+            BENCHMARK_LAUNCH_CONTRACT,
+        )
+        model = normalized["model"]
+        benchmark_name = normalized["benchmark_name"]
         if limit is not None and limit <= 0:
             raise ValueError("limit must be greater than 0 when provided")
-        if samples_per_prompt <= 0:
-            raise ValueError("samples_per_prompt must be greater than 0")
         return model, benchmark_name
 
     def _canonicalize_benchmark_name(

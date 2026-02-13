@@ -6,7 +6,7 @@ Real-time job monitoring with loss charts and log viewer.
 
 from nicegui import ui
 from datetime import datetime
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Dict, Any
 from pathlib import Path
 import asyncio
 import json
@@ -48,6 +48,10 @@ class Monitor:
         self._lr_label = None
         self._grad_norm_label = None
         self._verification_label = None
+        self._weights_updated_label = None
+        self._update_steps_label = None
+        self._update_reason_label = None
+        self._final_loss_label = None
         
         if job_id:
             self.job = state.get_job(job_id)
@@ -364,6 +368,113 @@ class Monitor:
                     self._verification_label = ui.label(val).classes(
                         f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                     )
+
+            ui.separator().classes('my-2')
+            summary = self._derive_training_outcome()
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Weights Updated').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._weights_updated_label = ui.label(summary["weights_updated"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Update Steps').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._update_steps_label = ui.label(summary["update_steps"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Final Loss').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._final_loss_label = ui.label(summary["final_loss"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Final Reason').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._update_reason_label = ui.label(summary["final_reason"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+
+    def _read_training_summary_payload(self) -> Optional[Dict[str, Any]]:
+        """Load canonical training summary payload if present."""
+        if not self.job or not self.job.output_dir:
+            return None
+        output_dir = Path(self.job.output_dir)
+        for filename in ("training_summary.json", "training_metrics.json"):
+            candidate = output_dir / filename
+            if not candidate.exists():
+                continue
+            try:
+                with open(candidate, encoding="utf-8") as f:
+                    payload = json.load(f)
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return None
+
+    def _derive_training_outcome(self) -> Dict[str, str]:
+        """Compute display-safe training outcome fields from summary payloads."""
+        payload = self._read_training_summary_payload()
+        if not payload:
+            return {
+                "weights_updated": "--",
+                "update_steps": "--",
+                "final_loss": "--",
+                "final_reason": "--",
+            }
+
+        total_steps = int(payload.get("total_train_steps_executed", 0) or 0)
+        weights_updated = payload.get("weights_updated")
+        final_loss = payload.get("final_train_loss")
+        final_reason = payload.get("final_update_reason")
+
+        cycle_entries = payload.get("cycles") or payload.get("cycle_results") or []
+        if isinstance(cycle_entries, list):
+            if weights_updated is None:
+                weights_updated = False
+                for entry in cycle_entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else entry
+                    if metrics.get("weights_updated") is True:
+                        weights_updated = True
+                        break
+            if total_steps == 0:
+                total_steps = sum(
+                    int(
+                        (
+                            entry.get("metrics", entry)
+                            if isinstance(entry, dict)
+                            else {}
+                        ).get("train_steps_executed", 0)
+                    )
+                    for entry in cycle_entries
+                    if isinstance(entry, dict)
+                )
+            if final_loss is None and cycle_entries:
+                last = cycle_entries[-1]
+                if isinstance(last, dict):
+                    metrics = last.get("metrics") if isinstance(last.get("metrics"), dict) else last
+                    final_loss = metrics.get("train_loss")
+                    if not final_reason:
+                        final_reason = metrics.get("update_reason")
+
+        if weights_updated is True:
+            weights_label = "yes"
+        elif weights_updated is False:
+            weights_label = "no"
+        else:
+            weights_label = "--"
+
+        if isinstance(final_loss, (int, float)):
+            final_loss_label = f"{float(final_loss):.4f}"
+        else:
+            final_loss_label = "--"
+
+        return {
+            "weights_updated": weights_label,
+            "update_steps": str(total_steps),
+            "final_loss": final_loss_label,
+            "final_reason": str(final_reason or "--"),
+        }
     
     def _render_log_viewer(self):
         """Render the log viewer section."""
@@ -607,6 +718,16 @@ class Monitor:
             
             if self._verification_label and self.job.verification_rate is not None:
                 self._verification_label.set_text(f'{self.job.verification_rate:.1%}')
+
+            summary = self._derive_training_outcome()
+            if self._weights_updated_label:
+                self._weights_updated_label.set_text(summary["weights_updated"])
+            if self._update_steps_label:
+                self._update_steps_label.set_text(summary["update_steps"])
+            if self._final_loss_label:
+                self._final_loss_label.set_text(summary["final_loss"])
+            if self._update_reason_label:
+                self._update_reason_label.set_text(summary["final_reason"])
         except Exception:
             pass  # UI context may be invalid
     

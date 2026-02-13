@@ -21,6 +21,7 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_benchmark_results_trust_matrix.py" in content
     assert "tests/test_training_pipeline_contracts.py" in content
     assert "tests/test_dependency_packaging_contracts.py" in content
+    assert "tests/test_runtime_surface_alignment.py" in content
 
 
 def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():

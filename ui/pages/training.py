@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 from ui.theme import COLORS
 from ui.state import state
 from ui.services import TrainingService
+from ui.services.launch_contracts import (
+    UI_SUPPORTED_TRAINING_MODES,
+    UI_DEFERRED_TRAINING_MODES,
+)
 from ui.components.notifications import notify_job_started, notify_job_failed
 
 
@@ -313,6 +317,18 @@ class Training:
             )
             with self._toggle_container:
                 self._render_mode_buttons()
+
+            with ui.row().classes(
+                f'w-full items-start gap-2 p-3 rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+            ):
+                ui.icon("info", size="16px").classes(f'text-[{COLORS["info"]}] mt-0.5')
+                ui.label(
+                    "UI launch supports "
+                    + ", ".join(mode.upper() for mode in UI_SUPPORTED_TRAINING_MODES)
+                    + ". Modality-specific train commands ("
+                    + ", ".join(mode for mode in UI_DEFERRED_TRAINING_MODES)
+                    + ") remain CLI capability-gated."
+                ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
             
             # Main form container
             self.form_container = ui.column().classes('w-full gap-6')
@@ -321,8 +337,12 @@ class Training:
     
     def _render_mode_buttons(self):
         """Render the SFT/RAFT mode toggle buttons."""
-        self._mode_button("SFT", "sft", "school")
-        self._mode_button("RAFT", "raft", "autorenew")
+        icon_by_mode = {
+            "sft": "school",
+            "raft": "autorenew",
+        }
+        for mode in UI_SUPPORTED_TRAINING_MODES:
+            self._mode_button(mode.upper(), mode, icon_by_mode[mode])
     
     def _mode_button(self, label: str, mode: str, icon: str):
         """Render a mode toggle button."""

@@ -136,6 +136,18 @@ from .benchmark_service import (
     ALL_PRESETS,
 )
 
+# Launch contracts
+from .launch_contracts import (
+    LaunchContract,
+    SFT_LAUNCH_CONTRACT,
+    RAFT_LAUNCH_CONTRACT,
+    BENCHMARK_LAUNCH_CONTRACT,
+    UI_SUPPORTED_TRAINING_MODES,
+    UI_DEFERRED_TRAINING_MODES,
+    validate_launch_payload,
+    ensure_local_path_exists_if_pathlike,
+)
+
 
 # Convenience functions for common operations
 
@@ -221,4 +233,14 @@ __all__ = [
     'AUDIO_PRESETS',
     'AGENTIC_PRESETS',
     'ALL_PRESETS',
+
+    # Launch contracts
+    'LaunchContract',
+    'SFT_LAUNCH_CONTRACT',
+    'RAFT_LAUNCH_CONTRACT',
+    'BENCHMARK_LAUNCH_CONTRACT',
+    'UI_SUPPORTED_TRAINING_MODES',
+    'UI_DEFERRED_TRAINING_MODES',
+    'validate_launch_payload',
+    'ensure_local_path_exists_if_pathlike',
 ]
