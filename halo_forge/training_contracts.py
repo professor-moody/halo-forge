@@ -39,6 +39,11 @@ def normalize_update_metrics(
         "train_loss": train_loss,
         "weights_updated": weights_updated,
         "update_reason": str(update_reason),
+        "optimizer_steps": max(0, int(payload.get("optimizer_steps", steps) or 0)),
+        "skipped_batches_non_finite": max(
+            0,
+            int(payload.get("skipped_batches_non_finite", 0) or 0),
+        ),
     }
 
 
@@ -72,6 +77,13 @@ def build_training_summary(
     model_name: str,
     total_cycles_planned: int,
     cycles: Iterable[Dict[str, Any]],
+    run_id: Optional[str] = None,
+    seed: Optional[int] = None,
+    resume_from_cycle: int = 0,
+    resumed_from_checkpoint: Optional[Dict[str, Any]] = None,
+    base_model_name: Optional[str] = None,
+    active_model_name: Optional[str] = None,
+    failure_reason: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build canonical final training summary payload."""
@@ -93,6 +105,17 @@ def build_training_summary(
         "weights_updated": weights_updated,
         "final_train_loss": final_cycle.get("train_loss"),
         "final_update_reason": final_cycle.get("update_reason", "no_cycles"),
+        "run_id": run_id or "",
+        "seed": seed,
+        "resume_from_cycle": int(max(0, resume_from_cycle)),
+        "resumed_from_checkpoint": resumed_from_checkpoint,
+        "base_model_name": base_model_name or model_name,
+        "active_model_name": active_model_name or model_name,
+        "failure_reason": (
+            failure_reason
+            if failure_reason is not None
+            else (final_cycle.get("update_reason", "no_cycles") if not weights_updated else None)
+        ),
     }
     if extra:
         summary.update(extra)

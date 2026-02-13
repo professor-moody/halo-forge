@@ -84,6 +84,7 @@ from .verifier_service import (
 from .results_service import (
     ResultsService,
     BenchmarkResult,
+    TrainingRunSummary,
     get_results_service,
 )
 
@@ -210,6 +211,7 @@ __all__ = [
     # Results
     'ResultsService',
     'BenchmarkResult',
+    'TrainingRunSummary',
     'get_results_service',
     
     # Datasets

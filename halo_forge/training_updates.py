@@ -21,6 +21,7 @@ def run_text_supervised_updates(
     gradient_accumulation_steps: int = 1,
     max_steps: int = 8,
     max_length: int = 2048,
+    max_grad_norm: float | None = None,
 ) -> Dict[str, Any]:
     """
     Run a minimal supervised update loop on text samples.
@@ -31,6 +32,8 @@ def run_text_supervised_updates(
             "train_loss": None,
             "weights_updated": False,
             "update_reason": "no_samples",
+            "optimizer_steps": 0,
+            "skipped_batches_non_finite": 0,
         }
 
     if model is None or tokenizer is None:
@@ -39,6 +42,8 @@ def run_text_supervised_updates(
             "train_loss": None,
             "weights_updated": False,
             "update_reason": "model_or_tokenizer_missing",
+            "optimizer_steps": 0,
+            "skipped_batches_non_finite": 0,
         }
 
     import torch
@@ -53,6 +58,7 @@ def run_text_supervised_updates(
     grad_accum = max(1, gradient_accumulation_steps)
     per_step_limit = max(1, max_steps)
     last_loss_value = 0.0
+    skipped_batches_non_finite = 0
 
     for batch in _chunk_texts(texts, max(1, batch_size)):
         encoded = tokenizer(
@@ -85,12 +91,18 @@ def run_text_supervised_updates(
         loss = outputs.loss
         if loss is None:
             continue
+        if not torch.isfinite(loss).item():
+            skipped_batches_non_finite += 1
+            optimizer.zero_grad(set_to_none=True)
+            continue
 
         (loss / grad_accum).backward()
         last_loss_value = float(loss.detach().item())
         micro_steps += 1
 
         if micro_steps % grad_accum == 0:
+            if max_grad_norm is not None and max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             optimizer_steps += 1
@@ -101,6 +113,8 @@ def run_text_supervised_updates(
 
     # Flush trailing gradients if accumulation did not align exactly.
     if micro_steps % grad_accum != 0:
+        if max_grad_norm is not None and max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         optimizer_steps += 1
@@ -112,6 +126,8 @@ def run_text_supervised_updates(
             "train_loss": None,
             "weights_updated": False,
             "update_reason": "no_optimizer_steps",
+            "optimizer_steps": 0,
+            "skipped_batches_non_finite": skipped_batches_non_finite,
         }
 
     return {
@@ -119,4 +135,6 @@ def run_text_supervised_updates(
         "train_loss": total_loss / optimizer_steps if total_loss else 0.0,
         "weights_updated": True,
         "update_reason": "updated",
+        "optimizer_steps": optimizer_steps,
+        "skipped_batches_non_finite": skipped_batches_non_finite,
     }

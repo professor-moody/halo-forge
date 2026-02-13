@@ -268,13 +268,18 @@ class Dashboard:
         completed = [j for j in recent if j.status in ('completed', 'failed', 'stopped')]
         
         if not completed:
-            with ui.column().classes('w-full items-center justify-center py-8 gap-2'):
-                ui.icon('history', size='32px').classes(
-                    f'text-[{COLORS["text_muted"]}]'
-                )
-                ui.label('No completed runs yet').classes(
-                    f'text-sm text-[{COLORS["text_muted"]}]'
-                )
+            training_runs = self.results_service.get_recent_training_runs(5)
+            if training_runs:
+                for run in training_runs:
+                    self._render_training_run_row(run)
+            else:
+                with ui.column().classes('w-full items-center justify-center py-8 gap-2'):
+                    ui.icon('history', size='32px').classes(
+                        f'text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.label('No completed runs yet').classes(
+                        f'text-sm text-[{COLORS["text_muted"]}]'
+                    )
         else:
             for job in completed[:5]:
                 with ui.row().classes(
@@ -295,6 +300,25 @@ class Dashboard:
                         ui.label(job.duration_str).classes(
                             f'text-xs text-[{COLORS["text_muted"]}]'
                         )
+
+    def _render_training_run_row(self, run):
+        """Render a persisted training summary row when no live state jobs exist."""
+        with ui.row().classes(
+            f'w-full items-center gap-3 p-3 rounded-lg '
+            f'hover:bg-[{COLORS["bg_hover"]}] transition-colors'
+        ):
+            status_color = COLORS["success"] if run.weights_updated else COLORS["warning"]
+            ui.icon("check_circle" if run.weights_updated else "info", size='18px').classes(
+                f'text-[{status_color}]'
+            )
+            with ui.column().classes('flex-1 gap-0'):
+                ui.label(f"{run.modality.upper()} • {Path(str(run.model_name)).name}").classes(
+                    f'text-sm text-[{COLORS["text_primary"]}]'
+                )
+                reason = run.failure_reason or run.final_update_reason or "summary"
+                ui.label(f"steps={run.total_train_steps_executed} • {reason}").classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
     
     def _render_action_button(self, label: str, icon: str, path: str):
         """Render a quick action button."""
@@ -435,37 +459,11 @@ class Dashboard:
     
     def _load_recent_training_data(self) -> dict:
         """Load training loss data from recent runs."""
-        result = {'runs': [], 'steps': []}
-        
-        # Look for training logs/results
-        results_dir = Path('results')
-        if not results_dir.exists():
-            return result
-        
-        # Search for training JSON files with loss data
-        training_files = list(results_dir.glob('**/training*.json'))[:3]
-        
-        max_steps = 0
-        for f in training_files:
-            try:
-                with open(f) as fp:
-                    data = json.load(fp)
-                    if 'loss_history' in data:
-                        losses = data['loss_history']
-                        max_steps = max(max_steps, len(losses))
-                        result['runs'].append({
-                            'name': f.stem[:15],
-                            'loss': losses
-                        })
-            except (json.JSONDecodeError, IOError):
-                continue
-        
-        # Generate step labels
-        if max_steps > 0:
-            step_interval = max(1, max_steps // 10)
-            result['steps'] = [str(i * step_interval) for i in range(max_steps // step_interval + 1)]
-        
-        return result
+        try:
+            return self.results_service.get_dashboard_training_summary(max_runs=3)
+        except Exception as e:
+            print(f"[Dashboard] Failed to load training summary: {e}")
+            return {'runs': [], 'steps': []}
     
     def _load_benchmark_data(self) -> dict:
         """Load benchmark chart data from canonical ResultsService aggregation."""

@@ -117,6 +117,9 @@ def resolve_resume_checkpoint(
     output_dir: Path,
     resume_from_cycle: int,
     max_cycles: int,
+    modality: Optional[str] = None,
+    min_contract_version: int = 1,
+    required_model_artifacts: tuple[str, ...] = (),
 ) -> ResumeCheckpoint:
     """
     Resolve and validate checkpoint artifacts for ``resume_from_cycle``.
@@ -138,6 +141,23 @@ def resolve_resume_checkpoint(
 
     with open(state_path, encoding="utf-8") as f:
         state = json.load(f)
+    if not isinstance(state, dict):
+        raise ValueError(f"Invalid checkpoint state format in {state_path}")
+
+    contract_version = int(state.get("contract_version", 0) or 0)
+    if contract_version < min_contract_version:
+        raise ValueError(
+            f"checkpoint state contract_version={contract_version} is below required "
+            f"{min_contract_version} in {state_path}"
+        )
+
+    state_modality = str(state.get("modality") or "")
+    if modality and state_modality != modality:
+        raise ValueError(
+            f"resume_from_cycle={resume_from_cycle} expected modality={modality} "
+            f"but found modality={state_modality} in {state_path}"
+        )
+
     model_dir_text = state.get("model_dir")
     if not model_dir_text:
         raise ValueError(
@@ -148,6 +168,12 @@ def resolve_resume_checkpoint(
         raise ValueError(
             f"resume_from_cycle={resume_from_cycle} requires model directory {model_dir}"
         )
+    for artifact_name in required_model_artifacts:
+        candidate = model_dir / artifact_name
+        if not candidate.exists():
+            raise ValueError(
+                f"resume_from_cycle={resume_from_cycle} requires model artifact {candidate}"
+            )
 
     return ResumeCheckpoint(
         cycle=checkpoint_cycle,

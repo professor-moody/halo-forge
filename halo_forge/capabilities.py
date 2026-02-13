@@ -155,6 +155,17 @@ def _is_model_family_supported(model_name: str, capability: ModalityTrainCapabil
     return False
 
 
+def get_supported_model_families(modality: str) -> Tuple[str, ...]:
+    """Return supported model family tokens for a modality train surface."""
+    return MODALITY_TRAIN_CAPABILITIES[modality].supported_model_families
+
+
+def is_model_family_supported(modality: str, model_name: str) -> bool:
+    """Public wrapper for model family support checks."""
+    capability = MODALITY_TRAIN_CAPABILITIES[modality]
+    return _is_model_family_supported(model_name, capability)
+
+
 def check_modality_train_capability(
     modality: str,
     model_name: str,

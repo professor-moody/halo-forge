@@ -82,6 +82,32 @@ class BenchmarkResult:
         }
 
 
+@dataclass
+class TrainingRunSummary:
+    """Normalized modality training summary entry."""
+
+    id: str
+    modality: str
+    model_name: str
+    output_dir: Path
+    timestamp: datetime = field(default_factory=datetime.now)
+    run_id: Optional[str] = None
+    seed: Optional[int] = None
+    resume_from_cycle: int = 0
+    resumed_from_checkpoint: Optional[Dict[str, Any]] = None
+    base_model_name: Optional[str] = None
+    active_model_name: Optional[str] = None
+    cycles_executed: int = 0
+    total_train_steps_executed: int = 0
+    final_train_loss: Optional[float] = None
+    weights_updated: bool = False
+    final_update_reason: str = ""
+    failure_reason: Optional[str] = None
+    final_model_path: Optional[str] = None
+    cycle_losses: List[float] = field(default_factory=list)
+    raw_data: Dict[str, Any] = field(default_factory=dict)
+
+
 class ResultsService:
     """Authoritative results ingestion/parsing and aggregation service."""
 
@@ -89,6 +115,11 @@ class ResultsService:
         Path("results"),
         Path("results/benchmarks"),
         Path("outputs"),
+    ]
+    TRAINING_DIRS = [
+        Path("models"),
+        Path("outputs"),
+        Path("results"),
     ]
 
     DOMAIN_KEYWORDS = {
@@ -120,6 +151,8 @@ class ResultsService:
         self.base_path = base_path or Path.cwd()
         self._cache: List[BenchmarkResult] = []
         self._cache_time: Optional[datetime] = None
+        self._training_cache: List[TrainingRunSummary] = []
+        self._training_cache_time: Optional[datetime] = None
         self._cache_ttl = 30  # seconds
 
     def scan_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
@@ -158,6 +191,62 @@ class ResultsService:
     def list_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
         """Public alias for canonical listing."""
         return self.scan_results(force_refresh=force_refresh)
+
+    def list_training_runs(self, force_refresh: bool = False) -> List[TrainingRunSummary]:
+        """Scan canonical training summary artifacts for modality runs."""
+        if not force_refresh and self._training_cache_time:
+            age = (datetime.now() - self._training_cache_time).total_seconds()
+            if age < self._cache_ttl:
+                return self._training_cache
+
+        runs: List[TrainingRunSummary] = []
+        seen_files: set[Path] = set()
+
+        for training_dir in self.TRAINING_DIRS:
+            full_path = self.base_path / training_dir
+            if not full_path.exists():
+                continue
+
+            for filename in ("training_summary.json", "training_metrics.json"):
+                for json_file in full_path.glob(f"**/{filename}"):
+                    if json_file in seen_files:
+                        continue
+                    seen_files.add(json_file)
+                    if filename == "training_metrics.json" and (json_file.parent / "training_summary.json").exists():
+                        continue
+                    try:
+                        parsed = self._parse_training_summary_file(json_file)
+                        if parsed:
+                            runs.append(parsed)
+                    except Exception as e:
+                        print(f"[ResultsService] Failed to parse training summary {json_file}: {e}")
+
+        runs.sort(key=lambda r: r.timestamp, reverse=True)
+        self._training_cache = runs
+        self._training_cache_time = datetime.now()
+        return runs
+
+    def get_recent_training_runs(self, n: int = 5) -> List[TrainingRunSummary]:
+        """Return the newest modality training runs."""
+        return self.list_training_runs()[:n]
+
+    def get_dashboard_training_summary(self, max_runs: int = 3) -> Dict[str, Any]:
+        """Build chart-ready training loss series from canonical training summaries."""
+        runs = self.get_recent_training_runs(max_runs)
+        if not runs:
+            return {"runs": [], "steps": []}
+
+        max_steps = max((len(run.cycle_losses) for run in runs), default=0)
+        steps = [str(i + 1) for i in range(max_steps)]
+        series: List[Dict[str, Any]] = []
+        for run in runs:
+            series.append(
+                {
+                    "name": f"{run.modality}:{Path(run.model_name).name[:12]}",
+                    "loss": run.cycle_losses,
+                }
+            )
+        return {"runs": series, "steps": steps}
 
     def list_results_by_domain(
         self,
@@ -373,6 +462,89 @@ class ResultsService:
             file_path=path,
             raw_data=data,
             normalized_metrics=normalized_metrics,
+        )
+
+    def _parse_training_summary_file(self, path: Path) -> Optional[TrainingRunSummary]:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+
+        modality = str(data.get("modality") or "").strip().lower()
+        if not modality:
+            modality = self._detect_domain(path, data, str(path.parent.name))
+
+        model_name = str(
+            data.get("base_model_name")
+            or data.get("model_name")
+            or data.get("active_model_name")
+            or "unknown"
+        )
+
+        cycle_entries = data.get("cycles") if isinstance(data.get("cycles"), list) else []
+        cycle_losses: List[float] = []
+        for entry in cycle_entries:
+            if not isinstance(entry, dict):
+                continue
+            loss_value = self._as_float(entry.get("train_loss"))
+            if loss_value is not None:
+                cycle_losses.append(loss_value)
+
+        resume_from_cycle = self._as_int(data.get("resume_from_cycle"))
+        total_steps = self._as_int(data.get("total_train_steps_executed"))
+        final_loss = self._as_float(data.get("final_train_loss"))
+        timestamp = self._parse_timestamp(data, path)
+        final_model_path = data.get("final_model_path")
+        run_id = data.get("run_id")
+        seed = data.get("seed")
+        try:
+            if seed is not None:
+                seed = int(seed)
+        except (TypeError, ValueError):
+            seed = None
+
+        try:
+            relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
+        except Exception:
+            relative_id = path.as_posix()
+
+        return TrainingRunSummary(
+            id=relative_id.replace("/", "_"),
+            modality=modality or "unknown",
+            model_name=model_name,
+            output_dir=path.parent,
+            timestamp=timestamp,
+            run_id=str(run_id) if run_id else None,
+            seed=seed,
+            resume_from_cycle=resume_from_cycle,
+            resumed_from_checkpoint=(
+                data.get("resumed_from_checkpoint")
+                if isinstance(data.get("resumed_from_checkpoint"), dict)
+                else None
+            ),
+            base_model_name=(
+                str(data.get("base_model_name"))
+                if data.get("base_model_name")
+                else None
+            ),
+            active_model_name=(
+                str(data.get("active_model_name"))
+                if data.get("active_model_name")
+                else None
+            ),
+            cycles_executed=self._as_int(data.get("cycles_executed")),
+            total_train_steps_executed=total_steps,
+            final_train_loss=final_loss,
+            weights_updated=bool(data.get("weights_updated", False)),
+            final_update_reason=str(data.get("final_update_reason") or ""),
+            failure_reason=(
+                str(data.get("failure_reason"))
+                if data.get("failure_reason") not in (None, "")
+                else None
+            ),
+            final_model_path=str(final_model_path) if final_model_path else None,
+            cycle_losses=cycle_losses,
+            raw_data=data,
         )
 
     def _metric_sources(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:

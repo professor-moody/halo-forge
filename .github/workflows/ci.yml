@@ -54,4 +54,6 @@ jobs:
             tests/test_training_pipeline_contracts.py \
             tests/test_dependency_packaging_contracts.py \
             tests/test_runtime_surface_alignment.py \
-            tests/test_phase6_modality_graduation.py
+            tests/test_phase6_modality_graduation.py \
+            tests/test_phase7_modality_reliability_gates.py \
+            tests/test_phase7b_modality_e2e_surface.py

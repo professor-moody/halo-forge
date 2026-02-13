@@ -368,12 +368,13 @@ Run pipeline validation tests.
 | `--model` | `-m` | string | No | `Qwen/Qwen2.5-Coder-0.5B` | Model for testing |
 | `--verbose` | `-v` | flag | No | false | Verbose output |
 
-**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training)
+**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite)
 
 ```bash
 halo-forge test --level smoke
 halo-forge test --level standard --verbose
 halo-forge test --level full --model Qwen/Qwen2.5-Coder-1.5B
+halo-forge test --level modality
 ```
 
 ---
@@ -491,6 +492,7 @@ Real-training enabled. Use `--allow-prototype-train` only if a modality is tempo
 | `--limit` | - | int | No | - | Limit dataset samples |
 | `--allow-prototype-train` | - | flag | No | false | Compatibility override for temporary prototype gating |
 | `--resume-from-cycle` | - | int | No | 0 | Resume from a previously saved cycle index |
+| `--seed` | - | int | No | 42 | Deterministic runtime seed |
 
 **Dataset choices:** `textvqa`, `docvqa`, `chartqa`, `realworldqa`, `mathvista`
 **Supported model families:** `qwen2-vl`, `qwen-vl`, `llava`
@@ -501,7 +503,7 @@ halo-forge vlm train \
   --dataset textvqa \
   --cycles 6 \
   --output models/vlm_textvqa \
-  --allow-prototype-train
+  --seed 42
 ```
 
 ---
@@ -574,6 +576,7 @@ Real-training enabled. Use `--allow-prototype-train` only if a modality is tempo
 | `--limit` | - | int | No | - | Limit dataset samples |
 | `--allow-prototype-train` | - | flag | No | false | Compatibility override for temporary prototype gating |
 | `--resume-from-cycle` | - | int | No | 0 | Resume from a previously saved cycle index |
+| `--seed` | - | int | No | 42 | Deterministic runtime seed |
 
 **Dataset choices:** `librispeech`, `common_voice`, `audioset`, `speech_commands`
 **Supported model families:** `whisper`
@@ -585,7 +588,7 @@ halo-forge audio train \
   --task asr \
   --cycles 4 \
   --output models/audio_asr \
-  --allow-prototype-train
+  --seed 42
 ```
 
 ---
@@ -659,6 +662,7 @@ Real-training enabled. Use `--allow-prototype-train` only if a modality is tempo
 | `--limit` | - | int | No | - | Limit dataset samples |
 | `--allow-prototype-train` | - | flag | No | false | Compatibility override for temporary prototype gating |
 | `--resume-from-cycle` | - | int | No | 0 | Resume from a previously saved cycle index |
+| `--seed` | - | int | No | 42 | Deterministic runtime seed |
 **Supported model families:** `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral`
 
 **RAFT Dataset choices:** `gsm8k`, `math`, `aime`
@@ -669,7 +673,7 @@ halo-forge reasoning train \
   --dataset gsm8k \
   --cycles 4 \
   --output models/reasoning_gsm8k \
-  --allow-prototype-train
+  --seed 42
 ```
 
 ---
@@ -745,6 +749,7 @@ Real-training enabled. Use `--allow-prototype-train` only if a modality is tempo
 | `--dry-run` | - | flag | No | false | Validate config only |
 | `--allow-prototype-train` | - | flag | No | false | Compatibility override for temporary prototype gating |
 | `--resume-from-cycle` | - | int | No | 0 | Resume from a previously saved cycle index |
+| `--seed` | - | int | No | 42 | Deterministic runtime seed |
 **Supported model families:** `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral`
 
 ```bash
@@ -753,7 +758,7 @@ halo-forge agentic train \
   --dataset xlam \
   --cycles 5 \
   --output models/agentic_raft \
-  --allow-prototype-train
+  --seed 42
 ```
 
 ---

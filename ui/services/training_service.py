@@ -186,10 +186,11 @@ class TrainingService:
         output_dir: str,
         cycles: int,
         resume_from_cycle: int = 0,
+        seed: int = 42,
         limit: Optional[int] = None,
         task: Optional[str] = None,
         samples_per_prompt: Optional[int] = None,
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str, str, int]:
         """Validate user inputs for modality-specific train launches."""
         contract = MODALITY_TRAIN_LAUNCH_CONTRACTS[modality]
         if modality == "vlm" and not samples_per_prompt:
@@ -200,6 +201,7 @@ class TrainingService:
             "output_dir": output_dir,
             "cycles": cycles,
             "resume_from_cycle": resume_from_cycle,
+            "seed": seed,
             "limit": limit,
             "task": task,
             "samples_per_prompt": samples_per_prompt,
@@ -207,10 +209,17 @@ class TrainingService:
         normalized = validate_launch_payload(payload, contract)
         if resume_from_cycle < 0:
             raise ValueError("resume_from_cycle must be >= 0")
+        try:
+            parsed_seed = int(seed)
+        except (TypeError, ValueError):
+            raise ValueError("seed must be >= 0")
+        if parsed_seed < 0:
+            raise ValueError("seed must be >= 0")
         return (
             normalized["model"],
             normalized["dataset"],
             normalized["output_dir"],
+            parsed_seed,
         )
     
     async def launch_sft(
@@ -526,6 +535,7 @@ class TrainingService:
         task: Optional[str] = None,
         limit: Optional[int] = None,
         resume_from_cycle: int = 0,
+        seed: int = 42,
         allow_prototype_train: bool = False,
         on_log: Optional[Callable[[str], None]] = None,
     ) -> str:
@@ -533,13 +543,14 @@ class TrainingService:
         if modality not in MODALITY_TRAIN_LAUNCH_CONTRACTS:
             raise ValueError(f"Unsupported modality: {modality}")
 
-        model, dataset, output_dir = self._validate_modality_launch_payload(
+        model, dataset, output_dir, seed = self._validate_modality_launch_payload(
             modality=modality,
             model=model,
             dataset=dataset,
             output_dir=output_dir,
             cycles=cycles,
             resume_from_cycle=resume_from_cycle,
+            seed=seed,
             limit=limit,
             task=task,
             samples_per_prompt=samples_per_prompt,
@@ -588,6 +599,7 @@ class TrainingService:
             "--output", output_dir,
             "--cycles", str(cycles),
             "--resume-from-cycle", str(max(0, resume_from_cycle)),
+            "--seed", str(seed),
         ]
         if learning_rate is not None:
             cmd.extend(["--lr", str(learning_rate)])

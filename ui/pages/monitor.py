@@ -54,6 +54,10 @@ class Monitor:
         self._update_steps_label = None
         self._update_reason_label = None
         self._final_loss_label = None
+        self._run_id_label = None
+        self._seed_label = None
+        self._resume_label = None
+        self._failure_reason_label = None
         
         if job_id:
             self.job = state.get_job(job_id)
@@ -394,6 +398,26 @@ class Monitor:
                 self._update_reason_label = ui.label(summary["final_reason"]).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Failure Reason').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._failure_reason_label = ui.label(summary["failure_reason"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Run ID').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._run_id_label = ui.label(summary["run_id"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Seed').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._seed_label = ui.label(summary["seed"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Resume').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._resume_label = ui.label(summary["resume"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
 
     def _read_training_summary_payload(self) -> Optional[Dict[str, Any]]:
         """Load canonical training summary payload if present."""
@@ -422,12 +446,21 @@ class Monitor:
                 "update_steps": "--",
                 "final_loss": "--",
                 "final_reason": "--",
+                "failure_reason": "--",
+                "run_id": "--",
+                "seed": "--",
+                "resume": "--",
             }
 
         total_steps = int(payload.get("total_train_steps_executed", 0) or 0)
         weights_updated = payload.get("weights_updated")
         final_loss = payload.get("final_train_loss")
         final_reason = payload.get("final_update_reason")
+        run_id = payload.get("run_id")
+        seed = payload.get("seed")
+        failure_reason = payload.get("failure_reason")
+        resume_cycle = payload.get("resume_from_cycle")
+        resumed_checkpoint = payload.get("resumed_from_checkpoint")
 
         cycle_entries = payload.get("cycles") or payload.get("cycle_results") or []
         if isinstance(cycle_entries, list):
@@ -477,6 +510,14 @@ class Monitor:
             "update_steps": str(total_steps),
             "final_loss": final_loss_label,
             "final_reason": str(final_reason or "--"),
+            "failure_reason": str(failure_reason or "--"),
+            "run_id": str(run_id or "--"),
+            "seed": str(seed if seed is not None else "--"),
+            "resume": (
+                f"cycle {resume_cycle} ({resumed_checkpoint.get('cycle_dir', 'checkpoint')})"
+                if isinstance(resumed_checkpoint, dict) and (resume_cycle or 0) > 0
+                else (f"cycle {resume_cycle}" if (resume_cycle or 0) > 0 else "none")
+            ),
         }
     
     def _render_log_viewer(self):
@@ -731,6 +772,14 @@ class Monitor:
                 self._final_loss_label.set_text(summary["final_loss"])
             if self._update_reason_label:
                 self._update_reason_label.set_text(summary["final_reason"])
+            if self._failure_reason_label:
+                self._failure_reason_label.set_text(summary["failure_reason"])
+            if self._run_id_label:
+                self._run_id_label.set_text(summary["run_id"])
+            if self._seed_label:
+                self._seed_label.set_text(summary["seed"])
+            if self._resume_label:
+                self._resume_label.set_text(summary["resume"])
         except Exception:
             pass  # UI context may be invalid
     

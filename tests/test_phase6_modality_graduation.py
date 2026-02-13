@@ -82,7 +82,7 @@ def test_vlm_trainer_writes_cycle_and_final_artifacts(monkeypatch, tmp_path):
         },
     )
 
-    summary = trainer.train(prompts=[])
+    summary = trainer.train(prompts=[SimpleNamespace()])
     assert (tmp_path / "vlm" / "cycle_0" / "model").exists()
     assert (tmp_path / "vlm" / "cycle_0" / "checkpoint_state.json").exists()
     assert (tmp_path / "vlm" / "latest_checkpoint.json").exists()
@@ -144,7 +144,7 @@ def test_vlm_resume_from_cycle_uses_previous_checkpoint_model(monkeypatch, tmp_p
     output_dir = tmp_path / "vlm_resume"
     trainer1 = VLMRAFTTrainer(VLMRAFTConfig(num_cycles=2, output_dir=str(output_dir)))
     _patch_trainer(trainer1)
-    trainer1.train(prompts=[])
+    trainer1.train(prompts=[SimpleNamespace()])
 
     resume_model_path = {}
     trainer2 = VLMRAFTTrainer(VLMRAFTConfig(num_cycles=3, output_dir=str(output_dir)))
@@ -156,7 +156,7 @@ def test_vlm_resume_from_cycle_uses_previous_checkpoint_model(monkeypatch, tmp_p
 
     _patch_trainer(trainer2)
     monkeypatch.setattr(trainer2, "_setup", _capture_setup)
-    summary = trainer2.train(prompts=[], resume_from=2)
+    summary = trainer2.train(prompts=[SimpleNamespace()], resume_from=2)
     assert str(Path(resume_model_path["value"])).endswith("cycle_1/model")
     assert summary["cycles_executed"] == 3
 
@@ -211,7 +211,7 @@ def test_audio_reasoning_agentic_write_artifact_contract(monkeypatch, tmp_path):
             ),
         ),
     )
-    audio.train(samples=[])
+    audio.train(samples=[object()])
     assert (tmp_path / "audio" / "cycle_0" / "model").exists()
     assert (tmp_path / "audio" / "final_model").exists()
 
@@ -281,7 +281,7 @@ def test_audio_reasoning_agentic_write_artifact_contract(monkeypatch, tmp_path):
             ),
         ),
     )
-    agentic.train(samples=[])
+    agentic.train(samples=[object()])
     assert (tmp_path / "agentic" / "cycle_0" / "model").exists()
     assert (tmp_path / "agentic" / "final_model").exists()
 
@@ -351,6 +351,7 @@ def test_training_service_modality_command_respects_prototype_flag(monkeypatch, 
         )
     )
     assert "--allow-prototype-train" in captured_cmd["value"]
+    assert "--seed" in captured_cmd["value"]
 
 
 def test_app_state_cycle_progress_for_modality_jobs():

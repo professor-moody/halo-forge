@@ -23,6 +23,7 @@ from halo_forge.vlm.models import (
     supports_vlm_training,
 )
 from halo_forge.vlm.data import VLMSample, load_vlm_dataset
+from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
     build_cycle_summary,
@@ -34,6 +35,11 @@ from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
     resolve_resume_checkpoint,
+)
+from halo_forge.runtime_determinism import (
+    DEFAULT_TRAINING_SEED,
+    build_run_id,
+    set_global_seed,
 )
 
 
@@ -71,6 +77,7 @@ class VLMRAFTConfig:
     # Hardware
     bf16: bool = True
     gradient_checkpointing: bool = True
+    seed: int = DEFAULT_TRAINING_SEED
 
 
 @dataclass
@@ -123,6 +130,9 @@ class VLMRAFTTrainer:
         self.best_reward = 0.0
         self.training_history: List[Dict[str, Any]] = []
         self.training_summary: Dict[str, Any] = {}
+        self.base_model_name = config.model_name
+        self.run_id: str = ""
+        self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
         
         # Create output directory
         self.output_dir = Path(config.output_dir)
@@ -296,6 +306,8 @@ class VLMRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "unsupported_model_family",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": 0,
             }
 
         if not samples:
@@ -304,6 +316,8 @@ class VLMRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "no_filtered_samples",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": 0,
             }
 
         model = getattr(self.adapter, "model", None)
@@ -315,6 +329,8 @@ class VLMRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "adapter_model_missing",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": 0,
             }
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
@@ -326,6 +342,7 @@ class VLMRAFTTrainer:
         grad_accum = 1
         micro_steps = 0
         last_loss_value = 0.0
+        skipped_batches_non_finite = 0
 
         for sample in samples[:8]:
             image = self.adapter._load_image(sample.image)
@@ -370,6 +387,10 @@ class VLMRAFTTrainer:
             loss = outputs.loss
             if loss is None:
                 continue
+            if not torch.isfinite(loss).item():
+                skipped_batches_non_finite += 1
+                optimizer.zero_grad(set_to_none=True)
+                continue
 
             (loss / grad_accum).backward()
             last_loss_value = float(loss.detach().item())
@@ -410,6 +431,8 @@ class VLMRAFTTrainer:
             "train_loss": (total_loss / optimizer_steps) if total_loss else 0.0,
             "weights_updated": optimizer_steps > 0,
             "update_reason": "updated" if optimizer_steps > 0 else "no_optimizer_steps",
+            "optimizer_steps": optimizer_steps,
+            "skipped_batches_non_finite": skipped_batches_non_finite,
         }
     
     def save_checkpoint(self, cycle: int, cycle_metrics: Dict[str, Any]):
@@ -578,22 +601,45 @@ class VLMRAFTTrainer:
                 # Load from HuggingFace dataset
                 dataset = load_vlm_dataset(prompts)
                 prompts = list(dataset)
-        
+
+        if not prompts:
+            raise ValueError("VLM training requires at least one prompt/sample")
+
         self._log(f"Training with {len(prompts)} prompts", "info")
-        
+
         # Setup
         # Determine starting cycle
         start_cycle = resume_from if resume_from else 0
+        self.resume_checkpoint_meta = None
         self._validate_resume_configuration(start_cycle)
         if start_cycle > 0:
             checkpoint = resolve_resume_checkpoint(
                 output_dir=self.output_dir,
                 resume_from_cycle=start_cycle,
                 max_cycles=self.config.num_cycles,
+                modality="vlm",
             )
+            self.resume_checkpoint_meta = {
+                "cycle": checkpoint.cycle,
+                "cycle_dir": str(checkpoint.cycle_dir),
+                "model_dir": str(checkpoint.model_dir),
+            }
             self.config.model_name = str(checkpoint.model_dir)
             self.config.adapter_type = checkpoint.state.get("adapter_type") or self.config.adapter_type
             self._load_resume_history(start_cycle)
+
+        if not (
+            is_model_family_supported("vlm", self.config.model_name)
+            or is_model_family_supported("vlm", self.base_model_name)
+        ):
+            families = ", ".join(get_supported_model_families("vlm"))
+            raise ValueError(
+                f"Unsupported model family for vlm training. Supported families: {families}."
+            )
+
+        normalized_seed = set_global_seed(self.config.seed)
+        self.config.seed = normalized_seed
+        self.run_id = build_run_id("vlm")
 
         self._setup()
         
@@ -618,6 +664,12 @@ class VLMRAFTTrainer:
             model_name=self.config.model_name,
             total_cycles_planned=self.config.num_cycles,
             cycles=self.training_history,
+            run_id=self.run_id,
+            seed=self.config.seed,
+            resume_from_cycle=start_cycle,
+            resumed_from_checkpoint=self.resume_checkpoint_meta,
+            base_model_name=self.base_model_name,
+            active_model_name=self.config.model_name,
             extra={
                 "best_avg_reward": self.best_reward,
             },
@@ -652,6 +704,7 @@ class VLMRAFTTrainer:
             output_dir=self.output_dir,
             resume_from_cycle=start_cycle,
             max_cycles=self.config.num_cycles,
+            modality="vlm",
         )
         history_path = self.output_dir / "training_history.json"
         if not history_path.exists():

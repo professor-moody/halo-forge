@@ -21,6 +21,8 @@ def test_training_contract_helpers_emit_stable_shapes():
         "train_loss": None,
         "weights_updated": False,
         "update_reason": "no_filtered_samples",
+        "optimizer_steps": 0,
+        "skipped_batches_non_finite": 0,
     }
 
     cycle = build_cycle_summary(
@@ -53,6 +55,7 @@ def test_training_contract_helpers_emit_stable_shapes():
     assert summary["total_train_steps_executed"] == 0
     assert summary["weights_updated"] is False
     assert summary["final_update_reason"] == "no_filtered_samples"
+    assert summary["failure_reason"] == "no_filtered_samples"
 
 
 def test_reasoning_cycle_metrics_include_canonical_training_contract_keys(monkeypatch, tmp_path):
@@ -143,7 +146,7 @@ def test_audio_train_writes_canonical_training_summary(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(trainer, "_save_checkpoint", lambda *args, **kwargs: None)
 
-    results = trainer.train(samples=[])
+    results = trainer.train(samples=[object()])
     assert len(results) == 1
     summary = trainer.training_summary
     assert summary["modality"] == "audio"
@@ -187,7 +190,7 @@ def test_vlm_resume_requires_history_and_checkpoint(tmp_path):
     trainer.run_cycle = lambda prompts, cycle: {}
 
     with pytest.raises(ValueError, match="requires checkpoint"):
-        trainer.train(prompts=[], resume_from=1)
+        trainer.train(prompts=[object()], resume_from=1)
 
 
 def test_cli_enforces_non_zero_exit_when_no_training_updates():

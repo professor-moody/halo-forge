@@ -21,6 +21,7 @@ from halo_forge.audio.models import (
     get_audio_adapter,
     supports_audio_training,
 )
+from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_contracts import (
     build_cycle_summary,
     build_training_summary,
@@ -31,6 +32,11 @@ from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
     resolve_resume_checkpoint,
+)
+from halo_forge.runtime_determinism import (
+    DEFAULT_TRAINING_SEED,
+    build_run_id,
+    set_global_seed,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,7 +81,8 @@ class AudioRAFTConfig:
     
     # Device
     device: Optional[str] = None
-    
+    seed: int = DEFAULT_TRAINING_SEED
+
     def __post_init__(self):
         if self.device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -130,6 +137,9 @@ class AudioRAFTTrainer:
         self.cycle_results: List[AudioRAFTCycleResult] = []
         self._all_cycle_metrics: List[Dict[str, Any]] = []
         self.training_summary: Dict[str, Any] = {}
+        self.base_model_name = config.model_name
+        self.run_id: str = ""
+        self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
     
     def _init_adapter(self) -> None:
         """Initialize model adapter."""
@@ -179,15 +189,35 @@ class AudioRAFTTrainer:
             List of cycle results
         """
         start_cycle = int(resume_from_cycle or 0)
+        self.resume_checkpoint_meta = None
         self._validate_resume_configuration(start_cycle)
         if start_cycle > 0:
             checkpoint = resolve_resume_checkpoint(
                 output_dir=self.output_dir,
                 resume_from_cycle=start_cycle,
                 max_cycles=self.config.num_cycles,
+                modality="audio",
             )
+            self.resume_checkpoint_meta = {
+                "cycle": checkpoint.cycle,
+                "cycle_dir": str(checkpoint.cycle_dir),
+                "model_dir": str(checkpoint.model_dir),
+            }
             self.config.model_name = str(checkpoint.model_dir)
             self._load_resume_history(start_cycle)
+
+        if not (
+            is_model_family_supported("audio", self.config.model_name)
+            or is_model_family_supported("audio", self.base_model_name)
+        ):
+            families = ", ".join(get_supported_model_families("audio"))
+            raise ValueError(
+                f"Unsupported model family for audio training. Supported families: {families}."
+            )
+
+        normalized_seed = set_global_seed(self.config.seed)
+        self.config.seed = normalized_seed
+        self.run_id = build_run_id("audio")
 
         self._init_adapter()
         self._init_verifier()
@@ -196,6 +226,8 @@ class AudioRAFTTrainer:
         if isinstance(samples, str):
             dataset = load_audio_dataset(samples, limit=None)
             samples = list(dataset)
+        if not samples:
+            raise ValueError("audio training requires at least one sample")
         
         logger.info(f"Starting AudioRAFT training with {len(samples)} samples")
         logger.info(f"Task: {self.config.task}")
@@ -240,6 +272,12 @@ class AudioRAFTTrainer:
             model_name=self.config.model_name,
             total_cycles_planned=self.config.num_cycles,
             cycles=self._all_cycle_metrics,
+            run_id=self.run_id,
+            seed=self.config.seed,
+            resume_from_cycle=start_cycle,
+            resumed_from_checkpoint=self.resume_checkpoint_meta,
+            base_model_name=self.base_model_name,
+            active_model_name=self.config.model_name,
             extra={
                 "task": self.config.task,
                 "samples": len(samples),
@@ -431,6 +469,8 @@ class AudioRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "unsupported_model_family",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": 0,
             }
 
         if not kept:
@@ -439,6 +479,8 @@ class AudioRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "no_filtered_samples",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": 0,
             }
 
         model = getattr(self.adapter, "model", None)
@@ -449,6 +491,8 @@ class AudioRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "adapter_not_loaded",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": 0,
             }
 
         model.train()
@@ -460,6 +504,7 @@ class AudioRAFTTrainer:
         micro_steps = 0
         grad_accum = max(1, self.config.gradient_accumulation_steps)
         last_loss_value = 0.0
+        skipped_batches_non_finite = 0
 
         for item in kept:
             sample: AudioSample = item["sample"]
@@ -491,6 +536,10 @@ class AudioRAFTTrainer:
             loss = outputs.loss
             if loss is None:
                 continue
+            if not torch.isfinite(loss).item():
+                skipped_batches_non_finite += 1
+                optimizer.zero_grad(set_to_none=True)
+                continue
 
             (loss / grad_accum).backward()
             last_loss_value = float(loss.detach().item())
@@ -514,6 +563,8 @@ class AudioRAFTTrainer:
                 "train_loss": None,
                 "weights_updated": False,
                 "update_reason": "no_optimizer_steps",
+                "optimizer_steps": 0,
+                "skipped_batches_non_finite": skipped_batches_non_finite,
             }
 
         return {
@@ -521,6 +572,8 @@ class AudioRAFTTrainer:
             "train_loss": total_loss / optimizer_steps if total_loss else 0.0,
             "weights_updated": True,
             "update_reason": "updated",
+            "optimizer_steps": optimizer_steps,
+            "skipped_batches_non_finite": skipped_batches_non_finite,
         }
     
     def _save_checkpoint(self, cycle: int, cycle_metrics: Dict[str, Any]) -> None:
@@ -582,6 +635,7 @@ class AudioRAFTTrainer:
             output_dir=self.output_dir,
             resume_from_cycle=start_cycle,
             max_cycles=self.config.num_cycles,
+            modality="audio",
         )
         history_path = self.output_dir / "training_history.json"
         if not history_path.exists():

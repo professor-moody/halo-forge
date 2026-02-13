@@ -13,6 +13,7 @@ import time
 
 from halo_forge.reasoning.verifiers import MathVerifier, ReasoningVerifyResult
 from halo_forge.reasoning.data import MathSample
+from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
     build_cycle_summary,
@@ -24,6 +25,11 @@ from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
     resolve_resume_checkpoint,
+)
+from halo_forge.runtime_determinism import (
+    DEFAULT_TRAINING_SEED,
+    build_run_id,
+    set_global_seed,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +53,7 @@ class ReasoningRAFTConfig:
     train_batch_size: int = 1
     gradient_accumulation_steps: int = 1
     train_max_steps_per_cycle: int = 8
+    train_max_grad_norm: Optional[float] = None
     
     # Generation
     temperature: float = 0.7
@@ -62,6 +69,7 @@ class ReasoningRAFTConfig:
     # Hardware
     bf16: bool = True
     gradient_checkpointing: bool = True
+    seed: int = DEFAULT_TRAINING_SEED
 
 
 @dataclass
@@ -115,6 +123,9 @@ class ReasoningRAFTTrainer:
         }
         self._all_cycle_metrics: List[Dict[str, Any]] = []
         self.training_summary: Dict[str, Any] = {}
+        self.base_model_name = config.model_name
+        self.run_id: str = ""
+        self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
     
     def load_model(self) -> None:
         """Load model and tokenizer."""
@@ -360,17 +371,39 @@ class ReasoningRAFTTrainer:
         logger.info(f"  Samples: {len(samples)}")
         logger.info(f"  Cycles: {self.config.num_cycles}")
         logger.info(f"  Model: {self.config.model_name}")
-        
+        if not samples:
+            raise ValueError("reasoning training requires at least one sample")
+
         start_cycle = int(resume_from_cycle or 0)
+        self.resume_checkpoint_meta = None
         self._validate_resume_configuration(start_cycle)
         if start_cycle > 0:
             checkpoint = resolve_resume_checkpoint(
                 output_dir=self.output_dir,
                 resume_from_cycle=start_cycle,
                 max_cycles=self.config.num_cycles,
+                modality="reasoning",
             )
+            self.resume_checkpoint_meta = {
+                "cycle": checkpoint.cycle,
+                "cycle_dir": str(checkpoint.cycle_dir),
+                "model_dir": str(checkpoint.model_dir),
+            }
             self.config.model_name = str(checkpoint.model_dir)
             self._load_resume_history(start_cycle)
+
+        if not (
+            is_model_family_supported("reasoning", self.config.model_name)
+            or is_model_family_supported("reasoning", self.base_model_name)
+        ):
+            families = ", ".join(get_supported_model_families("reasoning"))
+            raise ValueError(
+                f"Unsupported model family for reasoning training. Supported families: {families}."
+            )
+
+        normalized_seed = set_global_seed(self.config.seed)
+        self.config.seed = normalized_seed
+        self.run_id = build_run_id("reasoning")
 
         for cycle in range(start_cycle, self.config.num_cycles):
             self.current_cycle = cycle
@@ -387,6 +420,12 @@ class ReasoningRAFTTrainer:
             model_name=self.config.model_name,
             total_cycles_planned=self.config.num_cycles,
             cycles=self._all_cycle_metrics,
+            run_id=self.run_id,
+            seed=self.config.seed,
+            resume_from_cycle=start_cycle,
+            resumed_from_checkpoint=self.resume_checkpoint_meta,
+            base_model_name=self.base_model_name,
+            active_model_name=self.config.model_name,
             extra={
                 "config": {
                     "model": self.config.model_name,
@@ -489,6 +528,7 @@ class ReasoningRAFTTrainer:
             gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             max_steps=self.config.train_max_steps_per_cycle,
             max_length=1024,
+            max_grad_norm=self.config.train_max_grad_norm,
         )
 
     def _validate_resume_configuration(self, start_cycle: int) -> None:
@@ -503,6 +543,7 @@ class ReasoningRAFTTrainer:
             output_dir=self.output_dir,
             resume_from_cycle=start_cycle,
             max_cycles=self.config.num_cycles,
+            modality="reasoning",
         )
         history_path = self.output_dir / "training_history.json"
         if not history_path.exists():

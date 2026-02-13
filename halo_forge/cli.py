@@ -90,6 +90,21 @@ def _enforce_training_outcome_or_exit(modality: str, summary: dict) -> None:
     sys.exit(2)
 
 
+def _print_training_run_metadata(summary: dict) -> None:
+    """Print deterministic runtime metadata when available."""
+    run_id = summary.get("run_id")
+    if run_id:
+        print(f"Run ID: {run_id}")
+    if summary.get("seed") is not None:
+        print(f"Seed: {summary['seed']}")
+    resume_from_cycle = summary.get("resume_from_cycle")
+    if resume_from_cycle is not None:
+        print(f"Resume from cycle: {resume_from_cycle}")
+    resumed_from = summary.get("resumed_from_checkpoint")
+    if isinstance(resumed_from, dict) and resumed_from.get("model_dir"):
+        print(f"Resumed checkpoint: {resumed_from['model_dir']}")
+
+
 # =============================================================================
 # Auto-Logging System
 # =============================================================================
@@ -1665,6 +1680,217 @@ class TestRunner:
         
         return self.print_summary()
 
+    def test_modality_fixtures(self) -> bool:
+        """Validate deterministic modality fixture pack shape."""
+        fixture_dir = Path("tests/fixtures/modality")
+        required_files = (
+            "vlm_samples.jsonl",
+            "audio_samples.jsonl",
+            "reasoning_samples.jsonl",
+            "agentic_samples.jsonl",
+        )
+        if not fixture_dir.exists():
+            raise RuntimeError(f"Missing fixture directory: {fixture_dir}")
+
+        for filename in required_files:
+            path = fixture_dir / filename
+            if not path.exists():
+                raise RuntimeError(f"Missing fixture file: {path}")
+            with open(path, encoding="utf-8") as f:
+                first_line = f.readline().strip()
+            if not first_line:
+                raise RuntimeError(f"Fixture file is empty: {path}")
+            try:
+                json.loads(first_line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"Invalid JSONL fixture in {path}: {exc}") from exc
+        return True
+
+    def test_modality_train_smoke(self) -> bool:
+        """Run tiny deterministic modality train-smoke flows."""
+        import torch
+        from types import SimpleNamespace
+
+        from halo_forge.training_contracts import build_cycle_summary
+        from halo_forge.vlm.trainer import VLMRAFTConfig, VLMRAFTTrainer, VLMSampleResult
+        from halo_forge.audio.trainer import AudioRAFTConfig, AudioRAFTTrainer, AudioRAFTCycleResult
+        from halo_forge.reasoning.trainer import ReasoningRAFTConfig, ReasoningRAFTTrainer
+        from halo_forge.reasoning.data import MathSample
+        from halo_forge.agentic.trainer import AgenticRAFTConfig, AgenticRAFTTrainer, AgenticRAFTCycleResult
+
+        class _FakeSaveComponent:
+            def __init__(self, marker: str):
+                self.marker = marker
+
+            def save_pretrained(self, target_dir: str):
+                target = Path(target_dir) / f"{self.marker}.txt"
+                target.write_text(self.marker, encoding="utf-8")
+
+        with tempfile.TemporaryDirectory(prefix="halo_forge_modality_test_") as tmp_dir:
+            output_root = Path(tmp_dir)
+
+            # VLM smoke
+            vlm = VLMRAFTTrainer(VLMRAFTConfig(num_cycles=1, output_dir=str(output_root / "vlm"), seed=7))
+            vlm._setup = lambda: (
+                setattr(
+                    vlm,
+                    "adapter",
+                    SimpleNamespace(
+                        model=_FakeSaveComponent("vlm_model"),
+                        tokenizer=_FakeSaveComponent("vlm_tokenizer"),
+                        processor=_FakeSaveComponent("vlm_processor"),
+                        cleanup=lambda: None,
+                    ),
+                ),
+                setattr(vlm, "verifier", SimpleNamespace(cleanup=lambda: None)),
+            )
+            vlm.generate_samples = lambda prompts, spp: [
+                VLMSampleResult(
+                    image="fixture.png",
+                    prompt="describe",
+                    completion="answer",
+                    ground_truth="answer",
+                    reward=1.0,
+                    success=True,
+                    details={},
+                )
+            ]
+            vlm.filter_samples = lambda samples: samples
+            vlm.train_on_samples = lambda samples, cycle: {
+                "train_steps_executed": 1,
+                "train_loss": 0.1,
+                "weights_updated": True,
+                "update_reason": "updated",
+                "optimizer_steps": 1,
+                "skipped_batches_non_finite": 0,
+            }
+            vlm_summary = vlm.train(prompts=[SimpleNamespace(image="fixture.png", prompt="describe", ground_truth="answer")])
+            if not vlm_summary.get("final_model_path"):
+                raise RuntimeError("VLM smoke did not emit final_model_path")
+
+            # Audio smoke
+            audio = AudioRAFTTrainer(AudioRAFTConfig(num_cycles=1, output_dir=str(output_root / "audio"), seed=7))
+            audio.adapter = SimpleNamespace(
+                model=_FakeSaveComponent("audio_model"),
+                tokenizer=_FakeSaveComponent("audio_tokenizer"),
+                processor=_FakeSaveComponent("audio_processor"),
+            )
+            audio._init_adapter = lambda: None
+            audio._init_verifier = lambda: None
+            audio._train_cycle = lambda cycle, samples: AudioRAFTCycleResult(
+                cycle=cycle,
+                samples_generated=1,
+                samples_verified=1,
+                samples_kept=1,
+                average_reward=1.0,
+                learning_rate=1e-5,
+                metrics=build_cycle_summary(
+                    cycle=cycle,
+                    learning_rate=1e-5,
+                    samples_seen=1,
+                    samples_kept=1,
+                    cycle_duration_seconds=0.01,
+                    update_metrics={
+                        "train_steps_executed": 1,
+                        "train_loss": 0.1,
+                        "weights_updated": True,
+                        "update_reason": "updated",
+                        "optimizer_steps": 1,
+                        "skipped_batches_non_finite": 0,
+                    },
+                ),
+            )
+            audio.train(samples=[SimpleNamespace()])
+            if not audio.training_summary.get("final_model_path"):
+                raise RuntimeError("Audio smoke did not emit final_model_path")
+
+            # Reasoning smoke
+            reasoning = ReasoningRAFTTrainer(
+                ReasoningRAFTConfig(num_cycles=1, output_dir=str(output_root / "reasoning"), seed=7)
+            )
+            reasoning.train_cycle = lambda samples, cycle: build_cycle_summary(
+                cycle=cycle,
+                learning_rate=1e-5,
+                samples_seen=1,
+                samples_kept=1,
+                cycle_duration_seconds=0.01,
+                update_metrics={
+                    "train_steps_executed": 1,
+                    "train_loss": 0.1,
+                    "weights_updated": True,
+                    "update_reason": "updated",
+                    "optimizer_steps": 1,
+                    "skipped_batches_non_finite": 0,
+                },
+                extra={"accuracy": 1.0, "avg_reward": 1.0},
+            )
+            reasoning_summary = reasoning.train(samples=[MathSample(question="1+1", answer="2")])
+            if not reasoning_summary.get("final_model_path"):
+                raise RuntimeError("Reasoning smoke did not emit final_model_path")
+
+            # Agentic smoke
+            agentic = AgenticRAFTTrainer(
+                AgenticRAFTConfig(num_cycles=1, output_dir=str(output_root / "agentic"), seed=7)
+            )
+            agentic.model = _FakeSaveComponent("agentic_model")
+            agentic.tokenizer = _FakeSaveComponent("agentic_tokenizer")
+            agentic._run_cycle = lambda samples, cycle: AgenticRAFTCycleResult(
+                cycle=cycle,
+                total_samples=1,
+                verified_samples=1,
+                avg_reward=1.0,
+                success_rate=1.0,
+                training_samples=1,
+                metrics=build_cycle_summary(
+                    cycle=cycle,
+                    learning_rate=1e-5,
+                    samples_seen=1,
+                    samples_kept=1,
+                    cycle_duration_seconds=0.01,
+                    update_metrics={
+                        "train_steps_executed": 1,
+                        "train_loss": 0.1,
+                        "weights_updated": True,
+                        "update_reason": "updated",
+                        "optimizer_steps": 1,
+                        "skipped_batches_non_finite": 0,
+                    },
+                ),
+            )
+            agentic_summary = agentic.train(
+                samples=[SimpleNamespace(prompt="prompt", expected_calls=[], is_irrelevant=False)]
+            )
+            if not agentic_summary.get("final_model_path"):
+                raise RuntimeError("Agentic smoke did not emit final_model_path")
+
+        return True
+
+    def run_modality(self) -> bool:
+        """Run deterministic modality training smoke checks."""
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("Modality Smoke", "Deterministic tiny-run validation")
+        else:
+            print(f"\n{'='*60}")
+            print("halo forge Modality Smoke Test")
+            print(f"{'='*60}\n")
+
+        self.run_test("Modality fixtures", self.test_modality_fixtures)
+
+        try:
+            import torch  # noqa: F401
+            has_torch = True
+        except Exception:
+            has_torch = False
+
+        self.run_test(
+            "Modality train smoke",
+            self.test_modality_train_smoke,
+            skip_condition=not has_torch,
+            skip_reason="torch not available in environment",
+        )
+        return self.print_summary()
+
 
 def cmd_test(args):
     """Run pipeline validation tests."""
@@ -1676,9 +1902,11 @@ def cmd_test(args):
         success = runner.run_standard()
     elif args.level == "full":
         success = runner.run_full()
+    elif args.level == "modality":
+        success = runner.run_modality()
     else:
         print(f"Unknown test level: {args.level}")
-        print("Valid levels: smoke, standard, full")
+        print("Valid levels: smoke, standard, full, modality")
         sys.exit(1)
     
     sys.exit(0 if success else 1)
@@ -1940,6 +2168,7 @@ def cmd_vlm_train(args):
     print(f"Dataset:     {args.dataset}")
     print(f"Output:      {args.output}")
     print(f"Cycles:      {args.cycles}")
+    print(f"Seed:        {args.seed}")
     print("=" * 60)
 
     _enforce_modality_train_contract("vlm", args)
@@ -2004,6 +2233,7 @@ def cmd_vlm_train(args):
         output_weight=args.output_weight,
         lr_decay_per_cycle=args.lr_decay,
         temperature=args.temperature,
+        seed=args.seed,
     )
     
     # Load dataset
@@ -2039,6 +2269,7 @@ def cmd_vlm_train(args):
     print(f"Output: {args.output}")
     if summary.get("final_model_path"):
         print(f"Final model: {summary['final_model_path']}")
+    _print_training_run_metadata(summary)
     print(f"Train steps executed: {total_steps}")
     if isinstance(final_loss, (int, float)):
         print(f"Final train loss: {final_loss:.4f}")
@@ -2235,7 +2466,7 @@ def cmd_audio_datasets(args):
     print()
     print("Usage:")
     print("  halo-forge audio benchmark --model openai/whisper-small --dataset librispeech")
-    print("  halo-forge audio train --model openai/whisper-small --dataset librispeech --allow-prototype-train")
+    print("  halo-forge audio train --model openai/whisper-small --dataset librispeech --seed 42")
 
 
 def cmd_audio_sft(args):
@@ -2349,6 +2580,7 @@ def cmd_audio_train(args):
     print(f"Task: {args.task}")
     print(f"Cycles: {args.cycles}")
     print(f"Output: {args.output}")
+    print(f"Seed: {args.seed}")
 
     _enforce_modality_train_contract("audio", args)
     
@@ -2386,6 +2618,7 @@ def cmd_audio_train(args):
         learning_rate=args.lr,
         lr_decay_per_cycle=args.lr_decay,
         output_dir=args.output,
+        seed=args.seed,
     )
     
     # Run training
@@ -2407,12 +2640,13 @@ def cmd_audio_train(args):
     print(f"Final model saved to: {args.output}")
     if summary.get("final_model_path"):
         print(f"Final model: {summary['final_model_path']}")
+    _print_training_run_metadata(summary)
     print(f"Train steps executed: {total_steps}")
     if isinstance(final_loss, (int, float)):
         print(f"Final train loss: {final_loss:.4f}")
     
     print("\nUsage:")
-    print("  halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct --allow-prototype-train")
+    print("  halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-7B-Instruct --seed 42")
     print("  halo-forge vlm benchmark --dataset docvqa --model path/to/model")
 
 
@@ -2706,6 +2940,8 @@ def main():
     vlm_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     vlm_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
                                   help='Resume training from this cycle index (default: 0)')
+    vlm_train_parser.add_argument('--seed', type=int, default=42,
+                                  help='Random seed for deterministic runs (default: 42)')
     vlm_train_parser.add_argument('--dry-run', action='store_true',
                                   help='Validate config and datasets without running training')
     vlm_train_parser.add_argument(
@@ -2784,6 +3020,8 @@ def main():
                                     help='Output directory (default: models/audio_raft)')
     audio_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
                                     help='Resume training from this cycle index (default: 0)')
+    audio_train_parser.add_argument('--seed', type=int, default=42,
+                                    help='Random seed for deterministic runs (default: 42)')
     audio_train_parser.add_argument('--dry-run', action='store_true',
                                     help='Validate config without running training')
     audio_train_parser.add_argument(
@@ -2845,6 +3083,8 @@ def main():
     reasoning_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     reasoning_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
                                         help='Resume training from this cycle index (default: 0)')
+    reasoning_train_parser.add_argument('--seed', type=int, default=42,
+                                        help='Random seed for deterministic runs (default: 42)')
     reasoning_train_parser.add_argument('--dry-run', action='store_true',
                                         help='Validate config without running training')
     reasoning_train_parser.add_argument(
@@ -2904,6 +3144,8 @@ def main():
     agentic_train_parser.add_argument('--limit', type=int, help='Limit dataset samples')
     agentic_train_parser.add_argument('--resume-from-cycle', type=int, default=0,
                                       help='Resume training from this cycle index (default: 0)')
+    agentic_train_parser.add_argument('--seed', type=int, default=42,
+                                      help='Random seed for deterministic runs (default: 42)')
     agentic_train_parser.add_argument('--dry-run', action='store_true',
                                       help='Validate config without running training')
     agentic_train_parser.add_argument(
@@ -2955,8 +3197,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full'],
-                             help='Test level: smoke (no GPU), standard (with GPU), full (with training)')
+                             choices=['smoke', 'standard', 'full', 'modality'],
+                             help='Test level: smoke (no GPU), standard (with GPU), full (with training), modality (deterministic modality smoke)')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -3004,7 +3246,7 @@ def cmd_reasoning_datasets(args):
     print()
     print("Usage:")
     print("  halo-forge reasoning benchmark --dataset gsm8k")
-    print("  halo-forge reasoning train --dataset gsm8k --cycles 4 --allow-prototype-train")
+    print("  halo-forge reasoning train --dataset gsm8k --cycles 4 --seed 42")
 
 
 def cmd_reasoning_sft(args):
@@ -3173,6 +3415,7 @@ def cmd_reasoning_train(args):
     print(f"Dataset: {args.dataset}")
     print(f"Cycles: {args.cycles}")
     print(f"Output: {args.output}")
+    print(f"Seed: {args.seed}")
 
     _enforce_modality_train_contract("reasoning", args)
     
@@ -3206,6 +3449,7 @@ def cmd_reasoning_train(args):
         learning_rate=args.lr,
         lr_decay_per_cycle=args.lr_decay,
         output_dir=args.output,
+        seed=args.seed,
     )
     
     # Load dataset
@@ -3228,6 +3472,7 @@ def cmd_reasoning_train(args):
     print(f"Final accuracy: {summary.get('final_accuracy', 0):.1%}")
     if summary.get("final_model_path"):
         print(f"Final model: {summary['final_model_path']}")
+    _print_training_run_metadata(summary)
     total_steps = sum(
         int(c.get("train_steps_executed", 0))
         for c in summary.get("cycles", [])
@@ -3374,6 +3619,7 @@ def cmd_agentic_train(args):
     print(f"Dataset: {args.dataset}")
     print(f"Cycles: {args.cycles}")
     print(f"Output: {args.output}")
+    print(f"Seed: {args.seed}")
 
     _enforce_modality_train_contract("agentic", args)
     
@@ -3413,6 +3659,7 @@ def cmd_agentic_train(args):
         learning_rate=args.lr,
         lr_decay_per_cycle=args.lr_decay,
         output_dir=args.output,
+        seed=args.seed,
     )
     
     # Train
@@ -3434,6 +3681,7 @@ def cmd_agentic_train(args):
     print(f"Final avg reward: {results.get('final_avg_reward', 0):.3f}")
     if results.get("final_model_path"):
         print(f"Final model: {results['final_model_path']}")
+    _print_training_run_metadata(results)
     print(f"Train steps executed: {total_steps}")
     if isinstance(final_loss, (int, float)):
         print(f"Final train loss: {final_loss:.4f}")

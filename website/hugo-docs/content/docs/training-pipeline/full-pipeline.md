@@ -215,7 +215,7 @@ halo-forge benchmark run \
 ```bash
 # SFT → RAFT → Benchmark
 halo-forge reasoning sft --dataset metamath --model Qwen/Qwen2.5-3B-Instruct --output models/reasoning_sft
-halo-forge reasoning train --model models/reasoning_sft --dataset gsm8k --cycles 5 --output models/reasoning_raft --allow-prototype-train
+halo-forge reasoning train --model models/reasoning_sft --dataset gsm8k --cycles 5 --output models/reasoning_raft --seed 42
 halo-forge reasoning benchmark --model models/reasoning_raft --dataset gsm8k
 ```
 
@@ -224,7 +224,7 @@ halo-forge reasoning benchmark --model models/reasoning_raft --dataset gsm8k
 ```bash
 # SFT → RAFT → Benchmark
 halo-forge audio sft --dataset librispeech_sft --model openai/whisper-small --output models/audio_sft
-halo-forge audio train --model models/audio_sft --dataset librispeech --task asr --cycles 3 --output models/audio_raft --allow-prototype-train
+halo-forge audio train --model models/audio_sft --dataset librispeech --task asr --cycles 3 --output models/audio_raft --seed 42
 halo-forge audio benchmark --model models/audio_raft --dataset librispeech --task asr
 ```
 
@@ -233,7 +233,7 @@ halo-forge audio benchmark --model models/audio_raft --dataset librispeech --tas
 ```bash
 # SFT → RAFT → Benchmark
 halo-forge vlm sft --dataset llava --model Qwen/Qwen2-VL-2B-Instruct --output models/vlm_sft
-halo-forge vlm train --model models/vlm_sft --dataset textvqa --cycles 3 --output models/vlm_raft --allow-prototype-train
+halo-forge vlm train --model models/vlm_sft --dataset textvqa --cycles 3 --output models/vlm_raft --seed 42
 halo-forge vlm benchmark --model models/vlm_raft --dataset textvqa
 ```
 
@@ -242,7 +242,7 @@ halo-forge vlm benchmark --model models/vlm_raft --dataset textvqa
 ```bash
 # SFT → RAFT → Benchmark
 halo-forge agentic sft --dataset xlam_sft --model Qwen/Qwen2.5-7B-Instruct --output models/agentic_sft
-halo-forge agentic train --model models/agentic_sft --dataset xlam --cycles 3 --output models/agentic_raft --allow-prototype-train
+halo-forge agentic train --model models/agentic_sft --dataset xlam --cycles 3 --output models/agentic_raft --seed 42
 halo-forge agentic benchmark --model models/agentic_raft --dataset xlam
 ```
 

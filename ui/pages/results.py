@@ -12,7 +12,7 @@ from pathlib import Path
 from nicegui import ui, app
 
 from ui.theme import COLORS
-from ui.services import BenchmarkResult, get_results_service
+from ui.services import BenchmarkResult, TrainingRunSummary, get_results_service
 
 
 class Results:
@@ -23,6 +23,7 @@ class Results:
     def __init__(self):
         self.results_service = get_results_service()
         self.results: list[BenchmarkResult] = self.results_service.list_results(force_refresh=True)
+        self.training_runs: list[TrainingRunSummary] = self.results_service.list_training_runs(force_refresh=False)
         self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
         self.sort_by: str = app.storage.user.get("results_sort_by", "timestamp")
         self.sort_desc: bool = app.storage.user.get("results_sort_desc", True)
@@ -37,7 +38,7 @@ class Results:
                     ui.button("Refresh", icon="refresh", on_click=self._refresh).props("flat")
                     ui.button("Export", icon="download", on_click=self._export).props("flat")
 
-            if not self.results:
+            if not self.results and not self.training_runs:
                 self._render_empty_state()
                 return
 
@@ -63,18 +64,27 @@ class Results:
                 displayed_any = True
                 self._render_domain_table(domain, self._sorted(domain_results))
 
+            if self.training_runs:
+                displayed_any = True
+                self._render_training_runs_table(self.training_runs)
+
             if not displayed_any:
                 self._render_empty_state()
 
     def _render_summary(self):
         by_domain = self.results_service.get_summary().get("by_domain", {})
         unique_models = len({r.model for r in self.results})
-        latest = max(self.results, key=lambda r: r.timestamp)
+        latest_timestamp = None
+        if self.results:
+            latest_timestamp = max(self.results, key=lambda r: r.timestamp).timestamp
+        elif self.training_runs:
+            latest_timestamp = max(self.training_runs, key=lambda r: r.timestamp).timestamp
 
         with ui.row().classes("w-full gap-4 animate-in"):
             self._stat_card("Total Runs", str(len(self.results)), "analytics")
+            self._stat_card("Training Runs", str(len(self.training_runs)), "auto_awesome")
             self._stat_card("Unique Models", str(unique_models), "psychology")
-            self._stat_card("Latest", latest.timestamp.strftime("%Y-%m-%d"), "schedule")
+            self._stat_card("Latest", latest_timestamp.strftime("%Y-%m-%d") if latest_timestamp else "--", "schedule")
             self._stat_card("Domains", str(len(by_domain)), "dashboard")
 
     def _stat_card(self, label: str, value: str, icon: str):
@@ -172,6 +182,83 @@ class Results:
                         f'w-28 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
                     )
 
+    def _render_training_runs_table(self, rows: list[TrainingRunSummary]):
+        with ui.column().classes(
+            f'w-full gap-3 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+            f'border border-[#2d343c] animate-in'
+        ):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label(f"Training Runs ({len(rows)})").classes(
+                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                )
+                ui.label("Status metadata from training_summary.json").classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+
+            with ui.row().classes(
+                f'w-full items-center gap-3 px-3 py-2 rounded-lg bg-[{COLORS["bg_secondary"]}]'
+            ):
+                ui.label("Modality").classes(
+                    f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Model").classes(
+                    f'flex-[2] text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Updated").classes(
+                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Steps").classes(
+                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Final Loss").classes(
+                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Reason").classes(
+                    f'flex-1 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Run").classes(
+                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Time").classes(
+                    f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+
+            for run in rows[:20]:
+                with ui.row().classes(
+                    f'w-full items-center gap-3 px-3 py-2 border-b border-[#2d343c] '
+                    f'hover:bg-[{COLORS["bg_hover"]}]'
+                ):
+                    ui.label(run.modality.upper()).classes(
+                        f'w-28 text-sm text-[{COLORS["text_secondary"]}]'
+                    )
+                    with ui.column().classes("flex-[2] gap-0"):
+                        ui.label(Path(str(run.model_name)).name).classes(
+                            f'text-sm text-[{COLORS["text_primary"]}]'
+                        )
+                        ui.label(str(run.output_dir)).classes(
+                            f'text-xs text-[{COLORS["text_muted"]}] truncate'
+                        )
+                    ui.label("yes" if run.weights_updated else "no").classes(
+                        f'w-20 text-sm font-mono text-[{COLORS["primary"]}] text-right'
+                    )
+                    ui.label(str(run.total_train_steps_executed)).classes(
+                        f'w-20 text-sm font-mono text-[{COLORS["text_secondary"]}] text-right'
+                    )
+                    ui.label(
+                        f"{run.final_train_loss:.4f}" if isinstance(run.final_train_loss, (int, float)) else "--"
+                    ).classes(
+                        f'w-24 text-sm font-mono text-[{COLORS["text_secondary"]}] text-right'
+                    )
+                    ui.label(run.failure_reason or run.final_update_reason or "--").classes(
+                        f'flex-1 text-sm text-[{COLORS["text_muted"]}] truncate'
+                    )
+                    ui.label(run.run_id or "--").classes(
+                        f'w-20 text-xs font-mono text-[{COLORS["text_muted"]}] text-right'
+                    )
+                    ui.label(run.timestamp.strftime("%m-%d %H:%M")).classes(
+                        f'w-28 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
+                    )
+
     def _metric_value(self, result: BenchmarkResult, key: str):
         if key in result.normalized_metrics:
             return result.normalized_metrics.get(key)
@@ -226,6 +313,7 @@ class Results:
 
     def _refresh(self):
         self.results = self.results_service.list_results(force_refresh=True)
+        self.training_runs = self.results_service.list_training_runs(force_refresh=True)
         self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
         ui.navigate.to("/results")
 

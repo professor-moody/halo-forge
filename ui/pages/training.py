@@ -247,6 +247,7 @@ class ModalityFormData:
     task: str = "asr"
     limit: Optional[int] = None
     resume_from_cycle: int = 0
+    seed: int = 42
     allow_prototype_train: bool = False
 
 
@@ -976,6 +977,14 @@ class Training:
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'resume_from_cycle')
 
+                with ui.column().classes('min-w-[140px] gap-2'):
+                    ui.label('Seed').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.number(value=data.seed, min=0, step=1).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'seed')
+
             with ui.row().classes('w-full gap-4 flex-wrap'):
                 self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32)
                 self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}")
@@ -1016,20 +1025,23 @@ class Training:
                         'outlined dense dark color=grey-7'
                     ).on('update:model-value', _set_optional_limit)
 
-            with ui.row().classes('w-full items-center gap-4'):
-                ui.switch(value=data.allow_prototype_train).props(
-                    'color=primary'
-                ).bind_value(data, 'allow_prototype_train')
-                ui.label('Allow prototype train override').classes(
-                    f'text-sm text-[{COLORS["text_secondary"]}]'
-                )
-
             capability = check_modality_train_capability(
                 modality=modality,
                 model_name=data.model,
                 allow_prototype_train=data.allow_prototype_train,
                 dry_run=True,
             )
+            if capability.capability.status == "prototype":
+                with ui.row().classes('w-full items-center gap-4'):
+                    ui.switch(value=data.allow_prototype_train).props(
+                        'color=primary'
+                    ).bind_value(data, 'allow_prototype_train')
+                    ui.label('Allow prototype train override').classes(
+                        f'text-sm text-[{COLORS["text_secondary"]}]'
+                    )
+            else:
+                data.allow_prototype_train = False
+
             with ui.row().classes('w-full items-center gap-2'):
                 ui.icon("shield", size="16px").classes(f'text-[{COLORS["info"]}]')
                 ui.label(
@@ -1505,6 +1517,7 @@ class Training:
                 task=data.task if modality == "audio" else None,
                 limit=data.limit if modality in {"reasoning", "agentic"} else None,
                 resume_from_cycle=data.resume_from_cycle,
+                seed=data.seed,
                 allow_prototype_train=data.allow_prototype_train,
             )
             notify_job_started(f"{modality.upper()}: {data.dataset}")

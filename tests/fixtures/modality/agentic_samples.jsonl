@@ -1,0 +1,1 @@
+{"prompt":"Call get_weather for Paris","expected_calls":[{"name":"get_weather","arguments":{"location":"Paris"}}],"is_irrelevant":false}
