@@ -20,6 +20,7 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase4_ui_observability_consolidation.py" in content
     assert "tests/test_benchmark_results_trust_matrix.py" in content
     assert "tests/test_training_pipeline_contracts.py" in content
+    assert "tests/test_dependency_packaging_contracts.py" in content
 
 
 def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():
@@ -57,3 +58,7 @@ def test_release_surface_excludes_legacy_tui_and_textual_dependency():
         if line.strip() and not line.strip().startswith("#")
     ]
     assert not any("textual" in line for line in active_lines)
+
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").lower()
+    assert "textual" not in pyproject
+    assert "halo_forge.tui" not in pyproject

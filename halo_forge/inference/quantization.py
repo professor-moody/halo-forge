@@ -230,12 +230,29 @@ def quantize_model_simple(
     Returns:
         Path to quantized model
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    except ImportError as e:
+        raise ImportError(
+            "transformers is required for quantize_model_simple. "
+            "Install with: pip install transformers"
+        ) from e
     
     print(f"Loading model from {model_path}...")
+
+    precision = (precision or "").lower().strip()
+    if precision not in {"int4", "int8", "fp16"}:
+        raise ValueError(f"Unsupported precision '{precision}'. Use one of: int4, int8, fp16")
     
     # Configure quantization
     if precision == "int4":
+        try:
+            import bitsandbytes  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "bitsandbytes is required for int4 quantization. "
+                "Install with: pip install bitsandbytes"
+            ) from e
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.bfloat16,
@@ -243,6 +260,13 @@ def quantize_model_simple(
             bnb_4bit_use_double_quant=True
         )
     elif precision == "int8":
+        try:
+            import bitsandbytes  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "bitsandbytes is required for int8 quantization. "
+                "Install with: pip install bitsandbytes"
+            ) from e
         quant_config = BitsAndBytesConfig(
             load_in_8bit=True
         )
@@ -262,12 +286,17 @@ def quantize_model_simple(
     # Run calibration if data provided
     if calibration_data:
         print("Running calibration...")
+        try:
+            from tqdm import tqdm
+        except ImportError:
+            tqdm = None
         cal_dataset = CalibrationDataset.from_jsonl(calibration_data, tokenizer)
         dataloader = cal_dataset.get_dataloader()
         
         model.eval()
         with torch.no_grad():
-            for batch in tqdm(dataloader, desc="Calibrating"):
+            iterator = tqdm(dataloader, desc="Calibrating") if tqdm else dataloader
+            for batch in iterator:
                 batch = {k: v.to(model.device) for k, v in batch.items()}
                 _ = model(**batch)
     

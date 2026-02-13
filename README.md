@@ -38,6 +38,30 @@
 
 ---
 
+## Installation Profiles
+
+Use `pyproject.toml` as the source of truth for installs:
+
+```bash
+pip install .
+```
+
+Optional modality/runtime profiles:
+
+```bash
+pip install ".[audio]"
+pip install ".[vlm]"
+pip install ".[reasoning]"
+pip install ".[benchmark]"
+pip install ".[inference]"
+pip install ".[dev]"
+```
+
+`requirements.txt` is maintained as a convenience mirror for environments that
+still use `pip install -r requirements.txt`.
+
+---
+
 ## License
 
 Copyright 2025 Halo Forge Labs LLC

@@ -28,12 +28,13 @@ dependencies = [
     "torch>=2.1.0",
     "transformers>=4.46.0",
     "peft>=0.13.0",
-    "datasets>=2.14.0",
+    "datasets>=2.14.0,<4.0.0",
     "trl>=0.12.0",
     "accelerate",
     "pyyaml>=6.0",
     "requests>=2.31.0",
     "tqdm",
+    "jsonlines",
     "tensorboard",
     "matplotlib",
     "pandas",
@@ -42,6 +43,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Dependency contract:
+# - `project.dependencies` is the baseline runtime contract for `pip install .`.
+# - Optional groups below are the supported modality/install profiles.
+# - `requirements.txt` remains a convenience mirror and must stay in sync.
 dev = [
     "pytest",
     "black",
@@ -51,6 +56,10 @@ llm-backends = [
     "anthropic>=0.18.0",
     "openai>=1.0.0",
 ]
+benchmark = [
+    "vlmeval>=0.2.0",
+]
+# Backward-compatible alias for existing docs/scripts.
 vlm-benchmark = [
     "vlmeval>=0.2.0",
 ]
@@ -61,11 +70,25 @@ vlm = [
 ]
 audio = [
     "openai-whisper",
+    "torchaudio>=2.0.0",
     "librosa",
+    "jiwer>=3.0.0",
     "soundfile",
 ]
+reasoning = [
+    "sympy>=1.12",
+]
+# Agentic training currently relies on baseline dependencies only.
+agentic = []
+inference = [
+    "bitsandbytes",
+    "scipy",
+    "sentencepiece",
+    "protobuf",
+    "einops",
+]
 all = [
-    "halo-forge[dev,llm-backends,vlm-benchmark,vlm,audio]",
+    "halo-forge[dev,llm-backends,benchmark,vlm-benchmark,vlm,audio,reasoning,agentic,inference]",
 ]
 
 [project.scripts]
@@ -90,4 +113,3 @@ target-version = ['py310', 'py311']
 [tool.isort]
 profile = "black"
 line_length = 100
-

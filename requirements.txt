@@ -1,48 +1,61 @@
-# halo-forge requirements
-# Note: torch is provided by the custom toolbox with ROCm support
-# If running outside toolbox, install torch separately with ROCm
+# halo-forge requirements (convenience mirror)
+#
+# Authoritative dependency metadata lives in `pyproject.toml`.
+# Preferred install paths:
+#   - Core runtime: `pip install .`
+#   - Modality extras: `pip install .[audio]`, `.[vlm]`, `.[reasoning]`, etc.
+# This file mirrors core + commonly used extras for environments that still use
+# `pip install -r requirements.txt`.
 
-# Core ML
+# Core runtime (`project.dependencies`)
+torch>=2.1.0
 transformers>=4.46.0
 peft>=0.13.0
 datasets>=2.14.0,<4.0.0
 trl>=0.12.0
 accelerate
+pyyaml>=6.0
+requests>=2.31.0
+tqdm
+jsonlines
+tensorboard
+matplotlib
+pandas
+rich
+nicegui>=1.4.0
+
+# Inference extras (`.[inference]`)
 bitsandbytes
 scipy
 sentencepiece
 protobuf
 einops
 
-# Data generation
-requests>=2.31.0
-pyyaml>=6.0
-tqdm
-jsonlines
+# Benchmark extras (`.[benchmark]`)
+vlmeval>=0.2.0
 
-# Monitoring
-tensorboard
-wandb
+# VLM extras (`.[vlm]`)
+qwen-vl-utils
+ultralytics
+easyocr
 
-# Utilities
-pandas
-matplotlib
-paramiko
-rich
-
-# Testing
-pytest
-
-# Audio (Phase 4)
+# Audio extras (`.[audio]`)
+openai-whisper
 torchaudio>=2.0.0
 librosa>=0.10.0
-jiwer>=3.0.0  # WER calculation
+jiwer>=3.0.0
+soundfile
 
-# Reasoning (Phase 5)
-sympy>=1.12  # Symbolic math verification
+# Reasoning extras (`.[reasoning]`)
+sympy>=1.12
 
-# Note: legacy TUI is deprecated and not part of the supported runtime surface.
+# Dev extras (`.[dev]`)
+pytest
+black
+isort
 
-# Optional: LLM backends for data generation
+# Optional LLM backend extras (`.[llm-backends]`)
 # anthropic>=0.18.0
 # openai>=1.0.0
+
+# Note: legacy TUI is deprecated and not part of the supported runtime surface.
