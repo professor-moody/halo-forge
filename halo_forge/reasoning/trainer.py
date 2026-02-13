@@ -14,6 +14,12 @@ import time
 from halo_forge.reasoning.verifiers import MathVerifier, ReasoningVerifyResult
 from halo_forge.reasoning.data import MathSample
 from halo_forge.training_updates import run_text_supervised_updates
+from halo_forge.training_contracts import (
+    build_cycle_summary,
+    build_training_summary,
+    normalize_update_metrics,
+    write_json_atomic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +108,7 @@ class ReasoningRAFTTrainer:
             "cycle_accuracy": [],
             "cycle_samples": [],
         }
+        self.training_summary: Dict[str, Any] = {}
     
     def load_model(self) -> None:
         """Load model and tokenizer."""
@@ -281,18 +288,27 @@ class ReasoningRAFTTrainer:
         # 4. Calculate metrics
         accuracy = sum(1 for c in completions if c.verified) / len(completions)
         avg_reward = sum(c.reward for c in completions) / len(completions)
-        train_metrics = self._train_on_filtered(filtered, cycle)
-
-        metrics = {
-            "cycle": cycle,
-            "total_completions": len(completions),
-            "filtered_completions": len(filtered),
-            "accuracy": accuracy,
-            "avg_reward": avg_reward,
-            "learning_rate": self.get_learning_rate(cycle),
-            "duration_seconds": time.time() - start_time,
-            **train_metrics,
-        }
+        cycle_duration = time.time() - start_time
+        train_metrics = normalize_update_metrics(
+            self._train_on_filtered(filtered, cycle),
+            default_reason="no_filtered_samples",
+        )
+        metrics = build_cycle_summary(
+            cycle=cycle,
+            learning_rate=self.get_learning_rate(cycle),
+            samples_seen=len(completions),
+            samples_kept=len(filtered),
+            cycle_duration_seconds=cycle_duration,
+            update_metrics=train_metrics,
+            extra={
+                "total_completions": len(completions),
+                "filtered_completions": len(filtered),
+                "accuracy": accuracy,
+                "avg_reward": avg_reward,
+                # Backward-compatible alias.
+                "duration_seconds": cycle_duration,
+            },
+        )
         
         # Update tracking
         self.metrics["cycle_rewards"].append(avg_reward)
@@ -343,22 +359,24 @@ class ReasoningRAFTTrainer:
             all_metrics.append(cycle_metrics)
         
         # Save final summary
-        summary = {
-            "config": {
-                "model": self.config.model_name,
-                "cycles": self.config.num_cycles,
-                "samples": len(samples),
+        summary = build_training_summary(
+            modality="reasoning",
+            model_name=self.config.model_name,
+            total_cycles_planned=self.config.num_cycles,
+            cycles=all_metrics,
+            extra={
+                "config": {
+                    "model": self.config.model_name,
+                    "cycles": self.config.num_cycles,
+                    "samples": len(samples),
+                },
+                "final_accuracy": self.metrics["cycle_accuracy"][-1] if self.metrics["cycle_accuracy"] else 0,
+                "final_reward": self.metrics["cycle_rewards"][-1] if self.metrics["cycle_rewards"] else 0,
             },
-            "cycles": all_metrics,
-            "final_accuracy": self.metrics["cycle_accuracy"][-1] if self.metrics["cycle_accuracy"] else 0,
-            "final_reward": self.metrics["cycle_rewards"][-1] if self.metrics["cycle_rewards"] else 0,
-            "total_train_steps_executed": sum(
-                int(c.get("train_steps_executed", 0)) for c in all_metrics
-            ),
-        }
-        
-        with open(self.output_dir / "training_summary.json", "w") as f:
-            json.dump(summary, f, indent=2)
+        )
+        self.training_summary = summary
+
+        write_json_atomic(self.output_dir / "training_summary.json", summary)
         
         logger.info(f"Training complete! Results saved to {self.output_dir}")
         
@@ -383,8 +401,7 @@ class ReasoningRAFTTrainer:
         path.mkdir(parents=True, exist_ok=True)
         
         # Save metrics
-        with open(path / "metrics.json", "w") as f:
-            json.dump(metrics, f, indent=2)
+        write_json_atomic(path / "metrics.json", metrics)
         
         # Save completions
         comp_data = []

@@ -49,4 +49,6 @@ jobs:
             tests/test_phase3_truth_in_advertising.py \
             tests/test_phase4_ui_observability_consolidation.py \
             tests/test_phase5_release_engineering.py \
-            tests/test_core_functionality_matrix.py
+            tests/test_core_functionality_matrix.py \
+            tests/test_benchmark_results_trust_matrix.py \
+            tests/test_training_pipeline_contracts.py

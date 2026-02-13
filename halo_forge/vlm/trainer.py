@@ -24,6 +24,12 @@ from halo_forge.vlm.models import (
 )
 from halo_forge.vlm.data import VLMSample, load_vlm_dataset
 from halo_forge.training_updates import run_text_supervised_updates
+from halo_forge.training_contracts import (
+    build_cycle_summary,
+    build_training_summary,
+    normalize_update_metrics,
+    write_json_atomic,
+)
 
 
 @dataclass
@@ -111,6 +117,7 @@ class VLMRAFTTrainer:
         self.current_cycle = 0
         self.best_reward = 0.0
         self.training_history: List[Dict[str, Any]] = []
+        self.training_summary: Dict[str, Any] = {}
         
         # Create output directory
         self.output_dir = Path(config.output_dir)
@@ -286,6 +293,14 @@ class VLMRAFTTrainer:
                 "update_reason": "unsupported_model_family",
             }
 
+        if not samples:
+            return {
+                "train_steps_executed": 0,
+                "train_loss": None,
+                "weights_updated": False,
+                "update_reason": "no_filtered_samples",
+            }
+
         model = getattr(self.adapter, "model", None)
         tokenizer = getattr(self.adapter, "tokenizer", None)
         processor = getattr(self.adapter, "processor", None)
@@ -396,18 +411,19 @@ class VLMRAFTTrainer:
         
         # Save config
         config_path = checkpoint_dir / "config.json"
-        with open(config_path, 'w') as f:
-            json.dump({
+        write_json_atomic(
+            config_path,
+            {
                 'model_name': self.config.model_name,
                 'cycle': cycle,
                 'learning_rate': self.get_learning_rate_for_cycle(cycle),
                 'timestamp': datetime.now().isoformat()
-            }, f, indent=2)
+            },
+        )
         
         # Save training history
         history_path = checkpoint_dir / "history.json"
-        with open(history_path, 'w') as f:
-            json.dump(self.training_history, f, indent=2)
+        write_json_atomic(history_path, {"cycles": self.training_history})
         
         self._log(f"Checkpoint saved: {checkpoint_dir}", "ok")
     
@@ -440,10 +456,14 @@ class VLMRAFTTrainer:
         # Calculate stats
         rewards = [s.reward for s in samples]
         successes = sum(1 for s in samples if s.success)
+        sample_count = len(samples)
         
-        self._log(f"Generated {len(samples)} samples in {gen_time/60:.1f} min", "ok")
-        self._log(f"Success rate: {successes/len(samples)*100:.1f}%", "info")
-        self._log(f"Avg reward: {sum(rewards)/len(rewards):.3f}", "info")
+        success_rate = (successes / sample_count) if sample_count else 0.0
+        avg_reward = (sum(rewards) / sample_count) if sample_count else 0.0
+        max_reward = max(rewards) if rewards else 0.0
+        self._log(f"Generated {sample_count} samples in {gen_time/60:.1f} min", "ok")
+        self._log(f"Success rate: {success_rate*100:.1f}%", "info")
+        self._log(f"Avg reward: {avg_reward:.3f}", "info")
         
         # 2. Filter samples
         filtered = self.filter_samples(samples)
@@ -460,17 +480,26 @@ class VLMRAFTTrainer:
         cycle_time = time.time() - cycle_start
         
         # Record metrics
-        metrics = {
-            'cycle': cycle,
-            'num_samples': len(samples),
-            'num_filtered': len(filtered),
-            'success_rate': successes / len(samples),
-            'avg_reward': sum(rewards) / len(rewards),
-            'max_reward': max(rewards),
-            'learning_rate': self.get_learning_rate_for_cycle(cycle),
-            'cycle_time_min': cycle_time / 60,
-            **train_metrics,
-        }
+        metrics = build_cycle_summary(
+            cycle=cycle,
+            learning_rate=self.get_learning_rate_for_cycle(cycle),
+            samples_seen=sample_count,
+            samples_kept=len(filtered),
+            cycle_duration_seconds=cycle_time,
+            update_metrics=normalize_update_metrics(
+                train_metrics,
+                default_reason="no_filtered_samples",
+            ),
+            extra={
+                "num_samples": sample_count,
+                "num_filtered": len(filtered),
+                "success_rate": success_rate,
+                "avg_reward": avg_reward,
+                "max_reward": max_reward,
+                # Backward-compatible alias.
+                "cycle_time_min": cycle_time / 60,
+            },
+        )
         
         self.training_history.append(metrics)
 
@@ -494,7 +523,7 @@ class VLMRAFTTrainer:
         self,
         prompts: Union[List[VLMSample], str],
         resume_from: Optional[int] = None
-    ):
+    ) -> Dict[str, Any]:
         """
         Run full RAFT training.
         
@@ -528,6 +557,9 @@ class VLMRAFTTrainer:
         
         # Determine starting cycle
         start_cycle = resume_from if resume_from else 0
+        self._validate_resume_configuration(start_cycle)
+        if start_cycle > 0:
+            self._load_resume_history(start_cycle)
         
         # Run cycles
         for cycle in range(start_cycle, self.config.num_cycles):
@@ -545,10 +577,56 @@ class VLMRAFTTrainer:
         self._log(f"Best avg reward: {self.best_reward:.3f}", "info")
         self._log(f"Output: {self.output_dir}", "info")
         
-        # Save final history
-        final_history_path = self.output_dir / "training_history.json"
-        with open(final_history_path, 'w') as f:
-            json.dump(self.training_history, f, indent=2)
+        summary = build_training_summary(
+            modality="vlm",
+            model_name=self.config.model_name,
+            total_cycles_planned=self.config.num_cycles,
+            cycles=self.training_history,
+            extra={
+                "best_avg_reward": self.best_reward,
+            },
+        )
+        self.training_summary = summary
+
+        # Save final history and summary.
+        write_json_atomic(self.output_dir / "training_history.json", {"cycles": self.training_history})
+        write_json_atomic(self.output_dir / "training_summary.json", summary)
+        return summary
+
+    def _validate_resume_configuration(self, start_cycle: int) -> None:
+        """Fail fast when resume configuration is inconsistent with saved artifacts."""
+        if start_cycle < 0 or start_cycle >= self.config.num_cycles:
+            raise ValueError(f"resume_from must be in [0, {self.config.num_cycles - 1}]")
+        if start_cycle == 0:
+            return
+        previous_cycle_dir = self.output_dir / f"cycle_{start_cycle - 1}"
+        if not previous_cycle_dir.exists():
+            raise ValueError(
+                f"resume_from={start_cycle} requires checkpoint directory {previous_cycle_dir}"
+            )
+        history_path = self.output_dir / "training_history.json"
+        if not history_path.exists():
+            raise ValueError(
+                f"resume_from={start_cycle} requires history file {history_path}"
+            )
+
+    def _load_resume_history(self, start_cycle: int) -> None:
+        """Load and validate existing training history for resume mode."""
+        history_path = self.output_dir / "training_history.json"
+        with open(history_path, encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict):
+            cycles = payload.get("cycles")
+        else:
+            cycles = payload
+        if not isinstance(cycles, list):
+            raise ValueError(f"Invalid training history format in {history_path}")
+        self.training_history = [dict(cycle) for cycle in cycles if isinstance(cycle, dict)]
+        if len(self.training_history) < start_cycle:
+            raise ValueError(
+                f"resume_from={start_cycle} exceeds available recorded cycles "
+                f"({len(self.training_history)}) in {history_path}"
+            )
     
     def cleanup(self):
         """Clean up resources."""

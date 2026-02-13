@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 import logging
 import json
-import os
+import time
 
 import torch
 from tqdm import tqdm
@@ -20,6 +20,12 @@ from halo_forge.audio.models import (
     AudioAdapter,
     get_audio_adapter,
     supports_audio_training,
+)
+from halo_forge.training_contracts import (
+    build_cycle_summary,
+    build_training_summary,
+    normalize_update_metrics,
+    write_json_atomic,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +123,7 @@ class AudioRAFTTrainer:
         
         # Track metrics
         self.cycle_results: List[AudioRAFTCycleResult] = []
+        self.training_summary: Dict[str, Any] = {}
     
     def _init_adapter(self) -> None:
         """Initialize model adapter."""
@@ -207,6 +214,35 @@ class AudioRAFTTrainer:
         
         # Save final model
         self._save_checkpoint(self.config.num_cycles - 1, final=True)
+
+        summary = build_training_summary(
+            modality="audio",
+            model_name=self.config.model_name,
+            total_cycles_planned=self.config.num_cycles,
+            cycles=[result.metrics for result in self.cycle_results],
+            extra={
+                "task": self.config.task,
+                "samples": len(samples),
+                "final_average_reward": (
+                    self.cycle_results[-1].average_reward if self.cycle_results else 0.0
+                ),
+                # Backward-compatible alias used by some callsites.
+                "cycle_results": [
+                    {
+                        "cycle": result.cycle,
+                        "samples_generated": result.samples_generated,
+                        "samples_verified": result.samples_verified,
+                        "samples_kept": result.samples_kept,
+                        "average_reward": result.average_reward,
+                        "learning_rate": result.learning_rate,
+                        "metrics": result.metrics,
+                    }
+                    for result in self.cycle_results
+                ],
+            },
+        )
+        self.training_summary = summary
+        write_json_atomic(self.output_dir / "training_summary.json", summary)
         
         return self.cycle_results
     
@@ -225,6 +261,7 @@ class AudioRAFTTrainer:
         Returns:
             Cycle result
         """
+        cycle_start = time.time()
         lr = self.get_learning_rate(cycle)
         logger.info(f"Learning rate: {lr:.2e}")
         
@@ -256,6 +293,23 @@ class AudioRAFTTrainer:
                 "update_reason": "no_filtered_samples",
             }
 
+        canonical_metrics = build_cycle_summary(
+            cycle=cycle,
+            learning_rate=lr,
+            samples_seen=len(verified),
+            samples_kept=len(kept),
+            cycle_duration_seconds=time.time() - cycle_start,
+            update_metrics=normalize_update_metrics(
+                train_metrics,
+                default_reason="no_filtered_samples",
+            ),
+            extra={
+                "min_reward": min(rewards) if rewards else 0.0,
+                "max_reward": max(rewards) if rewards else 0.0,
+                "average_reward": avg_reward,
+            },
+        )
+
         return AudioRAFTCycleResult(
             cycle=cycle,
             samples_generated=len(predictions),
@@ -263,11 +317,7 @@ class AudioRAFTTrainer:
             samples_kept=len(kept),
             average_reward=avg_reward,
             learning_rate=lr,
-            metrics={
-                "min_reward": min(rewards) if rewards else 0.0,
-                "max_reward": max(rewards) if rewards else 0.0,
-                **train_metrics,
-            }
+            metrics=canonical_metrics,
         )
     
     def _generate_predictions(
@@ -448,30 +498,32 @@ class AudioRAFTTrainer:
         
         # Save config
         config_path = checkpoint_dir / "config.json"
-        with open(config_path, 'w') as f:
-            json.dump({
+        write_json_atomic(
+            config_path,
+            {
                 "model_name": self.config.model_name,
                 "task": self.config.task,
                 "cycle": cycle + 1,
                 "learning_rate": self.get_learning_rate(cycle),
-            }, f, indent=2)
+            },
+        )
         
         # Save metrics
         metrics_path = checkpoint_dir / "metrics.json"
-        with open(metrics_path, 'w') as f:
-            results_data = [
-                {
-                    "cycle": r.cycle + 1,
-                    "samples_kept": r.samples_kept,
-                    "average_reward": r.average_reward,
-                    "learning_rate": r.learning_rate,
-                    "train_steps_executed": r.metrics.get("train_steps_executed", 0),
-                    "train_loss": r.metrics.get("train_loss"),
-                    "weights_updated": r.metrics.get("weights_updated", False),
-                }
-                for r in self.cycle_results
-            ]
-            json.dump(results_data, f, indent=2)
+        results_data = [
+            {
+                "cycle": r.cycle + 1,
+                "samples_kept": r.samples_kept,
+                "average_reward": r.average_reward,
+                "learning_rate": r.learning_rate,
+                "train_steps_executed": r.metrics.get("train_steps_executed", 0),
+                "train_loss": r.metrics.get("train_loss"),
+                "weights_updated": r.metrics.get("weights_updated", False),
+                "update_reason": r.metrics.get("update_reason"),
+            }
+            for r in self.cycle_results
+        ]
+        write_json_atomic(metrics_path, {"cycles": results_data})
         
         logger.info(f"Saved checkpoint to {checkpoint_dir}")
     

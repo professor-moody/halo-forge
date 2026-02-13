@@ -95,7 +95,7 @@ class ResultsService:
         "code": ["code", "humaneval", "mbpp", "livecodebench", "cpp", "rust", "go"],
         "reasoning": ["reasoning", "math", "gsm8k", "mmlu"],
         "vlm": ["vlm", "vision", "vqa", "textvqa", "docvqa", "chartqa"],
-        "audio": ["audio", "speech", "asr", "librispeech", "common_voice"],
+        "audio": ["audio", "speech", "asr", "librispeech", "common_voice", "commonvoice"],
         "agentic": ["agentic", "agent", "tool", "xlam", "function"],
     }
 
@@ -189,14 +189,14 @@ class ResultsService:
 
         ranked_models: List[tuple[str, Dict[str, BenchmarkResult]]] = []
         for model_key, domain_results in latest_by_model_domain.items():
-            non_zero_domains = 0
+            observed_domains = 0
             aggregate = 0.0
             for domain in domain_order:
                 score = self._result_score_for_dashboard(domain_results.get(domain))
-                if score is not None and score > 0:
-                    non_zero_domains += 1
+                if score is not None:
+                    observed_domains += 1
                     aggregate += score
-            if non_zero_domains == 0:
+            if observed_domains == 0:
                 continue
             ranked_models.append((model_key, domain_results))
 
@@ -205,7 +205,7 @@ class ResultsService:
                 sum(
                     1
                     for domain in domain_order
-                    if self._result_score_for_dashboard(item[1].get(domain)) not in (None, 0.0)
+                    if self._result_score_for_dashboard(item[1].get(domain)) is not None
                 ),
                 sum(
                     self._result_score_for_dashboard(item[1].get(domain)) or 0.0
@@ -296,11 +296,17 @@ class ResultsService:
             self._as_float(self._first_non_empty(sources, "accuracy", "acc"))
         )
         avg_reward = self._as_float(self._first_non_empty(sources, "avg_reward", "reward", "score"))
+        if avg_reward is None:
+            avg_reward = self._as_float(
+                self._first_non_empty(sources, "average_reward")
+            )
         success_rate = self._normalize_ratio(
             self._as_float(self._first_non_empty(sources, "success_rate", "pass_rate"))
         )
         wer = self._normalize_ratio(
-            self._as_float(self._first_non_empty(sources, "wer", "word_error_rate"))
+            self._as_float(
+                self._first_non_empty(sources, "wer", "word_error_rate", "average_wer")
+            )
         )
         json_valid_rate = self._normalize_ratio(
             self._as_float(self._first_non_empty(sources, "json_valid_rate", "json_validity"))
@@ -311,6 +317,7 @@ class ResultsService:
                     sources,
                     "function_correctness",
                     "function_call_accuracy",
+                    "function_accuracy",
                 )
             )
         )

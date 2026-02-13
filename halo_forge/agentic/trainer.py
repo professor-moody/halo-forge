@@ -18,6 +18,12 @@ from halo_forge.agentic.verifiers import ToolCallingVerifier, ToolCallVerifyResu
 from halo_forge.agentic.data import ToolCallSample, XLAMLoader
 from halo_forge.agentic.data.formatters import HermesFormatter, create_training_sample
 from halo_forge.training_updates import run_text_supervised_updates
+from halo_forge.training_contracts import (
+    build_cycle_summary,
+    build_training_summary,
+    normalize_update_metrics,
+    write_json_atomic,
+)
 from halo_forge.utils.metrics import MetricsTracker
 
 logger = logging.getLogger(__name__)
@@ -140,6 +146,7 @@ class AgenticRAFTTrainer:
             "cycle_accuracy": [],
             "cycle_samples": [],
         }
+        self.training_summary: Dict[str, Any] = {}
         
         # Initialize MetricsTracker for TensorBoard and JSON logging
         self.metrics_tracker = MetricsTracker(
@@ -205,6 +212,7 @@ class AgenticRAFTTrainer:
         
         logger.info(f"Starting RAFT training with {len(samples)} samples")
         logger.info(f"Cycles: {self.config.num_cycles}, Samples per prompt: {self.config.samples_per_prompt}")
+        self._validate_resume_from_cycle(resume_from_cycle)
         
         start_time = time.time()
         
@@ -244,25 +252,28 @@ class AgenticRAFTTrainer:
         total_time = time.time() - start_time
         
         # Final metrics
-        final_metrics = {
-            "total_cycles": self.config.num_cycles,
-            "total_time_seconds": total_time,
-            "final_avg_reward": self.cycle_results[-1].avg_reward if self.cycle_results else 0.0,
-            "final_success_rate": self.cycle_results[-1].success_rate if self.cycle_results else 0.0,
-            "total_train_steps_executed": sum(
-                int(r.metrics.get("train_steps_executed", 0))
-                for r in self.cycle_results
-            ),
-            "cycle_results": [vars(r) for r in self.cycle_results],
-        }
+        final_metrics = build_training_summary(
+            modality="agentic",
+            model_name=self.config.model_name,
+            total_cycles_planned=self.config.num_cycles,
+            cycles=[result.metrics for result in self.cycle_results],
+            extra={
+                "total_cycles": self.config.num_cycles,
+                "total_time_seconds": total_time,
+                "final_avg_reward": self.cycle_results[-1].avg_reward if self.cycle_results else 0.0,
+                "final_success_rate": self.cycle_results[-1].success_rate if self.cycle_results else 0.0,
+                # Backward-compatible alias retained for older consumers.
+                "cycle_results": [vars(r) for r in self.cycle_results],
+            },
+        )
+        self.training_summary = final_metrics
         
         # Save metrics summary
         self.metrics_tracker.save_summary()
         
         # Also save standalone metrics file
         metrics_path = self.output_dir / "training_metrics.json"
-        with open(metrics_path, "w") as f:
-            json.dump(final_metrics, f, indent=2)
+        write_json_atomic(metrics_path, final_metrics)
         
         logger.info(f"Training complete. Metrics saved to {metrics_path}")
         logger.info(f"TensorBoard logs: {self.output_dir / 'tensorboard'}")
@@ -284,6 +295,7 @@ class AgenticRAFTTrainer:
             Cycle results.
         """
         logger.info(f"Starting cycle {cycle + 1}")
+        cycle_start = time.time()
         
         # Generate and verify completions
         all_completions: List[AgenticCompletion] = []
@@ -336,6 +348,23 @@ class AgenticRAFTTrainer:
                 "update_reason": "no_filtered_samples",
             }
         
+        canonical_metrics = build_cycle_summary(
+            cycle=cycle,
+            learning_rate=self.get_learning_rate(cycle),
+            samples_seen=total_samples,
+            samples_kept=len(filtered),
+            cycle_duration_seconds=time.time() - cycle_start,
+            update_metrics=normalize_update_metrics(
+                train_metrics,
+                default_reason="no_filtered_samples",
+            ),
+            extra={
+                "success_rate": success_rate,
+                "avg_reward": avg_reward,
+                "training_samples": len(filtered),
+            },
+        )
+
         return AgenticRAFTCycleResult(
             cycle=cycle,
             total_samples=total_samples,
@@ -343,11 +372,23 @@ class AgenticRAFTTrainer:
             avg_reward=avg_reward,
             success_rate=success_rate,
             training_samples=len(filtered),
-            metrics={
-                "lr": self.get_learning_rate(cycle),
-                **train_metrics,
-            },
+            metrics=canonical_metrics,
         )
+
+    def _validate_resume_from_cycle(self, resume_from_cycle: int) -> None:
+        """Fail fast on invalid resume configuration."""
+        if resume_from_cycle < 0 or resume_from_cycle >= self.config.num_cycles:
+            raise ValueError(
+                f"resume_from_cycle must be in [0, {self.config.num_cycles - 1}]"
+            )
+        if resume_from_cycle == 0:
+            return
+        previous_cycle_dir = self.output_dir / f"cycle_{resume_from_cycle - 1}"
+        if not previous_cycle_dir.exists():
+            raise ValueError(
+                f"resume_from_cycle={resume_from_cycle} requires checkpoint directory "
+                f"{previous_cycle_dir}"
+            )
     
     def _generate_completions(
         self,
@@ -479,13 +520,11 @@ class AgenticRAFTTrainer:
         
         # Save config
         config_path = checkpoint_dir / "config.json"
-        with open(config_path, "w") as f:
-            json.dump(vars(self.config), f, indent=2, default=str)
+        write_json_atomic(config_path, vars(self.config))
         
         # Save metrics so far
         metrics_path = checkpoint_dir / "metrics.json"
-        with open(metrics_path, "w") as f:
-            json.dump(self.metrics, f, indent=2)
+        write_json_atomic(metrics_path, self.metrics)
         
         logger.info(f"Checkpoint saved to {checkpoint_dir}")
     

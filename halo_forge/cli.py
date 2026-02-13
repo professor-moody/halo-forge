@@ -72,6 +72,24 @@ def _enforce_modality_train_contract(modality: str, args) -> None:
         sys.exit(2)
 
 
+def _enforce_training_outcome_or_exit(modality: str, summary: dict) -> None:
+    """Fail non-zero when a train command produced no optimizer updates."""
+    if summary.get("weights_updated", False):
+        return
+
+    reason = summary.get("final_update_reason", "no_updates")
+    steps = int(summary.get("total_train_steps_executed", 0) or 0)
+    print(
+        f"{RED}TRAINING_CONTRACT_ERROR modality={modality} "
+        f"reason={reason} total_train_steps_executed={steps}{NC}"
+    )
+    print(
+        "Training completed without any optimizer updates. "
+        "Check dataset quality, model support, and adapter configuration."
+    )
+    sys.exit(2)
+
+
 # =============================================================================
 # Auto-Logging System
 # =============================================================================
@@ -1911,7 +1929,7 @@ def cmd_vlm_train(args):
     """Train VLM with RAFT."""
     from halo_forge.vlm import VLMRAFTTrainer
     from halo_forge.vlm.trainer import VLMRAFTConfig
-    from halo_forge.vlm.data import load_vlm_dataset, list_vlm_datasets
+    from halo_forge.vlm.data import list_vlm_datasets
     from halo_forge.vlm.verifiers import check_vlm_dependencies
     
     print_banner()
@@ -2003,19 +2021,16 @@ def cmd_vlm_train(args):
     trainer = VLMRAFTTrainer(config)
     
     try:
-        trainer.train(dataset_path)
+        summary = trainer.train(dataset_path)
+    except ValueError as e:
+        print(f"{RED}Training error: {e}{NC}")
+        sys.exit(2)
     finally:
         trainer.cleanup()
 
-    total_steps = sum(
-        int(cycle.get("train_steps_executed", 0))
-        for cycle in trainer.training_history
-    )
-    final_loss = (
-        trainer.training_history[-1].get("train_loss")
-        if trainer.training_history
-        else None
-    )
+    total_steps = int(summary.get("total_train_steps_executed", 0))
+    final_loss = summary.get("final_train_loss")
+    _enforce_training_outcome_or_exit("vlm", summary)
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Output: {args.output}")
@@ -2370,12 +2385,15 @@ def cmd_audio_train(args):
     
     # Run training
     trainer = AudioRAFTTrainer(config)
-    results = trainer.train(args.dataset)
-    total_steps = sum(
-        int(cycle.metrics.get("train_steps_executed", 0))
-        for cycle in results
-    )
-    final_loss = results[-1].metrics.get("train_loss") if results else None
+    try:
+        results = trainer.train(args.dataset)
+    except ValueError as e:
+        print(f"{RED}Training error: {e}{NC}")
+        sys.exit(2)
+    summary = getattr(trainer, "training_summary", {})
+    total_steps = int(summary.get("total_train_steps_executed", 0))
+    final_loss = summary.get("final_train_loss")
+    _enforce_training_outcome_or_exit("audio", summary)
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final model saved to: {args.output}")
@@ -3178,7 +3196,12 @@ def cmd_reasoning_train(args):
     
     # Train
     trainer = ReasoningRAFTTrainer(config)
-    summary = trainer.train(list(dataset))
+    try:
+        summary = trainer.train(list(dataset))
+    except ValueError as e:
+        print(f"{RED}Training error: {e}{NC}")
+        sys.exit(2)
+    _enforce_training_outcome_or_exit("reasoning", summary)
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final accuracy: {summary.get('final_accuracy', 0):.1%}")
@@ -3371,18 +3394,14 @@ def cmd_agentic_train(args):
     
     # Train
     trainer = AgenticRAFTTrainer(config)
-    results = trainer.train(samples)
-    total_steps = sum(
-        int(c.get("metrics", {}).get("train_steps_executed", 0))
-        for c in results.get("cycle_results", [])
-    )
-    final_loss = (
-        results.get("cycle_results", [{}])[-1]
-        .get("metrics", {})
-        .get("train_loss")
-        if results.get("cycle_results")
-        else None
-    )
+    try:
+        results = trainer.train(samples)
+    except ValueError as e:
+        print(f"{RED}Training error: {e}{NC}")
+        sys.exit(2)
+    total_steps = int(results.get("total_train_steps_executed", 0))
+    final_loss = results.get("final_train_loss")
+    _enforce_training_outcome_or_exit("agentic", results)
     
     print(f"\n{GREEN}Training complete!{NC}")
     print(f"Final accuracy: {results.get('final_success_rate', 0):.1%}")

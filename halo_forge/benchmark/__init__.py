@@ -98,6 +98,11 @@ def _load_jsonl_records(path: str) -> List[Dict[str, Any]]:
     return records
 
 
+def _normalize_benchmark_key(name: str) -> str:
+    """Normalize benchmark identifiers for backend routing comparisons."""
+    return (name or "").strip().lower().replace("-", "").replace("_", "")
+
+
 class LiveCodeBenchPythonVerifier(Verifier):
     """
     Lightweight verifier for Python LiveCodeBench-style stdin/stdout tasks.
@@ -240,10 +245,13 @@ class LiveCodeBenchPythonVerifier(Verifier):
 
 def _select_backend(model: str, benchmark: str) -> BenchmarkBackend:
     """Auto-select appropriate backend based on model/benchmark."""
-    bench_lower = benchmark.lower().replace('-', '').replace('_', '')
+    bench_lower = _normalize_benchmark_key(benchmark)
+    normalized_vlm_benchmarks = {
+        _normalize_benchmark_key(name) for name in VLM_BENCHMARKS
+    }
     
     # Check if it's a VLM benchmark
-    if bench_lower in VLM_BENCHMARKS:
+    if bench_lower in normalized_vlm_benchmarks:
         return BenchmarkBackend.VLMEVALKIT
     
     # Check if model is a VLM
