@@ -407,6 +407,25 @@ python3 scripts/run_non_code_modality_matrix.py \
 
 `status=pass|warn|fail` is contract-based runtime readiness, not model-quality promotion.
 
+Cross-module ops readiness reports (non-coding scope) can be generated with:
+
+```bash
+python3 scripts/run_ops_module_matrix.py \
+  --fixture-pack v1 \
+  --write-report \
+  --report-file results/readiness/ops_modules_readiness.v1.json
+```
+
+Strict fixture-backed gate (used in nightly CI):
+
+```bash
+python3 scripts/run_ops_module_matrix.py --fixture-pack v1 --strict
+```
+
+CI policy:
+- PR/push CI uses non-strict report generation (informational for readiness status).
+- Nightly CI uses strict mode and fails on any module `status=fail`.
+
 ---
 
 ## Experimental Commands

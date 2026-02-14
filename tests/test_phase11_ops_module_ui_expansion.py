@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ from ui.services.benchmark_service import BenchmarkService, BenchmarkType
 from ui.services.inference_service import InferenceService
 from ui.services.ops_readiness_service import OpsReadinessService
 from ui.state import AppState
+from ui.feature_flags import get_ui_feature_flags
 
 
 def test_ops_readiness_schema_validation_pass_and_fail():
@@ -73,6 +75,47 @@ def test_ops_matrix_script_flags_and_strict_behavior(tmp_path):
     assert "ERROR: failing modules:" in strict.stdout
 
 
+def test_ops_matrix_fixture_pack_strict_passes_and_corruption_fails(tmp_path):
+    """Fixture-pack strict mode should pass for valid fixtures and fail on corruption."""
+    script = Path("scripts/run_ops_module_matrix.py")
+    assert script.exists()
+
+    strict_pass = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--fixture-pack",
+            "v1",
+            "--strict",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert strict_pass.returncode == 0
+    assert "OPS_READY module=ui_ops" in strict_pass.stdout
+
+    fixture_root = Path("tests/fixtures/ops_readiness/v1")
+    corrupted_root = tmp_path / "corrupted_pack"
+    shutil.copytree(fixture_root, corrupted_root)
+    (corrupted_root / "vlm" / "launch_context.json").unlink()
+
+    strict_fail = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--fixture-pack",
+            str(corrupted_root),
+            "--strict",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert strict_fail.returncode == 1
+    assert "ERROR: failing modules:" in strict_fail.stdout
+
+
 def test_app_routes_include_feature_flagged_expansion_pages():
     """UI app should register feature-flagged inference/advanced/research routes."""
     source = Path("ui/app.py").read_text(encoding="utf-8")
@@ -92,6 +135,24 @@ def test_sidebar_wires_conditional_nav_items_for_new_pages():
     assert "/inference" in source
     assert "/benchmark-advanced" in source
     assert "/research-hub" in source
+
+
+def test_feature_flags_default_on_and_kill_switch(monkeypatch):
+    """New UI surfaces should be enabled by default with env kill-switch support."""
+    for key in (
+        "HALO_UI_ENABLE_INFERENCE_PAGE",
+        "HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE",
+        "HALO_UI_ENABLE_RESEARCH_HUB_PAGE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    default_flags = get_ui_feature_flags()
+    assert default_flags.enable_inference_page is True
+    assert default_flags.enable_benchmark_advanced_page is True
+    assert default_flags.enable_research_hub_page is True
+
+    monkeypatch.setenv("HALO_UI_ENABLE_RESEARCH_HUB_PAGE", "0")
+    disabled_flags = get_ui_feature_flags()
+    assert disabled_flags.enable_research_hub_page is False
 
 
 def test_benchmark_service_supports_reasoning_type_command():

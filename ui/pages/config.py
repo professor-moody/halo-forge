@@ -152,7 +152,10 @@ output_dir: "models/raft_aggressive"
             f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
         )
         ui.label(
-            'Flags are environment-controlled. Restart the UI after changing values.'
+            'Pages are enabled by default. Set env vars to 0/false/off to disable.'
+        ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+        ui.label(
+            'Flags are environment-controlled; restart the UI after changes.'
         ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
 
         rows = [

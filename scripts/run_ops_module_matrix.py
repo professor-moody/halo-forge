@@ -47,6 +47,34 @@ def _parse_validation_targets(values: Iterable[str]) -> list[Tuple[str, Path]]:
     return targets
 
 
+def _parse_fixture_pack(pack: str) -> list[Tuple[str, Path]]:
+    pack_text = str(pack or "").strip()
+    if not pack_text:
+        return []
+
+    if "/" in pack_text or pack_text.startswith("."):
+        pack_root = Path(pack_text).expanduser()
+        if not pack_root.is_absolute():
+            pack_root = (REPO_ROOT / pack_root).resolve()
+    else:
+        pack_root = (REPO_ROOT / "tests" / "fixtures" / "ops_readiness" / pack_text).resolve()
+
+    if not pack_root.exists() or not pack_root.is_dir():
+        raise ValueError(f"Fixture pack directory not found: {pack_root}")
+
+    targets: list[Tuple[str, Path]] = []
+    for module in OPS_MODULES:
+        if module == "ui_ops":
+            # ui_ops validator inspects actual route/service wiring in the repository.
+            targets.append((module, REPO_ROOT))
+            continue
+        module_dir = pack_root / module
+        if not module_dir.exists() or not module_dir.is_dir():
+            raise ValueError(f"Fixture pack missing module directory: {module_dir}")
+        targets.append((module, module_dir))
+    return targets
+
+
 def _matrix(seed: int) -> Dict[str, list[dict]]:
     base = default_output_map()
     return {
@@ -184,6 +212,14 @@ def main() -> int:
         help="Validate module output target (format: module=/path/to/output)",
     )
     parser.add_argument(
+        "--fixture-pack",
+        default="",
+        help=(
+            "Use fixture pack for module validation. "
+            "Examples: v1 or tests/fixtures/ops_readiness/v1"
+        ),
+    )
+    parser.add_argument(
         "--write-report",
         action="store_true",
         help="Write canonical ops readiness report",
@@ -218,10 +254,19 @@ def main() -> int:
                 print()
 
     try:
-        targets = _parse_validation_targets(args.validate_module)
+        fixture_targets = _parse_fixture_pack(args.fixture_pack)
+        explicit_targets = _parse_validation_targets(args.validate_module)
     except ValueError as exc:
         print(f"ERROR: {exc}")
         return 2
+
+    targets_by_module: Dict[str, Path] = {}
+    for module, path in fixture_targets:
+        targets_by_module[module] = path
+    for module, path in explicit_targets:
+        # Explicit module targets override fixture pack mapping for that module.
+        targets_by_module[module] = path
+    targets = [(module, path) for module, path in targets_by_module.items()]
 
     if targets:
         entries: Dict[str, OpsModuleReadiness] = {}

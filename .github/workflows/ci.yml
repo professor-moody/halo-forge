@@ -42,6 +42,7 @@ jobs:
       - name: Ops module readiness contract report
         run: |
           python3 scripts/run_ops_module_matrix.py \
+            --fixture-pack v1 \
             --write-report \
             --report-file results/readiness/ops_modules_readiness.v1.json
 

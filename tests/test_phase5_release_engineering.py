@@ -32,7 +32,17 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase11_ops_module_ui_expansion.py" in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "scripts/run_ops_module_matrix.py" in content
+    assert "--fixture-pack v1" in content
     assert "tests/baselines/modality_runtime_baseline.v1.json" in content
+
+    nightly_workflow = Path(".github/workflows/nightly_ops_readiness.yml")
+    assert nightly_workflow.exists()
+    nightly_content = nightly_workflow.read_text(encoding="utf-8")
+    assert "schedule:" in nightly_content
+    assert "workflow_dispatch:" in nightly_content
+    assert "scripts/run_ops_module_matrix.py" in nightly_content
+    assert "--fixture-pack v1" in nightly_content
+    assert "--strict" in nightly_content
 
 
 def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():

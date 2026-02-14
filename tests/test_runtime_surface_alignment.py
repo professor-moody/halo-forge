@@ -100,3 +100,23 @@ def test_monitor_page_reads_canonical_training_summary_fields():
     assert "total_train_steps_executed" in source
     assert "final_train_loss" in source
     assert "self.benchmark_service.stop_job" in source
+
+
+def test_default_on_ops_routes_and_quick_actions_are_declared():
+    """New ops surfaces should be default-on with explicit kill-switch flags."""
+    flags_source = Path("ui/feature_flags.py").read_text(encoding="utf-8")
+    assert 'HALO_UI_ENABLE_INFERENCE_PAGE' in flags_source
+    assert 'HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE' in flags_source
+    assert 'HALO_UI_ENABLE_RESEARCH_HUB_PAGE' in flags_source
+    assert "default=True" in flags_source
+
+    app_source = Path("ui/app.py").read_text(encoding="utf-8")
+    assert "@ui.page('/inference')" in app_source
+    assert "@ui.page('/benchmark-advanced')" in app_source
+    assert "@ui.page('/research-hub')" in app_source
+    assert "_render_feature_disabled" in app_source
+
+    dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
+    assert "/inference" in dashboard_source
+    assert "/benchmark-advanced" in dashboard_source
+    assert "/research-hub" in dashboard_source

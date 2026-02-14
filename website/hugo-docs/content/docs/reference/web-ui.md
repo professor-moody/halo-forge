@@ -59,8 +59,9 @@ Configure and launch training jobs:
 | Type | Benchmarks | Models |
 |------|------------|--------|
 | **Code** | HumanEval, MBPP, LiveCodeBench | Qwen2.5-Coder, DeepSeek-Coder |
-| **VLM** | TextVQA, DocVQA, MMStar, ChartQA | Qwen2-VL, LLaVA, Phi-3-Vision |
+| **VLM** | TextVQA, DocVQA, ChartQA | Qwen2-VL, LLaVA, Phi-3-Vision |
 | **Audio** | LibriSpeech, CommonVoice | Whisper (tiny to large-v3) |
+| **Reasoning** | GSM8K, MATH | Qwen2.5-Instruct, Mistral-Instruct |
 | **Agentic** | xLAM Function Calling | Qwen2.5-Instruct, Mistral-Instruct |
 
 **Uses community tools**: VLM benchmarks use VLMEvalKit when available for standardized, comparable results.
@@ -123,6 +124,27 @@ Benchmark results table:
 - Multi-select for comparison
 - Sort by any column
 - Export to JSON/CSV
+
+### Inference (`/inference`)
+
+Launch inference optimize and benchmark jobs from the UI:
+- `inference optimize` launch contract (precision/latency/calibration)
+- `inference benchmark` launch contract (prompts, tokens, warmup)
+- Durable launch context + monitor/relaunch parity
+
+### Benchmark Advanced (`/benchmark-advanced`)
+
+Batch orchestration for non-code benchmark runs:
+- VLM/audio/reasoning/agentic batch launch
+- Per-domain dataset selection
+- Monitor handoff to first launched job
+
+### Research Hub (`/research-hub`)
+
+Cross-module ops readiness visibility:
+- Reads canonical ops readiness report when available
+- Falls back to live contract checks when report missing/corrupt
+- Shows actionable pass/warn/fail evidence by module
 
 ## Architecture
 
@@ -199,6 +221,23 @@ COLORS = {
 1. Create page component in `ui/pages/`
 2. Add route in `ui/app.py`
 3. Add navigation item in `ui/components/sidebar.py`
+
+## Feature Flags (Default-On Kill Switches)
+
+The following pages are enabled by default:
+- `/inference`
+- `/benchmark-advanced`
+- `/research-hub`
+
+Disable any page with env vars:
+
+```bash
+HALO_UI_ENABLE_INFERENCE_PAGE=0
+HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE=0
+HALO_UI_ENABLE_RESEARCH_HUB_PAGE=0
+```
+
+Accepted false values: `0`, `false`, `no`, `off`.
 
 ## Troubleshooting
 
