@@ -27,6 +27,7 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase7b_modality_e2e_surface.py" in content
     assert "tests/test_phase7c_modality_baseline_drift.py" in content
     assert "tests/test_phase8_ui_ops_parity_relaunch.py" in content
+    assert "tests/test_phase9_non_code_modality_research_matrix.py" in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "tests/baselines/modality_runtime_baseline.v1.json" in content
 
