@@ -60,6 +60,13 @@ jobs:
             --write-report \
             --report-file results/readiness/ops_dataset_burnin.v1.json
 
+      - name: All-module readiness report (informational)
+        run: |
+          python3 scripts/run_all_module_matrix.py \
+            --fixture-pack v1 \
+            --write-report \
+            --report-file results/readiness/all_modules_readiness.v1.json
+
       - name: Upload ops readiness artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -68,6 +75,7 @@ jobs:
             results/readiness/ops_modules_readiness.v1.json
             results/readiness/ops_e2e_launch_reliability.v1.json
             results/readiness/ops_dataset_burnin.v1.json
+            results/readiness/all_modules_readiness.v1.json
           if-no-files-found: error
 
       - name: Core framework and UI regression checks
@@ -100,4 +108,5 @@ jobs:
             tests/test_phase10_non_code_ui_readiness_gates.py \
             tests/test_phase11_ops_module_ui_expansion.py \
             tests/test_phase12_ops_e2e_launch_reliability.py \
-            tests/test_phase13_ops_dataset_burnin_baselines.py
+            tests/test_phase13_ops_dataset_burnin_baselines.py \
+            tests/test_phase14_all_module_parity.py

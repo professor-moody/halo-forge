@@ -23,6 +23,7 @@ from ui.services.benchmark_service import (
     AGENTIC_PRESETS,
     get_benchmark_service,
 )
+from ui.services.ops_readiness_service import get_ops_readiness_service
 from ui.components.notifications import notify_job_started, notify_job_failed
 from ui.components.file_picker import FilePicker
 
@@ -90,6 +91,7 @@ class Benchmark:
         self.data.preset = CODE_PRESETS[0] if CODE_PRESETS else None
         self.is_running = False
         self.benchmark_service = get_benchmark_service(state)
+        self.ops_readiness_service = get_ops_readiness_service()
         self._tabs_container = None
         self._config_container = None
         # Cache for discovered local models
@@ -217,7 +219,7 @@ class Benchmark:
                     ui.label('Compare model to published benchmarks').classes(
                         f'text-sm text-[{COLORS["text_muted"]}]'
                     )
-            
+
             # Benchmark type tabs - in container for refresh
             with ui.row().classes(
                 f'w-full gap-2 p-2 rounded-xl bg-[{COLORS["bg_card"]}] '
@@ -277,6 +279,56 @@ class Benchmark:
         self._config_container.clear()
         with self._config_container:
             self._render_form()
+
+    def _render_all_module_readiness_banner(self):
+        """Render all-module readiness status for benchmark surfaces."""
+        module_key = (
+            "benchmark_code"
+            if self.data.benchmark_type == BenchmarkType.CODE
+            else "benchmark_non_code"
+        )
+        try:
+            report = self.ops_readiness_service.get_effective_all_module_readiness()
+        except Exception as e:
+            ui.label(f"All-module readiness unavailable: {e}").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
+            return
+
+        entry = report.modules.get(module_key)
+        if entry is None:
+            return
+
+        status = entry.status.lower()
+        if status == "pass":
+            color = COLORS["success"]
+            icon = "check_circle"
+        elif status == "warn":
+            color = COLORS["warning"]
+            icon = "warning"
+        else:
+            color = COLORS["error"]
+            icon = "error"
+
+        with ui.column().classes(
+            f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
+        ):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon(icon, size='16px').classes(f'text-[{color}]')
+                source = f"{report.source}"
+                if report.stale:
+                    source += " (stale)"
+                ui.label(
+                    f"All-module readiness {status.upper()} • module={module_key} • source={source}"
+                ).classes(f'text-xs text-[{color}] font-medium')
+            if entry.errors:
+                ui.label(f"Blocking reason: {entry.errors[0]}").classes(
+                    f'text-xs text-[{COLORS["error"]}]'
+                )
+            elif entry.warnings:
+                ui.label(f"Warning: {entry.warnings[0]}").classes(
+                    f'text-xs text-[{COLORS["warning"]}]'
+                )
     
     def _get_models_for_type(self, btype: BenchmarkType) -> list[str]:
         """Get suggested models for benchmark type."""
@@ -294,6 +346,7 @@ class Benchmark:
     
     def _render_form(self):
         """Render the benchmark configuration form."""
+        self._render_all_module_readiness_banner()
         # Two-column layout
         with ui.row().classes('w-full gap-6'):
             # Left column - Model & Benchmark Selection

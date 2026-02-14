@@ -10,12 +10,20 @@ from typing import Dict
 
 from nicegui import ui
 
-from halo_forge.ops_module_readiness import OPS_MODULES
+from halo_forge.all_module_readiness import ALL_MODULES
 from ui.services import get_ops_readiness_service
 from ui.theme import COLORS
 
 
 MODULE_ROUTE_MAP: Dict[str, str] = {
+    "config": "/config",
+    "data": "/datasets",
+    "info": "/",
+    "plot": "/results",
+    "sft": "/training",
+    "raft": "/training",
+    "benchmark_code": "/benchmark",
+    "benchmark_non_code": "/benchmark-advanced",
     "vlm": "/training",
     "audio": "/training",
     "reasoning": "/training",
@@ -56,7 +64,7 @@ class ResearchHub:
             self._render_content(force_refresh=True)
 
     def _render_content(self, force_refresh: bool) -> None:
-        report = self.readiness_service.get_effective_readiness(force_refresh=force_refresh)
+        report = self.readiness_service.get_effective_all_module_readiness(force_refresh=force_refresh)
         burnin_meta = self.readiness_service.get_burnin_provenance(force_refresh=force_refresh)
         burnin_report = None
         if burnin_meta.get("burnin_report_present"):
@@ -89,7 +97,7 @@ class ResearchHub:
                 "Readiness is warn-but-allow: launches remain enabled for debugging and validation."
             ).classes(f"text-xs text-[{COLORS['text_secondary']}]")
 
-        for module in OPS_MODULES:
+        for module in ALL_MODULES:
             burnin_entry = None
             if burnin_report and module in burnin_report.modules:
                 burnin_entry = burnin_report.modules[module]

@@ -18,6 +18,15 @@ from halo_forge.ops_module_readiness import (
     default_output_map,
     load_ops_readiness_report,
 )
+from halo_forge.all_module_readiness import (
+    ALL_MODULES,
+    DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
+    AllModuleReadinessReport,
+    apply_staleness_policy as apply_all_module_staleness_policy,
+    compute_all_module_readiness,
+    default_output_map as default_all_module_output_map,
+    load_all_module_readiness_report,
+)
 
 
 class OpsReadinessService:
@@ -28,14 +37,18 @@ class OpsReadinessService:
         *,
         base_path: Optional[Path] = None,
         report_path: Path = DEFAULT_OPS_READINESS_REPORT_FILE,
+        all_module_report_path: Path = DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
         burnin_report_path: Path = Path("results/readiness/ops_dataset_burnin.v1.json"),
     ):
         self.base_path = base_path or Path.cwd()
         self.report_path = report_path
+        self.all_module_report_path = all_module_report_path
         self.burnin_report_path = burnin_report_path
         self._cache: Optional[OpsReadinessReport] = None
         self._cache_time: Optional[datetime] = None
         self._cache_ttl_seconds = 30
+        self._all_module_cache: Optional[AllModuleReadinessReport] = None
+        self._all_module_cache_time: Optional[datetime] = None
         self._burnin_cache = None
         self._burnin_cache_time: Optional[datetime] = None
 
@@ -122,10 +135,97 @@ class OpsReadinessService:
             return self.report_path
         return self.base_path / self.report_path
 
+    def _resolve_all_module_report_path(self) -> Path:
+        if self.all_module_report_path.is_absolute():
+            return self.all_module_report_path
+        return self.base_path / self.all_module_report_path
+
     def _resolve_burnin_report_path(self) -> Path:
         if self.burnin_report_path.is_absolute():
             return self.burnin_report_path
         return self.base_path / self.burnin_report_path
+
+    def load_all_module_readiness_report(
+        self,
+        force_refresh: bool = False,
+    ) -> AllModuleReadinessReport:
+        """Load canonical all-module readiness report from disk."""
+        if not force_refresh and self._all_module_cache and self._all_module_cache_time:
+            age = (datetime.now() - self._all_module_cache_time).total_seconds()
+            if age < self._cache_ttl_seconds:
+                return self._all_module_cache
+
+        report_file = self._resolve_all_module_report_path()
+        if not report_file.exists():
+            raise FileNotFoundError(f"All-module readiness report not found: {report_file}")
+
+        report = load_all_module_readiness_report(report_file)
+        report = apply_all_module_staleness_policy(
+            report,
+            stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
+        )
+        self._all_module_cache = report
+        self._all_module_cache_time = datetime.now()
+        return report
+
+    def compute_live_all_module_readiness(
+        self,
+        output_map: Optional[Dict[str, str]] = None,
+        seed: int = 42,
+    ) -> AllModuleReadinessReport:
+        """Compute all-module readiness directly from local contracts/artifacts."""
+        merged_output_map = self._default_all_module_output_map()
+        if output_map:
+            for key, value in output_map.items():
+                if key in ALL_MODULES and value:
+                    merged_output_map[key] = value
+
+        report = compute_all_module_readiness(
+            output_map=merged_output_map,
+            seed=seed,
+            source="ui_live_compute",
+            require_artifacts=False,
+        )
+        report = apply_all_module_staleness_policy(
+            report,
+            stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
+        )
+        self._all_module_cache = report
+        self._all_module_cache_time = datetime.now()
+        return report
+
+    def get_effective_all_module_readiness(
+        self,
+        output_map: Optional[Dict[str, str]] = None,
+        seed: int = 42,
+        force_refresh: bool = False,
+    ) -> AllModuleReadinessReport:
+        """
+        Return effective all-module readiness for UI.
+
+        Preferred source: persisted canonical report.
+        Fallback source: live contract compute.
+        """
+        try:
+            report = self.load_all_module_readiness_report(force_refresh=force_refresh)
+            if report.stale and not self._has_usable_all_module_entries(report):
+                return self.compute_live_all_module_readiness(output_map=output_map, seed=seed)
+            return report
+        except Exception:
+            return self.compute_live_all_module_readiness(output_map=output_map, seed=seed)
+
+    def _default_all_module_output_map(self) -> Dict[str, str]:
+        defaults = default_all_module_output_map()
+        return {
+            module: str(Path(path))
+            for module, path in defaults.items()
+        }
+
+    def _has_usable_all_module_entries(self, report: AllModuleReadinessReport) -> bool:
+        for module in ALL_MODULES:
+            if report.modules[module].status in {"pass", "warn"}:
+                return True
+        return False
 
     def load_burnin_report(self, force_refresh: bool = False):
         """Load dataset burn-in report if present and valid."""

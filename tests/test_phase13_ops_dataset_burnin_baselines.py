@@ -130,6 +130,7 @@ def test_ui_ops_readiness_service_and_pages_include_burnin_provenance_hooks():
     assert "burnin_report_present" in service_source
     assert "burnin_generated_at" in service_source
     assert "burnin_status" in service_source
+    assert "get_effective_all_module_readiness" in service_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "burnin report unavailable" in research_hub_source

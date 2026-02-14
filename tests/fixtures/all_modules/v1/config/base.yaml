@@ -1,0 +1,4 @@
+model:
+  name: Qwen/Qwen2.5-Coder-3B
+training:
+  epochs: 1

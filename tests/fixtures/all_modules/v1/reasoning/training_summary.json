@@ -1,0 +1,9 @@
+{
+  "modality": "reasoning",
+  "run_id": "reasoning-fixture-run",
+  "seed": 42,
+  "weights_updated": true,
+  "total_train_steps_executed": 2,
+  "final_update_reason": "updated",
+  "failure_reason": null
+}

@@ -17,6 +17,7 @@ from ui.services import (
     get_hardware_monitor,
     get_event_bus,
     get_modality_readiness_service,
+    get_ops_readiness_service,
     Event,
     EventType,
 )
@@ -33,7 +34,8 @@ class Dashboard:
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         self.results_service = get_results_service()
         self.hardware_monitor = get_hardware_monitor()
-        self.readiness_service = get_modality_readiness_service()
+        self.modality_readiness_service = get_modality_readiness_service()
+        self.readiness_service = get_ops_readiness_service()
     
     def render(self):
         """Render the dashboard page."""
@@ -99,13 +101,13 @@ class Dashboard:
             # Register cleanup on client disconnect
             ui.context.client.on_disconnect(self._cleanup)
 
-            # Non-code modality readiness summary
+            # All-module readiness summary
             with ui.column().classes(
                 f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
                 f'border border-[#2d343c] animate-in stagger-2'
             ):
                 with ui.row().classes('w-full items-center justify-between'):
-                    ui.label('Non-Code Modality Readiness').classes(
+                    ui.label('All-Module Readiness (Non-Code Modality Readiness)').classes(
                         f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                     )
                     ui.button(
@@ -365,9 +367,9 @@ class Dashboard:
                 ui.label(label).classes(f'text-sm text-[{COLORS["text_primary"]}]')
 
     def _render_modality_readiness_summary(self):
-        """Render non-code modality readiness rows."""
+        """Render all-module readiness rows."""
         try:
-            report = self.readiness_service.get_effective_readiness()
+            report = self.readiness_service.get_effective_all_module_readiness()
         except Exception as e:
             ui.label(f"Readiness unavailable: {e}").classes(
                 f'text-sm text-[{COLORS["warning"]}]'
@@ -395,8 +397,21 @@ class Dashboard:
                 f'text-xs text-[{COLORS["warning"]}]'
             )
 
-        for modality in ("vlm", "audio", "reasoning", "agentic"):
-            entry = report.modalities.get(modality)
+        for module in (
+            "config",
+            "data",
+            "sft",
+            "raft",
+            "benchmark_code",
+            "benchmark_non_code",
+            "inference",
+            "vlm",
+            "audio",
+            "reasoning",
+            "agentic",
+            "ui_ops",
+        ):
+            entry = report.modules.get(module)
             if not entry:
                 continue
             badge_color = self._status_color(entry.status)
@@ -405,7 +420,7 @@ class Dashboard:
             ):
                 with ui.column().classes('gap-1'):
                     with ui.row().classes('items-center gap-2'):
-                        ui.label(modality.upper()).classes(
+                        ui.label(module.upper()).classes(
                             f'text-sm font-medium text-[{COLORS["text_primary"]}]'
                         )
                         ui.label(entry.status.upper()).classes(
@@ -582,7 +597,7 @@ class Dashboard:
 
     async def _refresh_readiness(self):
         """Trigger readiness refresh."""
-        self.readiness_service.get_effective_readiness(force_refresh=True)
+        self.readiness_service.get_effective_all_module_readiness(force_refresh=True)
         ui.notify('Readiness refreshed', type='info', timeout=1200)
     
     def _setup_gpu_polling(self):

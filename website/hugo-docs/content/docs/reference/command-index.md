@@ -398,13 +398,15 @@ Run pipeline validation tests.
 | `--baseline-file` | - | path | No | `tests/baselines/modality_runtime_baseline.v1.json` | Baseline JSON path (`modality` or `ops-burnin`) |
 | `--write-baseline` | - | flag | No | false | Write/overwrite baseline (`modality` or `ops-burnin`) |
 | `--compare-baseline` | - | flag | No | false | Compare run to baseline and fail on hard drift |
-| `--report-file` | - | path | No | `results/readiness/ops_e2e_launch_reliability.v1.json` | Report output path (`ops-e2e` / `ops-burnin`) |
-| `--strict` | - | flag | No | false | Fail on `status=fail` modules (`ops-e2e` / `ops-burnin`) |
-| `--seed` | - | int | No | `42` | Deterministic seed (`ops-e2e` / `ops-burnin`) |
-| `--fixture-pack` | - | string | No | - | Fixture pack (`v1`) or custom path (`ops-e2e` level) |
+| `--report-file` | - | path | No | `results/readiness/ops_e2e_launch_reliability.v1.json` | Report output path (`ops-e2e` / `ops-burnin` / `all-modules`) |
+| `--strict` | - | flag | No | false | Fail on `status=fail` modules (`ops-e2e` / `ops-burnin` / `all-modules`) |
+| `--seed` | - | int | No | `42` | Deterministic seed (`ops-e2e` / `ops-burnin` / `all-modules`) |
+| `--fixture-pack` | - | string | No | - | Fixture pack (`v1`) or custom path (`ops-e2e` / `all-modules` level) |
 | `--burnin-profile` | - | string | No | `tiny-v1` | Dataset-backed burn-in profile (`ops-burnin` level) |
+| `--profile` | - | string | No | `bounded-v1` | Readiness profile (`all-modules` level) |
+| `--module` | - | string (repeatable) | No | - | Filter module(s) for `all-modules` |
 
-**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite), `ops-e2e` (non-code launch lifecycle reliability), `ops-burnin` (bounded dataset-backed non-code burn-in)
+**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite), `ops-e2e` (non-code launch lifecycle reliability), `ops-burnin` (bounded dataset-backed non-code burn-in), `all-modules` (coding + non-coding parity checks)
 
 Baseline drift checks validate runtime contract stability, not model-quality promotion thresholds.
 
@@ -419,6 +421,9 @@ halo-forge test --level ops-e2e --fixture-pack v1 --report-file results/readines
 halo-forge test --level ops-e2e --fixture-pack v1 --strict
 halo-forge test --level ops-burnin --burnin-profile tiny-v1 --report-file results/readiness/ops_dataset_burnin.v1.json
 halo-forge test --level ops-burnin --burnin-profile tiny-v1 --compare-baseline --strict
+halo-forge test --level all-modules --fixture-pack v1 --report-file results/readiness/all_modules_readiness.v1.json
+halo-forge test --level all-modules --fixture-pack v1 --strict
+halo-forge test --level all-modules --module sft --module raft --strict
 ```
 
 Non-code modality UI readiness reports (contract-only) can be generated with:
@@ -483,6 +488,21 @@ python3 scripts/run_ops_dataset_burnin.py \
   --strict \
   --compare-baseline \
   --baseline-file tests/baselines/ops_dataset_burnin_baseline.v1.json
+```
+
+All-module parity readiness (coding + non-coding):
+
+```bash
+python3 scripts/run_all_module_matrix.py \
+  --fixture-pack v1 \
+  --write-report \
+  --report-file results/readiness/all_modules_readiness.v1.json
+```
+
+Strict nightly all-module gate:
+
+```bash
+python3 scripts/run_all_module_matrix.py --fixture-pack v1 --strict
 ```
 
 CI policy:

@@ -14,6 +14,7 @@ from nicegui import ui
 
 from ui.components.notifications import notify_job_failed, notify_job_started
 from ui.services import BenchmarkType, get_benchmark_service, get_presets_for_type
+from ui.services.ops_readiness_service import get_ops_readiness_service
 from ui.state import state
 from ui.theme import COLORS
 
@@ -39,6 +40,7 @@ class BenchmarkAdvanced:
     def __init__(self):
         self.data = BenchmarkAdvancedData()
         self.benchmark_service = get_benchmark_service(state)
+        self.ops_readiness_service = get_ops_readiness_service()
         self.is_running = False
         self._init_defaults()
 
@@ -65,6 +67,8 @@ class BenchmarkAdvanced:
                     f"text-sm text-[{COLORS['text_secondary']}]"
                 )
 
+            self._render_all_module_readiness_banner()
+
             with ui.row().classes("w-full gap-6 flex-wrap"):
                 with ui.column().classes(
                     f"flex-1 min-w-[350px] gap-4 p-5 rounded-xl bg-[{COLORS['bg_card']}] border border-[#2d343c]"
@@ -88,6 +92,51 @@ class BenchmarkAdvanced:
                     on_click=lambda: asyncio.create_task(self._launch_batch()),
                 ).props("unelevated").classes(
                     f"w-full bg-[{COLORS['primary']}] text-white"
+                )
+
+    def _render_all_module_readiness_banner(self) -> None:
+        """Render all-module readiness status for advanced benchmark surface."""
+        try:
+            report = self.ops_readiness_service.get_effective_all_module_readiness()
+        except Exception as e:
+            ui.label(f"All-module readiness unavailable: {e}").classes(
+                f"text-xs text-[{COLORS['warning']}]"
+            )
+            return
+
+        entry = report.modules.get("benchmark_non_code")
+        if entry is None:
+            return
+
+        status = entry.status.lower()
+        if status == "pass":
+            color = COLORS["success"]
+            icon = "check_circle"
+        elif status == "warn":
+            color = COLORS["warning"]
+            icon = "warning"
+        else:
+            color = COLORS["error"]
+            icon = "error"
+
+        with ui.column().classes(
+            f"w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10"
+        ):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon(icon, size="16px").classes(f"text-[{color}]")
+                source = f"{report.source}"
+                if report.stale:
+                    source += " (stale)"
+                ui.label(
+                    f"All-module readiness {status.upper()} • module=benchmark_non_code • source={source}"
+                ).classes(f"text-xs text-[{color}] font-medium")
+            if entry.errors:
+                ui.label(f"Blocking reason: {entry.errors[0]}").classes(
+                    f"text-xs text-[{COLORS['error']}]"
+                )
+            elif entry.warnings:
+                ui.label(f"Warning: {entry.warnings[0]}").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
                 )
 
     def _render_core_fields(self) -> None:

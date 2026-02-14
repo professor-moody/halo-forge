@@ -11,6 +11,7 @@ import yaml
 
 from ui.theme import COLORS
 from ui.feature_flags import get_ui_feature_flags
+from ui.services.ops_readiness_service import get_ops_readiness_service
 
 
 class ConfigEditor:
@@ -96,6 +97,7 @@ output_dir: "models/raft_aggressive"
         self.editor_content: str = ""
         self.is_modified: bool = False
         self.validation_error: Optional[str] = None
+        self.ops_readiness_service = get_ops_readiness_service()
     
     def render(self):
         """Render the config editor page."""
@@ -114,6 +116,8 @@ output_dir: "models/raft_aggressive"
                     ui.button('Save', icon='save', on_click=self._save_config).props(
                         'unelevated'
                     ).classes(f'bg-[{COLORS["primary"]}] text-white')
+
+            self._render_all_module_readiness_banner()
             
             # Main layout
             with ui.row().classes('w-full gap-6 flex-wrap'):
@@ -144,6 +148,51 @@ output_dir: "models/raft_aggressive"
                 f'border border-[#2d343c] animate-in stagger-4'
             ):
                 self._render_templates()
+
+    def _render_all_module_readiness_banner(self):
+        """Render all-module readiness status for config surface."""
+        try:
+            report = self.ops_readiness_service.get_effective_all_module_readiness()
+        except Exception as e:
+            ui.label(f"All-module readiness unavailable: {e}").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
+            return
+
+        entry = report.modules.get("config")
+        if entry is None:
+            return
+
+        status = entry.status.lower()
+        if status == "pass":
+            color = COLORS["success"]
+            icon = "check_circle"
+        elif status == "warn":
+            color = COLORS["warning"]
+            icon = "warning"
+        else:
+            color = COLORS["error"]
+            icon = "error"
+
+        with ui.column().classes(
+            f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
+        ):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon(icon, size='16px').classes(f'text-[{color}]')
+                source = f"{report.source}"
+                if report.stale:
+                    source += " (stale)"
+                ui.label(
+                    f"All-module readiness {status.upper()} • module=config • source={source}"
+                ).classes(f'text-xs text-[{color}] font-medium')
+            if entry.errors:
+                ui.label(f"Blocking reason: {entry.errors[0]}").classes(
+                    f'text-xs text-[{COLORS["error"]}]'
+                )
+            elif entry.warnings:
+                ui.label(f"Warning: {entry.warnings[0]}").classes(
+                    f'text-xs text-[{COLORS["warning"]}]'
+                )
 
     def _render_feature_flags(self):
         """Mirror feature-flag state for operators."""

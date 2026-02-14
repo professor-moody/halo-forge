@@ -2193,6 +2193,126 @@ class TestRunner:
                 )
         return self.print_summary()
 
+    def run_all_modules(
+        self,
+        *,
+        profile: str = "bounded-v1",
+        seed: int = 42,
+        report_file: Optional[str] = None,
+        module_filters: Optional[List[str]] = None,
+        strict: bool = False,
+        fixture_pack: str = "",
+    ) -> bool:
+        """Run all-module readiness checks for coding + non-coding surfaces."""
+        from halo_forge.all_module_readiness import (
+            ALL_MODULES,
+            ALL_MODULE_READINESS_STATUSES,
+            DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
+            AllModuleReadiness,
+            build_all_module_readiness_report,
+            compute_all_module_readiness,
+            default_output_map,
+            validate_all_module,
+            write_all_module_readiness_report,
+        )
+
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("All Module Parity", "Coding + non-coding readiness checks")
+        else:
+            print(f"\n{'='*60}")
+            print("halo forge All Module Parity")
+            print(f"{'='*60}\n")
+
+        selected_modules = []
+        for module in module_filters or []:
+            key = str(module or "").strip().lower()
+            if not key:
+                continue
+            if key not in ALL_MODULES:
+                raise RuntimeError(f"Unsupported module filter: {key}")
+            if key not in selected_modules:
+                selected_modules.append(key)
+        if not selected_modules:
+            selected_modules = list(ALL_MODULES)
+
+        def _resolve_fixture_pack(pack: str) -> Optional[Path]:
+            text = str(pack or "").strip()
+            if not text:
+                return None
+            if "/" in text or text.startswith("."):
+                root = Path(text).expanduser()
+                if not root.is_absolute():
+                    root = (Path.cwd() / root).resolve()
+                return root
+            return (Path.cwd() / "tests" / "fixtures" / "all_modules" / text).resolve()
+
+        def _run_all_module_checks() -> bool:
+            pack_root = _resolve_fixture_pack(fixture_pack)
+            if pack_root:
+                if not pack_root.exists() or not pack_root.is_dir():
+                    raise RuntimeError(f"Fixture pack directory not found: {pack_root}")
+                entries: Dict[str, AllModuleReadiness] = {}
+                for module in selected_modules:
+                    if module == "ui_ops":
+                        module_dir = Path.cwd()
+                    else:
+                        module_dir = pack_root / module
+                        if not module_dir.exists() or not module_dir.is_dir():
+                            raise RuntimeError(f"Fixture pack missing module directory: {module_dir}")
+                    entries[module] = validate_all_module(
+                        module=module,
+                        output_dir=module_dir,
+                        seed=seed,
+                        require_artifacts=True,
+                    )
+                report = build_all_module_readiness_report(
+                    module_entries=entries,
+                    seed=seed,
+                    source="cli_test",
+                )
+            else:
+                base_output_map = default_output_map()
+                output_map = {
+                    module: base_output_map[module]
+                    for module in selected_modules
+                }
+                report = compute_all_module_readiness(
+                    output_map=output_map,
+                    seed=seed,
+                    source="cli_test",
+                    require_artifacts=False,
+                )
+
+            for module in selected_modules:
+                entry = report.modules[module]
+                print(
+                    "ALL_READY "
+                    f"module={module} status={entry.status} "
+                    f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+                )
+                if entry.status not in ALL_MODULE_READINESS_STATUSES:
+                    raise RuntimeError(
+                        f"Invalid all-module status for module={module}: {entry.status}"
+                    )
+
+            report_path = Path(report_file) if report_file else DEFAULT_ALL_MODULE_READINESS_REPORT_FILE
+            write_all_module_readiness_report(report_path, report)
+            self.log(f"Wrote all-module readiness report: {report_path}", "info")
+
+            if strict:
+                failing = [
+                    module
+                    for module in selected_modules
+                    if report.modules[module].status == "fail"
+                ]
+                if failing:
+                    raise RuntimeError("Failing modules: " + ", ".join(sorted(failing)))
+            return True
+
+        self.run_test(f"All-module readiness ({profile})", _run_all_module_checks)
+        return self.print_summary()
+
 
 def cmd_test(args):
     """Run pipeline validation tests."""
@@ -2240,9 +2360,21 @@ def cmd_test(args):
             compare_baseline=args.compare_baseline,
             strict=args.strict,
         )
+    elif args.level == "all-modules":
+        report_file = args.report_file
+        if report_file == "results/readiness/ops_e2e_launch_reliability.v1.json":
+            report_file = "results/readiness/all_modules_readiness.v1.json"
+        success = runner.run_all_modules(
+            profile=args.profile,
+            seed=args.seed,
+            report_file=report_file,
+            module_filters=args.module,
+            strict=args.strict,
+            fixture_pack=args.fixture_pack,
+        )
     else:
         print(f"Unknown test level: {args.level}")
-        print("Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin")
+        print("Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules")
         sys.exit(1)
     
     sys.exit(0 if success else 1)
@@ -3544,8 +3676,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin'],
-                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin')
+                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules'],
+                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -3587,9 +3719,20 @@ def main():
         help='Burn-in profile for --level ops-burnin (default: tiny-v1)',
     )
     test_parser.add_argument(
+        '--profile',
+        default='bounded-v1',
+        help='Readiness profile for --level all-modules (default: bounded-v1)',
+    )
+    test_parser.add_argument(
+        '--module',
+        action='append',
+        default=[],
+        help='Filter module(s) for --level all-modules (repeatable)',
+    )
+    test_parser.add_argument(
         '--fixture-pack',
         default='',
-        help='Fixture pack for ops-e2e checks (e.g., v1 or tests/fixtures/ops_e2e/v1)',
+        help='Fixture pack for ops-e2e/all-modules checks (e.g., v1 or tests/fixtures/.../v1)',
     )
     
     # ui command - web interface

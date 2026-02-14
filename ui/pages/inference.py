@@ -16,6 +16,7 @@ from nicegui import app, ui
 from ui.components.file_picker import FilePicker
 from ui.components.notifications import notify_job_failed, notify_job_started
 from ui.services import get_inference_service
+from ui.services.ops_readiness_service import get_ops_readiness_service
 from ui.state import state
 from ui.theme import COLORS
 
@@ -46,6 +47,7 @@ class Inference:
         self.data = InferenceFormData()
         self.is_running = False
         self.inference_service = get_inference_service(state)
+        self.ops_readiness_service = get_ops_readiness_service()
         self._tabs_container = None
         self._form_container = None
         self._consume_clone_payload()
@@ -90,6 +92,8 @@ class Inference:
                 ui.label("Optimize and benchmark inference runtime").classes(
                     f"text-sm text-[{COLORS['text_secondary']}]"
                 )
+
+            self._render_all_module_readiness_banner()
 
             with ui.row().classes(
                 f"w-full gap-2 p-2 rounded-xl bg-[{COLORS['bg_card']}] "
@@ -318,6 +322,51 @@ class Inference:
             self._form_container.clear()
             with self._form_container:
                 self._render_form()
+
+    def _render_all_module_readiness_banner(self) -> None:
+        """Render all-module readiness status for inference surface."""
+        try:
+            report = self.ops_readiness_service.get_effective_all_module_readiness()
+        except Exception as e:
+            ui.label(f"All-module readiness unavailable: {e}").classes(
+                f"text-xs text-[{COLORS['warning']}]"
+            )
+            return
+
+        entry = report.modules.get("inference")
+        if entry is None:
+            return
+
+        status = entry.status.lower()
+        if status == "pass":
+            color = COLORS["success"]
+            icon = "check_circle"
+        elif status == "warn":
+            color = COLORS["warning"]
+            icon = "warning"
+        else:
+            color = COLORS["error"]
+            icon = "error"
+
+        with ui.column().classes(
+            f"w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10"
+        ):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon(icon, size="16px").classes(f"text-[{color}]")
+                source = f"{report.source}"
+                if report.stale:
+                    source += " (stale)"
+                ui.label(
+                    f"All-module readiness {status.upper()} • module=inference • source={source}"
+                ).classes(f"text-xs text-[{color}] font-medium")
+            if entry.errors:
+                ui.label(f"Blocking reason: {entry.errors[0]}").classes(
+                    f"text-xs text-[{COLORS['error']}]"
+                )
+            elif entry.warnings:
+                ui.label(f"Warning: {entry.warnings[0]}").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
+                )
 
         FilePicker(
             start_path=".",

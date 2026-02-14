@@ -39,6 +39,7 @@ The main landing page showing:
 - **Training History Chart**: Loss curves from recent runs
 - **Benchmark Scores Chart**: Pass@1 comparisons across models
 - **Recent Runs**: Quick access to completed jobs
+- **All-Module Readiness**: coding + non-coding contract status snapshot
 
 ### Training (`/training`)
 
@@ -96,6 +97,7 @@ YAML configuration editor:
 - Schema validation (checks for valid halo-forge config keys)
 - Save to file
 - Template presets
+- All-module readiness banner for config contract status
 
 ### Verifiers (`/verifiers`)
 
@@ -138,6 +140,7 @@ Launch inference optimize and benchmark jobs from the UI:
 - `inference optimize` launch contract (precision/latency/calibration)
 - `inference benchmark` launch contract (prompts, tokens, warmup)
 - Durable launch context + monitor/relaunch parity
+- All-module readiness banner for inference contract status
 
 ### Benchmark Advanced (`/benchmark-advanced`)
 
@@ -145,11 +148,14 @@ Batch orchestration for non-code benchmark runs:
 - VLM/audio/reasoning/agentic batch launch
 - Per-domain dataset selection
 - Monitor handoff to first launched job
+- All-module readiness banner for non-code benchmark contract status
 
 ### Research Hub (`/research-hub`)
 
 Cross-module ops readiness visibility:
 - Reads canonical ops readiness report when available
+- Reads canonical all-module readiness report when available:
+  - `results/readiness/all_modules_readiness.v1.json`
 - Falls back to live contract checks when report missing/corrupt
 - Shows actionable pass/warn/fail evidence by module
 - Shows optional dataset burn-in provenance when available:
@@ -266,6 +272,17 @@ python3 scripts/run_ops_dataset_burnin.py \
   --burnin-profile tiny-v1 \
   --write-report \
   --report-file results/readiness/ops_dataset_burnin.v1.json
+```
+
+### All-module readiness unavailable
+
+If coding/non-coding readiness is unavailable in Dashboard or Research Hub, generate the canonical report:
+
+```bash
+python3 scripts/run_all_module_matrix.py \
+  --fixture-pack v1 \
+  --write-report \
+  --report-file results/readiness/all_modules_readiness.v1.json
 ```
 
 ### Duration/Progress not updating

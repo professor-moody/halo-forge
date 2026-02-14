@@ -11,7 +11,11 @@ from dataclasses import dataclass, field
 
 from ui.theme import COLORS
 from ui.state import state
-from ui.services import TrainingService, get_modality_readiness_service
+from ui.services import (
+    TrainingService,
+    get_modality_readiness_service,
+    get_ops_readiness_service,
+)
 from ui.services.launch_contracts import (
     UI_SUPPORTED_TRAINING_MODES,
     UI_DEFERRED_TRAINING_MODES,
@@ -354,6 +358,7 @@ class Training:
         self.is_running = False
         self.training_service = TrainingService(state)
         self.readiness_service = get_modality_readiness_service()
+        self.ops_readiness_service = get_ops_readiness_service()
         self._consume_clone_payload()
         
         # Container references for dynamic updates
@@ -697,6 +702,7 @@ class Training:
                     ).bind_value(self.sft_data, 'gradient_checkpointing')
         
         # Launch button
+        self._render_all_module_readiness_banner("sft")
         self._render_launch_button("Start SFT Training", self._launch_sft)
     
     def _apply_sft_preset(self, preset_name: str):
@@ -1000,6 +1006,7 @@ class Training:
                 )
         
         # Launch button
+        self._render_all_module_readiness_banner("raft")
         self._render_launch_button("Start RAFT Training", self._launch_raft)
     
     def _browse_checkpoint(self):
@@ -1127,6 +1134,7 @@ class Training:
                     f"supported families: {', '.join(capability.capability.supported_model_families)}"
                 ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
 
+            self._render_all_module_readiness_banner(modality)
             self._render_modality_readiness_banner(modality)
 
         self._render_launch_button(
@@ -1184,9 +1192,59 @@ class Training:
                     f'text-xs font-mono text-[{COLORS["text_muted"]}]'
                 )
 
+    def _render_all_module_readiness_banner(self, module_key: str):
+        """Render all-module readiness status for the selected training surface."""
+        try:
+            report = self.ops_readiness_service.get_effective_all_module_readiness()
+        except Exception as e:
+            ui.label(f"All-module readiness unavailable: {e}").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
+            return
+
+        readiness = report.modules.get(module_key)
+        if readiness is None:
+            return
+
+        status = readiness.status.lower()
+        if status == "pass":
+            color = COLORS["success"]
+            icon = "check_circle"
+        elif status == "warn":
+            color = COLORS["warning"]
+            icon = "warning"
+        else:
+            color = COLORS["error"]
+            icon = "error"
+
+        with ui.column().classes(
+            f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
+        ):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon(icon, size='16px').classes(f'text-[{color}]')
+                source = f"{report.source}"
+                if report.stale:
+                    source += " (stale)"
+                ui.label(
+                    f"All-module readiness {status.upper()} • module={module_key} • source={source}"
+                ).classes(f'text-xs text-[{color}] font-medium')
+            if readiness.errors:
+                ui.label(f"Blocking reason: {readiness.errors[0]}").classes(
+                    f'text-xs text-[{COLORS["error"]}]'
+                )
+            elif readiness.warnings:
+                ui.label(f"Warning: {readiness.warnings[0]}").classes(
+                    f'text-xs text-[{COLORS["warning"]}]'
+                )
+            if readiness.last_output_dir:
+                ui.label(f"Evidence: {readiness.last_output_dir}").classes(
+                    f'text-xs font-mono text-[{COLORS["text_muted"]}]'
+                )
+
     def _refresh_readiness(self):
         """Force-refresh readiness cache and re-render current form."""
         self.readiness_service.get_effective_readiness(force_refresh=True)
+        self.ops_readiness_service.get_effective_all_module_readiness(force_refresh=True)
         ui.notify('Readiness refreshed', type='info', timeout=1200)
         self.form_container.clear()
         with self.form_container:
