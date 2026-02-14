@@ -7,21 +7,11 @@ Left navigation drawer with animated hover effects.
 from nicegui import ui
 from ui.theme import COLORS
 from ui import __version__
+from ui.feature_flags import get_ui_feature_flags
 
 
 class Sidebar:
     """Left sidebar navigation component."""
-    
-    NAV_ITEMS = [
-        {"icon": "dashboard", "label": "Dashboard", "path": "/"},
-        {"icon": "model_training", "label": "Training", "path": "/training"},
-        {"icon": "speed", "label": "Benchmark", "path": "/benchmark"},
-        {"icon": "computer", "label": "Monitor", "path": "/monitor"},
-        {"icon": "settings", "label": "Config", "path": "/config"},
-        {"icon": "verified", "label": "Verifiers", "path": "/verifiers"},
-        {"icon": "storage", "label": "Datasets", "path": "/datasets"},
-        {"icon": "analytics", "label": "Results", "path": "/results"},
-    ]
     
     def __init__(self):
         self.render()
@@ -46,7 +36,7 @@ class Sidebar:
             
             # Navigation items
             with ui.column().classes('w-full flex-1 py-4 gap-1'):
-                for item in self.NAV_ITEMS:
+                for item in self._nav_items():
                     self._render_nav_item(item)
             
             # Footer
@@ -90,3 +80,27 @@ class Sidebar:
             ):
                 ui.icon(item['icon'], size='20px').classes(f'text-[{icon_color}]')
                 ui.label(item['label']).classes(f'text-sm font-medium text-[{text_color}]')
+
+    def _nav_items(self) -> list[dict]:
+        items = [
+            {"icon": "dashboard", "label": "Dashboard", "path": "/"},
+            {"icon": "model_training", "label": "Training", "path": "/training"},
+            {"icon": "speed", "label": "Benchmark", "path": "/benchmark"},
+            {"icon": "computer", "label": "Monitor", "path": "/monitor"},
+            {"icon": "settings", "label": "Config", "path": "/config"},
+            {"icon": "verified", "label": "Verifiers", "path": "/verifiers"},
+            {"icon": "storage", "label": "Datasets", "path": "/datasets"},
+            {"icon": "analytics", "label": "Results", "path": "/results"},
+        ]
+
+        flags = get_ui_feature_flags()
+        if flags.enable_inference_page:
+            items.append({"icon": "bolt", "label": "Inference", "path": "/inference"})
+        if flags.enable_benchmark_advanced_page:
+            items.append(
+                {"icon": "view_array", "label": "Benchmark+", "path": "/benchmark-advanced"}
+            )
+        if flags.enable_research_hub_page:
+            items.append({"icon": "science", "label": "Research Hub", "path": "/research-hub"})
+
+        return items

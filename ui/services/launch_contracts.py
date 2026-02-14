@@ -66,6 +66,16 @@ AGENTIC_TRAIN_LAUNCH_CONTRACT = LaunchContract(
     optional_positive_int_fields=("limit",),
 )
 
+INFERENCE_OPTIMIZE_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "output_dir", "target_precision"),
+    non_negative_float_fields=("target_latency",),
+)
+
+INFERENCE_BENCHMARK_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "output_dir"),
+    positive_int_fields=("num_prompts", "max_tokens", "warmup"),
+)
+
 MODALITY_TRAIN_LAUNCH_CONTRACTS: dict[str, LaunchContract] = {
     "vlm": VLM_TRAIN_LAUNCH_CONTRACT,
     "audio": AUDIO_TRAIN_LAUNCH_CONTRACT,

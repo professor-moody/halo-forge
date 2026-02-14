@@ -10,6 +10,7 @@ from typing import Optional
 import yaml
 
 from ui.theme import COLORS
+from ui.feature_flags import get_ui_feature_flags
 
 
 class ConfigEditor:
@@ -129,13 +130,53 @@ output_dir: "models/raft_aggressive"
                     f'border border-[#2d343c] animate-in stagger-2'
                 ):
                     self._render_editor()
+
+            # Feature flag mirror
+            with ui.column().classes(
+                f'w-full gap-3 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+                f'border border-[#2d343c] animate-in stagger-3'
+            ):
+                self._render_feature_flags()
             
             # Templates section
             with ui.column().classes(
                 f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
-                f'border border-[#2d343c] animate-in stagger-3'
+                f'border border-[#2d343c] animate-in stagger-4'
             ):
                 self._render_templates()
+
+    def _render_feature_flags(self):
+        """Mirror feature-flag state for operators."""
+        flags = get_ui_feature_flags()
+        ui.label('UI Feature Flags').classes(
+            f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        ui.label(
+            'Flags are environment-controlled. Restart the UI after changing values.'
+        ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+
+        rows = [
+            ("HALO_UI_ENABLE_INFERENCE_PAGE", flags.enable_inference_page, "/inference"),
+            (
+                "HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE",
+                flags.enable_benchmark_advanced_page,
+                "/benchmark-advanced",
+            ),
+            ("HALO_UI_ENABLE_RESEARCH_HUB_PAGE", flags.enable_research_hub_page, "/research-hub"),
+        ]
+        for env_name, enabled, route in rows:
+            with ui.row().classes(
+                f'w-full items-center justify-between px-3 py-2 rounded-lg bg-[{COLORS["bg_secondary"]}]'
+            ):
+                with ui.column().classes('gap-0'):
+                    ui.label(env_name).classes(
+                        f'text-xs font-mono text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label(route).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                status_color = COLORS["success"] if enabled else COLORS["warning"]
+                ui.label("ENABLED" if enabled else "DISABLED").classes(
+                    f'text-xs font-semibold text-[{status_color}]'
+                )
     
     def _render_file_browser(self):
         """Render the config file browser."""

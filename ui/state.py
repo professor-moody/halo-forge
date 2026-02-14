@@ -12,7 +12,7 @@ from collections import deque
 import uuid
 
 
-JobType = Literal["sft", "raft", "benchmark", "vlm", "audio", "reasoning", "agentic"]
+JobType = Literal["sft", "raft", "benchmark", "inference", "vlm", "audio", "reasoning", "agentic"]
 JobStatus = Literal["pending", "running", "completed", "failed", "stopped"]
 
 

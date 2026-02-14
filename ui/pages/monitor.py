@@ -16,6 +16,7 @@ from ui.state import state, JobState
 from ui.services import (
     TrainingService,
     get_benchmark_service,
+    get_inference_service,
     get_event_bus,
     Event,
     EventType,
@@ -40,6 +41,7 @@ class Monitor:
         self.log_lines: list[str] = []  # Legacy - kept for event handler compatibility
         self.training_service = TrainingService(state)
         self.benchmark_service = get_benchmark_service(state)
+        self.inference_service = get_inference_service(state)
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
@@ -936,6 +938,8 @@ class Monitor:
             # Route stop calls by job type.
             if self.job.type == "benchmark":
                 success = await self.benchmark_service.stop_job(self.job.id)
+            elif self.job.type == "inference":
+                success = await self.inference_service.stop_job(self.job.id)
             else:
                 success = await self.training_service.stop_job(self.job.id)
             
@@ -961,6 +965,12 @@ class Monitor:
             context = read_launch_context(context_path)
             if self.job.type == "benchmark":
                 new_job_id = await self.benchmark_service.relaunch_from_context(
+                    context_path,
+                    origin_job_id=self.job.id,
+                    source_ui_page="/monitor",
+                )
+            elif self.job.type == "inference":
+                new_job_id = await self.inference_service.relaunch_from_context(
                     context_path,
                     origin_job_id=self.job.id,
                     source_ui_page="/monitor",
@@ -1018,6 +1028,9 @@ class Monitor:
             if self.job.type == "benchmark":
                 app.storage.user["benchmark_clone_payload"] = payload
                 ui.navigate.to("/benchmark")
+            elif self.job.type == "inference":
+                app.storage.user["inference_clone_payload"] = payload
+                ui.navigate.to("/inference")
             else:
                 app.storage.user["training_clone_payload"] = payload
                 ui.navigate.to("/training")

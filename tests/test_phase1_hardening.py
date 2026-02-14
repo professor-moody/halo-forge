@@ -220,3 +220,12 @@ def test_planning_docs_policy_guards():
         check=False,
     )
     assert master_plan_tracked.returncode != 0
+
+    tracked_internal_dossiers = subprocess.run(
+        ["git", "ls-files", ".internal_docs/research_testing/modules"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert tracked_internal_dossiers.returncode == 0
+    assert tracked_internal_dossiers.stdout.strip() == ""

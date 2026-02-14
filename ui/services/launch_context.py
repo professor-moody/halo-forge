@@ -18,6 +18,7 @@ SUPPORTED_JOB_TYPES = {
     "sft",
     "raft",
     "benchmark",
+    "inference",
     "vlm",
     "audio",
     "reasoning",
@@ -140,6 +141,20 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "run_after_compile",
         "task",
     ),
+    "inference": (
+        "mode",
+        "model",
+        "output_dir",
+        "target_precision",
+        "target_latency",
+        "calibration_data",
+        "dry_run",
+        "prompts",
+        "num_prompts",
+        "max_tokens",
+        "warmup",
+        "measure_memory",
+    ),
 }
 
 
@@ -180,7 +195,7 @@ class LaunchContextV1:
             raise ValueError(f"Unsupported launch context job_type: {job_type}")
 
         service = str(data.get("service") or "").strip().lower()
-        if service not in {"training", "benchmark"}:
+        if service not in {"training", "benchmark", "inference"}:
             raise ValueError(f"Unsupported launch context service: {service}")
 
         command = data.get("command")
@@ -285,4 +300,3 @@ def read_launch_context(path: Path | str) -> LaunchContextV1:
     if not isinstance(raw, dict):
         raise ValueError("launch_context.json must contain an object")
     return LaunchContextV1.from_dict(raw)
-

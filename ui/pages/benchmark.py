@@ -1,7 +1,7 @@
 """
 Benchmark Launch Page
 
-Configure and launch Code, VLM, Audio, and Agentic benchmarks.
+Configure and launch Code, VLM, Audio, Reasoning, and Agentic benchmarks.
 """
 
 from nicegui import ui, app
@@ -19,6 +19,7 @@ from ui.services.benchmark_service import (
     CODE_PRESETS,
     VLM_PRESETS,
     AUDIO_PRESETS,
+    REASONING_PRESETS,
     AGENTIC_PRESETS,
     get_benchmark_service,
 )
@@ -70,6 +71,12 @@ class Benchmark:
         "openai/whisper-small",
         "openai/whisper-medium",
         "openai/whisper-large-v3",
+    ]
+
+    REASONING_MODELS = [
+        "Qwen/Qwen2.5-7B-Instruct",
+        "Qwen/Qwen2.5-14B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.3",
     ]
     
     AGENTIC_MODELS = [
@@ -227,6 +234,7 @@ class Benchmark:
         self._type_button("Code", BenchmarkType.CODE, "code")
         self._type_button("VLM", BenchmarkType.VLM, "image")
         self._type_button("Audio", BenchmarkType.AUDIO, "mic")
+        self._type_button("Reasoning", BenchmarkType.REASONING, "calculate")
         self._type_button("Agentic", BenchmarkType.AGENTIC, "smart_toy")
     
     def _type_button(self, label: str, btype: BenchmarkType, icon: str):
@@ -278,6 +286,8 @@ class Benchmark:
             return self.VLM_MODELS
         elif btype == BenchmarkType.AUDIO:
             return self.AUDIO_MODELS
+        elif btype == BenchmarkType.REASONING:
+            return self.REASONING_MODELS
         elif btype == BenchmarkType.AGENTIC:
             return self.AGENTIC_MODELS
         return self.CODE_MODELS

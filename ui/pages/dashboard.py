@@ -11,6 +11,7 @@ from nicegui import ui
 from ui.theme import COLORS
 from ui.state import state
 from ui.services.hardware import get_gpu_summary
+from ui.feature_flags import get_ui_feature_flags
 from ui.services import (
     get_results_service,
     get_hardware_monitor,
@@ -191,6 +192,13 @@ class Dashboard:
                     self._render_action_button('SFT Training', 'school', '/training?type=sft')
                     self._render_action_button('RAFT Training', 'autorenew', '/training?type=raft')
                     self._render_action_button('Run Benchmark', 'speed', '/benchmark')
+                    flags = get_ui_feature_flags()
+                    if flags.enable_inference_page:
+                        self._render_action_button('Inference', 'bolt', '/inference')
+                    if flags.enable_benchmark_advanced_page:
+                        self._render_action_button('Benchmark+', 'view_array', '/benchmark-advanced')
+                    if flags.enable_research_hub_page:
+                        self._render_action_button('Research Hub', 'science', '/research-hub')
                     self._render_action_button('View Configs', 'settings', '/config')
                     self._render_action_button('Test Verifier', 'verified', '/verifiers')
     

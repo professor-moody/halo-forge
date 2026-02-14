@@ -29,7 +29,9 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase8_ui_ops_parity_relaunch.py" in content
     assert "tests/test_phase9_non_code_modality_research_matrix.py" in content
     assert "tests/test_phase10_non_code_ui_readiness_gates.py" in content
+    assert "tests/test_phase11_ops_module_ui_expansion.py" in content
     assert "scripts/generate_modality_baseline.py" in content
+    assert "scripts/run_ops_module_matrix.py" in content
     assert "tests/baselines/modality_runtime_baseline.v1.json" in content
 
 

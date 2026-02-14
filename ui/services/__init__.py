@@ -133,8 +133,13 @@ from .benchmark_service import (
     CODE_PRESETS,
     VLM_PRESETS,
     AUDIO_PRESETS,
+    REASONING_PRESETS,
     AGENTIC_PRESETS,
     ALL_PRESETS,
+)
+from .inference_service import (
+    InferenceService,
+    get_inference_service,
 )
 
 # Launch contracts
@@ -143,6 +148,8 @@ from .launch_contracts import (
     SFT_LAUNCH_CONTRACT,
     RAFT_LAUNCH_CONTRACT,
     BENCHMARK_LAUNCH_CONTRACT,
+    INFERENCE_OPTIMIZE_LAUNCH_CONTRACT,
+    INFERENCE_BENCHMARK_LAUNCH_CONTRACT,
     VLM_TRAIN_LAUNCH_CONTRACT,
     AUDIO_TRAIN_LAUNCH_CONTRACT,
     REASONING_TRAIN_LAUNCH_CONTRACT,
@@ -164,6 +171,10 @@ from .launch_context import (
 from .modality_readiness_service import (
     ModalityReadinessService,
     get_modality_readiness_service,
+)
+from .ops_readiness_service import (
+    OpsReadinessService,
+    get_ops_readiness_service,
 )
 
 
@@ -250,14 +261,21 @@ __all__ = [
     'CODE_PRESETS',
     'VLM_PRESETS',
     'AUDIO_PRESETS',
+    'REASONING_PRESETS',
     'AGENTIC_PRESETS',
     'ALL_PRESETS',
+
+    # Inference
+    'InferenceService',
+    'get_inference_service',
 
     # Launch contracts
     'LaunchContract',
     'SFT_LAUNCH_CONTRACT',
     'RAFT_LAUNCH_CONTRACT',
     'BENCHMARK_LAUNCH_CONTRACT',
+    'INFERENCE_OPTIMIZE_LAUNCH_CONTRACT',
+    'INFERENCE_BENCHMARK_LAUNCH_CONTRACT',
     'VLM_TRAIN_LAUNCH_CONTRACT',
     'AUDIO_TRAIN_LAUNCH_CONTRACT',
     'REASONING_TRAIN_LAUNCH_CONTRACT',
@@ -279,4 +297,6 @@ __all__ = [
     # Non-code modality readiness
     'ModalityReadinessService',
     'get_modality_readiness_service',
+    'OpsReadinessService',
+    'get_ops_readiness_service',
 ]

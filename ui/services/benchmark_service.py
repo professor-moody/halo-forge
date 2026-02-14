@@ -10,7 +10,7 @@ Uses community tools where available:
 
 For training verification (RAFT loop), see halo_forge.rlvr.verifiers.
 
-Supports Code, VLM, Audio, and Agentic benchmark types.
+Supports Code, VLM, Audio, Reasoning, and Agentic benchmark types.
 """
 
 import asyncio
@@ -45,6 +45,7 @@ class BenchmarkType(Enum):
     CODE = "code"
     VLM = "vlm"
     AUDIO = "audio"
+    REASONING = "reasoning"
     AGENTIC = "agentic"
 
 
@@ -163,6 +164,25 @@ AUDIO_PRESETS = [
     ),
 ]
 
+REASONING_PRESETS = [
+    BenchmarkPreset(
+        name="GSM8K",
+        type=BenchmarkType.REASONING,
+        dataset="gsm8k",
+        description="Grade-school math reasoning benchmark",
+        default_limit=200,
+        cli_args={"split": "test"},
+    ),
+    BenchmarkPreset(
+        name="MATH",
+        type=BenchmarkType.REASONING,
+        dataset="math",
+        description="Competition math reasoning benchmark",
+        default_limit=200,
+        cli_args={"split": "test"},
+    ),
+]
+
 AGENTIC_PRESETS = [
     BenchmarkPreset(
         name="xLAM Function Calling",
@@ -173,7 +193,7 @@ AGENTIC_PRESETS = [
     ),
 ]
 
-ALL_PRESETS = CODE_PRESETS + VLM_PRESETS + AUDIO_PRESETS + AGENTIC_PRESETS
+ALL_PRESETS = CODE_PRESETS + VLM_PRESETS + AUDIO_PRESETS + REASONING_PRESETS + AGENTIC_PRESETS
 
 BENCHMARK_DATASET_ALIASES: dict[BenchmarkType, dict[str, str]] = {
     BenchmarkType.AUDIO: {
@@ -302,6 +322,19 @@ class BenchmarkService:
                     f"Unsupported audio benchmark dataset '{benchmark_name}' "
                     f"(canonical '{canonical}'). Available: {sorted(supported)}"
                 )
+        elif benchmark_type == BenchmarkType.REASONING:
+            try:
+                from halo_forge.reasoning.data import list_math_datasets
+
+                supported = set(list_math_datasets())
+            except Exception as e:
+                supported = None
+                print(f"Warning: skipping reasoning dataset validation ({e})")
+            if supported is not None and canonical not in supported:
+                raise ValueError(
+                    f"Unsupported reasoning benchmark dataset '{benchmark_name}' "
+                    f"(canonical '{canonical}'). Available: {sorted(supported)}"
+                )
         elif benchmark_type == BenchmarkType.AGENTIC:
             try:
                 from halo_forge.agentic.data import list_agentic_datasets
@@ -377,7 +410,7 @@ class BenchmarkService:
         
         Args:
             model: Model name or path
-            benchmark_type: Type of benchmark (CODE, VLM, AUDIO, AGENTIC)
+            benchmark_type: Type of benchmark (CODE, VLM, AUDIO, REASONING, AGENTIC)
             benchmark_name: Benchmark/dataset name
             limit: Max samples to evaluate
             output_path: Output JSON path for results
@@ -591,6 +624,18 @@ class BenchmarkService:
             task = kwargs.pop("task", "asr")
             cmd.extend(["--task", task])
         
+        elif benchmark_type == BenchmarkType.REASONING:
+            split = kwargs.pop("split", "test")
+            cmd = [
+                sys.executable, "-m", "halo_forge.cli", "reasoning", "benchmark",
+                "--model", model,
+                "--dataset", benchmark_name,
+                "--split", str(split),
+                "--output", output_path,
+            ]
+            if limit:
+                cmd.extend(["--limit", str(limit)])
+
         elif benchmark_type == BenchmarkType.AGENTIC:
             cmd = [
                 sys.executable, "-m", "halo_forge.cli", "agentic", "benchmark",

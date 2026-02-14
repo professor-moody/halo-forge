@@ -10,6 +10,7 @@ from pathlib import Path
 from ui.theme import apply_theme, COLORS
 from ui.components.sidebar import Sidebar
 from ui.components.header import Header
+from ui.feature_flags import get_ui_feature_flags
 
 
 # Serve static files from ui/static/ at /static URL path
@@ -36,6 +37,23 @@ def create_layout(page_title: str = "Dashboard"):
         Sidebar()
     
     return header
+
+
+def _render_feature_disabled(feature_name: str, env_var: str) -> None:
+    """Render explicit disabled feature state instead of 404."""
+    with ui.column().classes(
+        f"w-full max-w-2xl mx-auto mt-10 gap-4 p-6 rounded-xl bg-[{COLORS['bg_card']}] "
+        f"border border-[#2d343c]"
+    ):
+        ui.label(f"{feature_name} is disabled").classes(
+            f"text-lg font-semibold text-[{COLORS['text_primary']}]"
+        )
+        ui.label(
+            "This route is behind a feature flag."
+        ).classes(f"text-sm text-[{COLORS['text_secondary']}]")
+        ui.label(
+            f"Set `{env_var}=1` before starting the UI to enable it."
+        ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
 
 
 @ui.page('/')
@@ -117,6 +135,51 @@ def benchmark_page():
     with ui.column().classes('w-full h-full'):
         from ui.pages.benchmark import Benchmark
         Benchmark().render()
+
+
+@ui.page('/inference')
+def inference_page():
+    """Inference launch page (feature-flagged)."""
+    create_layout("Inference")
+    flags = get_ui_feature_flags()
+    with ui.column().classes('w-full h-full'):
+        if not flags.enable_inference_page:
+            _render_feature_disabled("Inference", "HALO_UI_ENABLE_INFERENCE_PAGE")
+            return
+        from ui.pages.inference import Inference
+        Inference().render()
+
+
+@ui.page('/benchmark-advanced')
+def benchmark_advanced_page():
+    """Advanced benchmark orchestration page (feature-flagged)."""
+    create_layout("Benchmark Advanced")
+    flags = get_ui_feature_flags()
+    with ui.column().classes('w-full h-full'):
+        if not flags.enable_benchmark_advanced_page:
+            _render_feature_disabled(
+                "Benchmark Advanced",
+                "HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE",
+            )
+            return
+        from ui.pages.benchmark_advanced import BenchmarkAdvanced
+        BenchmarkAdvanced().render()
+
+
+@ui.page('/research-hub')
+def research_hub_page():
+    """Ops readiness and research hub page (feature-flagged)."""
+    create_layout("Research Hub")
+    flags = get_ui_feature_flags()
+    with ui.column().classes('w-full h-full'):
+        if not flags.enable_research_hub_page:
+            _render_feature_disabled(
+                "Research Hub",
+                "HALO_UI_ENABLE_RESEARCH_HUB_PAGE",
+            )
+            return
+        from ui.pages.research_hub import ResearchHub
+        ResearchHub().render()
 
 
 def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):

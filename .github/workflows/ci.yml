@@ -39,6 +39,12 @@ jobs:
             --baseline-file tests/baselines/modality_runtime_baseline.v1.json \
             --check
 
+      - name: Ops module readiness contract report
+        run: |
+          python3 scripts/run_ops_module_matrix.py \
+            --write-report \
+            --report-file results/readiness/ops_modules_readiness.v1.json
+
       - name: Core framework and UI regression checks
         run: |
           pytest -q \
@@ -66,4 +72,5 @@ jobs:
             tests/test_phase7c_modality_baseline_drift.py \
             tests/test_phase8_ui_ops_parity_relaunch.py \
             tests/test_phase9_non_code_modality_research_matrix.py \
-            tests/test_phase10_non_code_ui_readiness_gates.py
+            tests/test_phase10_non_code_ui_readiness_gates.py \
+            tests/test_phase11_ops_module_ui_expansion.py
