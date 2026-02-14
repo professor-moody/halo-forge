@@ -57,6 +57,13 @@ class ResearchHub:
 
     def _render_content(self, force_refresh: bool) -> None:
         report = self.readiness_service.get_effective_readiness(force_refresh=force_refresh)
+        burnin_meta = self.readiness_service.get_burnin_provenance(force_refresh=force_refresh)
+        burnin_report = None
+        if burnin_meta.get("burnin_report_present"):
+            try:
+                burnin_report = self.readiness_service.load_burnin_report(force_refresh=force_refresh)
+            except Exception:
+                burnin_report = None
         with ui.column().classes(
             f"w-full gap-2 p-4 rounded-xl bg-[{COLORS['bg_card']}] border border-[#2d343c]"
         ):
@@ -67,14 +74,28 @@ class ResearchHub:
             if report.stale:
                 source_text += f" stale={report.age_seconds}s"
             ui.label(source_text).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+            if burnin_meta.get("burnin_report_present"):
+                ui.label(
+                    "burnin "
+                    f"status={burnin_meta.get('burnin_status')} "
+                    f"source={burnin_meta.get('burnin_source')} "
+                    f"generated_at={burnin_meta.get('burnin_generated_at')}"
+                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+            else:
+                ui.label("burnin report unavailable (non-blocking)").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
+                )
             ui.label(
                 "Readiness is warn-but-allow: launches remain enabled for debugging and validation."
             ).classes(f"text-xs text-[{COLORS['text_secondary']}]")
 
         for module in OPS_MODULES:
-            self._render_module_card(module, report.modules[module])
+            burnin_entry = None
+            if burnin_report and module in burnin_report.modules:
+                burnin_entry = burnin_report.modules[module]
+            self._render_module_card(module, report.modules[module], burnin_entry)
 
-    def _render_module_card(self, module: str, entry) -> None:
+    def _render_module_card(self, module: str, entry, burnin_entry=None) -> None:
         color = {
             "pass": COLORS["success"],
             "warn": COLORS["warning"],
@@ -103,6 +124,16 @@ class ResearchHub:
             ui.label(f"errors={len(entry.errors)} warnings={len(entry.warnings)}").classes(
                 f"text-xs text-[{COLORS['text_muted']}] font-mono"
             )
+            if burnin_entry is not None:
+                burnin_color = {
+                    "pass": COLORS["success"],
+                    "warn": COLORS["warning"],
+                    "fail": COLORS["error"],
+                }.get(burnin_entry.status, COLORS["text_secondary"])
+                ui.label(
+                    f"burnin status={burnin_entry.status} "
+                    f"errors={len(burnin_entry.errors)} warnings={len(burnin_entry.warnings)}"
+                ).classes(f"text-xs text-[{burnin_color}] font-mono")
 
             if entry.errors:
                 ui.label(f"Blocker: {entry.errors[0]}").classes(

@@ -128,6 +128,8 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "--open-browser" in cli_source
     assert "--no-browser" in cli_source
     assert "ui_parser.set_defaults(open_browser=False)" in cli_source
+    assert "ops-burnin" in cli_source
+    assert "--burnin-profile" in cli_source
     assert "Routes:" in cli_source
     assert "/training" in cli_source
     assert "/benchmark" in cli_source

@@ -216,3 +216,13 @@ def test_ops_e2e_script_and_fixture_pack_exist():
     assert fixture_root.exists()
     assert (fixture_root / "vlm" / "launch_context.json").exists()
     assert (fixture_root / "benchmark" / "reasoning-fixture" / "launch_context.json").exists()
+
+
+def test_ops_dataset_burnin_script_and_fixture_pack_exist():
+    """Ops dataset burn-in script should have a tracked deterministic fixture pack."""
+    script = Path("scripts/run_ops_dataset_burnin.py")
+    fixture_root = Path("tests/fixtures/ops_dataset_burnin/v1")
+    assert script.exists()
+    assert fixture_root.exists()
+    assert (fixture_root / "audio" / "training_summary.json").exists()
+    assert (fixture_root / "benchmark" / "reasoning-fixture" / "benchmark.json").exists()

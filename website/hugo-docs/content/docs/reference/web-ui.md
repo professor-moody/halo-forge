@@ -152,6 +152,10 @@ Cross-module ops readiness visibility:
 - Reads canonical ops readiness report when available
 - Falls back to live contract checks when report missing/corrupt
 - Shows actionable pass/warn/fail evidence by module
+- Shows optional dataset burn-in provenance when available:
+  - `burnin_report_present`
+  - `burnin_generated_at`
+  - `burnin_status`
 
 ## Architecture
 
@@ -252,6 +256,17 @@ Accepted false values: `0`, `false`, `no`, `off`.
 
 Use `halo-forge ui --no-browser` (default) in headless environments.  
 Only use `--open-browser` when desktop browser integration is available.
+
+### Burn-in provenance unavailable
+
+If burn-in status is unavailable in Dashboard or Research Hub, generate the report:
+
+```bash
+python3 scripts/run_ops_dataset_burnin.py \
+  --burnin-profile tiny-v1 \
+  --write-report \
+  --report-file results/readiness/ops_dataset_burnin.v1.json
+```
 
 ### Duration/Progress not updating
 

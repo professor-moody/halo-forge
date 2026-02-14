@@ -47,10 +47,17 @@ htmlcov/
 checkpoints/
 runs/
 logs/
-results/
+/results/
 *.pt
 *.pth
 *.safetensors
+
+# Keep public burn-in summary while ignoring other generated results
+!/results/
+/results/*
+!/results/readiness/
+/results/readiness/*
+!/results/readiness/OPS_DATASET_BURNIN_SUMMARY.md
 
 # Data (ignore downloaded/generated data, keep samples)
 /data/
@@ -101,6 +108,7 @@ scripts/*_benchmark*.sh
 
 # Scripts output directories
 scripts/models/
+scripts/results/
 
 # TensorBoard
 **/tensorboard/

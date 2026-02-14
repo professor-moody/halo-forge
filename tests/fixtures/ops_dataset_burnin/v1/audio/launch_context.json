@@ -1,0 +1,28 @@
+{
+  "args": {
+    "cycles": 1,
+    "dataset": "librispeech",
+    "model": "openai/whisper-small",
+    "output_dir": "models/phase7d/audio_phase7d",
+    "resume_from_cycle": 0,
+    "seed": 42,
+    "task": "asr"
+  },
+  "command": [
+    "python3",
+    "-m",
+    "halo_forge.cli",
+    "audio",
+    "train"
+  ],
+  "contract_version": 1,
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "job_type": "audio",
+  "relaunch_capabilities": {
+    "can_clone": true,
+    "can_relaunch": true,
+    "can_resume_latest": true
+  },
+  "service": "training",
+  "source_ui_page": "/training"
+}

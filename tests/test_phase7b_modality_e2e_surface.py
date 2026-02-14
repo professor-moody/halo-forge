@@ -10,7 +10,7 @@ from ui.services.results_service import ResultsService
 def test_cli_test_level_exposes_modality_suite():
     """CLI test command should expose and dispatch the modality level."""
     source = Path("halo_forge/cli.py").read_text(encoding="utf-8")
-    assert "choices=['smoke', 'standard', 'full', 'modality']" in source
+    assert "choices=['smoke', 'standard', 'full', 'modality'" in source
     assert 'elif args.level == "modality":' in source
     assert "runner.run_modality(" in source
 

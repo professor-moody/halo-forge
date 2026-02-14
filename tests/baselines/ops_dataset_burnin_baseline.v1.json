@@ -1,0 +1,247 @@
+{
+  "contract_version": 1,
+  "generator_version": "phase7i.v1",
+  "modules": {
+    "agentic": {
+      "artifacts": {
+        "final_model": false,
+        "latest_checkpoint": true,
+        "launch_context": true,
+        "training_summary": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli agentic train --dataset xlam --limit 32 --cycles 1 --seed 42 --dry-run"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "resume_latest_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "warn",
+        "execute_commands": false,
+        "failure_reason": null,
+        "final_update_reason": "updated",
+        "profile": "tiny-v1",
+        "readiness_status": "warn",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "weights_updated": true
+      },
+      "status": "warn",
+      "warnings": [
+        "final_model directory not found: /Users/keys/projects/halo-forge/tests/fixtures/ops_dataset_burnin/v1/agentic/final_model"
+      ]
+    },
+    "audio": {
+      "artifacts": {
+        "final_model": false,
+        "latest_checkpoint": true,
+        "launch_context": true,
+        "training_summary": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli audio train --dataset librispeech --task asr --cycles 1 --samples-per-prompt 1 --seed 42 --dry-run"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "resume_latest_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "warn",
+        "execute_commands": false,
+        "failure_reason": null,
+        "final_update_reason": "updated",
+        "profile": "tiny-v1",
+        "readiness_status": "warn",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "weights_updated": true
+      },
+      "status": "warn",
+      "warnings": [
+        "final_model directory not found: /Users/keys/projects/halo-forge/tests/fixtures/ops_dataset_burnin/v1/audio/final_model"
+      ]
+    },
+    "benchmark": {
+      "artifacts": {
+        "benchmark_results": true,
+        "launch_context": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli reasoning benchmark --model Qwen/Qwen2.5-7B-Instruct --dataset gsm8k --limit 32 --output results/readiness/ops_dataset_burnin_benchmark.json"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "pass",
+        "execute_commands": false,
+        "profile": "tiny-v1",
+        "readiness_status": "pass",
+        "seed": 42
+      },
+      "status": "pass",
+      "warnings": []
+    },
+    "inference": {
+      "artifacts": {
+        "launch_context": true,
+        "quantized_or_exported": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli inference optimize --model Qwen/Qwen2.5-Coder-0.5B --target-precision int4 --dry-run"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "pass",
+        "execute_commands": false,
+        "profile": "tiny-v1",
+        "readiness_status": "pass",
+        "seed": 42
+      },
+      "status": "pass",
+      "warnings": []
+    },
+    "reasoning": {
+      "artifacts": {
+        "final_model": false,
+        "latest_checkpoint": true,
+        "launch_context": true,
+        "training_summary": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli reasoning train --dataset gsm8k --limit 32 --cycles 1 --seed 42 --dry-run"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "resume_latest_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "warn",
+        "execute_commands": false,
+        "failure_reason": null,
+        "final_update_reason": "updated",
+        "profile": "tiny-v1",
+        "readiness_status": "warn",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "weights_updated": true
+      },
+      "status": "warn",
+      "warnings": [
+        "final_model directory not found: /Users/keys/projects/halo-forge/tests/fixtures/ops_dataset_burnin/v1/reasoning/final_model"
+      ]
+    },
+    "ui_ops": {
+      "artifacts": {
+        "ui_routes_contract": true,
+        "ui_service_contract": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli ui --no-browser"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "pass",
+        "execute_commands": false,
+        "profile": "tiny-v1",
+        "readiness_status": "pass",
+        "seed": 42
+      },
+      "status": "pass",
+      "warnings": []
+    },
+    "vlm": {
+      "artifacts": {
+        "final_model": false,
+        "latest_checkpoint": true,
+        "launch_context": true,
+        "training_summary": true
+      },
+      "commands": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli vlm train --dataset textvqa --limit 24 --cycles 1 --samples-per-prompt 1 --seed 42 --dry-run"
+      ],
+      "contract_checks": {
+        "launch_ok": true,
+        "readiness_parser_ok": true,
+        "relaunch_ok": true,
+        "resume_latest_ok": true,
+        "stop_ok": true
+      },
+      "duration_ms": 0,
+      "errors": [],
+      "metrics": {
+        "command_count": 1,
+        "command_non_zero_count": 0,
+        "command_unavailable_count": 0,
+        "e2e_status": "warn",
+        "execute_commands": false,
+        "failure_reason": null,
+        "final_update_reason": "updated",
+        "profile": "tiny-v1",
+        "readiness_status": "warn",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "weights_updated": true
+      },
+      "status": "warn",
+      "warnings": [
+        "final_model directory not found: /Users/keys/projects/halo-forge/tests/fixtures/ops_dataset_burnin/v1/vlm/final_model"
+      ]
+    }
+  },
+  "profile": "tiny-v1",
+  "seed": 42
+}

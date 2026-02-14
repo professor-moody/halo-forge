@@ -2069,13 +2069,137 @@ class TestRunner:
         self.run_test("Ops E2E launch reliability", _run_ops_e2e)
         return self.print_summary()
 
+    def run_ops_burnin(
+        self,
+        *,
+        burnin_profile: str = "tiny-v1",
+        seed: int = 42,
+        report_file: Optional[str] = None,
+        baseline_file: Optional[str] = None,
+        write_baseline: bool = False,
+        compare_baseline: bool = False,
+        strict: bool = False,
+    ) -> bool:
+        """Run bounded dataset-backed non-code burn-in checks."""
+        from halo_forge.ops_dataset_burnin import (
+            DEFAULT_OPS_BURNIN_BASELINE_FILE,
+            DEFAULT_OPS_BURNIN_REPORT_FILE,
+            OPS_BURNIN_STATUSES,
+            build_burnin_baseline_payload,
+            compare_burnin_baselines,
+            compute_ops_dataset_burnin,
+            format_burnin_drift_lines,
+            load_burnin_baseline_file,
+            validate_burnin_baseline_payload,
+            write_burnin_baseline_file,
+            write_ops_burnin_report,
+        )
+
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("Ops Dataset Burn-In", "Bounded non-code runtime trust checks")
+        else:
+            print(f"\n{'='*60}")
+            print("halo forge Ops Dataset Burn-In")
+            print(f"{'='*60}\n")
+
+        report_path = Path(report_file) if report_file else DEFAULT_OPS_BURNIN_REPORT_FILE
+        baseline_path = Path(baseline_file) if baseline_file else DEFAULT_OPS_BURNIN_BASELINE_FILE
+
+        report = None
+        current_baseline = None
+        hard_drifts: List[Dict[str, Any]] = []
+        warn_drifts: List[Dict[str, Any]] = []
+
+        def _run_burnin() -> bool:
+            nonlocal report, current_baseline
+            report = compute_ops_dataset_burnin(
+                profile=burnin_profile,
+                seed=seed,
+                source="cli_test",
+                execute_commands=False,
+                fixture_pack="v1",
+            )
+            for module in ("vlm", "audio", "reasoning", "agentic", "inference", "benchmark", "ui_ops"):
+                entry = report.modules[module]
+                print(
+                    "OPS_BURNIN "
+                    f"module={module} status={entry.status} "
+                    f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+                )
+                if entry.status not in OPS_BURNIN_STATUSES:
+                    raise RuntimeError(
+                        f"Invalid burn-in status for module={module}: {entry.status}"
+                    )
+            write_ops_burnin_report(report_path, report)
+            self.log(f"Wrote ops dataset burn-in report: {report_path}", "info")
+            current_baseline = build_burnin_baseline_payload(report)
+            return True
+
+        self.run_test("Ops dataset burn-in", _run_burnin)
+
+        def _write_baseline() -> bool:
+            if current_baseline is None:
+                raise RuntimeError("Burn-in baseline payload unavailable")
+            write_burnin_baseline_file(baseline_path, current_baseline)
+            self.log(f"Wrote burn-in baseline: {baseline_path}", "info")
+            return True
+
+        self.run_test(
+            "Ops burn-in baseline write",
+            _write_baseline,
+            skip_condition=not write_baseline,
+            skip_reason="--write-baseline not requested",
+        )
+
+        def _compare_baseline() -> bool:
+            nonlocal hard_drifts, warn_drifts
+            if current_baseline is None:
+                raise RuntimeError("Burn-in baseline payload unavailable")
+            if not baseline_path.exists():
+                raise RuntimeError(f"Baseline file not found: {baseline_path}")
+            expected = load_burnin_baseline_file(baseline_path)
+            schema_errors = validate_burnin_baseline_payload(expected)
+            if schema_errors:
+                raise RuntimeError("Invalid burn-in baseline schema: " + "; ".join(schema_errors))
+            drifts = compare_burnin_baselines(expected=expected, current=current_baseline)
+            if drifts:
+                for line in format_burnin_drift_lines(drifts):
+                    print(line)
+            hard_drifts = [drift for drift in drifts if drift.get("severity") == "hard"]
+            warn_drifts = [drift for drift in drifts if drift.get("severity") != "hard"]
+            if hard_drifts:
+                raise RuntimeError("Hard burn-in contract drift detected")
+            return True
+
+        self.run_test(
+            "Ops burn-in baseline compare",
+            _compare_baseline,
+            skip_condition=not compare_baseline,
+            skip_reason="--compare-baseline not requested",
+        )
+
+        if strict and report is not None:
+            failing = [
+                module for module, entry in report.modules.items() if entry.status == "fail"
+            ]
+            if failing:
+                self.failures += 1
+                self.log("Failing modules: " + ", ".join(sorted(failing)), "fail")
+            elif warn_drifts:
+                self.log(
+                    f"Burn-in warning drift detected ({len(warn_drifts)} warn drift(s))",
+                    "warn",
+                )
+        return self.print_summary()
+
 
 def cmd_test(args):
     """Run pipeline validation tests."""
-    if args.level != "modality" and (args.write_baseline or args.compare_baseline):
+    if args.level not in {"modality", "ops-burnin"} and (args.write_baseline or args.compare_baseline):
         print(
             f"{RED}Error: --write-baseline/--compare-baseline are supported only with "
-            f"--level modality{NC}"
+            f"--level modality or --level ops-burnin{NC}"
         )
         sys.exit(2)
 
@@ -2100,9 +2224,25 @@ def cmd_test(args):
             seed=args.seed,
             fixture_pack=args.fixture_pack,
         )
+    elif args.level == "ops-burnin":
+        report_file = args.report_file
+        baseline_file = args.baseline_file
+        if report_file == "results/readiness/ops_e2e_launch_reliability.v1.json":
+            report_file = "results/readiness/ops_dataset_burnin.v1.json"
+        if baseline_file == "tests/baselines/modality_runtime_baseline.v1.json":
+            baseline_file = "tests/baselines/ops_dataset_burnin_baseline.v1.json"
+        success = runner.run_ops_burnin(
+            burnin_profile=args.burnin_profile,
+            seed=args.seed,
+            report_file=report_file,
+            baseline_file=baseline_file,
+            write_baseline=args.write_baseline,
+            compare_baseline=args.compare_baseline,
+            strict=args.strict,
+        )
     else:
         print(f"Unknown test level: {args.level}")
-        print("Valid levels: smoke, standard, full, modality, ops-e2e")
+        print("Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin")
         sys.exit(1)
     
     sys.exit(0 if success else 1)
@@ -3404,8 +3544,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e'],
-                             help='Test level: smoke, standard, full, modality (baseline drift), ops-e2e (launch reliability)')
+                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin'],
+                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -3413,33 +3553,38 @@ def main():
     test_parser.add_argument(
         '--baseline-file',
         default='tests/baselines/modality_runtime_baseline.v1.json',
-        help='Baseline JSON path for modality drift checks (used with --level modality)',
+        help='Baseline JSON path for modality/ops-burnin drift checks',
     )
     test_parser.add_argument(
         '--write-baseline',
         action='store_true',
-        help='Write/overwrite modality runtime baseline snapshot (requires --level modality)',
+        help='Write/overwrite modality or ops-burnin baseline snapshot',
     )
     test_parser.add_argument(
         '--compare-baseline',
         action='store_true',
-        help='Compare modality smoke run against baseline and fail on drift (requires --level modality)',
+        help='Compare modality or ops-burnin run against baseline and fail on hard drift',
     )
     test_parser.add_argument(
         '--report-file',
         default='results/readiness/ops_e2e_launch_reliability.v1.json',
-        help='Output report path for --level ops-e2e',
+        help='Output report path for --level ops-e2e or --level ops-burnin',
     )
     test_parser.add_argument(
         '--strict',
         action='store_true',
-        help='Fail non-zero when any module reports fail (used with --level ops-e2e)',
+        help='Fail non-zero when module status is fail (used with --level ops-e2e or ops-burnin)',
     )
     test_parser.add_argument(
         '--seed',
         type=int,
         default=42,
-        help='Deterministic seed for ops-e2e checks (default: 42)',
+        help='Deterministic seed for ops-e2e/ops-burnin checks (default: 42)',
+    )
+    test_parser.add_argument(
+        '--burnin-profile',
+        default='tiny-v1',
+        help='Burn-in profile for --level ops-burnin (default: tiny-v1)',
     )
     test_parser.add_argument(
         '--fixture-pack',

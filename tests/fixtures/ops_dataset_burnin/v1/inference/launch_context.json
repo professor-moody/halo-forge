@@ -1,0 +1,27 @@
+{
+  "args": {
+    "mode": "optimize",
+    "model": "Qwen/Qwen2.5-Coder-3B",
+    "output_dir": "models/optimized",
+    "target_precision": "int4",
+    "target_latency": 50.0,
+    "dry_run": false
+  },
+  "command": [
+    "python3",
+    "-m",
+    "halo_forge.cli",
+    "inference",
+    "optimize"
+  ],
+  "contract_version": 1,
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "job_type": "inference",
+  "relaunch_capabilities": {
+    "can_clone": true,
+    "can_relaunch": true,
+    "can_resume_latest": false
+  },
+  "service": "inference",
+  "source_ui_page": "/inference"
+}

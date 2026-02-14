@@ -382,6 +382,18 @@ class Dashboard:
         ui.label(source_text).classes(
             f'text-xs text-[{COLORS["text_muted"]}]'
         )
+        burnin_meta = self.readiness_service.get_burnin_provenance()
+        if burnin_meta.get("burnin_report_present"):
+            burnin_status = str(burnin_meta.get("burnin_status") or "warn")
+            burnin_color = self._status_color(burnin_status)
+            ui.label(
+                f"burnin status={burnin_status} "
+                f"generated={burnin_meta.get('burnin_generated_at')}"
+            ).classes(f'text-xs text-[{burnin_color}]')
+        else:
+            ui.label("burnin report unavailable (non-blocking)").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
 
         for modality in ("vlm", "audio", "reasoning", "agentic"):
             entry = report.modalities.get(modality)

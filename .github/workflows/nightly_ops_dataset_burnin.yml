@@ -1,0 +1,36 @@
+name: Nightly Ops Dataset Burn-In
+
+on:
+  schedule:
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  strict-ops-dataset-burnin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Strict fixture-backed ops dataset burn-in gate
+        run: |
+          python3 scripts/run_ops_dataset_burnin.py \
+            --burnin-profile tiny-v1 \
+            --strict \
+            --compare-baseline \
+            --baseline-file tests/baselines/ops_dataset_burnin_baseline.v1.json \
+            --write-report \
+            --report-file results/readiness/ops_dataset_burnin.v1.json

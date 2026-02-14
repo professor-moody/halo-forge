@@ -31,13 +31,16 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase10_non_code_ui_readiness_gates.py" in content
     assert "tests/test_phase11_ops_module_ui_expansion.py" in content
     assert "tests/test_phase12_ops_e2e_launch_reliability.py" in content
+    assert "tests/test_phase13_ops_dataset_burnin_baselines.py" in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "scripts/run_ops_module_matrix.py" in content
     assert "scripts/run_ops_e2e_reliability.py" in content
+    assert "scripts/run_ops_dataset_burnin.py" in content
     assert "--fixture-pack v1" in content
     assert "tests/baselines/modality_runtime_baseline.v1.json" in content
     assert "ops-readiness-reports" in content
     assert "ops_e2e_launch_reliability.v1.json" in content
+    assert "ops_dataset_burnin.v1.json" in content
 
     nightly_workflow = Path(".github/workflows/nightly_ops_readiness.yml")
     assert nightly_workflow.exists()
@@ -56,6 +59,16 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "scripts/run_ops_e2e_reliability.py" in nightly_e2e_content
     assert "--fixture-pack v1" in nightly_e2e_content
     assert "--strict" in nightly_e2e_content
+
+    nightly_burnin_workflow = Path(".github/workflows/nightly_ops_dataset_burnin.yml")
+    assert nightly_burnin_workflow.exists()
+    nightly_burnin_content = nightly_burnin_workflow.read_text(encoding="utf-8")
+    assert "schedule:" in nightly_burnin_content
+    assert "workflow_dispatch:" in nightly_burnin_content
+    assert "scripts/run_ops_dataset_burnin.py" in nightly_burnin_content
+    assert "--strict" in nightly_burnin_content
+    assert "--compare-baseline" in nightly_burnin_content
+    assert "tests/baselines/ops_dataset_burnin_baseline.v1.json" in nightly_burnin_content
 
 
 def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():
