@@ -11,7 +11,14 @@ from nicegui import ui
 from ui.theme import COLORS
 from ui.state import state
 from ui.services.hardware import get_gpu_summary
-from ui.services import get_results_service, get_hardware_monitor, get_event_bus, Event, EventType
+from ui.services import (
+    get_results_service,
+    get_hardware_monitor,
+    get_event_bus,
+    get_modality_readiness_service,
+    Event,
+    EventType,
+)
 
 
 class Dashboard:
@@ -25,6 +32,7 @@ class Dashboard:
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         self.results_service = get_results_service()
         self.hardware_monitor = get_hardware_monitor()
+        self.readiness_service = get_modality_readiness_service()
     
     def render(self):
         """Render the dashboard page."""
@@ -89,6 +97,24 @@ class Dashboard:
             
             # Register cleanup on client disconnect
             ui.context.client.on_disconnect(self._cleanup)
+
+            # Non-code modality readiness summary
+            with ui.column().classes(
+                f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+                f'border border-[#2d343c] animate-in stagger-2'
+            ):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Non-Code Modality Readiness').classes(
+                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.button(
+                        'Refresh readiness',
+                        icon='refresh',
+                        on_click=self._refresh_readiness,
+                    ).props('flat dense').classes(
+                        f'text-[{COLORS["text_secondary"]}]'
+                    )
+                self._render_modality_readiness_summary()
             
             # Visualization charts grid
             with ui.element('div').classes('grid-panels w-full'):
@@ -329,6 +355,63 @@ class Dashboard:
             with ui.row().classes('items-center gap-2'):
                 ui.icon(icon, size='18px').classes(f'text-[{COLORS["accent"]}]')
                 ui.label(label).classes(f'text-sm text-[{COLORS["text_primary"]}]')
+
+    def _render_modality_readiness_summary(self):
+        """Render non-code modality readiness rows."""
+        try:
+            report = self.readiness_service.get_effective_readiness()
+        except Exception as e:
+            ui.label(f"Readiness unavailable: {e}").classes(
+                f'text-sm text-[{COLORS["warning"]}]'
+            )
+            return
+
+        source_text = f"source={report.source}"
+        if report.generated_at:
+            source_text += f" • generated={report.generated_at}"
+        if report.stale:
+            source_text += " • stale=true"
+        ui.label(source_text).classes(
+            f'text-xs text-[{COLORS["text_muted"]}]'
+        )
+
+        for modality in ("vlm", "audio", "reasoning", "agentic"):
+            entry = report.modalities.get(modality)
+            if not entry:
+                continue
+            badge_color = self._status_color(entry.status)
+            with ui.row().classes(
+                f'w-full items-start justify-between gap-4 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}]'
+            ):
+                with ui.column().classes('gap-1'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.label(modality.upper()).classes(
+                            f'text-sm font-medium text-[{COLORS["text_primary"]}]'
+                        )
+                        ui.label(entry.status.upper()).classes(
+                            f'text-xs px-2 py-0.5 rounded-full bg-[{badge_color}]/20 text-[{badge_color}]'
+                        )
+                    ui.label(
+                        f"errors={len(entry.errors)} • warnings={len(entry.warnings)}"
+                    ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                    if entry.errors:
+                        ui.label(entry.errors[0]).classes(
+                            f'text-xs text-[{COLORS["error"]}]'
+                        )
+                    elif entry.warnings:
+                        ui.label(entry.warnings[0]).classes(
+                            f'text-xs text-[{COLORS["warning"]}]'
+                        )
+                ui.label(entry.last_output_dir or "--").classes(
+                    f'text-xs font-mono text-[{COLORS["text_muted"]}] max-w-[50%] truncate'
+                )
+
+    def _status_color(self, status: str) -> str:
+        if status == "pass":
+            return COLORS["success"]
+        if status == "warn":
+            return COLORS["warning"]
+        return COLORS["error"]
     
     def _render_training_chart(self):
         """Render training history line chart."""
@@ -476,6 +559,11 @@ class Dashboard:
     async def _refresh_jobs(self):
         """Refresh jobs data."""
         ui.notify('Refreshing...', type='info', timeout=1000)
+
+    async def _refresh_readiness(self):
+        """Trigger readiness refresh."""
+        self.readiness_service.get_effective_readiness(force_refresh=True)
+        ui.notify('Readiness refreshed', type='info', timeout=1200)
     
     def _setup_gpu_polling(self):
         """Set up GPU stats updates via event subscription."""

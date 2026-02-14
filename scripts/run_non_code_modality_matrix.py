@@ -15,12 +15,18 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from halo_forge.modality_research import (
+    NON_CODE_MODALITIES,
     build_matrix_markdown,
     build_non_code_modality_matrix,
     build_validation_report_markdown,
     matrix_as_json_serializable,
     parse_validation_targets,
     validate_modality_training_artifacts,
+)
+from halo_forge.modality_readiness import (
+    DEFAULT_READINESS_REPORT_FILE,
+    build_readiness_report_from_validations,
+    write_readiness_report,
 )
 
 
@@ -72,6 +78,21 @@ def main() -> int:
         default="",
         help="Optional markdown report output path for validation results",
     )
+    parser.add_argument(
+        "--write-readiness-report",
+        action="store_true",
+        help="Write canonical readiness JSON report",
+    )
+    parser.add_argument(
+        "--readiness-report-file",
+        default=str(DEFAULT_READINESS_REPORT_FILE),
+        help="Readiness report output path",
+    )
+    parser.add_argument(
+        "--readiness-from-validation",
+        action="store_true",
+        help="Build readiness report from --validate-training targets",
+    )
     args = parser.parse_args()
 
     matrix = build_non_code_modality_matrix(
@@ -95,6 +116,35 @@ def main() -> int:
         return 2
 
     if not targets:
+        if args.write_readiness_report:
+            if args.readiness_from_validation:
+                print("ERROR: --readiness-from-validation requires --validate-training targets")
+                return 2
+            default_results = []
+            for modality in NON_CODE_MODALITIES:
+                output_dir = Path(args.train_output_root) / f"{modality}_phase7d"
+                default_results.append(
+                    validate_modality_training_artifacts(
+                        modality=modality,
+                        output_dir=output_dir,
+                        expected_seed=args.seed,
+                    )
+                )
+            readiness = build_readiness_report_from_validations(
+                default_results,
+                seed=args.seed,
+                source="script",
+            )
+            report_path = Path(args.readiness_report_file)
+            write_readiness_report(report_path, readiness)
+            print(f"Wrote readiness report: {report_path}")
+            for modality in NON_CODE_MODALITIES:
+                entry = readiness.modalities[modality]
+                print(
+                    "READINESS "
+                    f"modality={modality} status={entry.status} "
+                    f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+                )
         return 0
 
     results = []
@@ -116,6 +166,34 @@ def main() -> int:
         print(report)
 
     failures = [r for r in results if not r.ok]
+
+    if args.write_readiness_report:
+        readiness = build_readiness_report_from_validations(
+            results,
+            seed=args.seed,
+            source="script",
+        )
+        readiness_path = Path(args.readiness_report_file)
+        write_readiness_report(readiness_path, readiness)
+        print(f"Wrote readiness report: {readiness_path}")
+        for modality in NON_CODE_MODALITIES:
+            entry = readiness.modalities[modality]
+            print(
+                "READINESS "
+                f"modality={modality} status={entry.status} "
+                f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+            )
+        if args.readiness_from_validation:
+            readiness_failures = [
+                m for m in NON_CODE_MODALITIES if readiness.modalities[m].status == "fail"
+            ]
+            if readiness_failures:
+                print(
+                    "ERROR: readiness report contains failing modalities: "
+                    + ", ".join(readiness_failures)
+                )
+                return 1
+
     if failures:
         print(f"ERROR: validation failed for {len(failures)} modality output(s)")
         return 1

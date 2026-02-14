@@ -161,6 +161,10 @@ from .launch_context import (
     launch_context_path_for_output_dir,
     read_launch_context,
 )
+from .modality_readiness_service import (
+    ModalityReadinessService,
+    get_modality_readiness_service,
+)
 
 
 # Convenience functions for common operations
@@ -271,4 +275,8 @@ __all__ = [
     'LAUNCH_CONTEXT_CONTRACT_VERSION',
     'launch_context_path_for_output_dir',
     'read_launch_context',
+
+    # Non-code modality readiness
+    'ModalityReadinessService',
+    'get_modality_readiness_service',
 ]

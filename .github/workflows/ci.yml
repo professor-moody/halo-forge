@@ -65,4 +65,5 @@ jobs:
             tests/test_phase7b_modality_e2e_surface.py \
             tests/test_phase7c_modality_baseline_drift.py \
             tests/test_phase8_ui_ops_parity_relaunch.py \
-            tests/test_phase9_non_code_modality_research_matrix.py
+            tests/test_phase9_non_code_modality_research_matrix.py \
+            tests/test_phase10_non_code_ui_readiness_gates.py

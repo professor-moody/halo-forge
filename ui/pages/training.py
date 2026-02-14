@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from ui.theme import COLORS
 from ui.state import state
-from ui.services import TrainingService
+from ui.services import TrainingService, get_modality_readiness_service
 from ui.services.launch_contracts import (
     UI_SUPPORTED_TRAINING_MODES,
     UI_DEFERRED_TRAINING_MODES,
@@ -353,6 +353,7 @@ class Training:
         self.selected_raft_preset = "conservative"
         self.is_running = False
         self.training_service = TrainingService(state)
+        self.readiness_service = get_modality_readiness_service()
         self._consume_clone_payload()
         
         # Container references for dynamic updates
@@ -465,7 +466,12 @@ class Training:
                         + ", ".join(mode.upper() for mode in UI_SUPPORTED_TRAINING_MODES)
                         + ". Capability-gated modes still require explicit override while in prototype."
                     )
-                ui.label(message).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                ui.label(message).classes(f'text-xs text-[{COLORS["text_secondary"]}] flex-1')
+                ui.button(
+                    'Refresh readiness',
+                    icon='refresh',
+                    on_click=self._refresh_readiness,
+                ).props('flat dense').classes(f'text-[{COLORS["text_secondary"]}]')
             
             # Main form container
             self.form_container = ui.column().classes('w-full gap-6')
@@ -1121,10 +1127,70 @@ class Training:
                     f"supported families: {', '.join(capability.capability.supported_model_families)}"
                 ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
 
+            self._render_modality_readiness_banner(modality)
+
         self._render_launch_button(
             f"Start {modality.upper()} Training",
             lambda m=modality: self._launch_modality_train(m),
         )
+
+    def _render_modality_readiness_banner(self, modality: str):
+        """Render warn-but-allow readiness status for modality launches."""
+        try:
+            report = self.readiness_service.get_effective_readiness()
+        except Exception as e:
+            ui.label(f"Readiness unavailable: {e}").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
+            return
+
+        readiness = report.modalities.get(modality)
+        if readiness is None:
+            return
+
+        status = readiness.status.lower()
+        if status == "pass":
+            color = COLORS["success"]
+            icon = "check_circle"
+        elif status == "warn":
+            color = COLORS["warning"]
+            icon = "warning"
+        else:
+            color = COLORS["error"]
+            icon = "error"
+
+        with ui.column().classes(
+            f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
+        ):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon(icon, size='16px').classes(f'text-[{color}]')
+                source = f"{report.source}"
+                if report.stale:
+                    source += " (stale)"
+                ui.label(
+                    f"Readiness {status.upper()} • source={source}"
+                ).classes(f'text-xs text-[{color}] font-medium')
+            if readiness.errors:
+                ui.label(f"Blocking reason: {readiness.errors[0]}").classes(
+                    f'text-xs text-[{COLORS["error"]}]'
+                )
+            elif readiness.warnings:
+                ui.label(f"Warning: {readiness.warnings[0]}").classes(
+                    f'text-xs text-[{COLORS["warning"]}]'
+                )
+            output_hint = readiness.last_output_dir or readiness.evidence.get("training_summary")
+            if output_hint:
+                ui.label(f"Evidence: {output_hint}").classes(
+                    f'text-xs font-mono text-[{COLORS["text_muted"]}]'
+                )
+
+    def _refresh_readiness(self):
+        """Force-refresh readiness cache and re-render current form."""
+        self.readiness_service.get_effective_readiness(force_refresh=True)
+        ui.notify('Readiness refreshed', type='info', timeout=1200)
+        self.form_container.clear()
+        with self.form_container:
+            self._render_form()
     
     def _browse_curriculum_stats(self):
         """Open file picker for curriculum stats JSON file."""

@@ -392,6 +392,21 @@ halo-forge test --level modality --compare-baseline
 halo-forge test --level modality --write-baseline
 ```
 
+Non-code modality UI readiness reports (contract-only) can be generated with:
+
+```bash
+python3 scripts/run_non_code_modality_matrix.py \
+  --validate-training vlm=models/phase7d/vlm_phase7d \
+  --validate-training audio=models/phase7d/audio_phase7d \
+  --validate-training reasoning=models/phase7d/reasoning_phase7d \
+  --validate-training agentic=models/phase7d/agentic_phase7d \
+  --write-readiness-report \
+  --readiness-from-validation \
+  --readiness-report-file results/readiness/non_code_modalities_readiness.v1.json
+```
+
+`status=pass|warn|fail` is contract-based runtime readiness, not model-quality promotion.
+
 ---
 
 ## Experimental Commands
