@@ -1706,11 +1706,11 @@ class TestRunner:
                 raise RuntimeError(f"Invalid JSONL fixture in {path}: {exc}") from exc
         return True
 
-    def test_modality_train_smoke(self) -> bool:
+    def test_modality_train_smoke(self) -> Dict[str, Dict[str, Any]]:
         """Run tiny deterministic modality train-smoke flows."""
-        import torch
         from types import SimpleNamespace
 
+        from halo_forge.modality_baseline import build_modality_entries_from_runs
         from halo_forge.training_contracts import build_cycle_summary
         from halo_forge.vlm.trainer import VLMRAFTConfig, VLMRAFTTrainer, VLMSampleResult
         from halo_forge.audio.trainer import AudioRAFTConfig, AudioRAFTTrainer, AudioRAFTCycleResult
@@ -1728,6 +1728,7 @@ class TestRunner:
 
         with tempfile.TemporaryDirectory(prefix="halo_forge_modality_test_") as tmp_dir:
             output_root = Path(tmp_dir)
+            run_payloads: Dict[str, Dict[str, Any]] = {}
 
             # VLM smoke
             vlm = VLMRAFTTrainer(VLMRAFTConfig(num_cycles=1, output_dir=str(output_root / "vlm"), seed=7))
@@ -1767,6 +1768,7 @@ class TestRunner:
             vlm_summary = vlm.train(prompts=[SimpleNamespace(image="fixture.png", prompt="describe", ground_truth="answer")])
             if not vlm_summary.get("final_model_path"):
                 raise RuntimeError("VLM smoke did not emit final_model_path")
+            run_payloads["vlm"] = {"summary": vlm_summary, "output_dir": output_root / "vlm"}
 
             # Audio smoke
             audio = AudioRAFTTrainer(AudioRAFTConfig(num_cycles=1, output_dir=str(output_root / "audio"), seed=7))
@@ -1803,6 +1805,10 @@ class TestRunner:
             audio.train(samples=[SimpleNamespace()])
             if not audio.training_summary.get("final_model_path"):
                 raise RuntimeError("Audio smoke did not emit final_model_path")
+            run_payloads["audio"] = {
+                "summary": audio.training_summary,
+                "output_dir": output_root / "audio",
+            }
 
             # Reasoning smoke
             reasoning = ReasoningRAFTTrainer(
@@ -1827,6 +1833,10 @@ class TestRunner:
             reasoning_summary = reasoning.train(samples=[MathSample(question="1+1", answer="2")])
             if not reasoning_summary.get("final_model_path"):
                 raise RuntimeError("Reasoning smoke did not emit final_model_path")
+            run_payloads["reasoning"] = {
+                "summary": reasoning_summary,
+                "output_dir": output_root / "reasoning",
+            }
 
             # Agentic smoke
             agentic = AgenticRAFTTrainer(
@@ -1862,11 +1872,33 @@ class TestRunner:
             )
             if not agentic_summary.get("final_model_path"):
                 raise RuntimeError("Agentic smoke did not emit final_model_path")
+            run_payloads["agentic"] = {
+                "summary": agentic_summary,
+                "output_dir": output_root / "agentic",
+            }
 
-        return True
+            return build_modality_entries_from_runs(run_payloads)
 
-    def run_modality(self) -> bool:
+    def run_modality(
+        self,
+        baseline_file: Optional[str] = None,
+        write_baseline: bool = False,
+        compare_baseline: bool = False,
+    ) -> bool:
         """Run deterministic modality training smoke checks."""
+        from halo_forge.modality_baseline import (
+            DEFAULT_MODALITY_BASELINE_FILE,
+            build_baseline_payload,
+            compare_baseline_payloads,
+            compute_fixture_pack_fingerprint,
+            format_drift_lines,
+            load_baseline_file,
+            validate_baseline_payload,
+            write_baseline_file,
+        )
+
+        baseline_path = Path(baseline_file) if baseline_file else DEFAULT_MODALITY_BASELINE_FILE
+
         if self.use_rich:
             self.ui.print_banner()
             self.ui.print_header("Modality Smoke", "Deterministic tiny-run validation")
@@ -1883,17 +1915,74 @@ class TestRunner:
         except Exception:
             has_torch = False
 
-        self.run_test(
+        modality_entries = self.run_test(
             "Modality train smoke",
             self.test_modality_train_smoke,
             skip_condition=not has_torch,
             skip_reason="torch not available in environment",
+        )
+
+        def _write_baseline() -> bool:
+            if not has_torch or not isinstance(modality_entries, dict):
+                raise RuntimeError("Cannot write baseline without modality smoke runtime data")
+            payload = build_baseline_payload(modality_entries=modality_entries, seed=42)
+            write_baseline_file(baseline_path, payload)
+            self.log(f"Wrote modality baseline: {baseline_path}", "info")
+            return True
+
+        self.run_test(
+            "Modality baseline write",
+            _write_baseline,
+            skip_condition=not write_baseline,
+            skip_reason="--write-baseline not requested",
+        )
+
+        def _compare_baseline() -> bool:
+            if not baseline_path.exists():
+                raise RuntimeError(f"Baseline file not found: {baseline_path}")
+            expected = load_baseline_file(baseline_path)
+            schema_errors = validate_baseline_payload(expected)
+            if schema_errors:
+                raise RuntimeError("Invalid baseline schema: " + "; ".join(schema_errors))
+
+            if not has_torch or not isinstance(modality_entries, dict):
+                expected_fingerprint = str(expected.get("fixture_pack", ""))
+                current_fingerprint = compute_fixture_pack_fingerprint()
+                if expected_fingerprint != current_fingerprint:
+                    raise RuntimeError(
+                        "Fixture pack fingerprint mismatch without runtime smoke coverage. "
+                        f"expected={expected_fingerprint} actual={current_fingerprint}"
+                    )
+                self.log(
+                    "Torch runtime unavailable; validated baseline schema + fixture fingerprint only.",
+                    "skip",
+                )
+                return True
+
+            current = build_baseline_payload(modality_entries=modality_entries, seed=42)
+            drifts = compare_baseline_payloads(expected, current)
+            if drifts:
+                raise RuntimeError("\n".join(format_drift_lines(drifts)))
+            return True
+
+        self.run_test(
+            "Modality baseline compare",
+            _compare_baseline,
+            skip_condition=not compare_baseline,
+            skip_reason="--compare-baseline not requested",
         )
         return self.print_summary()
 
 
 def cmd_test(args):
     """Run pipeline validation tests."""
+    if args.level != "modality" and (args.write_baseline or args.compare_baseline):
+        print(
+            f"{RED}Error: --write-baseline/--compare-baseline are supported only with "
+            f"--level modality{NC}"
+        )
+        sys.exit(2)
+
     runner = TestRunner(verbose=args.verbose, model=args.model)
     
     if args.level == "smoke":
@@ -1903,7 +1992,11 @@ def cmd_test(args):
     elif args.level == "full":
         success = runner.run_full()
     elif args.level == "modality":
-        success = runner.run_modality()
+        success = runner.run_modality(
+            baseline_file=args.baseline_file,
+            write_baseline=args.write_baseline,
+            compare_baseline=args.compare_baseline,
+        )
     else:
         print(f"Unknown test level: {args.level}")
         print("Valid levels: smoke, standard, full, modality")
@@ -3203,6 +3296,21 @@ def main():
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
                              help='Verbose output with detailed logging')
+    test_parser.add_argument(
+        '--baseline-file',
+        default='tests/baselines/modality_runtime_baseline.v1.json',
+        help='Baseline JSON path for modality drift checks (used with --level modality)',
+    )
+    test_parser.add_argument(
+        '--write-baseline',
+        action='store_true',
+        help='Write/overwrite modality runtime baseline snapshot (requires --level modality)',
+    )
+    test_parser.add_argument(
+        '--compare-baseline',
+        action='store_true',
+        help='Compare modality smoke run against baseline and fail on drift (requires --level modality)',
+    )
     
     # ui command - web interface
     ui_parser = subparsers.add_parser('ui', help='Launch web UI')

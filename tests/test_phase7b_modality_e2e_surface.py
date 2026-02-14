@@ -12,7 +12,7 @@ def test_cli_test_level_exposes_modality_suite():
     source = Path("halo_forge/cli.py").read_text(encoding="utf-8")
     assert "choices=['smoke', 'standard', 'full', 'modality']" in source
     assert 'elif args.level == "modality":' in source
-    assert "runner.run_modality()" in source
+    assert "runner.run_modality(" in source
 
 
 def test_modality_fixture_pack_exists_and_is_parseable_jsonl():
@@ -106,3 +106,6 @@ def test_command_index_documents_modality_test_level():
     )
     assert "halo-forge test --level modality" in content
     assert "deterministic modality fixture + smoke suite" in content
+    assert "--baseline-file" in content
+    assert "--write-baseline" in content
+    assert "--compare-baseline" in content

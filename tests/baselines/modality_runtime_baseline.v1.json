@@ -1,0 +1,61 @@
+{
+  "contract_version": 1,
+  "created_at": "2026-02-14T00:00:00+00:00",
+  "fixture_pack": "67dcd38bf48e79b5106bcc8c671655c61a6f1963027a11372b1429fd4178f83d",
+  "generator_version": "phase7b.v1",
+  "modalities": {
+    "agentic": {
+      "checkpoint_written": true,
+      "cycles_executed": 1,
+      "failure_reason": null,
+      "final_model_written": true,
+      "final_update_reason": "updated",
+      "optimizer_steps": 1,
+      "resume_contract_ok": true,
+      "skipped_batches_non_finite": 0,
+      "total_train_steps_executed": 1,
+      "training_summary_written": true,
+      "weights_updated": true
+    },
+    "audio": {
+      "checkpoint_written": true,
+      "cycles_executed": 1,
+      "failure_reason": null,
+      "final_model_written": true,
+      "final_update_reason": "updated",
+      "optimizer_steps": 1,
+      "resume_contract_ok": true,
+      "skipped_batches_non_finite": 0,
+      "total_train_steps_executed": 1,
+      "training_summary_written": true,
+      "weights_updated": true
+    },
+    "reasoning": {
+      "checkpoint_written": true,
+      "cycles_executed": 1,
+      "failure_reason": null,
+      "final_model_written": true,
+      "final_update_reason": "updated",
+      "optimizer_steps": 1,
+      "resume_contract_ok": true,
+      "skipped_batches_non_finite": 0,
+      "total_train_steps_executed": 1,
+      "training_summary_written": true,
+      "weights_updated": true
+    },
+    "vlm": {
+      "checkpoint_written": true,
+      "cycles_executed": 1,
+      "failure_reason": null,
+      "final_model_written": true,
+      "final_update_reason": "updated",
+      "optimizer_steps": 1,
+      "resume_contract_ok": true,
+      "skipped_batches_non_finite": 0,
+      "total_train_steps_executed": 1,
+      "training_summary_written": true,
+      "weights_updated": true
+    }
+  },
+  "seed": 42
+}
