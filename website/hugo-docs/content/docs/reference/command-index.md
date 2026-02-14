@@ -79,6 +79,14 @@ logs/
 
 No need for manual `tee` or `PYTHONUNBUFFERED`. Use `--quiet` to suppress terminal output while still capturing logs.
 
+### UI Relaunch Context
+
+The web UI now writes durable launch metadata for each training and benchmark run:
+
+- File: `<output_dir>/launch_context.json`
+- Purpose: enables Monitor/Results `Rerun`, `Clone to Form`, and training `Resume Latest`
+- Resume scope: `raft`, `vlm`, `audio`, `reasoning`, `agentic` (checkpoint-based); benchmark supports rerun/clone only
+
 ---
 
 ## Core Commands (Production Ready)
@@ -367,14 +375,21 @@ Run pipeline validation tests.
 | `--level` | `-l` | string | No | `standard` | Test level |
 | `--model` | `-m` | string | No | `Qwen/Qwen2.5-Coder-0.5B` | Model for testing |
 | `--verbose` | `-v` | flag | No | false | Verbose output |
+| `--baseline-file` | - | path | No | `tests/baselines/modality_runtime_baseline.v1.json` | Baseline JSON path (modality level only) |
+| `--write-baseline` | - | flag | No | false | Write/overwrite deterministic modality baseline (modality level only) |
+| `--compare-baseline` | - | flag | No | false | Compare current modality run to baseline and fail on drift (modality level only) |
 
 **Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite)
+
+Baseline drift checks validate runtime contract stability, not model-quality promotion thresholds.
 
 ```bash
 halo-forge test --level smoke
 halo-forge test --level standard --verbose
 halo-forge test --level full --model Qwen/Qwen2.5-Coder-1.5B
 halo-forge test --level modality
+halo-forge test --level modality --compare-baseline
+halo-forge test --level modality --write-baseline
 ```
 
 ---

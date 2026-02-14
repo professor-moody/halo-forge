@@ -246,6 +246,15 @@ halo-forge agentic train --model models/agentic_sft --dataset xlam --cycles 3 --
 halo-forge agentic benchmark --model models/agentic_raft --dataset xlam
 ```
 
+## UI Operations Notes
+
+When launched from the web UI:
+
+- Each run writes `<output_dir>/launch_context.json` for durable rerun/clone actions.
+- Monitor and Results can rerun jobs even after UI restart if launch context exists.
+- `Resume Latest` is available only for cycle-based training jobs (`raft`, `vlm`, `audio`, `reasoning`, `agentic`) and uses checkpoint metadata from the run output.
+- Benchmark jobs support `Rerun` and `Clone to Form`, but not checkpoint resume.
+
 ## Timeline
 
 | Phase | Duration | Notes |

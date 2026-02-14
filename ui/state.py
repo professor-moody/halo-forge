@@ -54,6 +54,11 @@ class JobState:
     
     # Log file path for persistent logging
     log_file_path: Optional[Path] = None
+
+    # Durable relaunch context metadata
+    launch_context_file: Optional[Path] = None
+    launch_args: Dict[str, Any] = field(default_factory=dict)
+    lifecycle_metadata: Dict[str, Any] = field(default_factory=dict)
     
     @property
     def progress_percent(self) -> float:

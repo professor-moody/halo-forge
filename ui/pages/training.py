@@ -4,7 +4,7 @@ Training Launch Page
 Configure and launch SFT/RAFT training runs.
 """
 
-from nicegui import ui
+from nicegui import ui, app
 from pathlib import Path
 from typing import Literal, Optional
 from dataclasses import dataclass, field
@@ -353,10 +353,82 @@ class Training:
         self.selected_raft_preset = "conservative"
         self.is_running = False
         self.training_service = TrainingService(state)
+        self._consume_clone_payload()
         
         # Container references for dynamic updates
         self._toggle_container = None
         self.form_container = None
+
+    def _consume_clone_payload(self):
+        """Load optional clone/relaunch payload persisted in user storage."""
+        payload = app.storage.user.pop("training_clone_payload", None)
+        if not isinstance(payload, dict):
+            return
+        job_type = str(payload.get("job_type") or "").strip().lower()
+        args = payload.get("args")
+        if not isinstance(args, dict):
+            return
+
+        if job_type == "sft":
+            self.mode = "sft"
+            self._apply_payload_to_dataclass(self.sft_data, args)
+            model = str(args.get("model") or self.sft_data.model)
+            self.sft_data.model = model
+            known_models = {name for name, _ in RECOMMENDED_MODELS["code"]}
+            if model in known_models:
+                self.sft_data.model_source = "preset"
+                self.sft_data.custom_model = ""
+            else:
+                self.sft_data.model_source = "custom"
+                self.sft_data.custom_model = model
+
+            dataset = str(args.get("dataset") or self.sft_data.dataset)
+            canonical_dataset = _resolve_dataset_alias(dataset)
+            known_datasets = {name for name, _ in SFT_DATASETS}
+            if canonical_dataset in known_datasets:
+                self.sft_data.dataset = canonical_dataset
+                self.sft_data.dataset_source = "preset"
+                self.sft_data.custom_dataset = ""
+            else:
+                self.sft_data.dataset = dataset
+                self.sft_data.dataset_source = "custom"
+                self.sft_data.custom_dataset = dataset
+            return
+
+        if job_type == "raft":
+            self.mode = "raft"
+            self._apply_payload_to_dataclass(self.raft_data, args)
+            model = str(args.get("model") or self.raft_data.model)
+            self.raft_data.model = model
+            known_models = {name for name, _ in RECOMMENDED_MODELS["code"]}
+            if model in known_models:
+                self.raft_data.model_source = "preset"
+                self.raft_data.custom_model = ""
+            else:
+                self.raft_data.model_source = "custom"
+                self.raft_data.custom_model = model
+
+            prompts = str(args.get("prompts") or self.raft_data.prompts)
+            prompt_presets = {name for name, _ in RAFT_PROMPT_PRESETS}
+            if prompts in prompt_presets:
+                self.raft_data.prompts_source = "preset"
+                self.raft_data.custom_prompts = ""
+            else:
+                self.raft_data.prompts_source = "custom"
+                self.raft_data.custom_prompts = prompts
+            self.raft_data.prompts = prompts
+            self.raft_data.use_checkpoint = bool(self.raft_data.checkpoint)
+            return
+
+        if job_type in self.modality_data:
+            self.mode = job_type
+            self._apply_payload_to_dataclass(self.modality_data[job_type], args)
+
+    def _apply_payload_to_dataclass(self, target, payload: dict):
+        """Assign matching payload fields into a dataclass-like object."""
+        for key, value in payload.items():
+            if hasattr(target, key):
+                setattr(target, key, value)
     
     def render(self):
         """Render the training page."""
@@ -1402,6 +1474,7 @@ class Training:
                 model=model,
                 dataset=dataset,
                 output_dir=self.sft_data.output_dir,
+                source_ui_page="/training",
                 # Training hyperparameters
                 epochs=self.sft_data.epochs,
                 batch_size=self.sft_data.batch_size,
@@ -1458,6 +1531,7 @@ class Training:
                 model=model,
                 prompts=prompts,
                 output_dir=self.raft_data.output_dir,
+                source_ui_page="/training",
                 verifier=self.raft_data.verifier,
                 # RAFT parameters
                 cycles=self.raft_data.cycles,
@@ -1507,6 +1581,7 @@ class Training:
                 model=data.model,
                 dataset=data.dataset,
                 output_dir=data.output_dir,
+                source_ui_page="/training",
                 cycles=data.cycles,
                 learning_rate=data.learning_rate,
                 lr_decay=data.lr_decay,

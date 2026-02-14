@@ -34,6 +34,10 @@ from .launch_contracts import (
     BENCHMARK_LAUNCH_CONTRACT,
     validate_launch_payload,
 )
+from .launch_context import (
+    persist_launch_context,
+    read_launch_context,
+)
 
 
 class BenchmarkType(Enum):
@@ -312,6 +316,43 @@ class BenchmarkService:
                 )
 
         return canonical
+
+    def _build_lifecycle_metadata(
+        self,
+        *,
+        origin_job_id: Optional[str],
+        relaunch: bool,
+        launch_context_file: Optional[Path],
+        resume_strategy: Optional[str],
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if origin_job_id:
+            metadata["origin_job_id"] = origin_job_id
+        if relaunch:
+            metadata["relaunch"] = True
+        if launch_context_file:
+            metadata["launch_context_file"] = str(launch_context_file)
+        if resume_strategy:
+            metadata["resume_strategy"] = resume_strategy
+        return metadata
+
+    def _event_extra_fields(self, job) -> dict[str, Any]:
+        if not job or not job.lifecycle_metadata:
+            return {}
+        return {
+            "origin_job_id": job.lifecycle_metadata.get("origin_job_id"),
+            "relaunch": job.lifecycle_metadata.get("relaunch"),
+            "launch_context_file": job.lifecycle_metadata.get("launch_context_file"),
+            "resume_strategy": job.lifecycle_metadata.get("resume_strategy"),
+        }
+
+    def _merge_transition_metadata(self, job, extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if job and job.lifecycle_metadata:
+            metadata.update(job.lifecycle_metadata)
+        if extra:
+            metadata.update(extra)
+        return metadata
     
     async def launch_benchmark(
         self,
@@ -325,6 +366,10 @@ class BenchmarkService:
         verifier: Optional[str] = None,
         run_after_compile: bool = True,
         on_log: Optional[Callable[[str], None]] = None,
+        source_ui_page: str = "/benchmark",
+        origin_job_id: Optional[str] = None,
+        relaunch: bool = False,
+        resume_strategy: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -377,27 +422,6 @@ class BenchmarkService:
             output_dir=output_file.parent,
         )
         
-        # Emit job created event
-        created_transition = {
-            "from_status": None,
-            "to_status": "pending",
-            "applied": True,
-            "source": "benchmark_service.launch_benchmark",
-            "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
-            "metadata": {"job_type": "benchmark"},
-        }
-        get_event_bus().emit_sync(Event(
-            type=EventType.JOB_CREATED,
-            job_id=job.id,
-            data=build_transition_payload(
-                created_transition,
-                name=job.name,
-                type="benchmark",
-                benchmark_type=benchmark_type.value,
-            ),
-        ))
-        
         # Build command based on benchmark type
         cmd = self._build_command(
             model=model,
@@ -410,11 +434,107 @@ class BenchmarkService:
             run_after_compile=run_after_compile,
             **kwargs
         )
+
+        launch_args = {
+            "model": model,
+            "benchmark_type": benchmark_type.value,
+            "benchmark_name": benchmark_name,
+            "limit": limit,
+            "output_path": str(output_file),
+            "output_dir": str(output_file.parent),
+            "samples_per_prompt": samples_per_prompt,
+            "verifier": verifier,
+            "run_after_compile": run_after_compile,
+        }
+        launch_args.update({k: v for k, v in kwargs.items() if v is not None})
+        launch_context_file = None
+        try:
+            launch_context_file = persist_launch_context(
+                output_dir=output_file.parent,
+                job_type="benchmark",
+                service="benchmark",
+                source_ui_page=source_ui_page,
+                command=cmd,
+                args=launch_args,
+                relaunch_capabilities={
+                    "can_relaunch": True,
+                    "can_clone": True,
+                    "can_resume_latest": False,
+                },
+            )
+        except Exception as e:
+            print(f"[BenchmarkService] Failed to persist launch context: {e}")
+        lifecycle_metadata = self._build_lifecycle_metadata(
+            origin_job_id=origin_job_id,
+            relaunch=relaunch,
+            launch_context_file=launch_context_file,
+            resume_strategy=resume_strategy,
+        )
+        job.launch_context_file = launch_context_file
+        job.launch_args = launch_args
+        job.lifecycle_metadata = lifecycle_metadata
+
+        # Emit job created event
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": "benchmark_service.launch_benchmark",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": self._merge_transition_metadata(
+                job,
+                {"job_type": "benchmark"},
+            ),
+        }
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type="benchmark",
+                benchmark_type=benchmark_type.value,
+                **self._event_extra_fields(job),
+            ),
+        ))
         
         # Launch subprocess
         await self._launch_process(job.id, cmd, on_log)
         
         return job.id
+
+    async def relaunch_from_context(
+        self,
+        launch_context_file: str | Path,
+        *,
+        origin_job_id: Optional[str] = None,
+        source_ui_page: str = "/monitor",
+        on_log: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """Relaunch a benchmark job from persisted launch context."""
+        context = read_launch_context(launch_context_file)
+        if context.service != "benchmark":
+            raise ValueError("launch context does not belong to benchmark service")
+        if context.job_type != "benchmark":
+            raise ValueError(f"Unsupported benchmark relaunch job_type: {context.job_type}")
+
+        args = dict(context.args)
+        benchmark_type_value = str(args.pop("benchmark_type", "")).strip().lower()
+        try:
+            benchmark_type = BenchmarkType(benchmark_type_value)
+        except ValueError as e:
+            raise ValueError(f"Invalid benchmark_type in launch context: {benchmark_type_value}") from e
+
+        return await self.launch_benchmark(
+            benchmark_type=benchmark_type,
+            on_log=on_log,
+            source_ui_page=source_ui_page,
+            origin_job_id=origin_job_id,
+            relaunch=True,
+            resume_strategy="relaunch",
+            **args,
+        )
     
     def _build_command(
         self,
@@ -529,7 +649,10 @@ class BenchmarkService:
             "running",
             source="benchmark_service._launch_process",
             reason="process_started",
-            metadata={"command": cmd},
+            metadata=self._merge_transition_metadata(
+                job,
+                {"command": cmd},
+            ),
         )
 
         # Emit job started event
@@ -542,6 +665,7 @@ class BenchmarkService:
                     transition,
                     name=job.name,
                     type="benchmark",
+                    **self._event_extra_fields(job),
                 ),
             ))
         
@@ -598,7 +722,10 @@ class BenchmarkService:
                 "stopped",
                 source="benchmark_service._stream_logs",
                 reason="stop_requested",
-                metadata={"return_code": return_code},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code},
+                ),
             )
             if transitioned:
                 transition = self.state.get_last_transition(job_id)
@@ -608,6 +735,7 @@ class BenchmarkService:
                     data=build_transition_payload(
                         transition,
                         return_code=return_code,
+                        **self._event_extra_fields(job),
                     ),
                 ))
         elif return_code == 0:
@@ -616,7 +744,10 @@ class BenchmarkService:
                 "completed",
                 source="benchmark_service._stream_logs",
                 reason="process_exit_ok",
-                metadata={"return_code": return_code},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code},
+                ),
             )
             if not transitioned:
                 return
@@ -627,6 +758,7 @@ class BenchmarkService:
                 data=build_transition_payload(
                     transition,
                     return_code=return_code,
+                    **self._event_extra_fields(job),
                 ),
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
@@ -635,7 +767,10 @@ class BenchmarkService:
                 "stopped",
                 source="benchmark_service._stream_logs",
                 reason="terminated_signal",
-                metadata={"return_code": return_code},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code},
+                ),
             )
             if not transitioned:
                 return
@@ -646,6 +781,7 @@ class BenchmarkService:
                 data=build_transition_payload(
                     transition,
                     return_code=return_code,
+                    **self._event_extra_fields(job),
                 ),
             ))
         else:
@@ -655,7 +791,10 @@ class BenchmarkService:
                 "failed",
                 source="benchmark_service._stream_logs",
                 reason="process_exit_error",
-                metadata={"return_code": return_code, "error": job.error_message},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code, "error": job.error_message},
+                ),
             )
             if not transitioned:
                 return
@@ -667,6 +806,7 @@ class BenchmarkService:
                     transition,
                     return_code=return_code,
                     error=job.error_message,
+                    **self._event_extra_fields(job),
                 ),
             ))
     
@@ -699,6 +839,7 @@ class BenchmarkService:
                 "stopped",
                 source="benchmark_service.stop_job",
                 reason="process_missing",
+                metadata=self._merge_transition_metadata(job),
             )
             return True
         
@@ -716,6 +857,7 @@ class BenchmarkService:
             "stopped",
             source="benchmark_service.stop_job",
             reason="stop_completed",
+            metadata=self._merge_transition_metadata(job),
         )
         return True
     

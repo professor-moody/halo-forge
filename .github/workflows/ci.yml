@@ -33,6 +33,12 @@ jobs:
       - name: Syntax compile check
         run: python -m compileall -q halo_forge ui tests
 
+      - name: Modality baseline drift guard
+        run: |
+          python3 scripts/generate_modality_baseline.py \
+            --baseline-file tests/baselines/modality_runtime_baseline.v1.json \
+            --check
+
       - name: Core framework and UI regression checks
         run: |
           pytest -q \
@@ -56,4 +62,6 @@ jobs:
             tests/test_runtime_surface_alignment.py \
             tests/test_phase6_modality_graduation.py \
             tests/test_phase7_modality_reliability_gates.py \
-            tests/test_phase7b_modality_e2e_surface.py
+            tests/test_phase7b_modality_e2e_surface.py \
+            tests/test_phase7c_modality_baseline_drift.py \
+            tests/test_phase8_ui_ops_parity_relaunch.py

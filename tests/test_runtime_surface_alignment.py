@@ -99,3 +99,4 @@ def test_monitor_page_reads_canonical_training_summary_fields():
     assert "final_update_reason" in source
     assert "total_train_steps_executed" in source
     assert "final_train_loss" in source
+    assert "self.benchmark_service.stop_job" in source

@@ -25,6 +25,10 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase6_modality_graduation.py" in content
     assert "tests/test_phase7_modality_reliability_gates.py" in content
     assert "tests/test_phase7b_modality_e2e_surface.py" in content
+    assert "tests/test_phase7c_modality_baseline_drift.py" in content
+    assert "tests/test_phase8_ui_ops_parity_relaunch.py" in content
+    assert "scripts/generate_modality_baseline.py" in content
+    assert "tests/baselines/modality_runtime_baseline.v1.json" in content
 
 
 def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():

@@ -29,6 +29,11 @@ from .launch_contracts import (
     validate_launch_payload,
     ensure_local_path_exists_if_pathlike,
 )
+from .launch_context import (
+    CYCLE_BASED_TRAINING_JOB_TYPES,
+    persist_launch_context,
+    read_launch_context,
+)
 from halo_forge.capabilities import check_modality_train_capability
 
 # Import notification helpers (only used when UI is running)
@@ -221,6 +226,75 @@ class TrainingService:
             normalized["output_dir"],
             parsed_seed,
         )
+
+    def _build_lifecycle_metadata(
+        self,
+        *,
+        origin_job_id: Optional[str],
+        relaunch: bool,
+        launch_context_file: Optional[Path],
+        resume_strategy: Optional[str],
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if origin_job_id:
+            metadata["origin_job_id"] = origin_job_id
+        if relaunch:
+            metadata["relaunch"] = True
+        if launch_context_file:
+            metadata["launch_context_file"] = str(launch_context_file)
+        if resume_strategy:
+            metadata["resume_strategy"] = resume_strategy
+        return metadata
+
+    def _event_extra_fields(self, job) -> dict[str, Any]:
+        if not job or not job.lifecycle_metadata:
+            return {}
+        return {
+            "origin_job_id": job.lifecycle_metadata.get("origin_job_id"),
+            "relaunch": job.lifecycle_metadata.get("relaunch"),
+            "launch_context_file": job.lifecycle_metadata.get("launch_context_file"),
+            "resume_strategy": job.lifecycle_metadata.get("resume_strategy"),
+        }
+
+    def _merge_transition_metadata(self, job, extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if job and job.lifecycle_metadata:
+            metadata.update(job.lifecycle_metadata)
+        if extra:
+            metadata.update(extra)
+        return metadata
+
+    def resolve_resume_latest_cycle(self, output_dir: str | Path) -> int:
+        """
+        Resolve next resume cycle from latest checkpoint metadata.
+
+        Returns:
+            resume_from_cycle value (checkpoint cycle + 1)
+        """
+        output_path = Path(output_dir)
+        latest_path = output_path / "latest_checkpoint.json"
+        if not latest_path.exists():
+            raise ValueError(
+                f"latest checkpoint metadata not found: {latest_path}"
+            )
+
+        import json
+
+        try:
+            with latest_path.open(encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as e:
+            raise ValueError(f"failed to parse {latest_path}: {e}") from e
+
+        cycle_value = payload.get("cycle")
+        try:
+            cycle = int(cycle_value)
+        except (TypeError, ValueError):
+            raise ValueError(f"latest checkpoint cycle is invalid: {cycle_value}")
+        if cycle < 0:
+            raise ValueError(f"latest checkpoint cycle must be >= 0: {cycle}")
+
+        return cycle + 1
     
     async def launch_sft(
         self,
@@ -246,6 +320,10 @@ class TrainingService:
         early_stopping_patience: int = 5,
         gradient_checkpointing: bool = True,
         on_log: Optional[Callable[[str], None]] = None,
+        source_ui_page: str = "/training",
+        origin_job_id: Optional[str] = None,
+        relaunch: bool = False,
+        resume_strategy: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -295,26 +373,6 @@ class TrainingService:
             output_dir=Path(output_dir),
         )
         job.total_epochs = epochs
-        
-        # Emit job created event
-        created_transition = {
-            "from_status": None,
-            "to_status": "pending",
-            "applied": True,
-            "source": "training_service.launch_sft",
-            "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
-            "metadata": {"job_type": "sft"},
-        }
-        get_event_bus().emit_sync(Event(
-            type=EventType.JOB_CREATED,
-            job_id=job.id,
-            data=build_transition_payload(
-                created_transition,
-                name=job.name,
-                type="sft",
-            ),
-        ))
         
         # Build command
         cmd = [
@@ -367,6 +425,81 @@ class TrainingService:
         for key, value in kwargs.items():
             if value is not None:
                 cmd.extend([f"--{key.replace('_', '-')}", str(value)])
+
+        launch_args = {
+            "model": model,
+            "dataset": dataset,
+            "output_dir": output_dir,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "learning_rate": learning_rate,
+            "warmup_ratio": warmup_ratio,
+            "weight_decay": weight_decay,
+            "max_grad_norm": max_grad_norm,
+            "use_lora": use_lora,
+            "lora_rank": lora_rank,
+            "lora_alpha": lora_alpha,
+            "lora_dropout": lora_dropout,
+            "max_seq_length": max_seq_length,
+            "validation_split": validation_split,
+            "max_samples": max_samples,
+            "save_steps": save_steps,
+            "eval_steps": eval_steps,
+            "early_stopping_patience": early_stopping_patience,
+            "gradient_checkpointing": gradient_checkpointing,
+        }
+        launch_args.update({k: v for k, v in kwargs.items() if v is not None})
+        launch_context_file = None
+        try:
+            launch_context_file = persist_launch_context(
+                output_dir=output_dir,
+                job_type="sft",
+                service="training",
+                source_ui_page=source_ui_page,
+                command=cmd,
+                args=launch_args,
+                relaunch_capabilities={
+                    "can_relaunch": True,
+                    "can_clone": True,
+                    "can_resume_latest": False,
+                },
+            )
+        except Exception as e:
+            print(f"[TrainingService] Failed to persist launch context: {e}")
+        lifecycle_metadata = self._build_lifecycle_metadata(
+            origin_job_id=origin_job_id,
+            relaunch=relaunch,
+            launch_context_file=launch_context_file,
+            resume_strategy=resume_strategy,
+        )
+        job.launch_context_file = launch_context_file
+        job.launch_args = launch_args
+        job.lifecycle_metadata = lifecycle_metadata
+
+        # Emit job created event
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": "training_service.launch_sft",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": self._merge_transition_metadata(
+                job,
+                {"job_type": "sft"},
+            ),
+        }
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type="sft",
+                **self._event_extra_fields(job),
+            ),
+        ))
         
         # Launch subprocess
         await self._launch_process(job.id, cmd, on_log)
@@ -397,6 +530,10 @@ class TrainingService:
         system_prompt: str = "You are an expert programmer.",
         experimental_attention: bool = False,
         on_log: Optional[Callable[[str], None]] = None,
+        source_ui_page: str = "/training",
+        origin_job_id: Optional[str] = None,
+        relaunch: bool = False,
+        resume_strategy: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -450,26 +587,6 @@ class TrainingService:
         )
         job.total_cycles = cycles
         
-        # Emit job created event
-        created_transition = {
-            "from_status": None,
-            "to_status": "pending",
-            "applied": True,
-            "source": "training_service.launch_raft",
-            "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
-            "metadata": {"job_type": "raft"},
-        }
-        get_event_bus().emit_sync(Event(
-            type=EventType.JOB_CREATED,
-            job_id=job.id,
-            data=build_transition_payload(
-                created_transition,
-                name=job.name,
-                type="raft",
-            ),
-        ))
-        
         # Build command
         cmd = [
             sys.executable, "-m", "halo_forge.cli", "raft", "train",
@@ -512,6 +629,81 @@ class TrainingService:
         for key, value in kwargs.items():
             if value is not None:
                 cmd.extend([f"--{key.replace('_', '-')}", str(value)])
+
+        launch_args = {
+            "model": model,
+            "prompts": prompts,
+            "output_dir": output_dir,
+            "verifier": verifier,
+            "cycles": cycles,
+            "samples_per_prompt": samples_per_prompt,
+            "temperature": temperature,
+            "keep_percent": keep_percent,
+            "reward_threshold": reward_threshold,
+            "min_samples": min_samples,
+            "max_new_tokens": max_new_tokens,
+            "lr_decay": lr_decay,
+            "min_lr": min_lr,
+            "checkpoint": checkpoint,
+            "curriculum": curriculum,
+            "curriculum_stats": curriculum_stats,
+            "curriculum_start": curriculum_start,
+            "curriculum_increment": curriculum_increment,
+            "reward_shaping": reward_shaping,
+            "system_prompt": system_prompt,
+            "experimental_attention": experimental_attention,
+        }
+        launch_args.update({k: v for k, v in kwargs.items() if v is not None})
+        launch_context_file = None
+        try:
+            launch_context_file = persist_launch_context(
+                output_dir=output_dir,
+                job_type="raft",
+                service="training",
+                source_ui_page=source_ui_page,
+                command=cmd,
+                args=launch_args,
+                relaunch_capabilities={
+                    "can_relaunch": True,
+                    "can_clone": True,
+                    "can_resume_latest": True,
+                },
+            )
+        except Exception as e:
+            print(f"[TrainingService] Failed to persist launch context: {e}")
+        lifecycle_metadata = self._build_lifecycle_metadata(
+            origin_job_id=origin_job_id,
+            relaunch=relaunch,
+            launch_context_file=launch_context_file,
+            resume_strategy=resume_strategy,
+        )
+        job.launch_context_file = launch_context_file
+        job.launch_args = launch_args
+        job.lifecycle_metadata = lifecycle_metadata
+
+        # Emit job created event
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": "training_service.launch_raft",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": self._merge_transition_metadata(
+                job,
+                {"job_type": "raft"},
+            ),
+        }
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type="raft",
+                **self._event_extra_fields(job),
+            ),
+        ))
         
         # Launch subprocess
         await self._launch_process(job.id, cmd, on_log)
@@ -538,6 +730,10 @@ class TrainingService:
         seed: int = 42,
         allow_prototype_train: bool = False,
         on_log: Optional[Callable[[str], None]] = None,
+        source_ui_page: str = "/training",
+        origin_job_id: Optional[str] = None,
+        relaunch: bool = False,
+        resume_strategy: Optional[str] = None,
     ) -> str:
         """Launch modality-specific train command (vlm/audio/reasoning/agentic)."""
         if modality not in MODALITY_TRAIN_LAUNCH_CONTRACTS:
@@ -572,25 +768,6 @@ class TrainingService:
         )
         job.total_cycles = cycles
 
-        created_transition = {
-            "from_status": None,
-            "to_status": "pending",
-            "applied": True,
-            "source": f"training_service.launch_{modality}_train",
-            "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
-            "metadata": {"job_type": modality},
-        }
-        get_event_bus().emit_sync(Event(
-            type=EventType.JOB_CREATED,
-            job_id=job.id,
-            data=build_transition_payload(
-                created_transition,
-                name=job.name,
-                type=modality,
-            ),
-        ))
-
         cmd = [
             sys.executable, "-m", "halo_forge.cli",
             modality, "train",
@@ -620,8 +797,147 @@ class TrainingService:
         if capability.capability.status == "prototype" and allow_prototype_train:
             cmd.append("--allow-prototype-train")
 
+        launch_args = {
+            "model": model,
+            "dataset": dataset,
+            "output_dir": output_dir,
+            "cycles": cycles,
+            "learning_rate": learning_rate,
+            "lr_decay": lr_decay,
+            "samples_per_prompt": samples_per_prompt,
+            "temperature": temperature,
+            "keep_percent": keep_percent,
+            "reward_threshold": reward_threshold,
+            "task": task,
+            "limit": limit,
+            "resume_from_cycle": max(0, resume_from_cycle),
+            "seed": seed,
+            "allow_prototype_train": (
+                capability.capability.status == "prototype" and allow_prototype_train
+            ),
+        }
+        launch_context_file = None
+        try:
+            launch_context_file = persist_launch_context(
+                output_dir=output_dir,
+                job_type=modality,
+                service="training",
+                source_ui_page=source_ui_page,
+                command=cmd,
+                args=launch_args,
+                relaunch_capabilities={
+                    "can_relaunch": True,
+                    "can_clone": True,
+                    "can_resume_latest": modality in CYCLE_BASED_TRAINING_JOB_TYPES,
+                },
+            )
+        except Exception as e:
+            print(f"[TrainingService] Failed to persist launch context: {e}")
+        lifecycle_metadata = self._build_lifecycle_metadata(
+            origin_job_id=origin_job_id,
+            relaunch=relaunch,
+            launch_context_file=launch_context_file,
+            resume_strategy=resume_strategy,
+        )
+        job.launch_context_file = launch_context_file
+        job.launch_args = launch_args
+        job.lifecycle_metadata = lifecycle_metadata
+
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": f"training_service.launch_{modality}_train",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": self._merge_transition_metadata(
+                job,
+                {"job_type": modality},
+            ),
+        }
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type=modality,
+                **self._event_extra_fields(job),
+            ),
+        ))
+
         await self._launch_process(job.id, cmd, on_log)
         return job.id
+
+    async def relaunch_from_context(
+        self,
+        launch_context_file: str | Path,
+        *,
+        origin_job_id: Optional[str] = None,
+        resume_latest: bool = False,
+        source_ui_page: str = "/monitor",
+        on_log: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """Relaunch a training job from persisted launch context."""
+        context = read_launch_context(launch_context_file)
+        if context.service != "training":
+            raise ValueError("launch context does not belong to training service")
+
+        args = dict(context.args)
+        job_type = context.job_type
+        resume_strategy = "resume_latest" if resume_latest else "relaunch"
+
+        if resume_latest:
+            if job_type not in CYCLE_BASED_TRAINING_JOB_TYPES:
+                raise ValueError(f"{job_type} does not support resume_latest")
+            output_dir = args.get("output_dir")
+            if not output_dir:
+                raise ValueError("resume_latest requires output_dir in launch context")
+            next_cycle = self.resolve_resume_latest_cycle(str(output_dir))
+            total_cycles = int(args.get("cycles") or 0)
+            if total_cycles and next_cycle > total_cycles:
+                raise ValueError(
+                    f"resume_from_cycle {next_cycle} exceeds configured cycles {total_cycles}"
+                )
+            if job_type == "raft":
+                checkpoint_cycle = max(0, next_cycle - 1)
+                checkpoint_path = Path(output_dir) / f"cycle_{checkpoint_cycle}_final"
+                if not checkpoint_path.exists():
+                    raise ValueError(f"RAFT checkpoint not found for resume_latest: {checkpoint_path}")
+                args["checkpoint"] = str(checkpoint_path)
+            else:
+                args["resume_from_cycle"] = next_cycle
+
+        if job_type == "sft":
+            return await self.launch_sft(
+                on_log=on_log,
+                source_ui_page=source_ui_page,
+                origin_job_id=origin_job_id,
+                relaunch=True,
+                resume_strategy=resume_strategy,
+                **args,
+            )
+        if job_type == "raft":
+            return await self.launch_raft(
+                on_log=on_log,
+                source_ui_page=source_ui_page,
+                origin_job_id=origin_job_id,
+                relaunch=True,
+                resume_strategy=resume_strategy,
+                **args,
+            )
+        if job_type in {"vlm", "audio", "reasoning", "agentic"}:
+            return await self.launch_modality_train(
+                modality=job_type,
+                on_log=on_log,
+                source_ui_page=source_ui_page,
+                origin_job_id=origin_job_id,
+                relaunch=True,
+                resume_strategy=resume_strategy,
+                **args,
+            )
+
+        raise ValueError(f"Unsupported training relaunch job_type: {job_type}")
     
     async def _launch_process(
         self,
@@ -662,7 +978,10 @@ class TrainingService:
             "running",
             source="training_service._launch_process",
             reason="process_started",
-            metadata={"command": cmd},
+            metadata=self._merge_transition_metadata(
+                job,
+                {"command": cmd},
+            ),
         )
 
         # Emit job started event
@@ -675,6 +994,7 @@ class TrainingService:
                     transition,
                     name=job.name,
                     type=job.type,
+                    **self._event_extra_fields(job),
                 ),
             ))
         
@@ -799,7 +1119,10 @@ class TrainingService:
                 "stopped",
                 source="training_service._stream_logs",
                 reason="stop_requested",
-                metadata={"return_code": return_code},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code},
+                ),
             )
             if transitioned:
                 transition = self.state.get_last_transition(job_id)
@@ -809,6 +1132,7 @@ class TrainingService:
                     data=build_transition_payload(
                         transition,
                         return_code=return_code,
+                        **self._event_extra_fields(job),
                     ),
                 ))
         elif return_code == 0:
@@ -817,7 +1141,10 @@ class TrainingService:
                 "completed",
                 source="training_service._stream_logs",
                 reason="process_exit_ok",
-                metadata={"return_code": return_code},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code},
+                ),
             )
             if not transitioned:
                 return
@@ -828,6 +1155,7 @@ class TrainingService:
                 data=build_transition_payload(
                     transition,
                     return_code=return_code,
+                    **self._event_extra_fields(job),
                 ),
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
@@ -836,7 +1164,10 @@ class TrainingService:
                 "stopped",
                 source="training_service._stream_logs",
                 reason="terminated_signal",
-                metadata={"return_code": return_code},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code},
+                ),
             )
             if not transitioned:
                 return
@@ -847,6 +1178,7 @@ class TrainingService:
                 data=build_transition_payload(
                     transition,
                     return_code=return_code,
+                    **self._event_extra_fields(job),
                 ),
             ))
         else:
@@ -856,7 +1188,10 @@ class TrainingService:
                 "failed",
                 source="training_service._stream_logs",
                 reason="process_exit_error",
-                metadata={"return_code": return_code, "error": job.error_message},
+                metadata=self._merge_transition_metadata(
+                    job,
+                    {"return_code": return_code, "error": job.error_message},
+                ),
             )
             if not transitioned:
                 return
@@ -868,6 +1203,7 @@ class TrainingService:
                     transition,
                     return_code=return_code,
                     error=job.error_message,
+                    **self._event_extra_fields(job),
                 ),
             ))
     
@@ -940,6 +1276,7 @@ class TrainingService:
                 "stopped",
                 source="training_service.stop_job",
                 reason="process_missing",
+                metadata=self._merge_transition_metadata(job),
             )
             return True
         
@@ -959,6 +1296,7 @@ class TrainingService:
             "stopped",
             source="training_service.stop_job",
             reason="stop_completed",
+            metadata=self._merge_transition_metadata(job),
         )
         return True
     

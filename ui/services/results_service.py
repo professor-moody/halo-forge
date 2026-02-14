@@ -30,6 +30,8 @@ class BenchmarkResult:
     domain: str = "code"  # code, reasoning, vlm, audio, agentic
     notes: Optional[str] = None
     file_path: Optional[Path] = None
+    launch_context_path: Optional[Path] = None
+    has_relaunch_context: bool = False
     raw_data: Dict[str, Any] = field(default_factory=dict)
     normalized_metrics: Dict[str, float] = field(default_factory=dict)
 
@@ -78,6 +80,8 @@ class BenchmarkResult:
             "timestamp": self.timestamp.isoformat(),
             "domain": self.domain,
             "notes": self.notes,
+            "launch_context_path": str(self.launch_context_path) if self.launch_context_path else None,
+            "has_relaunch_context": self.has_relaunch_context,
             "normalized_metrics": self.normalized_metrics,
         }
 
@@ -104,6 +108,8 @@ class TrainingRunSummary:
     final_update_reason: str = ""
     failure_reason: Optional[str] = None
     final_model_path: Optional[str] = None
+    launch_context_path: Optional[Path] = None
+    has_relaunch_context: bool = False
     cycle_losses: List[float] = field(default_factory=list)
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -446,6 +452,7 @@ class ResultsService:
         except Exception:
             relative_id = path.as_posix()
         result_id = relative_id.replace("/", "_")
+        launch_context_path = path.parent / "launch_context.json"
         return BenchmarkResult(
             id=result_id,
             model=model,
@@ -460,6 +467,8 @@ class ResultsService:
             domain=domain,
             notes=notes,
             file_path=path,
+            launch_context_path=launch_context_path if launch_context_path.exists() else None,
+            has_relaunch_context=launch_context_path.exists(),
             raw_data=data,
             normalized_metrics=normalized_metrics,
         )
@@ -507,6 +516,7 @@ class ResultsService:
             relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
         except Exception:
             relative_id = path.as_posix()
+        launch_context_path = path.parent / "launch_context.json"
 
         return TrainingRunSummary(
             id=relative_id.replace("/", "_"),
@@ -543,6 +553,8 @@ class ResultsService:
                 else None
             ),
             final_model_path=str(final_model_path) if final_model_path else None,
+            launch_context_path=launch_context_path if launch_context_path.exists() else None,
+            has_relaunch_context=launch_context_path.exists(),
             cycle_losses=cycle_losses,
             raw_data=data,
         )

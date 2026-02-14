@@ -4,7 +4,7 @@ Benchmark Launch Page
 Configure and launch Code, VLM, Audio, and Agentic benchmarks.
 """
 
-from nicegui import ui
+from nicegui import ui, app
 from pathlib import Path
 from typing import Optional, Literal
 from dataclasses import dataclass, field
@@ -88,6 +88,59 @@ class Benchmark:
         # Cache for discovered local models
         self._local_models_cache: list[tuple[str, str]] = []
         self._refresh_local_models()
+        self._consume_clone_payload()
+
+    def _consume_clone_payload(self):
+        """Load optional clone/relaunch payload persisted in user storage."""
+        payload = app.storage.user.pop("benchmark_clone_payload", None)
+        if not isinstance(payload, dict):
+            return
+        args = payload.get("args")
+        if not isinstance(args, dict):
+            return
+
+        benchmark_type_raw = str(args.get("benchmark_type") or self.data.benchmark_type.value)
+        try:
+            self.data.benchmark_type = BenchmarkType(benchmark_type_raw)
+        except ValueError:
+            self.data.benchmark_type = BenchmarkType.CODE
+
+        model = str(args.get("model") or self.data.model)
+        self.data.model = model
+        if any(path == model for path, _ in self._local_models_cache):
+            self.data.model_source = "local"
+        elif "/" in model and not Path(model).exists():
+            self.data.model_source = "preset"
+        else:
+            self.data.model_source = "custom"
+            self.data.custom_model_path = model
+
+        benchmark_name = str(args.get("benchmark_name") or "").strip()
+        presets = get_presets_for_type(self.data.benchmark_type)
+        if benchmark_name:
+            matched = next((p for p in presets if p.dataset == benchmark_name), None)
+            self.data.preset = matched or (presets[0] if presets else None)
+        else:
+            self.data.preset = presets[0] if presets else None
+
+        if args.get("limit") is not None:
+            try:
+                self.data.limit = int(args["limit"])
+            except (TypeError, ValueError):
+                pass
+        if args.get("samples_per_prompt") is not None:
+            try:
+                self.data.samples_per_prompt = int(args["samples_per_prompt"])
+            except (TypeError, ValueError):
+                pass
+        if args.get("run_after_compile") is not None:
+            self.data.run_after_compile = bool(args["run_after_compile"])
+        if args.get("verifier"):
+            self.data.verifier = str(args["verifier"])
+        if args.get("output_dir"):
+            self.data.output_dir = str(args["output_dir"])
+        elif args.get("output_path"):
+            self.data.output_dir = str(Path(str(args["output_path"])).parent)
     
     def _refresh_local_models(self):
         """Refresh the cache of locally trained models."""
@@ -633,6 +686,7 @@ class Benchmark:
                 benchmark_name=self.data.preset.dataset,
                 limit=self.data.limit,
                 output_path=output_path,
+                source_ui_page="/benchmark",
                 samples_per_prompt=self.data.samples_per_prompt,
                 verifier=self.data.verifier if self.data.benchmark_type == BenchmarkType.CODE else None,
                 run_after_compile=self.data.run_after_compile,

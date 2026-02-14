@@ -6,13 +6,22 @@ Domain-specific benchmark results built from canonical ResultsService DTOs.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
 from nicegui import ui, app
 
 from ui.theme import COLORS
-from ui.services import BenchmarkResult, TrainingRunSummary, get_results_service
+from ui.state import state
+from ui.services import (
+    BenchmarkResult,
+    TrainingRunSummary,
+    TrainingService,
+    get_benchmark_service,
+    get_results_service,
+    read_launch_context,
+)
 
 
 class Results:
@@ -22,6 +31,8 @@ class Results:
 
     def __init__(self):
         self.results_service = get_results_service()
+        self.training_service = TrainingService(state)
+        self.benchmark_service = get_benchmark_service(state)
         self.results: list[BenchmarkResult] = self.results_service.list_results(force_refresh=True)
         self.training_runs: list[TrainingRunSummary] = self.results_service.list_training_runs(force_refresh=False)
         self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
@@ -152,6 +163,12 @@ class Results:
                 ui.label("Time").classes(
                     f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
                 )
+                ui.label("Actions").classes(
+                    f'w-44 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Actions").classes(
+                    f'w-36 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
 
             for result in rows:
                 with ui.row().classes(
@@ -181,6 +198,24 @@ class Results:
                     ui.label(result.timestamp.strftime("%m-%d %H:%M")).classes(
                         f'w-28 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
                     )
+                    with ui.row().classes("w-36 justify-end gap-1"):
+                        if result.has_relaunch_context and result.launch_context_path:
+                            ui.button(
+                                icon="replay",
+                                on_click=lambda r=result: asyncio.create_task(self._relaunch_benchmark_result(r)),
+                            ).props("flat round dense").classes(
+                                f'text-[{COLORS["accent"]}]'
+                            ).tooltip("Rerun")
+                            ui.button(
+                                icon="content_copy",
+                                on_click=lambda r=result: self._clone_benchmark_to_form(r),
+                            ).props("flat round dense").classes(
+                                f'text-[{COLORS["text_secondary"]}]'
+                            ).tooltip("Clone to Benchmark form")
+                        else:
+                            ui.label("--").classes(
+                                f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
+                            )
 
     def _render_training_runs_table(self, rows: list[TrainingRunSummary]):
         with ui.column().classes(
@@ -258,6 +293,33 @@ class Results:
                     ui.label(run.timestamp.strftime("%m-%d %H:%M")).classes(
                         f'w-28 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
                     )
+                    with ui.row().classes("w-44 justify-end gap-1"):
+                        if run.has_relaunch_context and run.launch_context_path:
+                            ui.button(
+                                icon="replay",
+                                on_click=lambda r=run: asyncio.create_task(self._relaunch_training_run(r)),
+                            ).props("flat round dense").classes(
+                                f'text-[{COLORS["accent"]}]'
+                            ).tooltip("Rerun")
+                            if run.modality in {"raft", "vlm", "audio", "reasoning", "agentic"}:
+                                ui.button(
+                                    icon="history",
+                                    on_click=lambda r=run: asyncio.create_task(
+                                        self._relaunch_training_run(r, resume_latest=True)
+                                    ),
+                                ).props("flat round dense").classes(
+                                    f'text-[{COLORS["info"]}]'
+                                ).tooltip("Resume Latest")
+                            ui.button(
+                                icon="content_copy",
+                                on_click=lambda r=run: self._clone_training_to_form(r),
+                            ).props("flat round dense").classes(
+                                f'text-[{COLORS["text_secondary"]}]'
+                            ).tooltip("Clone to Training form")
+                        else:
+                            ui.label("--").classes(
+                                f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
+                            )
 
     def _metric_value(self, result: BenchmarkResult, key: str):
         if key in result.normalized_metrics:
@@ -321,6 +383,70 @@ class Results:
         payload = [result.to_dict() for result in self.results]
         print(json.dumps(payload, indent=2, default=str))
         ui.notify("Exported results payload to server console", type="positive")
+
+    async def _relaunch_benchmark_result(self, result: BenchmarkResult):
+        """Relaunch benchmark from durable launch context."""
+        if not result.launch_context_path:
+            ui.notify("No launch context found for this benchmark run", type="warning")
+            return
+        try:
+            new_job_id = await self.benchmark_service.relaunch_from_context(
+                result.launch_context_path,
+                source_ui_page="/results",
+            )
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            ui.notify(f"Benchmark relaunch failed: {e}", type="negative")
+
+    async def _relaunch_training_run(self, run: TrainingRunSummary, resume_latest: bool = False):
+        """Relaunch training run from durable launch context."""
+        if not run.launch_context_path:
+            ui.notify("No launch context found for this training run", type="warning")
+            return
+        try:
+            new_job_id = await self.training_service.relaunch_from_context(
+                run.launch_context_path,
+                resume_latest=resume_latest,
+                source_ui_page="/results",
+            )
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            action = "Resume Latest" if resume_latest else "Relaunch"
+            ui.notify(f"{action} failed: {e}", type="negative")
+
+    def _clone_benchmark_to_form(self, result: BenchmarkResult):
+        """Clone benchmark launch args into benchmark form."""
+        if not result.launch_context_path:
+            ui.notify("No launch context found for this benchmark run", type="warning")
+            return
+        try:
+            context = read_launch_context(result.launch_context_path)
+        except Exception as e:
+            ui.notify(f"Launch context is invalid: {e}", type="negative")
+            return
+        app.storage.user["benchmark_clone_payload"] = {
+            "launch_context_file": str(result.launch_context_path),
+            "job_type": context.job_type,
+            "args": context.args,
+        }
+        ui.navigate.to("/benchmark")
+
+    def _clone_training_to_form(self, run: TrainingRunSummary):
+        """Clone training launch args into training form."""
+        if not run.launch_context_path:
+            ui.notify("No launch context found for this training run", type="warning")
+            return
+        try:
+            context = read_launch_context(run.launch_context_path)
+        except Exception as e:
+            ui.notify(f"Launch context is invalid: {e}", type="negative")
+            return
+        app.storage.user["training_clone_payload"] = {
+            "launch_context_file": str(run.launch_context_path),
+            "job_type": context.job_type,
+            "args": context.args,
+        }
+        ui.navigate.to("/training")
 
     def _domain_title(self, domain: str) -> str:
         if domain == "vlm":

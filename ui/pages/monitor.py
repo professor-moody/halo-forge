@@ -4,7 +4,7 @@ Monitor Page
 Real-time job monitoring with loss charts and log viewer.
 """
 
-from nicegui import ui
+from nicegui import ui, app
 from datetime import datetime
 from typing import Optional, Callable, List, Dict, Any
 from pathlib import Path
@@ -13,7 +13,14 @@ import json
 
 from ui.theme import COLORS
 from ui.state import state, JobState
-from ui.services import TrainingService, get_event_bus, Event, EventType
+from ui.services import (
+    TrainingService,
+    get_benchmark_service,
+    get_event_bus,
+    Event,
+    EventType,
+    read_launch_context,
+)
 from ui.components.notifications import (
     notify_training_stopped,
     notify_job_completed,
@@ -32,6 +39,7 @@ class Monitor:
         self.update_timer = None
         self.log_lines: list[str] = []  # Legacy - kept for event handler compatibility
         self.training_service = TrainingService(state)
+        self.benchmark_service = get_benchmark_service(state)
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
@@ -98,6 +106,28 @@ class Monitor:
             return Path(self.job.output_dir) / f"{self.job_id}_training.log"
         
         return None
+
+    def _get_launch_context_path(self) -> Optional[Path]:
+        """Resolve persisted launch context for the current job."""
+        if not self.job:
+            return None
+        if self.job.launch_context_file and Path(self.job.launch_context_file).exists():
+            return Path(self.job.launch_context_file)
+        if self.job.output_dir:
+            candidate = Path(self.job.output_dir) / "launch_context.json"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _get_launch_context(self) -> Optional[Any]:
+        """Read launch context safely for action availability checks."""
+        path = self._get_launch_context_path()
+        if not path:
+            return None
+        try:
+            return read_launch_context(path)
+        except Exception:
+            return None
     
     def render(self):
         """Render the monitor page."""
@@ -132,10 +162,44 @@ class Monitor:
                         ui.button('Stop', icon='stop', on_click=self._stop_job).props(
                             'flat'
                         ).classes(f'text-[{COLORS["error"]}]')
-                    
+                    else:
+                        context = self._get_launch_context()
+                        context_path = self._get_launch_context_path()
+                        if context:
+                            if context.relaunch_capabilities.get("can_relaunch", False):
+                                ui.button('Rerun', icon='replay', on_click=lambda: asyncio.create_task(self._rerun_job())).props(
+                                    'flat'
+                                ).classes(f'text-[{COLORS["accent"]}]')
+                            if (
+                                self.job.type in CYCLE_BASED_JOB_TYPES
+                                and context.relaunch_capabilities.get("can_resume_latest", False)
+                            ):
+                                ui.button(
+                                    'Resume Latest',
+                                    icon='history',
+                                    on_click=lambda: asyncio.create_task(self._resume_latest_job()),
+                                ).props('flat').classes(f'text-[{COLORS["info"]}]')
+                            if context.relaunch_capabilities.get("can_clone", False):
+                                ui.button(
+                                    'Clone to Form',
+                                    icon='content_copy',
+                                    on_click=self._clone_to_form,
+                                ).props('flat').classes(f'text-[{COLORS["text_secondary"]}]')
+                        elif context_path:
+                            ui.label("launch context unavailable (invalid JSON)").classes(
+                                f'text-xs text-[{COLORS["warning"]}]'
+                            )
+
                     ui.button(icon='refresh', on_click=self._refresh).props(
                         'flat round'
                     ).classes(f'text-[{COLORS["text_secondary"]}]')
+                    if self.job.output_dir:
+                        ui.button(
+                            icon='folder',
+                            on_click=self._copy_artifacts_path,
+                        ).props('flat round').classes(
+                            f'text-[{COLORS["text_secondary"]}]'
+                        ).tooltip(str(self.job.output_dir))
             
             # Progress section
             with ui.column().classes(
@@ -869,17 +933,107 @@ class Monitor:
         dialog.close()
         
         if self.job:
-            # Actually stop the job via TrainingService
-            success = await self.training_service.stop_job(self.job.id)
+            # Route stop calls by job type.
+            if self.job.type == "benchmark":
+                success = await self.benchmark_service.stop_job(self.job.id)
+            else:
+                success = await self.training_service.stop_job(self.job.id)
             
             try:
                 if success:
                     notify_training_stopped(self.job.name)
                     self.job = state.get_job(self.job_id)  # Refresh job state
                 else:
-                    notify_job_failed(self.job.name, "Failed to stop training")
+                    notify_job_failed(self.job.name, "Failed to stop job")
             except Exception:
                 pass  # Notification failed due to context
+
+    async def _rerun_job(self):
+        """Relaunch the current job from persisted launch context."""
+        if not self.job:
+            return
+        context_path = self._get_launch_context_path()
+        if not context_path:
+            notify_job_failed(self.job.name, "No launch context found for rerun")
+            return
+
+        try:
+            context = read_launch_context(context_path)
+            if self.job.type == "benchmark":
+                new_job_id = await self.benchmark_service.relaunch_from_context(
+                    context_path,
+                    origin_job_id=self.job.id,
+                    source_ui_page="/monitor",
+                )
+            else:
+                new_job_id = await self.training_service.relaunch_from_context(
+                    context_path,
+                    origin_job_id=self.job.id,
+                    source_ui_page="/monitor",
+                )
+            notify_job_started(f"Rerun: {context.job_type}")
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            notify_job_failed(self.job.name, f"Rerun failed: {e}")
+
+    async def _resume_latest_job(self):
+        """Resume from latest cycle checkpoint when supported."""
+        if not self.job:
+            return
+        if self.job.type not in CYCLE_BASED_JOB_TYPES:
+            notify_job_failed(self.job.name, "Resume Latest is not supported for this job type")
+            return
+        context_path = self._get_launch_context_path()
+        if not context_path:
+            notify_job_failed(self.job.name, "No launch context found for resume")
+            return
+
+        try:
+            new_job_id = await self.training_service.relaunch_from_context(
+                context_path,
+                origin_job_id=self.job.id,
+                resume_latest=True,
+                source_ui_page="/monitor",
+            )
+            notify_job_started(f"Resume Latest: {self.job.type.upper()}")
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            notify_job_failed(self.job.name, f"Resume Latest failed: {e}")
+
+    def _clone_to_form(self):
+        """Clone persisted launch args into the matching launch page form."""
+        if not self.job:
+            return
+        context_path = self._get_launch_context_path()
+        if not context_path:
+            notify_job_failed(self.job.name, "No launch context found to clone")
+            return
+        try:
+            context = read_launch_context(context_path)
+            payload = {
+                "launch_context_file": str(context_path),
+                "job_type": context.job_type,
+                "args": context.args,
+            }
+            if self.job.type == "benchmark":
+                app.storage.user["benchmark_clone_payload"] = payload
+                ui.navigate.to("/benchmark")
+            else:
+                app.storage.user["training_clone_payload"] = payload
+                ui.navigate.to("/training")
+        except Exception as e:
+            notify_job_failed(self.job.name, f"Clone to form failed: {e}")
+
+    def _copy_artifacts_path(self):
+        """Copy artifact output directory to clipboard."""
+        if not self.job or not self.job.output_dir:
+            ui.notify("No artifact path available", type="warning", timeout=1500)
+            return
+        output_path = str(self.job.output_dir)
+        ui.run_javascript(
+            f"navigator.clipboard.writeText({json.dumps(output_path)});"
+        )
+        ui.notify("Copied artifact path", type="positive", timeout=1200)
     
     def _scroll_to_bottom(self):
         """Scroll log viewer to bottom."""
