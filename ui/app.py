@@ -182,7 +182,12 @@ def research_hub_page():
         ResearchHub().render()
 
 
-def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
+def run(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    reload: bool = False,
+    open_browser: bool = False,
+):
     """Run the halo-forge web UI."""
     static_dir = Path(__file__).parent / "static"
     
@@ -196,11 +201,19 @@ def run(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
         favicon = favicon_png
     else:
         favicon = "🔥"
+
+    base_url = f"http://{host}:{port}"
+    print(f"UI_START base_url={base_url} open_browser={1 if open_browser else 0}")
+    print(f"UI_ROUTE root={base_url}/")
+    print(f"UI_ROUTE training={base_url}/training")
+    print(f"UI_ROUTE benchmark={base_url}/benchmark")
+    print(f"UI_ROUTE inference={base_url}/inference")
     
     ui.run(
         host=host,
         port=port,
         reload=reload,
+        show=open_browser,
         title="halo-forge",
         favicon=favicon,
         dark=True,

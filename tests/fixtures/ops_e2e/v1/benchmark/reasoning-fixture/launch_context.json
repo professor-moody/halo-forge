@@ -1,0 +1,26 @@
+{
+  "args": {
+    "benchmark_name": "gsm8k",
+    "benchmark_type": "reasoning",
+    "limit": 20,
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "output_path": "results/benchmarks/reasoning-fixture/benchmark.json"
+  },
+  "command": [
+    "python3",
+    "-m",
+    "halo_forge.cli",
+    "reasoning",
+    "benchmark"
+  ],
+  "contract_version": 1,
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "job_type": "benchmark",
+  "relaunch_capabilities": {
+    "can_clone": true,
+    "can_relaunch": true,
+    "can_resume_latest": false
+  },
+  "service": "benchmark",
+  "source_ui_page": "/benchmark"
+}

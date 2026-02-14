@@ -366,6 +366,26 @@ halo-forge info
 
 ---
 
+### halo-forge ui
+
+Launch the web UI.
+
+| Flag | Short | Type | Required | Default | Description |
+|------|-------|------|----------|---------|-------------|
+| `--host` | - | string | No | `127.0.0.1` | Host to bind |
+| `--port` | `-p` | int | No | `8080` | Port to bind |
+| `--reload` | - | flag | No | false | Enable hot reload |
+| `--open-browser` | - | flag | No | false | Auto-open browser after startup |
+| `--no-browser` | - | flag | No | false | Disable browser auto-open (this is the default behavior) |
+
+```bash
+halo-forge ui --no-browser
+halo-forge ui --open-browser
+halo-forge ui --host 0.0.0.0 --port 8080
+```
+
+---
+
 ### halo-forge test
 
 Run pipeline validation tests.
@@ -378,8 +398,12 @@ Run pipeline validation tests.
 | `--baseline-file` | - | path | No | `tests/baselines/modality_runtime_baseline.v1.json` | Baseline JSON path (modality level only) |
 | `--write-baseline` | - | flag | No | false | Write/overwrite deterministic modality baseline (modality level only) |
 | `--compare-baseline` | - | flag | No | false | Compare current modality run to baseline and fail on drift (modality level only) |
+| `--report-file` | - | path | No | `results/readiness/ops_e2e_launch_reliability.v1.json` | E2E reliability report output path (`ops-e2e` level) |
+| `--strict` | - | flag | No | false | Fail when any module reports `status=fail` (`ops-e2e` level) |
+| `--seed` | - | int | No | `42` | Deterministic seed (`ops-e2e` level) |
+| `--fixture-pack` | - | string | No | - | Fixture pack (`v1`) or custom path (`ops-e2e` level) |
 
-**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite)
+**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite), `ops-e2e` (non-code launch lifecycle reliability)
 
 Baseline drift checks validate runtime contract stability, not model-quality promotion thresholds.
 
@@ -390,6 +414,8 @@ halo-forge test --level full --model Qwen/Qwen2.5-Coder-1.5B
 halo-forge test --level modality
 halo-forge test --level modality --compare-baseline
 halo-forge test --level modality --write-baseline
+halo-forge test --level ops-e2e --fixture-pack v1 --report-file results/readiness/ops_e2e_launch_reliability.v1.json
+halo-forge test --level ops-e2e --fixture-pack v1 --strict
 ```
 
 Non-code modality UI readiness reports (contract-only) can be generated with:
@@ -422,9 +448,24 @@ Strict fixture-backed gate (used in nightly CI):
 python3 scripts/run_ops_module_matrix.py --fixture-pack v1 --strict
 ```
 
+Ops E2E launch lifecycle reliability (non-coding scope):
+
+```bash
+python3 scripts/run_ops_e2e_reliability.py \
+  --fixture-pack v1 \
+  --write-report \
+  --report-file results/readiness/ops_e2e_launch_reliability.v1.json
+```
+
+Strict nightly E2E gate:
+
+```bash
+python3 scripts/run_ops_e2e_reliability.py --fixture-pack v1 --strict
+```
+
 CI policy:
 - PR/push CI uses non-strict report generation (informational for readiness status).
-- Nightly CI uses strict mode and fails on any module `status=fail`.
+- Nightly CI uses strict mode and fails on any module `status=fail` (readiness + E2E lifecycle reports).
 
 ---
 

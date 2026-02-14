@@ -206,3 +206,13 @@ def test_ops_readiness_service_fallbacks_on_corrupt_report(tmp_path):
     report = service.get_effective_readiness(output_map=output_map, force_refresh=True)
     assert report.source == "ui_live_compute"
     assert set(report.modules.keys()) == set(OPS_MODULES)
+
+
+def test_ops_e2e_script_and_fixture_pack_exist():
+    """Ops E2E reliability script should have a tracked deterministic fixture pack."""
+    script = Path("scripts/run_ops_e2e_reliability.py")
+    fixture_root = Path("tests/fixtures/ops_e2e/v1")
+    assert script.exists()
+    assert fixture_root.exists()
+    assert (fixture_root / "vlm" / "launch_context.json").exists()
+    assert (fixture_root / "benchmark" / "reasoning-fixture" / "launch_context.json").exists()

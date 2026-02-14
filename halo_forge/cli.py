@@ -1973,6 +1973,102 @@ class TestRunner:
         )
         return self.print_summary()
 
+    def run_ops_e2e(
+        self,
+        report_file: Optional[str] = None,
+        strict: bool = False,
+        seed: int = 42,
+        fixture_pack: str = "",
+    ) -> bool:
+        """Run deterministic non-code ops E2E launch reliability checks."""
+        from halo_forge.ops_e2e_reliability import (
+            DEFAULT_OPS_E2E_REPORT_FILE,
+            OPS_E2E_STATUSES,
+            OpsE2EModuleResult,
+            build_ops_e2e_report,
+            compute_ops_e2e_reliability,
+            validate_ops_e2e_module,
+            write_ops_e2e_report,
+        )
+
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("Ops E2E Reliability", "Launch/stop/relaunch contract checks")
+        else:
+            print(f"\n{'='*60}")
+            print("halo forge Ops E2E Reliability")
+            print(f"{'='*60}\n")
+
+        def _resolve_fixture_pack(pack: str) -> Optional[Path]:
+            text = str(pack or "").strip()
+            if not text:
+                return None
+            if "/" in text or text.startswith("."):
+                root = Path(text).expanduser()
+                if not root.is_absolute():
+                    root = (Path.cwd() / root).resolve()
+                return root
+            return (Path.cwd() / "tests" / "fixtures" / "ops_e2e" / text).resolve()
+
+        def _run_ops_e2e() -> bool:
+            pack_root = _resolve_fixture_pack(fixture_pack)
+            if pack_root:
+                if not pack_root.exists() or not pack_root.is_dir():
+                    raise RuntimeError(f"Fixture pack directory not found: {pack_root}")
+                entries: Dict[str, OpsE2EModuleResult] = {}
+                for module in ("vlm", "audio", "reasoning", "agentic", "inference", "benchmark"):
+                    module_dir = pack_root / module
+                    if not module_dir.exists() or not module_dir.is_dir():
+                        raise RuntimeError(f"Fixture pack missing module directory: {module_dir}")
+                    entries[module] = validate_ops_e2e_module(
+                        module=module,
+                        output_dir=module_dir,
+                        seed=seed,
+                    )
+                entries["ui_ops"] = validate_ops_e2e_module(
+                    module="ui_ops",
+                    output_dir=Path.cwd(),
+                    seed=seed,
+                )
+                report = build_ops_e2e_report(module_entries=entries, seed=seed, source="cli_test")
+            else:
+                report = compute_ops_e2e_reliability(seed=seed, source="cli_test")
+
+            for module in ("vlm", "audio", "reasoning", "agentic", "inference", "benchmark", "ui_ops"):
+                entry = report.modules[module]
+                resume_ok = (
+                    bool(entry.resume_latest_ok) if entry.resume_latest_ok is not None else False
+                )
+                print(
+                    "OPS_E2E "
+                    f"module={module} status={entry.status} "
+                    f"launch={1 if entry.launch_ok else 0} "
+                    f"stop={1 if entry.stop_ok else 0} "
+                    f"relaunch={1 if entry.relaunch_ok else 0} "
+                    f"resume={1 if resume_ok else 0}"
+                )
+                if entry.status not in OPS_E2E_STATUSES:
+                    raise RuntimeError(
+                        f"Invalid E2E status for module={module}: {entry.status}"
+                    )
+
+            report_path = Path(report_file) if report_file else DEFAULT_OPS_E2E_REPORT_FILE
+            write_ops_e2e_report(report_path, report)
+            self.log(f"Wrote ops E2E report: {report_path}", "info")
+
+            if strict:
+                failing = [
+                    module
+                    for module, entry in report.modules.items()
+                    if entry.status == "fail"
+                ]
+                if failing:
+                    raise RuntimeError("Failing modules: " + ", ".join(sorted(failing)))
+            return True
+
+        self.run_test("Ops E2E launch reliability", _run_ops_e2e)
+        return self.print_summary()
+
 
 def cmd_test(args):
     """Run pipeline validation tests."""
@@ -1997,9 +2093,16 @@ def cmd_test(args):
             write_baseline=args.write_baseline,
             compare_baseline=args.compare_baseline,
         )
+    elif args.level == "ops-e2e":
+        success = runner.run_ops_e2e(
+            report_file=args.report_file,
+            strict=args.strict,
+            seed=args.seed,
+            fixture_pack=args.fixture_pack,
+        )
     else:
         print(f"Unknown test level: {args.level}")
-        print("Valid levels: smoke, standard, full, modality")
+        print("Valid levels: smoke, standard, full, modality, ops-e2e")
         sys.exit(1)
     
     sys.exit(0 if success else 1)
@@ -2007,10 +2110,21 @@ def cmd_test(args):
 
 def cmd_ui(args):
     """Launch the web UI."""
-    print(f"{GREEN}halo-forge UI{NC} → http://{args.host}:{args.port}")
+    base_url = f"http://{args.host}:{args.port}"
+    print(f"{GREEN}halo-forge UI{NC} → {base_url}")
+    print("Routes:")
+    print(f"  {base_url}/")
+    print(f"  {base_url}/training")
+    print(f"  {base_url}/benchmark")
+    print(f"  {base_url}/inference")
     
     from ui.app import run
-    run(host=args.host, port=args.port, reload=args.reload)
+    run(
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        open_browser=bool(getattr(args, "open_browser", False)),
+    )
 
 
 def cmd_inference_optimize(args):
@@ -3290,8 +3404,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full', 'modality'],
-                             help='Test level: smoke (no GPU), standard (with GPU), full (with training), modality (deterministic modality smoke)')
+                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e'],
+                             help='Test level: smoke, standard, full, modality (baseline drift), ops-e2e (launch reliability)')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -3311,6 +3425,27 @@ def main():
         action='store_true',
         help='Compare modality smoke run against baseline and fail on drift (requires --level modality)',
     )
+    test_parser.add_argument(
+        '--report-file',
+        default='results/readiness/ops_e2e_launch_reliability.v1.json',
+        help='Output report path for --level ops-e2e',
+    )
+    test_parser.add_argument(
+        '--strict',
+        action='store_true',
+        help='Fail non-zero when any module reports fail (used with --level ops-e2e)',
+    )
+    test_parser.add_argument(
+        '--seed',
+        type=int,
+        default=42,
+        help='Deterministic seed for ops-e2e checks (default: 42)',
+    )
+    test_parser.add_argument(
+        '--fixture-pack',
+        default='',
+        help='Fixture pack for ops-e2e checks (e.g., v1 or tests/fixtures/ops_e2e/v1)',
+    )
     
     # ui command - web interface
     ui_parser = subparsers.add_parser('ui', help='Launch web UI')
@@ -3320,6 +3455,20 @@ def main():
                            help='Port to listen on (default: 8080)')
     ui_parser.add_argument('--reload', action='store_true',
                            help='Enable hot reload for development')
+    ui_browser_group = ui_parser.add_mutually_exclusive_group()
+    ui_browser_group.add_argument(
+        '--open-browser',
+        action='store_true',
+        dest='open_browser',
+        help='Open browser automatically after startup',
+    )
+    ui_browser_group.add_argument(
+        '--no-browser',
+        action='store_false',
+        dest='open_browser',
+        help='Do not auto-open a browser (default, headless-safe)',
+    )
+    ui_parser.set_defaults(open_browser=False)
     
     # Parse arguments and dispatch
     args = parser.parse_args()

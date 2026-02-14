@@ -17,9 +17,16 @@ halo-forge ui --host 0.0.0.0 --port 8888
 
 # With auto-reload for development
 halo-forge ui --reload
+
+# Headless-safe (default behavior)
+halo-forge ui --no-browser
+
+# Explicit browser auto-open
+halo-forge ui --open-browser
 ```
 
 The UI will be available at `http://127.0.0.1:8080` by default.
+Startup logs print canonical route URLs (`/`, `/training`, `/benchmark`, `/inference`).
 
 ## Pages Overview
 
@@ -243,7 +250,8 @@ Accepted false values: `0`, `false`, `no`, `off`.
 
 ### "gio: Operation not supported"
 
-This harmless warning appears when running on headless systems where the browser can't auto-open.
+Use `halo-forge ui --no-browser` (default) in headless environments.  
+Only use `--open-browser` when desktop browser integration is available.
 
 ### Duration/Progress not updating
 

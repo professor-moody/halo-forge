@@ -120,3 +120,20 @@ def test_default_on_ops_routes_and_quick_actions_are_declared():
     assert "/inference" in dashboard_source
     assert "/benchmark-advanced" in dashboard_source
     assert "/research-hub" in dashboard_source
+
+
+def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
+    """UI command should expose explicit browser flags and deterministic startup route logs."""
+    cli_source = Path("halo_forge/cli.py").read_text(encoding="utf-8")
+    assert "--open-browser" in cli_source
+    assert "--no-browser" in cli_source
+    assert "ui_parser.set_defaults(open_browser=False)" in cli_source
+    assert "Routes:" in cli_source
+    assert "/training" in cli_source
+    assert "/benchmark" in cli_source
+    assert "/inference" in cli_source
+
+    app_source = Path("ui/app.py").read_text(encoding="utf-8")
+    assert "show=open_browser" in app_source
+    assert "UI_START base_url=" in app_source
+    assert "UI_ROUTE root=" in app_source

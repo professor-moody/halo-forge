@@ -1,0 +1,7 @@
+{
+  "accuracy": 0.58,
+  "benchmark": "gsm8k",
+  "domain": "reasoning",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "samples": 20
+}
