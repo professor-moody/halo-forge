@@ -28,6 +28,7 @@ SUPPORTED_JOB_TYPES = {
     "info",
     "plot",
     "qualification",
+    "bootstrap",
 }
 
 CYCLE_BASED_TRAINING_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
@@ -206,6 +207,13 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "module_filters",
         "fixture_pack",
     ),
+    "bootstrap": (
+        "bootstrap_profile",
+        "output_root",
+        "report_file",
+        "strict",
+        "module_filters",
+    ),
 }
 
 
@@ -246,7 +254,7 @@ class LaunchContextV1:
             raise ValueError(f"Unsupported launch context job_type: {job_type}")
 
         service = str(data.get("service") or "").strip().lower()
-        if service not in {"training", "benchmark", "inference", "module_ops", "qualification"}:
+        if service not in {"training", "benchmark", "inference", "module_ops", "qualification", "bootstrap"}:
             raise ValueError(f"Unsupported launch context service: {service}")
 
         command = data.get("command")

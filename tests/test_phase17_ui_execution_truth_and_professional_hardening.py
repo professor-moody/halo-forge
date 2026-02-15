@@ -141,6 +141,8 @@ def test_runtime_surface_includes_page_guard_and_non_blocking_copy():
     ops_service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
     assert "get_qualification_provenance" in ops_service_source
     assert "run_qualification_probe" in ops_service_source
+    assert "get_bootstrap_provenance" in ops_service_source
+    assert "run_bootstrap_probe" in ops_service_source
 
     diag_source = Path("ui/components/diagnostic_panel.py").read_text(encoding="utf-8")
     assert "Evidence missing (non-blocking)" in diag_source

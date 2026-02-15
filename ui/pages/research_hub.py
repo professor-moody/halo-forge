@@ -51,6 +51,11 @@ class ResearchHub:
                 )
                 with ui.row().classes("items-center gap-2"):
                     ui.button(
+                        "Run bootstrap probe",
+                        icon="build",
+                        on_click=lambda: asyncio.create_task(self._run_bootstrap_probe()),
+                    ).props("flat").classes(f"text-[{COLORS['accent']}]")
+                    ui.button(
                         "Run qualification probe",
                         icon="play_arrow",
                         on_click=lambda: asyncio.create_task(self._run_qualification_probe()),
@@ -73,6 +78,15 @@ class ResearchHub:
 
     def _render_content(self, force_refresh: bool) -> None:
         report = self.readiness_service.get_effective_all_module_readiness(force_refresh=force_refresh)
+        bootstrap_meta = self.readiness_service.get_bootstrap_provenance(force_refresh=force_refresh)
+        bootstrap_report = None
+        if bootstrap_meta.get("bootstrap_report_present"):
+            try:
+                bootstrap_report = self.readiness_service.load_bootstrap_report(
+                    force_refresh=force_refresh
+                )
+            except Exception:
+                bootstrap_report = None
         qualification_meta = self.readiness_service.get_qualification_provenance(force_refresh=force_refresh)
         qualification_report = None
         if qualification_meta.get("qualification_report_present"):
@@ -111,6 +125,18 @@ class ResearchHub:
                 ui.label("burnin report unavailable (non-blocking)").classes(
                     f"text-xs text-[{COLORS['warning']}]"
                 )
+            if bootstrap_meta.get("bootstrap_report_present"):
+                ui.label(
+                    "bootstrap "
+                    f"status={bootstrap_meta.get('bootstrap_status')} "
+                    f"profile={bootstrap_meta.get('bootstrap_profile')} "
+                    f"source={bootstrap_meta.get('bootstrap_source')} "
+                    f"generated_at={bootstrap_meta.get('bootstrap_generated_at')}"
+                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+            else:
+                ui.label("bootstrap report unavailable (non-blocking)").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
+                )
             if qualification_meta.get("qualification_report_present"):
                 ui.label(
                     "qualification "
@@ -143,15 +169,19 @@ class ResearchHub:
 
         for module in ALL_MODULES:
             burnin_entry = None
+            bootstrap_entry = None
             qualification_entry = None
             if burnin_report and module in burnin_report.modules:
                 burnin_entry = burnin_report.modules[module]
+            if bootstrap_report and module in bootstrap_report.modules:
+                bootstrap_entry = bootstrap_report.modules[module]
             if qualification_report and module in qualification_report.modules:
                 qualification_entry = qualification_report.modules[module]
             self._render_module_card(
                 module,
                 report.modules[module],
                 burnin_entry,
+                bootstrap_entry,
                 qualification_entry,
                 report.source,
                 bool(report.stale),
@@ -162,6 +192,7 @@ class ResearchHub:
         module: str,
         entry,
         burnin_entry=None,
+        bootstrap_entry=None,
         qualification_entry=None,
         source: str = "ui_live_compute",
         stale: bool = False,
@@ -195,6 +226,11 @@ class ResearchHub:
                     icon="play_arrow",
                     on_click=lambda m=module: self._run_contract_probe(m),
                 ).props("flat dense").classes(f"text-[{COLORS['text_secondary']}]")
+                ui.button(
+                    "Generate Evidence",
+                    icon="build",
+                    on_click=lambda m=module: asyncio.create_task(self._run_module_bootstrap(m)),
+                ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
 
             ui.label(f"errors={len(entry.errors)} warnings={len(entry.warnings)}").classes(
                 f"text-xs text-[{COLORS['text_muted']}] font-mono"
@@ -209,6 +245,25 @@ class ResearchHub:
                     f"burnin status={burnin_entry.status} "
                     f"errors={len(burnin_entry.errors)} warnings={len(burnin_entry.warnings)}"
                 ).classes(f"text-xs text-[{burnin_color}] font-mono")
+            if bootstrap_entry is not None:
+                boot_color = {
+                    "pass": COLORS["success"],
+                    "warn": COLORS["warning"],
+                    "fail": COLORS["error"],
+                }.get(bootstrap_entry.status, COLORS["text_secondary"])
+                ui.label(
+                    f"bootstrap status={bootstrap_entry.status} "
+                    f"attempted={1 if bootstrap_entry.bootstrap_attempted else 0} "
+                    f"created={len(bootstrap_entry.artifacts_created)}"
+                ).classes(f"text-xs text-[{boot_color}] font-mono")
+                if bootstrap_entry.errors:
+                    ui.label(
+                        f"Bootstrap blocker: {bootstrap_entry.errors[0]}"
+                    ).classes(f"text-xs text-[{COLORS['error']}]")
+                elif bootstrap_entry.warnings:
+                    ui.label(
+                        f"Bootstrap warning: {bootstrap_entry.warnings[0]}"
+                    ).classes(f"text-xs text-[{COLORS['warning']}]")
             if qualification_entry is not None:
                 qual_color = {
                     "pass": COLORS["success"],
@@ -251,6 +306,26 @@ class ResearchHub:
         ok, message, job_id = await self.readiness_service.run_qualification_probe(
             qualification_profile="contract-v1",
             strict=False,
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")
+
+    async def _run_bootstrap_probe(self) -> None:
+        ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
+            bootstrap_profile="contract-v1",
+            strict=False,
+            modules=[],
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")
+
+    async def _run_module_bootstrap(self, module: str) -> None:
+        ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
+            bootstrap_profile="contract-v1",
+            strict=False,
+            modules=[module],
         )
         ui.notify(message, type="positive" if ok else "warning", timeout=2200)
         if ok and job_id:

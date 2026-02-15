@@ -158,6 +158,8 @@ Cross-module ops readiness visibility:
   - `results/readiness/all_modules_readiness.v1.json`
 - Reads canonical all-module qualification report when available:
   - `results/readiness/all_module_qualification.v1.json`
+- Reads canonical all-module bootstrap report when available:
+  - `results/readiness/all_module_bootstrap.v1.json`
 - Falls back to live contract checks when report missing/corrupt
 - Shows actionable pass/warn/fail evidence by module
 - Shows optional dataset burn-in provenance when available:
@@ -169,6 +171,13 @@ Cross-module ops readiness visibility:
   - `qualification_generated_at`
   - `qualification_status`
   - `qualification_profile`
+- Shows bootstrap evidence-generation provenance when available:
+  - `bootstrap_report_present`
+  - `bootstrap_generated_at`
+  - `bootstrap_status`
+  - `bootstrap_profile`
+- Supports `Run bootstrap probe` action (tracked, non-blocking job in Monitor)
+- Supports module-level `Generate Evidence` actions to bootstrap evidence roots on demand
 - Supports `Run qualification probe` action (tracked, non-blocking job in Monitor)
 
 ## Readiness Semantics (Warn-and-Launch)
@@ -183,12 +192,14 @@ Banner wording:
 - `Evidence missing (non-blocking)` means files like prior `training_summary.json` or benchmark outputs were not found yet.
 - `Launch blocked` means the current contract/preflight is invalid and should be fixed before launch.
 - `Qualification blocker` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
+- `Bootstrap blocker` means evidence generation encountered a hard contract write/validation failure.
 
 Each readiness banner includes:
 - Stable issue metadata (`issue_code`, `severity`, `issue_scope`).
 - `Fix now` remediation text and fix options.
 - `What is missing?` evidence gaps or expected evidence root path.
 - `Run contract probe` button to refresh module contract evidence.
+- `Generate Evidence` button to create bounded bootstrap artifacts for the selected module.
 
 ## Architecture
 

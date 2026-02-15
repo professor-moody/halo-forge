@@ -20,6 +20,7 @@ from halo_forge.ops_module_readiness import (
     compute_ops_module_readiness,
     default_output_map,
     load_ops_readiness_report,
+    validate_ops_module,
     write_ops_readiness_report,
 )
 from halo_forge.all_module_readiness import (
@@ -39,9 +40,14 @@ from halo_forge.all_module_qualification import (
     DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE,
     load_all_module_qualification_report,
 )
+from halo_forge.all_module_bootstrap import (
+    DEFAULT_ALL_MODULE_BOOTSTRAP_REPORT_FILE,
+    load_all_module_bootstrap_report,
+)
 from .results_service import get_results_service
 from .launch_context import find_latest_launch_context
 from .qualification_service import get_qualification_service
+from .bootstrap_service import get_bootstrap_service
 from ui.state import state as app_state
 
 
@@ -55,6 +61,7 @@ class OpsReadinessService:
         report_path: Path = DEFAULT_OPS_READINESS_REPORT_FILE,
         all_module_report_path: Path = DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
         qualification_report_path: Path = DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE,
+        bootstrap_report_path: Path = DEFAULT_ALL_MODULE_BOOTSTRAP_REPORT_FILE,
         burnin_report_path: Path = Path("results/readiness/ops_dataset_burnin.v1.json"),
         walkthrough_report_path: Path = Path(
             ".internal_docs/research_testing/walkthroughs/reports/all_module_e2e_walkthrough_report.v1.json"
@@ -64,6 +71,7 @@ class OpsReadinessService:
         self.report_path = report_path
         self.all_module_report_path = all_module_report_path
         self.qualification_report_path = qualification_report_path
+        self.bootstrap_report_path = bootstrap_report_path
         self.burnin_report_path = burnin_report_path
         self.walkthrough_report_path = walkthrough_report_path
         self._cache: Optional[OpsReadinessReport] = None
@@ -75,6 +83,8 @@ class OpsReadinessService:
         self._burnin_cache_time: Optional[datetime] = None
         self._qualification_cache = None
         self._qualification_cache_time: Optional[datetime] = None
+        self._bootstrap_cache = None
+        self._bootstrap_cache_time: Optional[datetime] = None
         self._walkthrough_cache = None
         self._walkthrough_cache_time: Optional[datetime] = None
 
@@ -88,9 +98,10 @@ class OpsReadinessService:
         Resolve output roots using newest evidence first, then static defaults.
 
         Priority:
-        1. Recent parsed results/training/utility artifacts
-        2. Latest launch_context.json discovery
-        3. Static default output map
+        1. Bootstrap report evidence roots (when available)
+        2. Recent parsed results/training/utility artifacts
+        3. Latest launch_context.json discovery
+        4. Static default output map
         """
         if include_all_modules:
             resolved = self._default_all_module_output_map()
@@ -98,6 +109,20 @@ class OpsReadinessService:
         else:
             resolved = self._default_output_map()
             valid_keys = set(OPS_MODULES)
+
+        # Prefer explicit bootstrap evidence roots over static defaults.
+        try:
+            bootstrap_report = self.load_bootstrap_report(force_refresh=force_refresh)
+            for module, entry in bootstrap_report.modules.items():
+                root = str(entry.evidence_root or "").strip()
+                if not root:
+                    continue
+                if module in valid_keys:
+                    resolved[module] = root
+                elif module == "benchmark_non_code" and "benchmark" in valid_keys:
+                    resolved["benchmark"] = root
+        except Exception:
+            pass
 
         try:
             results_service = get_results_service()
@@ -298,6 +323,11 @@ class OpsReadinessService:
         if self.qualification_report_path.is_absolute():
             return self.qualification_report_path
         return self.base_path / self.qualification_report_path
+
+    def _resolve_bootstrap_report_path(self) -> Path:
+        if self.bootstrap_report_path.is_absolute():
+            return self.bootstrap_report_path
+        return self.base_path / self.bootstrap_report_path
 
     def _resolve_walkthrough_report_path(self) -> Path:
         if self.walkthrough_report_path.is_absolute():
@@ -610,6 +640,62 @@ class OpsReadinessService:
             "qualification_report_path": str(self._resolve_qualification_report_path()),
         }
 
+    def load_bootstrap_report(self, force_refresh: bool = False):
+        """Load all-module bootstrap report when present and schema-valid."""
+        if not force_refresh and self._bootstrap_cache and self._bootstrap_cache_time:
+            age = (datetime.now() - self._bootstrap_cache_time).total_seconds()
+            if age < self._cache_ttl_seconds:
+                return self._bootstrap_cache
+
+        report_file = self._resolve_bootstrap_report_path()
+        if not report_file.exists():
+            raise FileNotFoundError(f"All-module bootstrap report not found: {report_file}")
+
+        report = load_all_module_bootstrap_report(report_file)
+        self._bootstrap_cache = report
+        self._bootstrap_cache_time = datetime.now()
+        return report
+
+    def get_bootstrap_provenance(self, force_refresh: bool = False) -> Dict[str, object]:
+        """
+        Return optional bootstrap report provenance for dashboard/research surfaces.
+
+        Keys:
+        - bootstrap_report_present: bool
+        - bootstrap_generated_at: Optional[str]
+        - bootstrap_status: Optional[str]
+        - bootstrap_source: Optional[str]
+        - bootstrap_profile: Optional[str]
+        - bootstrap_report_path: Optional[str]
+        """
+        try:
+            report = self.load_bootstrap_report(force_refresh=force_refresh)
+        except Exception:
+            return {
+                "bootstrap_report_present": False,
+                "bootstrap_generated_at": None,
+                "bootstrap_status": None,
+                "bootstrap_source": None,
+                "bootstrap_profile": None,
+                "bootstrap_report_path": None,
+            }
+
+        statuses = [entry.status for entry in report.modules.values()]
+        overall_status = "pass"
+        if any(status == "fail" for status in statuses):
+            overall_status = "fail"
+        elif any(status == "warn" for status in statuses):
+            overall_status = "warn"
+
+        return {
+            "bootstrap_report_present": True,
+            "bootstrap_generated_at": report.generated_at,
+            "bootstrap_status": overall_status,
+            "bootstrap_source": report.source,
+            "bootstrap_profile": report.profile,
+            "bootstrap_report_path": str(self._resolve_bootstrap_report_path()),
+        }
+
     async def run_qualification_probe(
         self,
         *,
@@ -638,6 +724,37 @@ class OpsReadinessService:
             return True, f"Started qualification probe job {job_id}", job_id
         except Exception as exc:
             return False, f"Qualification probe failed: {exc}", None
+
+    async def run_bootstrap_probe(
+        self,
+        *,
+        bootstrap_profile: str = "contract-v1",
+        strict: bool = False,
+        modules: Optional[list[str]] = None,
+        output_root: str = "results/readiness/bootstrap",
+    ) -> tuple[bool, str, Optional[str]]:
+        """
+        Launch a tracked bootstrap probe job from UI.
+
+        Returns:
+            (success, message, job_id)
+        """
+        try:
+            service = get_bootstrap_service(app_state)
+            job_id = await service.launch_bootstrap(
+                bootstrap_profile=bootstrap_profile,
+                strict=strict,
+                module_filters=modules or [],
+                output_root=output_root,
+                source_ui_page="/research-hub",
+            )
+            self._bootstrap_cache = None
+            self._bootstrap_cache_time = None
+            self._all_module_cache = None
+            self._all_module_cache_time = None
+            return True, f"Started bootstrap probe job {job_id}", job_id
+        except Exception as exc:
+            return False, f"Bootstrap probe failed: {exc}", None
 
     def load_walkthrough_report(self, force_refresh: bool = False):
         """Load internal all-module walkthrough report if present and valid."""

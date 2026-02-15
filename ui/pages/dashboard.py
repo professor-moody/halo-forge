@@ -389,6 +389,7 @@ class Dashboard:
             f'text-xs text-[{COLORS["text_muted"]}]'
         )
         burnin_meta = self.readiness_service.get_burnin_provenance()
+        bootstrap_meta = self.readiness_service.get_bootstrap_provenance()
         qualification_meta = self.readiness_service.get_qualification_provenance()
         if burnin_meta.get("burnin_report_present"):
             burnin_status = str(burnin_meta.get("burnin_status") or "warn")
@@ -399,6 +400,18 @@ class Dashboard:
             ).classes(f'text-xs text-[{burnin_color}]')
         else:
             ui.label("burnin report unavailable (non-blocking)").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
+        if bootstrap_meta.get("bootstrap_report_present"):
+            bootstrap_status = str(bootstrap_meta.get("bootstrap_status") or "warn")
+            bootstrap_color = self._status_color(bootstrap_status)
+            ui.label(
+                f"bootstrap status={bootstrap_status} "
+                f"profile={bootstrap_meta.get('bootstrap_profile')} "
+                f"generated={bootstrap_meta.get('bootstrap_generated_at')}"
+            ).classes(f'text-xs text-[{bootstrap_color}]')
+        else:
+            ui.label("bootstrap report unavailable (non-blocking)").classes(
                 f'text-xs text-[{COLORS["warning"]}]'
             )
         if qualification_meta.get("qualification_report_present"):
@@ -435,6 +448,7 @@ class Dashboard:
                 ui.link('Inference', '/inference').classes(f'text-xs text-[{COLORS["accent"]}]')
                 ui.link('Ops', '/ops-console').classes(f'text-xs text-[{COLORS["accent"]}]')
                 ui.link('Research', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.link('Run Bootstrap', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
 
         for module in (
             "config",

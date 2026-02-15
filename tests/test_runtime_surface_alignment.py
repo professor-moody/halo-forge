@@ -132,9 +132,12 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "all-modules" in cli_source
     assert "walkthroughs" in cli_source
     assert "all-module-qualification" in cli_source
+    assert "all-module-bootstrap" in cli_source
     assert "--burnin-profile" in cli_source
     assert "--profile" in cli_source
     assert "--qualification-profile" in cli_source
+    assert "--bootstrap-profile" in cli_source
+    assert "--output-root" in cli_source
     assert "--module" in cli_source
     assert "--execute" in cli_source
     assert "Routes:" in cli_source
@@ -157,6 +160,7 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "get_walkthrough_provenance" in research_hub_source
     assert "walkthrough report unavailable" in research_hub_source
     assert "Run qualification probe" in research_hub_source
+    assert "Run bootstrap probe" in research_hub_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "QUALIFICATION_JOB_TYPES" in monitor_source

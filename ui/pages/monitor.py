@@ -16,6 +16,7 @@ from ui.state import state, JobState
 from ui.services import (
     TrainingService,
     get_benchmark_service,
+    get_bootstrap_service,
     get_inference_service,
     get_module_ops_service,
     get_qualification_service,
@@ -26,6 +27,7 @@ from ui.services import (
 )
 from ui.components.notifications import (
     notify_training_stopped,
+    notify_job_started,
     notify_job_completed,
     notify_job_failed,
 )
@@ -33,6 +35,7 @@ from ui.components.notifications import (
 CYCLE_BASED_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
 UTILITY_JOB_TYPES = {"config", "data", "info", "plot"}
 QUALIFICATION_JOB_TYPES = {"qualification"}
+BOOTSTRAP_JOB_TYPES = {"bootstrap"}
 
 
 class Monitor:
@@ -48,6 +51,7 @@ class Monitor:
         self.inference_service = get_inference_service(state)
         self.module_ops_service = get_module_ops_service(state)
         self.qualification_service = get_qualification_service(state)
+        self.bootstrap_service = get_bootstrap_service(state)
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
@@ -1041,6 +1045,8 @@ class Monitor:
                 success = await self.module_ops_service.stop_job(self.job.id)
             elif self.job.type in QUALIFICATION_JOB_TYPES:
                 success = await self.qualification_service.stop_job(self.job.id)
+            elif self.job.type in BOOTSTRAP_JOB_TYPES:
+                success = await self.bootstrap_service.stop_job(self.job.id)
             else:
                 success = await self.training_service.stop_job(self.job.id)
             
@@ -1084,6 +1090,12 @@ class Monitor:
                 )
             elif self.job.type in QUALIFICATION_JOB_TYPES:
                 new_job_id = await self.qualification_service.relaunch_from_context(
+                    context_path,
+                    origin_job_id=self.job.id,
+                    source_ui_page="/monitor",
+                )
+            elif self.job.type in BOOTSTRAP_JOB_TYPES:
+                new_job_id = await self.bootstrap_service.relaunch_from_context(
                     context_path,
                     origin_job_id=self.job.id,
                     source_ui_page="/monitor",
@@ -1150,6 +1162,9 @@ class Monitor:
             elif self.job.type in QUALIFICATION_JOB_TYPES:
                 app.storage.user["qualification_clone_payload"] = payload
                 ui.navigate.to("/research-hub")
+            elif self.job.type in BOOTSTRAP_JOB_TYPES:
+                app.storage.user["bootstrap_clone_payload"] = payload
+                ui.navigate.to("/research-hub")
             else:
                 app.storage.user["training_clone_payload"] = payload
                 ui.navigate.to("/training")
@@ -1167,6 +1182,8 @@ class Monitor:
             return self.module_ops_service.get_logs(self.job_id, last_n=1000)
         if self.job.type in QUALIFICATION_JOB_TYPES:
             return self.qualification_service.get_logs(self.job_id, last_n=1000)
+        if self.job.type in BOOTSTRAP_JOB_TYPES:
+            return self.bootstrap_service.get_logs(self.job_id, last_n=1000)
         return self.training_service.get_logs(self.job_id, last_n=1000)
 
     def _copy_artifacts_path(self):

@@ -177,6 +177,7 @@ def test_cli_ui_and_monitor_surfaces_include_qualification_contracts():
     assert "run_all_module_qualification" in cli_source
     assert "--qualification-profile" in cli_source
     assert "--show-fix-commands" in cli_source
+    assert "all-module-bootstrap" in cli_source
 
     service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
     assert "get_qualification_provenance" in service_source

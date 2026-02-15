@@ -16,11 +16,13 @@ from ui.theme import COLORS
 from ui.state import state
 from ui.services import (
     BenchmarkResult,
+    BootstrapReportSummary,
     QualificationReportSummary,
     TrainingRunSummary,
     UtilityRunSummary,
     TrainingService,
     get_benchmark_service,
+    get_bootstrap_service,
     get_module_ops_service,
     get_qualification_service,
     get_results_service,
@@ -39,11 +41,15 @@ class Results:
         self.benchmark_service = get_benchmark_service(state)
         self.module_ops_service = get_module_ops_service(state)
         self.qualification_service = get_qualification_service(state)
+        self.bootstrap_service = get_bootstrap_service(state)
         self.results: list[BenchmarkResult] = self.results_service.list_results(force_refresh=True)
         self.training_runs: list[TrainingRunSummary] = self.results_service.list_training_runs(force_refresh=False)
         self.utility_runs: list[UtilityRunSummary] = self.results_service.list_utility_runs(force_refresh=False)
         self.qualification_reports: list[QualificationReportSummary] = (
             self.results_service.list_qualification_reports(force_refresh=False)
+        )
+        self.bootstrap_reports: list[BootstrapReportSummary] = (
+            self.results_service.list_bootstrap_reports(force_refresh=False)
         )
         self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
         self.sort_by: str = app.storage.user.get("results_sort_by", "timestamp")
@@ -64,6 +70,7 @@ class Results:
                 and not self.training_runs
                 and not self.utility_runs
                 and not self.qualification_reports
+                and not self.bootstrap_reports
             ):
                 self._render_empty_state()
                 return
@@ -102,6 +109,10 @@ class Results:
                 displayed_any = True
                 self._render_qualification_reports_table(self.qualification_reports)
 
+            if self.bootstrap_reports:
+                displayed_any = True
+                self._render_bootstrap_reports_table(self.bootstrap_reports)
+
             if not displayed_any:
                 self._render_empty_state()
 
@@ -117,12 +128,15 @@ class Results:
             latest_timestamp = max(self.utility_runs, key=lambda r: r.timestamp).timestamp
         elif self.qualification_reports:
             latest_timestamp = max(self.qualification_reports, key=lambda r: r.timestamp).timestamp
+        elif self.bootstrap_reports:
+            latest_timestamp = max(self.bootstrap_reports, key=lambda r: r.timestamp).timestamp
 
         with ui.row().classes("w-full gap-4 animate-in"):
             self._stat_card("Total Runs", str(len(self.results)), "analytics")
             self._stat_card("Training Runs", str(len(self.training_runs)), "auto_awesome")
             self._stat_card("Utility Runs", str(len(self.utility_runs)), "terminal")
             self._stat_card("Qualification", str(len(self.qualification_reports)), "fact_check")
+            self._stat_card("Bootstrap", str(len(self.bootstrap_reports)), "build")
             self._stat_card("Unique Models", str(unique_models), "psychology")
             self._stat_card("Latest", latest_timestamp.strftime("%Y-%m-%d") if latest_timestamp else "--", "schedule")
             self._stat_card("Domains", str(len(by_domain)), "dashboard")
@@ -540,6 +554,103 @@ class Results:
                         f'text-xs text-[{COLORS["text_secondary"]}]'
                     )
 
+    def _render_bootstrap_reports_table(self, rows: list[BootstrapReportSummary]):
+        with ui.column().classes(
+            f'w-full gap-3 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+            f'border border-[#2d343c] animate-in'
+        ):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label(f"Bootstrap Reports ({len(rows)})").classes(
+                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                )
+                ui.label("results/readiness/all_module_bootstrap.v1.json").classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+
+            with ui.row().classes(
+                f'w-full items-center gap-3 px-3 py-2 rounded-lg bg-[{COLORS["bg_secondary"]}]'
+            ):
+                ui.label("Status").classes(
+                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Profile").classes(
+                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Source").classes(
+                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Counts").classes(
+                    f'w-36 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Top Error").classes(
+                    f'w-44 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Report").classes(
+                    f'flex-1 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Module Links").classes(
+                    f'w-56 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Actions").classes(
+                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+
+            for report in rows[:20]:
+                status_color = (
+                    COLORS["success"]
+                    if report.status == "pass"
+                    else COLORS["warning"] if report.status == "warn" else COLORS["error"]
+                )
+                with ui.row().classes(
+                    f'w-full items-center gap-3 px-3 py-2 border-b border-[#2d343c] '
+                    f'hover:bg-[{COLORS["bg_hover"]}]'
+                ):
+                    ui.label(report.status.upper()).classes(
+                        f'w-20 text-sm font-semibold text-[{status_color}]'
+                    )
+                    ui.label(report.profile).classes(
+                        f'w-24 text-sm text-[{COLORS["text_secondary"]}]'
+                    )
+                    ui.label(report.source).classes(
+                        f'w-20 text-sm text-[{COLORS["text_secondary"]}]'
+                    )
+                    ui.label(
+                        f"p={report.pass_count} w={report.warn_count} f={report.fail_count}"
+                    ).classes(f'w-36 text-sm font-mono text-[{COLORS["text_muted"]}]')
+                    ui.label(report.top_error or "--").classes(
+                        f'w-44 text-xs font-mono text-[{COLORS["text_muted"]}] truncate'
+                    )
+                    ui.label(str(report.report_path)).classes(
+                        f'flex-1 text-xs text-[{COLORS["text_muted"]}] truncate'
+                    )
+                    with ui.row().classes("w-56 gap-1 flex-wrap"):
+                        modules = report.failed_modules or list(report.module_statuses.keys())[:3]
+                        for module in modules[:4]:
+                            route = self._route_for_module(module)
+                            ui.link(module, route).classes(
+                                f'text-xs text-[{COLORS["accent"]}] hover:underline'
+                            )
+                    with ui.row().classes("w-24 justify-end gap-1"):
+                        if report.has_relaunch_context and report.launch_context_path:
+                            ui.button(
+                                icon="replay",
+                                on_click=lambda r=report: asyncio.create_task(
+                                    self._relaunch_bootstrap_report(r)
+                                ),
+                            ).props("flat round dense").classes(
+                                f'text-[{COLORS["accent"]}]'
+                            ).tooltip("Rerun bootstrap")
+                            ui.button(
+                                icon="content_copy",
+                                on_click=lambda r=report: self._clone_bootstrap_to_form(r),
+                            ).props("flat round dense").classes(
+                                f'text-[{COLORS["text_secondary"]}]'
+                            ).tooltip("Clone to Research Hub")
+                        else:
+                            ui.label("--").classes(
+                                f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
+                            )
+
     def _metric_value(self, result: BenchmarkResult, key: str):
         if key in result.normalized_metrics:
             return result.normalized_metrics.get(key)
@@ -597,6 +708,9 @@ class Results:
         self.training_runs = self.results_service.list_training_runs(force_refresh=True)
         self.utility_runs = self.results_service.list_utility_runs(force_refresh=True)
         self.qualification_reports = self.results_service.list_qualification_reports(
+            force_refresh=True
+        )
+        self.bootstrap_reports = self.results_service.list_bootstrap_reports(
             force_refresh=True
         )
         self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
@@ -665,6 +779,20 @@ class Results:
         except Exception as e:
             ui.notify(f"Qualification relaunch failed: {e}", type="negative")
 
+    async def _relaunch_bootstrap_report(self, report: BootstrapReportSummary):
+        """Relaunch bootstrap run from durable launch context."""
+        if not report.launch_context_path:
+            ui.notify("No launch context found for this bootstrap run", type="warning")
+            return
+        try:
+            new_job_id = await self.bootstrap_service.relaunch_from_context(
+                report.launch_context_path,
+                source_ui_page="/results",
+            )
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            ui.notify(f"Bootstrap relaunch failed: {e}", type="negative")
+
     def _clone_benchmark_to_form(self, result: BenchmarkResult):
         """Clone benchmark launch args into benchmark form."""
         if not result.launch_context_path:
@@ -715,6 +843,23 @@ class Results:
             "args": context.args,
         }
         ui.navigate.to("/ops-console")
+
+    def _clone_bootstrap_to_form(self, report: BootstrapReportSummary):
+        """Clone bootstrap launch args into research hub form."""
+        if not report.launch_context_path:
+            ui.notify("No launch context found for this bootstrap run", type="warning")
+            return
+        try:
+            context = read_launch_context(report.launch_context_path)
+        except Exception as e:
+            ui.notify(f"Launch context is invalid: {e}", type="negative")
+            return
+        app.storage.user["bootstrap_clone_payload"] = {
+            "launch_context_file": str(report.launch_context_path),
+            "job_type": context.job_type,
+            "args": context.args,
+        }
+        ui.navigate.to("/research-hub")
 
     def _domain_title(self, domain: str) -> str:
         if domain == "vlm":

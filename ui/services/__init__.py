@@ -87,6 +87,7 @@ from .results_service import (
     TrainingRunSummary,
     UtilityRunSummary,
     QualificationReportSummary,
+    BootstrapReportSummary,
     get_results_service,
 )
 
@@ -150,6 +151,10 @@ from .module_ops_service import (
 from .qualification_service import (
     QualificationService,
     get_qualification_service,
+)
+from .bootstrap_service import (
+    BootstrapService,
+    get_bootstrap_service,
 )
 
 # Launch contracts
@@ -250,6 +255,7 @@ __all__ = [
     'TrainingRunSummary',
     'UtilityRunSummary',
     'QualificationReportSummary',
+    'BootstrapReportSummary',
     'get_results_service',
     
     # Datasets
@@ -287,6 +293,8 @@ __all__ = [
     'get_module_ops_service',
     'QualificationService',
     'get_qualification_service',
+    'BootstrapService',
+    'get_bootstrap_service',
 
     # Launch contracts
     'LaunchContract',
