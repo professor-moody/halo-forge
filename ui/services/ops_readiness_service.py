@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
+from halo_forge.diagnostics import derive_issue_metadata
 from halo_forge.ops_module_readiness import (
     DEFAULT_OPS_READINESS_REPORT_FILE,
     OPS_MODULES,
@@ -318,10 +319,12 @@ class OpsReadinessService:
             raise FileNotFoundError(f"All-module readiness report not found: {report_file}")
 
         report = load_all_module_readiness_report(report_file)
+        self._normalize_all_module_report(report)
         report = apply_all_module_staleness_policy(
             report,
             stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
         )
+        self._normalize_all_module_report(report)
         self._all_module_cache = report
         self._all_module_cache_time = datetime.now()
         return report
@@ -350,10 +353,12 @@ class OpsReadinessService:
             source="ui_live_compute",
             require_artifacts=False,
         )
+        self._normalize_all_module_report(report)
         report = apply_all_module_staleness_policy(
             report,
             stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
         )
+        self._normalize_all_module_report(report)
         self._all_module_cache = report
         self._all_module_cache_time = datetime.now()
         return report
@@ -429,12 +434,14 @@ class OpsReadinessService:
                 seed=seed,
                 source="ui_live_compute",
             )
+            self._normalize_all_module_report(updated)
             path = self._resolve_all_module_report_path()
             write_all_module_readiness_report(path, updated)
             self._all_module_cache = apply_all_module_staleness_policy(
                 updated,
                 stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
             )
+            self._normalize_all_module_report(self._all_module_cache)
             self._all_module_cache_time = datetime.now()
             return True, f"Wrote contract probe readiness for {module_key} to {path}"
 
@@ -473,6 +480,26 @@ class OpsReadinessService:
             if report.modules[module].status in {"pass", "warn"}:
                 return True
         return False
+
+    def _normalize_all_module_report(self, report: AllModuleReadinessReport) -> None:
+        """Backfill additive diagnostic fields for older report payloads."""
+        for module, entry in report.modules.items():
+            metadata = derive_issue_metadata(
+                module=module,
+                issue_class=str(getattr(entry, "issue_class", "none") or "none"),
+                launch_blocked=bool(getattr(entry, "launch_blocked", False)),
+                errors=list(getattr(entry, "errors", []) or []),
+                warnings=list(getattr(entry, "warnings", []) or []),
+                action_hint=str(getattr(entry, "action_hint", "") or ""),
+                evidence=dict(getattr(entry, "evidence", {}) or {}),
+                last_output_dir=str(getattr(entry, "last_output_dir", "") or ""),
+            )
+            entry.issue_code = str(metadata["issue_code"])
+            entry.issue_scope = str(metadata["issue_scope"])
+            entry.severity = str(metadata["severity"])
+            entry.what_is_missing = [str(v) for v in metadata["what_is_missing"]]
+            entry.fix_now = str(metadata["fix_now"])
+            entry.fix_options = [str(v) for v in metadata["fix_options"]]
 
     def load_burnin_report(self, force_refresh: bool = False):
         """Load dataset burn-in report if present and valid."""
@@ -538,6 +565,7 @@ class OpsReadinessService:
             raise FileNotFoundError(f"All-module qualification report not found: {report_file}")
 
         report = load_all_module_qualification_report(report_file)
+        self._normalize_qualification_report(report)
         self._qualification_cache = report
         self._qualification_cache_time = datetime.now()
         return report
@@ -660,6 +688,30 @@ class OpsReadinessService:
             "walkthrough_profile": getattr(report, "profile", None),
             "walkthrough_status_summary": summary,
         }
+
+    def _normalize_qualification_report(self, report) -> None:
+        """Backfill additive issue metadata for qualification payload compatibility."""
+        for module, entry in report.modules.items():
+            metadata = derive_issue_metadata(
+                module=module,
+                issue_class="preflight_blocker"
+                if bool(getattr(entry, "launch_blocked", False))
+                else "evidence_gap",
+                launch_blocked=bool(getattr(entry, "launch_blocked", False)),
+                errors=list(getattr(entry, "errors", []) or []),
+                warnings=list(getattr(entry, "warnings", []) or []),
+                action_hint="",
+                evidence=dict(getattr(entry, "evidence", {}) or {}),
+                last_output_dir=str(
+                    (getattr(entry, "evidence", {}) or {}).get("output_dir") or ""
+                ),
+            )
+            entry.issue_code = str(metadata["issue_code"])
+            entry.issue_scope = str(metadata["issue_scope"])
+            entry.severity = str(metadata["severity"])
+            entry.what_is_missing = [str(v) for v in metadata["what_is_missing"]]
+            entry.fix_now = str(metadata["fix_now"])
+            entry.fix_options = [str(v) for v in metadata["fix_options"]]
 
 
 _ops_readiness_service: Optional[OpsReadinessService] = None

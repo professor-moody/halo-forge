@@ -472,6 +472,9 @@ class Results:
                 ui.label("Counts").classes(
                     f'w-36 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                 )
+                ui.label("Top Issue").classes(
+                    f'w-44 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
                 ui.label("Report").classes(
                     f'flex-1 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                 )
@@ -504,6 +507,10 @@ class Results:
                     ui.label(
                         f"p={report.pass_count} w={report.warn_count} f={report.fail_count}"
                     ).classes(f'w-36 text-sm font-mono text-[{COLORS["text_muted"]}]')
+                    issue_label = report.top_issue_code or "--"
+                    ui.label(issue_label).classes(
+                        f'w-44 text-xs font-mono text-[{COLORS["text_muted"]}] truncate'
+                    )
                     ui.label(str(report.report_path)).classes(
                         f'flex-1 text-xs text-[{COLORS["text_muted"]}] truncate'
                     )
@@ -528,6 +535,10 @@ class Results:
                             ui.label("--").classes(
                                 f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
                             )
+                if report.top_fix_now:
+                    ui.label(f"Fix now: {report.top_fix_now}").classes(
+                        f'text-xs text-[{COLORS["text_secondary"]}]'
+                    )
 
     def _metric_value(self, result: BenchmarkResult, key: str):
         if key in result.normalized_metrics:

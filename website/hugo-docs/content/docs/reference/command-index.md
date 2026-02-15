@@ -407,6 +407,7 @@ Run pipeline validation tests.
 | `--qualification-profile` | - | string | No | `contract-v1` | Qualification profile (`contract-v1` / `fixture-v1` / `live-local`) for `all-module-qualification` |
 | `--module` | - | string (repeatable) | No | - | Filter module(s) for `all-modules`, `walkthroughs`, or `all-module-qualification` |
 | `--execute` | - | flag | No | false | Execute bounded probes for `walkthroughs` when using `--profile live-local` |
+| `--show-fix-commands` | - | flag | No | false | Emit `ALL_QUAL_FIX` remediation lines for `all-module-qualification` |
 
 **Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite), `ops-e2e` (non-code launch lifecycle reliability), `ops-burnin` (bounded dataset-backed non-code burn-in), `all-modules` (coding + non-coding readiness checks), `walkthroughs` (internal/operator E2E walkthrough contract validation), `all-module-qualification` (explicit bounded lifecycle qualification orchestration)
 
@@ -430,6 +431,7 @@ halo-forge test --level walkthroughs --profile contract-v1 --report-file .intern
 halo-forge test --level walkthroughs --module sft --module raft --profile live-local --execute
 halo-forge test --level all-module-qualification --qualification-profile contract-v1 --report-file results/readiness/all_module_qualification.v1.json
 halo-forge test --level all-module-qualification --qualification-profile fixture-v1 --fixture-pack v1 --compare-baseline --baseline-file tests/baselines/all_module_qualification_baseline.v1.json --strict
+halo-forge test --level all-module-qualification --show-fix-commands
 ```
 
 Equivalent script entrypoint:
@@ -439,6 +441,7 @@ python3 scripts/run_all_module_qualification.py \
   --qualification-profile fixture-v1 \
   --fixture-pack v1 \
   --write-report \
+  --show-fix-commands \
   --report-file results/readiness/all_module_qualification.v1.json
 ```
 
@@ -527,7 +530,7 @@ CI policy:
 
 Readiness interpretation:
 - `WARN` commonly indicates missing historical evidence (for example prior `training_summary.json` or benchmark outputs) and remains non-blocking for UI launches.
-- `FAIL` indicates a contract/preflight issue; check `launch_blocked`, `issue_class`, and `action_hint` in readiness payload entries.
+- `FAIL` indicates a contract/preflight issue; check `launch_blocked`, `issue_code`, `severity`, `what_is_missing`, and `fix_now` in readiness/qualification payload entries.
 
 ---
 

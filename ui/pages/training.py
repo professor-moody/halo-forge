@@ -21,6 +21,7 @@ from ui.services.launch_contracts import (
     UI_DEFERRED_TRAINING_MODES,
 )
 from ui.components.notifications import notify_job_started, notify_job_failed
+from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 from halo_forge.capabilities import check_modality_train_capability
 
 
@@ -1207,59 +1208,14 @@ class Training:
         readiness = report.modules.get(module_key)
         if readiness is None:
             return
-
-        status = readiness.status.lower()
-        if status == "pass":
-            color = COLORS["success"]
-            icon = "check_circle"
-        elif status == "warn":
-            color = COLORS["warning"]
-            icon = "warning"
-        else:
-            color = COLORS["error"]
-            icon = "error"
-
-        with ui.column().classes(
-            f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
-        ):
-            with ui.row().classes('items-center justify-between gap-2'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.icon(icon, size='16px').classes(f'text-[{color}]')
-                    source = f"{report.source}"
-                    if report.stale:
-                        source += " (stale)"
-                    ui.label(
-                        f"All-module readiness {status.upper()} • module={module_key} • source={source}"
-                    ).classes(f'text-xs text-[{color}] font-medium')
-                ui.button(
-                    'Run contract probe',
-                    icon='play_arrow',
-                    on_click=lambda key=module_key: self._run_contract_probe(key),
-                ).props('flat dense size=sm').classes(
-                    f'text-[{COLORS["text_secondary"]}]'
-                )
-            if readiness.errors:
-                if readiness.launch_blocked:
-                    ui.label(f"Launch blocked: {readiness.errors[0]}").classes(
-                        f'text-xs text-[{COLORS["error"]}]'
-                    )
-                else:
-                    ui.label(f"Evidence missing (non-blocking): {readiness.errors[0]}").classes(
-                        f'text-xs text-[{COLORS["warning"]}]'
-                    )
-            elif readiness.warnings:
-                ui.label(f"Evidence missing (non-blocking): {readiness.warnings[0]}").classes(
-                    f'text-xs text-[{COLORS["warning"]}]'
-                )
-            if readiness.action_hint:
-                ui.label(f"Action: {readiness.action_hint}").classes(
-                    f'text-xs text-[{COLORS["text_secondary"]}]'
-                )
-            expected_path = output_map.get(module_key) or readiness.last_output_dir
-            if expected_path:
-                ui.label(f"What is missing? Expected evidence root: {expected_path}").classes(
-                    f'text-xs font-mono text-[{COLORS["text_muted"]}]'
-                )
+        render_readiness_diagnostic_panel(
+            module=module_key,
+            entry=readiness,
+            source=report.source,
+            stale=bool(report.stale),
+            expected_path=str(output_map.get(module_key) or readiness.last_output_dir or ""),
+            on_probe=lambda key=module_key: self._run_contract_probe(key),
+        )
 
     def _run_contract_probe(self, module_key: str) -> None:
         ok, message = self.ops_readiness_service.run_contract_probe(

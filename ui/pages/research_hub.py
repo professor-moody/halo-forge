@@ -12,6 +12,7 @@ from typing import Dict
 from nicegui import ui
 
 from halo_forge.all_module_readiness import ALL_MODULES
+from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 from ui.services import get_ops_readiness_service
 from ui.theme import COLORS
 
@@ -147,9 +148,24 @@ class ResearchHub:
                 burnin_entry = burnin_report.modules[module]
             if qualification_report and module in qualification_report.modules:
                 qualification_entry = qualification_report.modules[module]
-            self._render_module_card(module, report.modules[module], burnin_entry, qualification_entry)
+            self._render_module_card(
+                module,
+                report.modules[module],
+                burnin_entry,
+                qualification_entry,
+                report.source,
+                bool(report.stale),
+            )
 
-    def _render_module_card(self, module: str, entry, burnin_entry=None, qualification_entry=None) -> None:
+    def _render_module_card(
+        self,
+        module: str,
+        entry,
+        burnin_entry=None,
+        qualification_entry=None,
+        source: str = "ui_live_compute",
+        stale: bool = False,
+    ) -> None:
         color = {
             "pass": COLORS["success"],
             "warn": COLORS["warning"],
@@ -213,36 +229,15 @@ class ResearchHub:
                     ui.label(
                         f"Qualification warning: {qualification_entry.warnings[0]}"
                     ).classes(f"text-xs text-[{COLORS['warning']}]")
-
-            if entry.errors:
-                if entry.launch_blocked:
-                    ui.label(f"Launch blocked: {entry.errors[0]}").classes(
-                        f"text-xs text-[{COLORS['error']}]"
-                    )
-                else:
-                    ui.label(f"Evidence missing (non-blocking): {entry.errors[0]}").classes(
-                        f"text-xs text-[{COLORS['warning']}]"
-                    )
-            elif entry.warnings:
-                ui.label(f"Evidence missing (non-blocking): {entry.warnings[0]}").classes(
-                    f"text-xs text-[{COLORS['warning']}]"
-                )
-            else:
-                ui.label("All required contract checks passed.").classes(
-                    f"text-xs text-[{COLORS['success']}]"
-                )
-            if entry.action_hint:
-                ui.label(f"Action: {entry.action_hint}").classes(
-                    f"text-xs text-[{COLORS['text_secondary']}]"
-                )
-
-            if entry.evidence:
-                evidence_preview = ", ".join(
-                    f"{key}={value}" for key, value in list(entry.evidence.items())[:3]
-                )
-                ui.label(f"evidence: {evidence_preview}").classes(
-                    f"text-xs text-[{COLORS['text_muted']}] font-mono"
-                )
+            render_readiness_diagnostic_panel(
+                module=module,
+                entry=entry,
+                source=source,
+                stale=stale,
+                expected_path=str(entry.last_output_dir or ""),
+                on_probe=None,
+                compact=True,
+            )
 
     def _run_contract_probe(self, module: str) -> None:
         ok, message = self.readiness_service.run_contract_probe(

@@ -16,7 +16,7 @@ from ui.services.results_service import ResultsService
 
 
 def test_all_module_readiness_payload_supports_launch_blocking_extensions():
-    """Schema should accept launch_blocked/issue_class/action_hint contract fields."""
+    """Schema should accept launch diagnostics and explainability fields."""
     report = build_all_module_readiness_report(module_entries={}, seed=42, source="script")
     payload = report.to_dict()
     errors = validate_all_module_readiness_payload(payload)
@@ -26,6 +26,11 @@ def test_all_module_readiness_payload_supports_launch_blocking_extensions():
     assert "launch_blocked" in sample
     assert "issue_class" in sample
     assert "action_hint" in sample
+    assert "issue_code" in sample
+    assert "severity" in sample
+    assert "what_is_missing" in sample
+    assert "fix_now" in sample
+    assert "fix_options" in sample
 
 
 def test_non_code_missing_history_is_warn_and_not_launch_blocked_by_default(tmp_path):
@@ -127,13 +132,16 @@ def test_runtime_surface_includes_page_guard_and_non_blocking_copy():
     assert "traceback.print_exc" in page_guard_source
 
     training_source = Path("ui/pages/training.py").read_text(encoding="utf-8")
-    assert "Evidence missing (non-blocking)" in training_source
+    assert "render_readiness_diagnostic_panel" in training_source
     assert "self._render_modality_readiness_banner(modality)" not in training_source
 
     inference_source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
-    assert "Run contract probe" in inference_source
-    assert "Launch blocked:" in inference_source
+    assert "render_readiness_diagnostic_panel" in inference_source
 
     ops_service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
     assert "get_qualification_provenance" in ops_service_source
     assert "run_qualification_probe" in ops_service_source
+
+    diag_source = Path("ui/components/diagnostic_panel.py").read_text(encoding="utf-8")
+    assert "Evidence missing (non-blocking)" in diag_source
+    assert "Launch blocked:" in diag_source

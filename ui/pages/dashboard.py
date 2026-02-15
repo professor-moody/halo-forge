@@ -468,6 +468,10 @@ class Dashboard:
                     ui.label(
                         f"errors={len(entry.errors)} • warnings={len(entry.warnings)}"
                     ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                    if getattr(entry, "issue_code", ""):
+                        ui.label(
+                            f"issue={entry.issue_code} • severity={getattr(entry, 'severity', 'info')}"
+                        ).classes(f'text-xs font-mono text-[{COLORS["text_muted"]}]')
                     if entry.errors:
                         if entry.launch_blocked:
                             ui.label(f"Launch blocked: {entry.errors[0]}").classes(
@@ -481,9 +485,15 @@ class Dashboard:
                         ui.label(f"Evidence missing (non-blocking): {entry.warnings[0]}").classes(
                             f'text-xs text-[{COLORS["warning"]}]'
                         )
-                    if entry.action_hint:
-                        ui.label(f"Action: {entry.action_hint}").classes(
+                    fix_now = getattr(entry, "fix_now", "") or entry.action_hint
+                    if fix_now:
+                        ui.label(f"Fix now: {fix_now}").classes(
                             f'text-xs text-[{COLORS["text_secondary"]}]'
+                        )
+                    missing = list(getattr(entry, "what_is_missing", []) or [])
+                    if missing:
+                        ui.label(f"What is missing? {missing[0]}").classes(
+                            f'text-xs font-mono text-[{COLORS["text_muted"]}]'
                         )
                 ui.label(entry.last_output_dir or "--").classes(
                     f'text-xs font-mono text-[{COLORS["text_muted"]}] max-w-[50%] truncate'

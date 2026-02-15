@@ -21,6 +21,7 @@ from halo_forge.all_module_qualification import (
     compare_qualification_baselines,
     compute_all_module_qualification,
     format_qualification_drift_lines,
+    format_qualification_issue_lines,
     load_qualification_baseline_file,
     validate_qualification_baseline_payload,
     write_all_module_qualification_report,
@@ -126,6 +127,11 @@ def main() -> int:
         action="store_true",
         help="Fail non-zero on module fail status or hard drift",
     )
+    parser.add_argument(
+        "--show-fix-commands",
+        action="store_true",
+        help="Emit ALL_QUAL_FIX lines with suggested remediation commands",
+    )
     args = parser.parse_args()
 
     try:
@@ -170,6 +176,11 @@ def main() -> int:
             f"module={module} status={entry.status} "
             f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
         )
+        for line in format_qualification_issue_lines(
+            entry,
+            show_fix_commands=args.show_fix_commands,
+        ):
+            print(line)
         if entry.status not in ALL_MODULE_QUALIFICATION_STATUSES:
             print(f"ERROR: invalid status for module={module}: {entry.status}")
             return 2

@@ -15,6 +15,12 @@ from halo_forge.all_module_readiness import (
     default_output_map as default_readiness_output_map,
     validate_all_module,
 )
+from halo_forge.diagnostics import (
+    ISSUE_SCOPES,
+    ISSUE_SEVERITIES,
+    derive_issue_metadata,
+    validate_issue_metadata_payload,
+)
 from halo_forge.runtime_determinism import DEFAULT_TRAINING_SEED, normalize_seed
 
 ALL_MODULE_QUALIFICATION_CONTRACT_VERSION = 1
@@ -51,6 +57,13 @@ class AllModuleQualificationResult:
     warnings: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
     rerun_commands: List[str] = field(default_factory=list)
+    launch_blocked: bool = False
+    issue_code: str = "UNKNOWN"
+    issue_scope: str = "module"
+    severity: str = "info"
+    what_is_missing: List[str] = field(default_factory=list)
+    fix_now: str = "No action needed."
+    fix_options: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,11 +79,18 @@ class AllModuleQualificationResult:
             "warnings": list(self.warnings),
             "evidence": dict(self.evidence),
             "rerun_commands": list(self.rerun_commands),
+            "launch_blocked": bool(self.launch_blocked),
+            "issue_code": self.issue_code,
+            "issue_scope": self.issue_scope,
+            "severity": self.severity,
+            "what_is_missing": list(self.what_is_missing),
+            "fix_now": self.fix_now,
+            "fix_options": list(self.fix_options),
         }
 
     @staticmethod
     def from_dict(module: str, payload: Mapping[str, Any]) -> "AllModuleQualificationResult":
-        return AllModuleQualificationResult(
+        result = AllModuleQualificationResult(
             module=module,
             status=str(payload.get("status", "fail")),
             launch_ok=bool(payload.get("launch_ok", False)),
@@ -88,7 +108,18 @@ class AllModuleQualificationResult:
                 else {}
             ),
             rerun_commands=[str(v) for v in payload.get("rerun_commands", []) if v is not None],
+            launch_blocked=bool(payload.get("launch_blocked", False)),
+            issue_code=str(payload.get("issue_code") or "UNKNOWN"),
+            issue_scope=str(payload.get("issue_scope") or "module"),
+            severity=str(payload.get("severity") or "info"),
+            what_is_missing=[
+                str(v) for v in payload.get("what_is_missing", []) if v is not None
+            ],
+            fix_now=str(payload.get("fix_now") or "No action needed."),
+            fix_options=[str(v) for v in payload.get("fix_options", []) if v is not None],
         )
+        _apply_issue_metadata(result)
+        return result
 
 
 @dataclass
@@ -216,6 +247,7 @@ def validate_all_module_qualification_payload(payload: Mapping[str, Any]) -> Lis
             "stop_ok",
             "resume_latest_ok",
             "artifacts_ok",
+            "launch_blocked",
         ):
             if not isinstance(entry.get(field_name), bool):
                 errors.append(f"{field_name} must be boolean for {module}")
@@ -229,6 +261,7 @@ def validate_all_module_qualification_payload(payload: Mapping[str, Any]) -> Lis
         evidence = entry.get("evidence")
         if evidence is not None and not isinstance(evidence, Mapping):
             errors.append(f"evidence must be object for {module}")
+        errors.extend(validate_issue_metadata_payload(entry, module=module))
 
     return errors
 
@@ -258,6 +291,7 @@ def build_all_module_qualification_report(
     for module in ALL_MODULES:
         entry = module_entries.get(module)
         if isinstance(entry, AllModuleQualificationResult):
+            _apply_issue_metadata(entry)
             modules[module] = entry
             continue
         modules[module] = AllModuleQualificationResult(
@@ -275,6 +309,7 @@ def build_all_module_qualification_report(
             evidence={"evaluated": False},
             rerun_commands=[" ".join(_module_command(module, normalized_seed))],
         )
+        _apply_issue_metadata(modules[module])
 
     return AllModuleQualificationReport(
         contract_version=ALL_MODULE_QUALIFICATION_CONTRACT_VERSION,
@@ -391,7 +426,7 @@ def validate_all_module_qualification(
     """Validate one module lifecycle qualification contract."""
     module_key = str(module or "").strip().lower()
     if module_key not in ALL_MODULES:
-        return AllModuleQualificationResult(
+        invalid_result = AllModuleQualificationResult(
             module=module_key,
             status="fail",
             launch_ok=False,
@@ -406,6 +441,8 @@ def validate_all_module_qualification(
             evidence={"output_dir": str(output_dir)},
             rerun_commands=[],
         )
+        _apply_issue_metadata(invalid_result)
+        return invalid_result
 
     readiness_entry: AllModuleReadiness = validate_all_module(
         module=module_key,
@@ -470,7 +507,7 @@ def validate_all_module_qualification(
         evidence["launch_blocked_reason"] = readiness_entry.errors[0]
 
     status = _status(errors, warnings)
-    return AllModuleQualificationResult(
+    result = AllModuleQualificationResult(
         module=module_key,
         status=status,
         launch_ok=launch_ok,
@@ -484,7 +521,10 @@ def validate_all_module_qualification(
         warnings=warnings,
         evidence=evidence,
         rerun_commands=[" ".join(_module_command(module_key, normalize_seed(seed)))],
+        launch_blocked=readiness_entry.launch_blocked,
     )
+    _apply_issue_metadata(result)
+    return result
 
 
 def normalize_all_module_qualification_payload(
@@ -699,6 +739,47 @@ def format_qualification_drift_lines(drifts: Iterable[Mapping[str, Any]]) -> Lis
             f"severity={severity} module={module} field={field_name} "
             f"expected={expected_value} actual={actual_value}"
         )
+    return lines
+
+
+def format_qualification_issue_lines(
+    entry: AllModuleQualificationResult,
+    *,
+    show_fix_commands: bool = False,
+) -> List[str]:
+    """Format module diagnostics into parseable qualification issue lines."""
+    lines: List[str] = []
+    if str(entry.status).lower() == "pass":
+        return lines
+
+    summary = ""
+    if entry.errors:
+        summary = entry.errors[0]
+    elif entry.warnings:
+        summary = entry.warnings[0]
+    elif entry.what_is_missing:
+        summary = entry.what_is_missing[0]
+    else:
+        summary = entry.fix_now
+
+    lines.append(
+        "ALL_QUAL_ISSUE "
+        f"module={entry.module} "
+        f"code={entry.issue_code} "
+        f"scope={entry.issue_scope} "
+        f"severity={entry.severity} "
+        f"blocked={1 if entry.launch_blocked else 0} "
+        f"summary={json.dumps(summary)} "
+        f"fix_now={json.dumps(entry.fix_now)}"
+    )
+
+    if show_fix_commands:
+        for option in entry.fix_options:
+            lines.append(
+                "ALL_QUAL_FIX "
+                f"module={entry.module} "
+                f"command={json.dumps(str(option))}"
+            )
     return lines
 
 
@@ -1026,3 +1107,28 @@ def _normalize_mapping(value: Any) -> Any:
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     return _normalize_text(value)
+
+
+def _apply_issue_metadata(entry: AllModuleQualificationResult) -> None:
+    metadata = derive_issue_metadata(
+        module=entry.module,
+        issue_class="preflight_blocker" if entry.launch_blocked else "evidence_gap",
+        launch_blocked=entry.launch_blocked,
+        errors=entry.errors,
+        warnings=entry.warnings,
+        action_hint="",
+        evidence=entry.evidence,
+        last_output_dir=str(entry.evidence.get("output_dir") or ""),
+    )
+    entry.issue_code = str(metadata["issue_code"])
+    entry.issue_scope = str(metadata["issue_scope"])
+    entry.severity = str(metadata["severity"])
+    entry.what_is_missing = [str(v) for v in metadata["what_is_missing"]]
+    entry.fix_now = str(metadata["fix_now"])
+    merged_options = list(entry.fix_options) + [str(v) for v in metadata["fix_options"]]
+    deduped: List[str] = []
+    for option in merged_options:
+        text = str(option).strip()
+        if text and text not in deduped:
+            deduped.append(text)
+    entry.fix_options = deduped[:5]

@@ -152,6 +152,9 @@ class QualificationReportSummary:
     timestamp: datetime = field(default_factory=datetime.now)
     module_statuses: Dict[str, str] = field(default_factory=dict)
     failed_modules: List[str] = field(default_factory=list)
+    module_issue_codes: Dict[str, str] = field(default_factory=dict)
+    top_issue_code: Optional[str] = None
+    top_fix_now: Optional[str] = None
     launch_context_path: Optional[Path] = None
     has_relaunch_context: bool = False
     raw_data: Dict[str, Any] = field(default_factory=dict)
@@ -759,22 +762,37 @@ class ResultsService:
             return None
 
         module_statuses: Dict[str, str] = {}
+        module_issue_codes: Dict[str, str] = {}
         pass_count = 0
         warn_count = 0
         fail_count = 0
         failed_modules: List[str] = []
+        top_issue_code: Optional[str] = None
+        top_fix_now: Optional[str] = None
         for module, payload in modules.items():
             if not isinstance(payload, dict):
                 continue
             status = str(payload.get("status") or "").strip().lower() or "warn"
+            issue_code = str(payload.get("issue_code") or "").strip()
+            fix_now = str(payload.get("fix_now") or "").strip()
             module_statuses[str(module)] = status
+            if issue_code:
+                module_issue_codes[str(module)] = issue_code
             if status == "pass":
                 pass_count += 1
             elif status == "fail":
                 fail_count += 1
                 failed_modules.append(str(module))
+                if top_issue_code is None and issue_code:
+                    top_issue_code = issue_code
+                if top_fix_now is None and fix_now:
+                    top_fix_now = fix_now
             else:
                 warn_count += 1
+                if top_issue_code is None and issue_code:
+                    top_issue_code = issue_code
+                if top_fix_now is None and fix_now:
+                    top_fix_now = fix_now
 
         overall_status = "pass"
         if fail_count > 0:
@@ -802,6 +820,9 @@ class ResultsService:
             timestamp=timestamp,
             module_statuses=module_statuses,
             failed_modules=failed_modules,
+            module_issue_codes=module_issue_codes,
+            top_issue_code=top_issue_code,
+            top_fix_now=top_fix_now,
             launch_context_path=launch_context_path if launch_context_path.exists() else None,
             has_relaunch_context=launch_context_path.exists(),
             raw_data=data,

@@ -20,6 +20,7 @@ from ui.components.notifications import (
     notify_verification_passed,
     notify_verification_failed,
 )
+from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 
 __all__ = [
     "Sidebar",
@@ -37,4 +38,5 @@ __all__ = [
     "notify_config_saved",
     "notify_verification_passed",
     "notify_verification_failed",
+    "render_readiness_diagnostic_panel",
 ]

@@ -409,6 +409,10 @@ class Monitor:
     
     def _render_metrics_panel(self):
         """Render the current metrics panel with stored references for live updates."""
+        if self.job and self.job.type in QUALIFICATION_JOB_TYPES:
+            self._render_qualification_metrics_panel()
+            return
+
         ui.label('Current Metrics').classes(
             f'text-base font-semibold text-[{COLORS["text_primary"]}]'
         )
@@ -490,6 +494,28 @@ class Monitor:
                 self._resume_label = ui.label(summary["resume"]).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
+
+    def _render_qualification_metrics_panel(self) -> None:
+        """Render qualification-specific metrics summary."""
+        ui.label('Qualification Metrics').classes(
+            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        summary = self._derive_qualification_outcome()
+        with ui.column().classes('w-full gap-3 mt-2'):
+            for label, key in (
+                ("Status", "status"),
+                ("Pass Count", "pass_count"),
+                ("Warn Count", "warn_count"),
+                ("Fail Count", "fail_count"),
+                ("Top Issue", "top_issue"),
+                ("Fix Now", "fix_now"),
+                ("Profile", "profile"),
+            ):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    ui.label(summary[key]).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                    )
 
     def _read_training_summary_payload(self) -> Optional[Dict[str, Any]]:
         """Load canonical training summary payload if present."""
@@ -591,6 +617,71 @@ class Monitor:
                 else (f"cycle {resume_cycle}" if (resume_cycle or 0) > 0 else "none")
             ),
         }
+
+    def _derive_qualification_outcome(self) -> Dict[str, str]:
+        """Compute display-safe qualification summary fields from report payload."""
+        payload = self._read_qualification_report_payload()
+        if not payload:
+            return {
+                "status": "--",
+                "pass_count": "--",
+                "warn_count": "--",
+                "fail_count": "--",
+                "top_issue": "--",
+                "fix_now": "--",
+                "profile": "--",
+            }
+
+        modules = payload.get("modules") if isinstance(payload.get("modules"), dict) else {}
+        pass_count = 0
+        warn_count = 0
+        fail_count = 0
+        top_issue = "--"
+        fix_now = "--"
+        for _, entry in modules.items():
+            if not isinstance(entry, dict):
+                continue
+            status = str(entry.get("status") or "warn").strip().lower()
+            if status == "pass":
+                pass_count += 1
+            elif status == "fail":
+                fail_count += 1
+            else:
+                warn_count += 1
+            if top_issue == "--" and entry.get("issue_code"):
+                top_issue = str(entry.get("issue_code"))
+            if fix_now == "--" and entry.get("fix_now"):
+                fix_now = str(entry.get("fix_now"))
+
+        overall_status = "pass"
+        if fail_count > 0:
+            overall_status = "fail"
+        elif warn_count > 0:
+            overall_status = "warn"
+
+        return {
+            "status": overall_status,
+            "pass_count": str(pass_count),
+            "warn_count": str(warn_count),
+            "fail_count": str(fail_count),
+            "top_issue": top_issue,
+            "fix_now": fix_now,
+            "profile": str(payload.get("profile") or "--"),
+        }
+
+    def _read_qualification_report_payload(self) -> Optional[Dict[str, Any]]:
+        """Load qualification report payload if present in job output."""
+        if not self.job or not self.job.output_dir:
+            return None
+        candidate = Path(self.job.output_dir) / "all_module_qualification.v1.json"
+        if not candidate.exists():
+            return None
+        try:
+            with open(candidate, encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
     
     def _render_log_viewer(self):
         """Render the log viewer section."""

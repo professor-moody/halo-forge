@@ -185,8 +185,9 @@ Banner wording:
 - `Qualification blocker` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
 
 Each readiness banner includes:
-- `Action` hint from readiness diagnostics.
-- `What is missing?` expected evidence root path.
+- Stable issue metadata (`issue_code`, `severity`, `issue_scope`).
+- `Fix now` remediation text and fix options.
+- `What is missing?` evidence gaps or expected evidence root path.
 - `Run contract probe` button to refresh module contract evidence.
 
 ## Architecture

@@ -2325,6 +2325,7 @@ class TestRunner:
         strict: bool = False,
         module_filters: Optional[List[str]] = None,
         fixture_pack: str = "",
+        show_fix_commands: bool = False,
     ) -> bool:
         """Run all-module qualification lifecycle checks with optional drift compare."""
         from halo_forge.all_module_readiness import ALL_MODULES
@@ -2336,6 +2337,7 @@ class TestRunner:
             compare_qualification_baselines,
             compute_all_module_qualification,
             format_qualification_drift_lines,
+            format_qualification_issue_lines,
             load_qualification_baseline_file,
             validate_qualification_baseline_payload,
             write_all_module_qualification_report,
@@ -2426,6 +2428,11 @@ class TestRunner:
                     f"module={module} status={entry.status} "
                     f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
                 )
+                for line in format_qualification_issue_lines(
+                    entry,
+                    show_fix_commands=show_fix_commands,
+                ):
+                    print(line)
                 if entry.status not in ALL_MODULE_QUALIFICATION_STATUSES:
                     raise RuntimeError(
                         f"Invalid qualification status for module={module}: {entry.status}"
@@ -2671,6 +2678,7 @@ def cmd_test(args):
             strict=args.strict,
             module_filters=args.module,
             fixture_pack=args.fixture_pack,
+            show_fix_commands=args.show_fix_commands,
         )
     else:
         print(f"Unknown test level: {args.level}")
@@ -4042,6 +4050,11 @@ def main():
         '--fixture-pack',
         default='',
         help='Fixture pack for ops-e2e/all-modules/all-module-qualification checks (e.g., v1 or tests/fixtures/.../v1)',
+    )
+    test_parser.add_argument(
+        '--show-fix-commands',
+        action='store_true',
+        help='Emit parseable remediation command lines for qualification issues (--level all-module-qualification)',
     )
     test_parser.add_argument(
         '--execute',

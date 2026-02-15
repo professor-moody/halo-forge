@@ -148,6 +148,11 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "UI_ROUTE root=" in app_source
     assert "render_guarded_page" in app_source
 
+    diag_source = Path("ui/components/diagnostic_panel.py").read_text(encoding="utf-8")
+    assert "render_readiness_diagnostic_panel" in diag_source
+    assert "Evidence missing (non-blocking)" in diag_source
+    assert "Launch blocked:" in diag_source
+
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "get_walkthrough_provenance" in research_hub_source
     assert "walkthrough report unavailable" in research_hub_source

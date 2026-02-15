@@ -10,6 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
+from halo_forge.diagnostics import (
+    ISSUE_SCOPES,
+    ISSUE_SEVERITIES,
+    derive_issue_metadata,
+    validate_issue_metadata_payload,
+)
 from halo_forge.modality_readiness import ReadinessCheck
 from halo_forge.ops_module_readiness import (
     OPS_READINESS_STALE_AFTER_SECONDS,
@@ -39,6 +45,8 @@ ALL_MODULE_READINESS_CONTRACT_VERSION = 1
 ALL_MODULE_READINESS_STATUSES = ("pass", "warn", "fail")
 ALL_MODULE_READINESS_SOURCES = ("script", "ui_live_compute", "cli_test")
 ALL_MODULE_ISSUE_CLASSES = ("none", "evidence_gap", "preflight_blocker", "contract_break")
+ALL_MODULE_ISSUE_SCOPES = ISSUE_SCOPES
+ALL_MODULE_ISSUE_SEVERITIES = ISSUE_SEVERITIES
 DEFAULT_ALL_MODULE_READINESS_REPORT_FILE = Path(
     "results/readiness/all_modules_readiness.v1.json"
 )
@@ -66,6 +74,12 @@ class AllModuleReadiness:
     launch_blocked: bool = False
     issue_class: str = "none"
     action_hint: str = ""
+    issue_code: str = "UNKNOWN"
+    issue_scope: str = "module"
+    severity: str = "info"
+    what_is_missing: List[str] = field(default_factory=list)
+    fix_now: str = "No action needed."
+    fix_options: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -80,6 +94,12 @@ class AllModuleReadiness:
             "launch_blocked": bool(self.launch_blocked),
             "issue_class": self.issue_class,
             "action_hint": self.action_hint,
+            "issue_code": self.issue_code,
+            "issue_scope": self.issue_scope,
+            "severity": self.severity,
+            "what_is_missing": list(self.what_is_missing),
+            "fix_now": self.fix_now,
+            "fix_options": list(self.fix_options),
         }
 
     @staticmethod
@@ -95,7 +115,7 @@ class AllModuleReadiness:
                 required=bool(check_payload.get("required", True)),
                 message=str(check_payload.get("message", "")),
             )
-        return AllModuleReadiness(
+        readiness = AllModuleReadiness(
             module=module,
             status=str(payload.get("status", "fail")),
             checks=checks,
@@ -108,7 +128,19 @@ class AllModuleReadiness:
             launch_blocked=bool(payload.get("launch_blocked", False)),
             issue_class=str(payload.get("issue_class") or "none"),
             action_hint=str(payload.get("action_hint") or ""),
+            issue_code=str(payload.get("issue_code") or "UNKNOWN"),
+            issue_scope=str(payload.get("issue_scope") or "module"),
+            severity=str(payload.get("severity") or "info"),
+            what_is_missing=[
+                str(v) for v in payload.get("what_is_missing", []) if v is not None
+            ],
+            fix_now=str(payload.get("fix_now") or "No action needed."),
+            fix_options=[
+                str(v) for v in payload.get("fix_options", []) if v is not None
+            ],
         )
+        _apply_issue_metadata(readiness)
+        return readiness
 
 
 @dataclass
@@ -175,6 +207,7 @@ def build_all_module_readiness_report(
     for module in ALL_MODULES:
         entry = module_entries.get(module)
         if isinstance(entry, AllModuleReadiness):
+            _apply_issue_metadata(entry)
             report_modules[module] = entry
             continue
         report_modules[module] = AllModuleReadiness(
@@ -186,6 +219,7 @@ def build_all_module_readiness_report(
             issue_class="contract_break",
             action_hint="Generate or compute readiness for this module before reviewing status.",
         )
+        _apply_issue_metadata(report_modules[module])
 
     return AllModuleReadinessReport(
         contract_version=ALL_MODULE_READINESS_CONTRACT_VERSION,
@@ -273,6 +307,7 @@ def validate_all_module_readiness_payload(payload: Mapping[str, Any]) -> List[st
         action_hint = entry.get("action_hint")
         if action_hint is not None and not isinstance(action_hint, str):
             errors.append(f"action_hint must be a string for {module}")
+        errors.extend(validate_issue_metadata_payload(entry, module=module))
 
     return errors
 
@@ -336,6 +371,7 @@ def apply_staleness_policy(
             entry.issue_class = "evidence_gap"
             entry.action_hint = "Refresh or regenerate readiness evidence for this module."
             entry.launch_blocked = False
+        _apply_issue_metadata(entry)
     return cloned
 
 
@@ -463,7 +499,7 @@ def validate_all_module(
 
 def _from_ops_module(entry: OpsModuleReadiness, module_name: Optional[str] = None) -> AllModuleReadiness:
     module = module_name or entry.module
-    return AllModuleReadiness(
+    readiness = AllModuleReadiness(
         module=module,
         status=entry.status,
         checks=entry.checks,
@@ -475,6 +511,8 @@ def _from_ops_module(entry: OpsModuleReadiness, module_name: Optional[str] = Non
         issue_class=entry.issue_class,
         action_hint=entry.action_hint,
     )
+    _apply_issue_metadata(readiness)
+    return readiness
 
 
 def _load_cli_source() -> str:
@@ -548,7 +586,7 @@ def _create_readiness(
         warnings=warnings,
         launch_blocked=blocked,
     )
-    return AllModuleReadiness(
+    readiness = AllModuleReadiness(
         module=module,
         status=status,
         checks=checks,
@@ -560,6 +598,27 @@ def _create_readiness(
         issue_class=issue_class or derived_issue,
         action_hint=action_hint or derived_hint,
     )
+    _apply_issue_metadata(readiness)
+    return readiness
+
+
+def _apply_issue_metadata(entry: AllModuleReadiness) -> None:
+    metadata = derive_issue_metadata(
+        module=entry.module,
+        issue_class=entry.issue_class,
+        launch_blocked=entry.launch_blocked,
+        errors=entry.errors,
+        warnings=entry.warnings,
+        action_hint=entry.action_hint,
+        evidence=entry.evidence,
+        last_output_dir=entry.last_output_dir,
+    )
+    entry.issue_code = str(metadata["issue_code"])
+    entry.issue_scope = str(metadata["issue_scope"])
+    entry.severity = str(metadata["severity"])
+    entry.what_is_missing = [str(v) for v in metadata["what_is_missing"]]
+    entry.fix_now = str(metadata["fix_now"])
+    entry.fix_options = [str(v) for v in metadata["fix_options"]]
 
 
 def _validate_config_module(*, output_dir: Path, require_artifacts: bool) -> AllModuleReadiness:

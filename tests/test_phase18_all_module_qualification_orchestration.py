@@ -176,6 +176,7 @@ def test_cli_ui_and_monitor_surfaces_include_qualification_contracts():
     assert "all-module-qualification" in cli_source
     assert "run_all_module_qualification" in cli_source
     assert "--qualification-profile" in cli_source
+    assert "--show-fix-commands" in cli_source
 
     service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
     assert "get_qualification_provenance" in service_source
@@ -199,6 +200,12 @@ def test_cli_ui_and_monitor_surfaces_include_qualification_contracts():
     results_page_source = Path("ui/pages/results.py").read_text(encoding="utf-8")
     assert "_render_qualification_reports_table" in results_page_source
     assert "_relaunch_qualification_report" in results_page_source
+
+    script_source = Path("scripts/run_all_module_qualification.py").read_text(
+        encoding="utf-8"
+    )
+    assert "--show-fix-commands" in script_source
+    assert "format_qualification_issue_lines" in script_source
 
 
 def test_ci_workflows_include_qualification_steps():
