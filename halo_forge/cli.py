@@ -2313,6 +2313,87 @@ class TestRunner:
         self.run_test(f"All-module readiness ({profile})", _run_all_module_checks)
         return self.print_summary()
 
+    def run_walkthroughs(
+        self,
+        *,
+        profile: str = "contract-v1",
+        seed: int = 42,
+        report_file: Optional[str] = None,
+        module_filters: Optional[List[str]] = None,
+        strict: bool = False,
+        execute: bool = False,
+    ) -> bool:
+        """Run all-module walkthrough contracts for local/operator validation."""
+        from halo_forge.all_module_walkthroughs import (
+            DEFAULT_WALKTHROUGH_REPORT_FILE,
+            WALKTHROUGH_PROFILES,
+            compute_walkthroughs,
+            write_walkthrough_report,
+        )
+
+        if profile not in WALKTHROUGH_PROFILES:
+            raise RuntimeError(
+                f"Invalid walkthrough profile: {profile}. "
+                f"Expected one of {', '.join(WALKTHROUGH_PROFILES)}"
+            )
+
+        selected_modules: List[str] = []
+        for module in module_filters or []:
+            key = str(module or "").strip().lower()
+            if not key:
+                continue
+            if key not in (
+                "config",
+                "data",
+                "info",
+                "plot",
+                "sft",
+                "raft",
+                "benchmark_code",
+                "benchmark_non_code",
+                "inference",
+                "vlm",
+                "audio",
+                "reasoning",
+                "agentic",
+                "ui_ops",
+            ):
+                raise RuntimeError(f"Unsupported walkthrough module filter: {key}")
+            if key not in selected_modules:
+                selected_modules.append(key)
+
+        if not selected_modules:
+            selected_modules = []
+
+        def _run_walkthroughs() -> bool:
+            report = compute_walkthroughs(
+                modules=selected_modules,
+                seed=seed,
+                profile=profile,
+                execute=execute,
+            )
+            modules_to_print = selected_modules or list(report.modules.keys())
+            for module in modules_to_print:
+                entry = report.modules[module]
+                print(
+                    "WALKTHROUGH "
+                    f"module={module} status={entry.status} "
+                    f"steps={len(entry.steps)} errors={len(entry.errors)} warnings={len(entry.warnings)}"
+                )
+
+            path = Path(report_file) if report_file else DEFAULT_WALKTHROUGH_REPORT_FILE
+            write_walkthrough_report(path, report)
+            self.log(f"Wrote walkthrough report: {path}", "info")
+
+            if strict:
+                failing = [module for module in modules_to_print if report.modules[module].status == "fail"]
+                if failing:
+                    raise RuntimeError("Failing modules: " + ", ".join(sorted(failing)))
+            return True
+
+        self.run_test(f"All-module walkthroughs ({profile})", _run_walkthroughs)
+        return self.print_summary()
+
 
 def cmd_test(args):
     """Run pipeline validation tests."""
@@ -2372,9 +2453,27 @@ def cmd_test(args):
             strict=args.strict,
             fixture_pack=args.fixture_pack,
         )
+    elif args.level == "walkthroughs":
+        report_file = args.report_file
+        profile = args.profile
+        if report_file == "results/readiness/ops_e2e_launch_reliability.v1.json":
+            report_file = (
+                ".internal_docs/research_testing/walkthroughs/reports/"
+                "all_module_e2e_walkthrough_report.v1.json"
+            )
+        if profile == "bounded-v1":
+            profile = "contract-v1"
+        success = runner.run_walkthroughs(
+            profile=profile,
+            seed=args.seed,
+            report_file=report_file,
+            module_filters=args.module,
+            strict=args.strict,
+            execute=args.execute,
+        )
     else:
         print(f"Unknown test level: {args.level}")
-        print("Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules")
+        print("Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs")
         sys.exit(1)
     
     sys.exit(0 if success else 1)
@@ -3676,8 +3775,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules'],
-                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules')
+                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules', 'walkthroughs'],
+                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -3700,12 +3799,12 @@ def main():
     test_parser.add_argument(
         '--report-file',
         default='results/readiness/ops_e2e_launch_reliability.v1.json',
-        help='Output report path for --level ops-e2e or --level ops-burnin',
+        help='Output report path for --level ops-e2e, ops-burnin, all-modules, or walkthroughs',
     )
     test_parser.add_argument(
         '--strict',
         action='store_true',
-        help='Fail non-zero when module status is fail (used with --level ops-e2e or ops-burnin)',
+        help='Fail non-zero when module status is fail (used with --level ops-e2e, ops-burnin, all-modules, walkthroughs)',
     )
     test_parser.add_argument(
         '--seed',
@@ -3721,18 +3820,23 @@ def main():
     test_parser.add_argument(
         '--profile',
         default='bounded-v1',
-        help='Readiness profile for --level all-modules (default: bounded-v1)',
+        help='Readiness profile for --level all-modules (default: bounded-v1); walkthroughs uses contract-v1/live-local',
     )
     test_parser.add_argument(
         '--module',
         action='append',
         default=[],
-        help='Filter module(s) for --level all-modules (repeatable)',
+        help='Filter module(s) for --level all-modules or walkthroughs (repeatable)',
     )
     test_parser.add_argument(
         '--fixture-pack',
         default='',
         help='Fixture pack for ops-e2e/all-modules checks (e.g., v1 or tests/fixtures/.../v1)',
+    )
+    test_parser.add_argument(
+        '--execute',
+        action='store_true',
+        help='Execute bounded command probes (used with --level walkthroughs and profile=live-local)',
     )
     
     # ui command - web interface

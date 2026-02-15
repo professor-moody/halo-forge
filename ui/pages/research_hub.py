@@ -66,6 +66,7 @@ class ResearchHub:
     def _render_content(self, force_refresh: bool) -> None:
         report = self.readiness_service.get_effective_all_module_readiness(force_refresh=force_refresh)
         burnin_meta = self.readiness_service.get_burnin_provenance(force_refresh=force_refresh)
+        walkthrough_meta = self.readiness_service.get_walkthrough_provenance(force_refresh=force_refresh)
         burnin_report = None
         if burnin_meta.get("burnin_report_present"):
             try:
@@ -91,6 +92,20 @@ class ResearchHub:
                 ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
             else:
                 ui.label("burnin report unavailable (non-blocking)").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
+                )
+            if walkthrough_meta.get("walkthrough_report_present"):
+                summary = walkthrough_meta.get("walkthrough_status_summary") or {}
+                ui.label(
+                    "walkthrough "
+                    f"profile={walkthrough_meta.get('walkthrough_profile')} "
+                    f"generated_at={walkthrough_meta.get('walkthrough_generated_at')} "
+                    f"pass={summary.get('pass', 0)} "
+                    f"warn={summary.get('warn', 0)} "
+                    f"fail={summary.get('fail', 0)}"
+                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+            else:
+                ui.label("walkthrough report unavailable (internal/non-blocking)").classes(
                     f"text-xs text-[{COLORS['warning']}]"
                 )
             ui.label(

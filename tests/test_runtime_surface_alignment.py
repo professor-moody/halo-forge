@@ -130,9 +130,11 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "ui_parser.set_defaults(open_browser=False)" in cli_source
     assert "ops-burnin" in cli_source
     assert "all-modules" in cli_source
+    assert "walkthroughs" in cli_source
     assert "--burnin-profile" in cli_source
     assert "--profile" in cli_source
     assert "--module" in cli_source
+    assert "--execute" in cli_source
     assert "Routes:" in cli_source
     assert "/training" in cli_source
     assert "/benchmark" in cli_source
@@ -142,3 +144,7 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "show=open_browser" in app_source
     assert "UI_START base_url=" in app_source
     assert "UI_ROUTE root=" in app_source
+
+    research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
+    assert "get_walkthrough_provenance" in research_hub_source
+    assert "walkthrough report unavailable" in research_hub_source

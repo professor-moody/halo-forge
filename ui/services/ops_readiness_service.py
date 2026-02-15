@@ -39,11 +39,15 @@ class OpsReadinessService:
         report_path: Path = DEFAULT_OPS_READINESS_REPORT_FILE,
         all_module_report_path: Path = DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
         burnin_report_path: Path = Path("results/readiness/ops_dataset_burnin.v1.json"),
+        walkthrough_report_path: Path = Path(
+            ".internal_docs/research_testing/walkthroughs/reports/all_module_e2e_walkthrough_report.v1.json"
+        ),
     ):
         self.base_path = base_path or Path.cwd()
         self.report_path = report_path
         self.all_module_report_path = all_module_report_path
         self.burnin_report_path = burnin_report_path
+        self.walkthrough_report_path = walkthrough_report_path
         self._cache: Optional[OpsReadinessReport] = None
         self._cache_time: Optional[datetime] = None
         self._cache_ttl_seconds = 30
@@ -51,6 +55,8 @@ class OpsReadinessService:
         self._all_module_cache_time: Optional[datetime] = None
         self._burnin_cache = None
         self._burnin_cache_time: Optional[datetime] = None
+        self._walkthrough_cache = None
+        self._walkthrough_cache_time: Optional[datetime] = None
 
     def load_readiness_report(self, force_refresh: bool = False) -> OpsReadinessReport:
         """Load canonical ops readiness report from disk."""
@@ -144,6 +150,11 @@ class OpsReadinessService:
         if self.burnin_report_path.is_absolute():
             return self.burnin_report_path
         return self.base_path / self.burnin_report_path
+
+    def _resolve_walkthrough_report_path(self) -> Path:
+        if self.walkthrough_report_path.is_absolute():
+            return self.walkthrough_report_path
+        return self.base_path / self.walkthrough_report_path
 
     def load_all_module_readiness_report(
         self,
@@ -277,6 +288,56 @@ class OpsReadinessService:
             "burnin_generated_at": report.generated_at,
             "burnin_status": overall_status,
             "burnin_source": report.source,
+        }
+
+    def load_walkthrough_report(self, force_refresh: bool = False):
+        """Load internal all-module walkthrough report if present and valid."""
+        from halo_forge.all_module_walkthroughs import load_walkthrough_report
+
+        if not force_refresh and self._walkthrough_cache and self._walkthrough_cache_time:
+            age = (datetime.now() - self._walkthrough_cache_time).total_seconds()
+            if age < self._cache_ttl_seconds:
+                return self._walkthrough_cache
+
+        report_file = self._resolve_walkthrough_report_path()
+        if not report_file.exists():
+            raise FileNotFoundError(f"Walkthrough report not found: {report_file}")
+
+        report = load_walkthrough_report(report_file)
+        self._walkthrough_cache = report
+        self._walkthrough_cache_time = datetime.now()
+        return report
+
+    def get_walkthrough_provenance(self, force_refresh: bool = False) -> Dict[str, object]:
+        """
+        Return optional internal walkthrough report metadata for UI read-only surfacing.
+
+        Keys:
+        - walkthrough_report_present: bool
+        - walkthrough_generated_at: Optional[str]
+        - walkthrough_profile: Optional[str]
+        - walkthrough_status_summary: Optional[dict[str, int]]
+        """
+        try:
+            report = self.load_walkthrough_report(force_refresh=force_refresh)
+        except Exception:
+            return {
+                "walkthrough_report_present": False,
+                "walkthrough_generated_at": None,
+                "walkthrough_profile": None,
+                "walkthrough_status_summary": None,
+            }
+
+        summary = {"pass": 0, "warn": 0, "fail": 0}
+        for entry in report.modules.values():
+            status = str(entry.status).lower()
+            if status in summary:
+                summary[status] += 1
+        return {
+            "walkthrough_report_present": True,
+            "walkthrough_generated_at": getattr(report, "generated_at", None),
+            "walkthrough_profile": getattr(report, "profile", None),
+            "walkthrough_status_summary": summary,
         }
 
 

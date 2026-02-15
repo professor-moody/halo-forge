@@ -82,6 +82,11 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "--fixture-pack v1" in nightly_all_modules_content
     assert "--strict" in nightly_all_modules_content
 
+    # Phase 7K walkthroughs are local/operator flows only; no CI gating changes.
+    assert "run_all_module_walkthroughs.py" not in content
+    assert not Path(".github/workflows/nightly_all_module_walkthroughs.yml").exists()
+    assert not Path(".github/workflows/nightly_walkthroughs.yml").exists()
+
 
 def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():
     """Heavy modality tests should skip cleanly when torch/numpy are unavailable."""
