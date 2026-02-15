@@ -395,19 +395,20 @@ Run pipeline validation tests.
 | `--level` | `-l` | string | No | `standard` | Test level |
 | `--model` | `-m` | string | No | `Qwen/Qwen2.5-Coder-0.5B` | Model for testing |
 | `--verbose` | `-v` | flag | No | false | Verbose output |
-| `--baseline-file` | - | path | No | `tests/baselines/modality_runtime_baseline.v1.json` | Baseline JSON path (`modality` or `ops-burnin`) |
-| `--write-baseline` | - | flag | No | false | Write/overwrite baseline (`modality` or `ops-burnin`) |
+| `--baseline-file` | - | path | No | `tests/baselines/modality_runtime_baseline.v1.json` | Baseline JSON path (`modality` / `ops-burnin` / `all-module-qualification`) |
+| `--write-baseline` | - | flag | No | false | Write/overwrite baseline (`modality` / `ops-burnin` / `all-module-qualification`) |
 | `--compare-baseline` | - | flag | No | false | Compare run to baseline and fail on hard drift |
-| `--report-file` | - | path | No | `results/readiness/ops_e2e_launch_reliability.v1.json` | Report output path (`ops-e2e` / `ops-burnin` / `all-modules` / `walkthroughs`) |
-| `--strict` | - | flag | No | false | Fail on `status=fail` modules (`ops-e2e` / `ops-burnin` / `all-modules` / `walkthroughs`) |
-| `--seed` | - | int | No | `42` | Deterministic seed (`ops-e2e` / `ops-burnin` / `all-modules` / `walkthroughs`) |
-| `--fixture-pack` | - | string | No | - | Fixture pack (`v1`) or custom path (`ops-e2e` / `all-modules` level) |
+| `--report-file` | - | path | No | `results/readiness/ops_e2e_launch_reliability.v1.json` | Report output path (`ops-e2e` / `ops-burnin` / `all-modules` / `walkthroughs` / `all-module-qualification`) |
+| `--strict` | - | flag | No | false | Fail on `status=fail` modules (`ops-e2e` / `ops-burnin` / `all-modules` / `walkthroughs` / `all-module-qualification`) |
+| `--seed` | - | int | No | `42` | Deterministic seed (`ops-e2e` / `ops-burnin` / `all-modules` / `walkthroughs` / `all-module-qualification`) |
+| `--fixture-pack` | - | string | No | - | Fixture pack (`v1`) or custom path (`ops-e2e` / `all-modules` / `all-module-qualification` level) |
 | `--burnin-profile` | - | string | No | `tiny-v1` | Dataset-backed burn-in profile (`ops-burnin` level) |
 | `--profile` | - | string | No | `bounded-v1` | Readiness profile (`all-modules` level) or walkthrough profile (`contract-v1`/`live-local`) |
-| `--module` | - | string (repeatable) | No | - | Filter module(s) for `all-modules` or `walkthroughs` |
+| `--qualification-profile` | - | string | No | `contract-v1` | Qualification profile (`contract-v1` / `fixture-v1` / `live-local`) for `all-module-qualification` |
+| `--module` | - | string (repeatable) | No | - | Filter module(s) for `all-modules`, `walkthroughs`, or `all-module-qualification` |
 | `--execute` | - | flag | No | false | Execute bounded probes for `walkthroughs` when using `--profile live-local` |
 
-**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite), `ops-e2e` (non-code launch lifecycle reliability), `ops-burnin` (bounded dataset-backed non-code burn-in), `all-modules` (coding + non-coding parity checks), `walkthroughs` (internal/operator E2E walkthrough contract validation)
+**Level choices:** `smoke` (no GPU), `standard` (with GPU), `full` (with training), `modality` (deterministic modality fixture + smoke suite), `ops-e2e` (non-code launch lifecycle reliability), `ops-burnin` (bounded dataset-backed non-code burn-in), `all-modules` (coding + non-coding readiness checks), `walkthroughs` (internal/operator E2E walkthrough contract validation), `all-module-qualification` (explicit bounded lifecycle qualification orchestration)
 
 Baseline drift checks validate runtime contract stability, not model-quality promotion thresholds.
 
@@ -427,6 +428,18 @@ halo-forge test --level all-modules --fixture-pack v1 --strict
 halo-forge test --level all-modules --module sft --module raft --strict
 halo-forge test --level walkthroughs --profile contract-v1 --report-file .internal_docs/research_testing/walkthroughs/reports/all_module_e2e_walkthrough_report.v1.json
 halo-forge test --level walkthroughs --module sft --module raft --profile live-local --execute
+halo-forge test --level all-module-qualification --qualification-profile contract-v1 --report-file results/readiness/all_module_qualification.v1.json
+halo-forge test --level all-module-qualification --qualification-profile fixture-v1 --fixture-pack v1 --compare-baseline --baseline-file tests/baselines/all_module_qualification_baseline.v1.json --strict
+```
+
+Equivalent script entrypoint:
+
+```bash
+python3 scripts/run_all_module_qualification.py \
+  --qualification-profile fixture-v1 \
+  --fixture-pack v1 \
+  --write-report \
+  --report-file results/readiness/all_module_qualification.v1.json
 ```
 
 Non-code modality UI readiness reports (contract-only) can be generated with:

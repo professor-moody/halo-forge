@@ -137,6 +137,26 @@ class UtilityRunSummary:
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class QualificationReportSummary:
+    """Normalized all-module qualification report entry."""
+
+    id: str
+    report_path: Path
+    profile: str
+    source: str
+    status: str
+    pass_count: int
+    warn_count: int
+    fail_count: int
+    timestamp: datetime = field(default_factory=datetime.now)
+    module_statuses: Dict[str, str] = field(default_factory=dict)
+    failed_modules: List[str] = field(default_factory=list)
+    launch_context_path: Optional[Path] = None
+    has_relaunch_context: bool = False
+    raw_data: Dict[str, Any] = field(default_factory=dict)
+
+
 class ResultsService:
     """Authoritative results ingestion/parsing and aggregation service."""
 
@@ -152,6 +172,10 @@ class ResultsService:
     ]
     UTILITY_DIRS = [
         Path("results/ops"),
+    ]
+    QUALIFICATION_DIRS = [
+        Path("results/readiness"),
+        Path("results/readiness/qualification"),
     ]
 
     DOMAIN_KEYWORDS = {
@@ -187,6 +211,8 @@ class ResultsService:
         self._training_cache_time: Optional[datetime] = None
         self._utility_cache: List[UtilityRunSummary] = []
         self._utility_cache_time: Optional[datetime] = None
+        self._qualification_cache: List[QualificationReportSummary] = []
+        self._qualification_cache_time: Optional[datetime] = None
         self._cache_ttl = 30  # seconds
 
     def scan_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
@@ -298,6 +324,43 @@ class ResultsService:
     def get_recent_utility_runs(self, n: int = 10) -> List[UtilityRunSummary]:
         """Return newest utility module runs."""
         return self.list_utility_runs()[:n]
+
+    def list_qualification_reports(
+        self,
+        force_refresh: bool = False,
+    ) -> List[QualificationReportSummary]:
+        """Scan canonical qualification report artifacts."""
+        if not force_refresh and self._qualification_cache_time:
+            age = (datetime.now() - self._qualification_cache_time).total_seconds()
+            if age < self._cache_ttl:
+                return self._qualification_cache
+
+        reports: List[QualificationReportSummary] = []
+        seen_files: set[Path] = set()
+
+        for qualification_dir in self.QUALIFICATION_DIRS:
+            full_path = self.base_path / qualification_dir
+            if not full_path.exists():
+                continue
+            for json_file in full_path.glob("**/all_module_qualification.v1.json"):
+                if json_file in seen_files:
+                    continue
+                seen_files.add(json_file)
+                try:
+                    parsed = self._parse_qualification_report_file(json_file)
+                    if parsed:
+                        reports.append(parsed)
+                except Exception as e:
+                    print(f"[ResultsService] Failed to parse qualification report {json_file}: {e}")
+
+        reports.sort(key=lambda report: report.timestamp, reverse=True)
+        self._qualification_cache = reports
+        self._qualification_cache_time = datetime.now()
+        return reports
+
+    def get_recent_qualification_reports(self, n: int = 10) -> List[QualificationReportSummary]:
+        """Return newest qualification report artifacts."""
+        return self.list_qualification_reports()[:n]
 
     def get_dashboard_training_summary(self, max_runs: int = 3) -> Dict[str, Any]:
         """Build chart-ready training loss series from canonical training summaries."""
@@ -682,6 +745,65 @@ class ResultsService:
             launch_context_path=launch_context_path if launch_context_path.exists() else None,
             has_relaunch_context=launch_context_path.exists(),
             error_message=str(data.get("error_message")) if data.get("error_message") else None,
+            raw_data=data,
+        )
+
+    def _parse_qualification_report_file(self, path: Path) -> Optional[QualificationReportSummary]:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+
+        modules = data.get("modules")
+        if not isinstance(modules, dict):
+            return None
+
+        module_statuses: Dict[str, str] = {}
+        pass_count = 0
+        warn_count = 0
+        fail_count = 0
+        failed_modules: List[str] = []
+        for module, payload in modules.items():
+            if not isinstance(payload, dict):
+                continue
+            status = str(payload.get("status") or "").strip().lower() or "warn"
+            module_statuses[str(module)] = status
+            if status == "pass":
+                pass_count += 1
+            elif status == "fail":
+                fail_count += 1
+                failed_modules.append(str(module))
+            else:
+                warn_count += 1
+
+        overall_status = "pass"
+        if fail_count > 0:
+            overall_status = "fail"
+        elif warn_count > 0:
+            overall_status = "warn"
+
+        timestamp = self._parse_timestamp(data, path)
+        launch_context_path = path.parent / "launch_context.json"
+
+        try:
+            relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
+        except Exception:
+            relative_id = path.as_posix()
+
+        return QualificationReportSummary(
+            id=relative_id.replace("/", "_"),
+            report_path=path,
+            profile=str(data.get("profile") or "contract-v1"),
+            source=str(data.get("source") or "script"),
+            status=overall_status,
+            pass_count=pass_count,
+            warn_count=warn_count,
+            fail_count=fail_count,
+            timestamp=timestamp,
+            module_statuses=module_statuses,
+            failed_modules=failed_modules,
+            launch_context_path=launch_context_path if launch_context_path.exists() else None,
+            has_relaunch_context=launch_context_path.exists(),
             raw_data=data,
         )
 

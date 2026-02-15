@@ -86,6 +86,7 @@ from .results_service import (
     BenchmarkResult,
     TrainingRunSummary,
     UtilityRunSummary,
+    QualificationReportSummary,
     get_results_service,
 )
 
@@ -145,6 +146,10 @@ from .inference_service import (
 from .module_ops_service import (
     ModuleOpsService,
     get_module_ops_service,
+)
+from .qualification_service import (
+    QualificationService,
+    get_qualification_service,
 )
 
 # Launch contracts
@@ -244,6 +249,7 @@ __all__ = [
     'BenchmarkResult',
     'TrainingRunSummary',
     'UtilityRunSummary',
+    'QualificationReportSummary',
     'get_results_service',
     
     # Datasets
@@ -279,6 +285,8 @@ __all__ = [
     'get_inference_service',
     'ModuleOpsService',
     'get_module_ops_service',
+    'QualificationService',
+    'get_qualification_service',
 
     # Launch contracts
     'LaunchContract',

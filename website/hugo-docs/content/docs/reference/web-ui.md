@@ -156,12 +156,20 @@ Cross-module ops readiness visibility:
 - Reads canonical ops readiness report when available
 - Reads canonical all-module readiness report when available:
   - `results/readiness/all_modules_readiness.v1.json`
+- Reads canonical all-module qualification report when available:
+  - `results/readiness/all_module_qualification.v1.json`
 - Falls back to live contract checks when report missing/corrupt
 - Shows actionable pass/warn/fail evidence by module
 - Shows optional dataset burn-in provenance when available:
   - `burnin_report_present`
   - `burnin_generated_at`
   - `burnin_status`
+- Shows qualification lifecycle provenance when available:
+  - `qualification_report_present`
+  - `qualification_generated_at`
+  - `qualification_status`
+  - `qualification_profile`
+- Supports `Run qualification probe` action (tracked, non-blocking job in Monitor)
 
 ## Readiness Semantics (Warn-and-Launch)
 
@@ -174,6 +182,7 @@ UI readiness is contract-based and **does not block launches** for missing histo
 Banner wording:
 - `Evidence missing (non-blocking)` means files like prior `training_summary.json` or benchmark outputs were not found yet.
 - `Launch blocked` means the current contract/preflight is invalid and should be fixed before launch.
+- `Qualification blocker` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
 
 Each readiness banner includes:
 - `Action` hint from readiness diagnostics.
@@ -300,6 +309,18 @@ python3 scripts/run_all_module_matrix.py \
   --fixture-pack v1 \
   --write-report \
   --report-file results/readiness/all_modules_readiness.v1.json
+```
+
+### All-module qualification unavailable
+
+If qualification status is unavailable in Dashboard or Research Hub, generate the canonical qualification report:
+
+```bash
+python3 scripts/run_all_module_qualification.py \
+  --qualification-profile fixture-v1 \
+  --fixture-pack v1 \
+  --write-report \
+  --report-file results/readiness/all_module_qualification.v1.json
 ```
 
 ### Duration/Progress not updating

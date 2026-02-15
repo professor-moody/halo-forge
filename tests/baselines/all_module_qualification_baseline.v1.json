@@ -1,0 +1,375 @@
+{
+  "contract_version": 1,
+  "generator_version": "phase7m.v1",
+  "modules": {
+    "agentic": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "checkpoint_cycle": 0,
+        "failure_reason": null,
+        "final_model": "<repo_root>/tests/fixtures/all_modules/v1/agentic/final_model",
+        "latest_checkpoint": "<repo_root>/tests/fixtures/all_modules/v1/agentic/latest_checkpoint.json",
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/agentic/launch_context.json",
+        "launch_context_contract_version": 1,
+        "launch_context_job_type": "agentic",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/agentic",
+        "profile": "fixture-v1",
+        "run_id": "agentic-fixture-run",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/agentic/training_summary.json",
+        "weights_updated": true
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge agentic train --dry-run --dataset xlam --seed 42"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": true,
+      "status": "warn",
+      "stop_ok": true,
+      "warnings": [
+        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/agentic/final_model"
+      ]
+    },
+    "audio": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "checkpoint_cycle": 0,
+        "failure_reason": null,
+        "final_model": "<repo_root>/tests/fixtures/all_modules/v1/audio/final_model",
+        "latest_checkpoint": "<repo_root>/tests/fixtures/all_modules/v1/audio/latest_checkpoint.json",
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/audio/launch_context.json",
+        "launch_context_contract_version": 1,
+        "launch_context_job_type": "audio",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/audio",
+        "profile": "fixture-v1",
+        "run_id": "audio-fixture-run",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/audio/training_summary.json",
+        "weights_updated": true
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge audio train --dry-run --dataset librispeech --seed 42"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": true,
+      "status": "warn",
+      "stop_ok": true,
+      "warnings": [
+        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/audio/final_model"
+      ]
+    },
+    "benchmark_code": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "benchmark_file_count": 1,
+        "benchmark_files": [
+          "<repo_root>/tests/fixtures/all_modules/v1/benchmark_code/humaneval-fixture/benchmark.json"
+        ],
+        "code_benchmark_file_count": 1,
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/benchmark_code",
+        "profile": "fixture-v1"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge benchmark eval --benchmark humaneval --limit 5"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "benchmark_non_code": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "benchmark_file_count": 1,
+        "benchmark_files": [
+          "<repo_root>/tests/fixtures/all_modules/v1/benchmark_non_code/reasoning-fixture/benchmark.json"
+        ],
+        "domains_detected": [
+          "reasoning"
+        ],
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/benchmark_non_code",
+        "parse_errors": 0,
+        "profile": "fixture-v1"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge reasoning benchmark --dataset gsm8k --limit 20"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "config": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "config_file_count": 1,
+        "config_files": [
+          "<repo_root>/tests/fixtures/all_modules/v1/config/base.yaml"
+        ],
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/config",
+        "profile": "fixture-v1"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge config validate configs/sft_example.yaml"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "data": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "jsonl_examples": [
+          "<repo_root>/tests/fixtures/all_modules/v1/data/sample.jsonl"
+        ],
+        "jsonl_file_count": 1,
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/data",
+        "profile": "fixture-v1"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge data prepare --list"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "inference": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "has_optimized_artifact": false,
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/inference/launch_context.json",
+        "launch_context_service": "inference",
+        "model_gguf": "<repo_root>/tests/fixtures/all_modules/v1/inference/model.gguf",
+        "model_onnx": "<repo_root>/tests/fixtures/all_modules/v1/inference/model.onnx",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/inference",
+        "profile": "fixture-v1",
+        "quantized_dir": "<repo_root>/tests/fixtures/all_modules/v1/inference/quantized"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge inference optimize --dry-run --model Qwen/Qwen2.5-Coder-3B"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "warn",
+      "stop_ok": true,
+      "warnings": [
+        "no optimized inference artifacts detected (quantized/, model.gguf, model.onnx)"
+      ]
+    },
+    "info": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "hardware_snapshot": "<repo_root>/tests/fixtures/all_modules/v1/info/hardware_snapshot.json",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/info",
+        "profile": "fixture-v1"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge info"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "plot": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "chart_file_count": 1,
+        "chart_files": [
+          "<repo_root>/tests/fixtures/all_modules/v1/plot/training_loss.png"
+        ],
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/plot",
+        "profile": "fixture-v1"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge plot benchmarks results/benchmarks"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "raft": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "latest_checkpoint": "<repo_root>/tests/fixtures/all_modules/v1/raft/latest_checkpoint.json",
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/raft/launch_context.json",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/raft",
+        "profile": "fixture-v1",
+        "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/raft/training_summary.json"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge raft train --dry-run --model Qwen/Qwen2.5-Coder-3B --prompts data/rlvr/humaneval_prompts.jsonl --seed 42"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": true,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "reasoning": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "checkpoint_cycle": 0,
+        "failure_reason": null,
+        "final_model": "<repo_root>/tests/fixtures/all_modules/v1/reasoning/final_model",
+        "latest_checkpoint": "<repo_root>/tests/fixtures/all_modules/v1/reasoning/latest_checkpoint.json",
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/reasoning/launch_context.json",
+        "launch_context_contract_version": 1,
+        "launch_context_job_type": "reasoning",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/reasoning",
+        "profile": "fixture-v1",
+        "run_id": "reasoning-fixture-run",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/reasoning/training_summary.json",
+        "weights_updated": true
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge reasoning train --dry-run --dataset gsm8k --seed 42"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": true,
+      "status": "warn",
+      "stop_ok": true,
+      "warnings": [
+        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/reasoning/final_model"
+      ]
+    },
+    "sft": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/sft/launch_context.json",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/sft",
+        "profile": "fixture-v1",
+        "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/sft/training_summary.json"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge sft train --dry-run --model Qwen/Qwen2.5-Coder-3B --dataset codealpaca"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "ui_ops": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "file_app": "<repo_root>/ui/app.py",
+        "file_benchmark_service": "<repo_root>/ui/services/benchmark_service.py",
+        "file_inference_service": "<repo_root>/ui/services/inference_service.py",
+        "file_ops_readiness_service": "<repo_root>/ui/services/ops_readiness_service.py",
+        "file_sidebar": "<repo_root>/ui/components/sidebar.py",
+        "output_dir": "<repo_root>",
+        "profile": "fixture-v1",
+        "repo_root": "<repo_root>"
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge ui --no-browser"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": false,
+      "status": "pass",
+      "stop_ok": true,
+      "warnings": []
+    },
+    "vlm": {
+      "artifacts_ok": true,
+      "errors": [],
+      "evidence": {
+        "checkpoint_cycle": 0,
+        "failure_reason": null,
+        "final_model": "<repo_root>/tests/fixtures/all_modules/v1/vlm/final_model",
+        "latest_checkpoint": "<repo_root>/tests/fixtures/all_modules/v1/vlm/latest_checkpoint.json",
+        "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/vlm/launch_context.json",
+        "launch_context_contract_version": 1,
+        "launch_context_job_type": "vlm",
+        "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/vlm",
+        "profile": "fixture-v1",
+        "run_id": "vlm-fixture-run",
+        "seed": 42,
+        "total_train_steps_executed": 2,
+        "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/vlm/training_summary.json",
+        "weights_updated": true
+      },
+      "launch_ok": true,
+      "monitor_ok": true,
+      "relaunch_ok": true,
+      "rerun_commands": [
+        "halo-forge vlm train --dry-run --dataset textvqa --seed 42"
+      ],
+      "results_ingestion_ok": true,
+      "resume_latest_ok": true,
+      "status": "warn",
+      "stop_ok": true,
+      "warnings": [
+        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/vlm/final_model"
+      ]
+    }
+  },
+  "profile": "fixture-v1",
+  "seed": 42
+}

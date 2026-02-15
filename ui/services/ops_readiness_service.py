@@ -34,8 +34,14 @@ from halo_forge.all_module_readiness import (
     validate_all_module,
     write_all_module_readiness_report,
 )
+from halo_forge.all_module_qualification import (
+    DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE,
+    load_all_module_qualification_report,
+)
 from .results_service import get_results_service
 from .launch_context import find_latest_launch_context
+from .qualification_service import get_qualification_service
+from ui.state import state as app_state
 
 
 class OpsReadinessService:
@@ -47,6 +53,7 @@ class OpsReadinessService:
         base_path: Optional[Path] = None,
         report_path: Path = DEFAULT_OPS_READINESS_REPORT_FILE,
         all_module_report_path: Path = DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
+        qualification_report_path: Path = DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE,
         burnin_report_path: Path = Path("results/readiness/ops_dataset_burnin.v1.json"),
         walkthrough_report_path: Path = Path(
             ".internal_docs/research_testing/walkthroughs/reports/all_module_e2e_walkthrough_report.v1.json"
@@ -55,6 +62,7 @@ class OpsReadinessService:
         self.base_path = base_path or Path.cwd()
         self.report_path = report_path
         self.all_module_report_path = all_module_report_path
+        self.qualification_report_path = qualification_report_path
         self.burnin_report_path = burnin_report_path
         self.walkthrough_report_path = walkthrough_report_path
         self._cache: Optional[OpsReadinessReport] = None
@@ -64,6 +72,8 @@ class OpsReadinessService:
         self._all_module_cache_time: Optional[datetime] = None
         self._burnin_cache = None
         self._burnin_cache_time: Optional[datetime] = None
+        self._qualification_cache = None
+        self._qualification_cache_time: Optional[datetime] = None
         self._walkthrough_cache = None
         self._walkthrough_cache_time: Optional[datetime] = None
 
@@ -282,6 +292,11 @@ class OpsReadinessService:
         if self.burnin_report_path.is_absolute():
             return self.burnin_report_path
         return self.base_path / self.burnin_report_path
+
+    def _resolve_qualification_report_path(self) -> Path:
+        if self.qualification_report_path.is_absolute():
+            return self.qualification_report_path
+        return self.base_path / self.qualification_report_path
 
     def _resolve_walkthrough_report_path(self) -> Path:
         if self.walkthrough_report_path.is_absolute():
@@ -510,6 +525,91 @@ class OpsReadinessService:
             "burnin_status": overall_status,
             "burnin_source": report.source,
         }
+
+    def load_qualification_report(self, force_refresh: bool = False):
+        """Load all-module qualification report when present and schema-valid."""
+        if not force_refresh and self._qualification_cache and self._qualification_cache_time:
+            age = (datetime.now() - self._qualification_cache_time).total_seconds()
+            if age < self._cache_ttl_seconds:
+                return self._qualification_cache
+
+        report_file = self._resolve_qualification_report_path()
+        if not report_file.exists():
+            raise FileNotFoundError(f"All-module qualification report not found: {report_file}")
+
+        report = load_all_module_qualification_report(report_file)
+        self._qualification_cache = report
+        self._qualification_cache_time = datetime.now()
+        return report
+
+    def get_qualification_provenance(self, force_refresh: bool = False) -> Dict[str, object]:
+        """
+        Return optional qualification report provenance for dashboard/research surfaces.
+
+        Keys:
+        - qualification_report_present: bool
+        - qualification_generated_at: Optional[str]
+        - qualification_status: Optional[str]
+        - qualification_source: Optional[str]
+        - qualification_profile: Optional[str]
+        - qualification_report_path: Optional[str]
+        """
+        try:
+            report = self.load_qualification_report(force_refresh=force_refresh)
+        except Exception:
+            return {
+                "qualification_report_present": False,
+                "qualification_generated_at": None,
+                "qualification_status": None,
+                "qualification_source": None,
+                "qualification_profile": None,
+                "qualification_report_path": None,
+            }
+
+        statuses = [entry.status for entry in report.modules.values()]
+        overall_status = "pass"
+        if any(status == "fail" for status in statuses):
+            overall_status = "fail"
+        elif any(status == "warn" for status in statuses):
+            overall_status = "warn"
+
+        return {
+            "qualification_report_present": True,
+            "qualification_generated_at": report.generated_at,
+            "qualification_status": overall_status,
+            "qualification_source": report.source,
+            "qualification_profile": report.profile,
+            "qualification_report_path": str(self._resolve_qualification_report_path()),
+        }
+
+    async def run_qualification_probe(
+        self,
+        *,
+        qualification_profile: str = "contract-v1",
+        strict: bool = False,
+        module_filters: Optional[list[str]] = None,
+        fixture_pack: str = "",
+    ) -> tuple[bool, str, Optional[str]]:
+        """
+        Launch a tracked qualification probe job from UI.
+
+        Returns:
+            (success, message, job_id)
+        """
+        try:
+            service = get_qualification_service(app_state)
+            job_id = await service.launch_qualification(
+                qualification_profile=qualification_profile,
+                strict=strict,
+                module_filters=module_filters or [],
+                fixture_pack=fixture_pack,
+                source_ui_page="/research-hub",
+            )
+            self._qualification_cache = None
+            self._qualification_cache_time = None
+            return True, f"Started qualification probe job {job_id}", job_id
+        except Exception as exc:
+            return False, f"Qualification probe failed: {exc}", None
 
     def load_walkthrough_report(self, force_refresh: bool = False):
         """Load internal all-module walkthrough report if present and valid."""

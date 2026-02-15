@@ -1,0 +1,37 @@
+name: Nightly All-Module Qualification
+
+on:
+  schedule:
+    - cron: "15 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  strict-all-module-qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Strict fixture-backed all-module qualification gate
+        run: |
+          python3 scripts/run_all_module_qualification.py \
+            --qualification-profile fixture-v1 \
+            --fixture-pack v1 \
+            --strict \
+            --compare-baseline \
+            --baseline-file tests/baselines/all_module_qualification_baseline.v1.json \
+            --write-report \
+            --report-file results/readiness/all_module_qualification.v1.json

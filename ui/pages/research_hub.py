@@ -6,6 +6,7 @@ Cross-module readiness and operational testing summary for all CLI modules.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Dict
 
 from nicegui import ui
@@ -47,11 +48,17 @@ class ResearchHub:
                 ui.label("Research Hub").classes(
                     f"text-2xl font-bold text-[{COLORS['text_primary']}]"
                 )
-                ui.button(
-                    "Refresh readiness",
-                    icon="refresh",
-                    on_click=self._refresh,
-                ).props("flat").classes(f"text-[{COLORS['text_secondary']}]")
+                with ui.row().classes("items-center gap-2"):
+                    ui.button(
+                        "Run qualification probe",
+                        icon="play_arrow",
+                        on_click=lambda: asyncio.create_task(self._run_qualification_probe()),
+                    ).props("flat").classes(f"text-[{COLORS['accent']}]")
+                    ui.button(
+                        "Refresh readiness",
+                        icon="refresh",
+                        on_click=self._refresh,
+                    ).props("flat").classes(f"text-[{COLORS['text_secondary']}]")
 
             self._content_container = ui.column().classes("w-full gap-4")
             self._render_content(force_refresh=False)
@@ -65,6 +72,15 @@ class ResearchHub:
 
     def _render_content(self, force_refresh: bool) -> None:
         report = self.readiness_service.get_effective_all_module_readiness(force_refresh=force_refresh)
+        qualification_meta = self.readiness_service.get_qualification_provenance(force_refresh=force_refresh)
+        qualification_report = None
+        if qualification_meta.get("qualification_report_present"):
+            try:
+                qualification_report = self.readiness_service.load_qualification_report(
+                    force_refresh=force_refresh
+                )
+            except Exception:
+                qualification_report = None
         burnin_meta = self.readiness_service.get_burnin_provenance(force_refresh=force_refresh)
         walkthrough_meta = self.readiness_service.get_walkthrough_provenance(force_refresh=force_refresh)
         burnin_report = None
@@ -94,6 +110,18 @@ class ResearchHub:
                 ui.label("burnin report unavailable (non-blocking)").classes(
                     f"text-xs text-[{COLORS['warning']}]"
                 )
+            if qualification_meta.get("qualification_report_present"):
+                ui.label(
+                    "qualification "
+                    f"status={qualification_meta.get('qualification_status')} "
+                    f"profile={qualification_meta.get('qualification_profile')} "
+                    f"source={qualification_meta.get('qualification_source')} "
+                    f"generated_at={qualification_meta.get('qualification_generated_at')}"
+                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+            else:
+                ui.label("qualification report unavailable (non-blocking)").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
+                )
             if walkthrough_meta.get("walkthrough_report_present"):
                 summary = walkthrough_meta.get("walkthrough_status_summary") or {}
                 ui.label(
@@ -114,11 +142,14 @@ class ResearchHub:
 
         for module in ALL_MODULES:
             burnin_entry = None
+            qualification_entry = None
             if burnin_report and module in burnin_report.modules:
                 burnin_entry = burnin_report.modules[module]
-            self._render_module_card(module, report.modules[module], burnin_entry)
+            if qualification_report and module in qualification_report.modules:
+                qualification_entry = qualification_report.modules[module]
+            self._render_module_card(module, report.modules[module], burnin_entry, qualification_entry)
 
-    def _render_module_card(self, module: str, entry, burnin_entry=None) -> None:
+    def _render_module_card(self, module: str, entry, burnin_entry=None, qualification_entry=None) -> None:
         color = {
             "pass": COLORS["success"],
             "warn": COLORS["warning"],
@@ -162,6 +193,26 @@ class ResearchHub:
                     f"burnin status={burnin_entry.status} "
                     f"errors={len(burnin_entry.errors)} warnings={len(burnin_entry.warnings)}"
                 ).classes(f"text-xs text-[{burnin_color}] font-mono")
+            if qualification_entry is not None:
+                qual_color = {
+                    "pass": COLORS["success"],
+                    "warn": COLORS["warning"],
+                    "fail": COLORS["error"],
+                }.get(qualification_entry.status, COLORS["text_secondary"])
+                ui.label(
+                    f"qualification status={qualification_entry.status} "
+                    f"launch_ok={1 if qualification_entry.launch_ok else 0} "
+                    f"monitor_ok={1 if qualification_entry.monitor_ok else 0} "
+                    f"results_ok={1 if qualification_entry.results_ingestion_ok else 0}"
+                ).classes(f"text-xs text-[{qual_color}] font-mono")
+                if qualification_entry.errors:
+                    ui.label(
+                        f"Qualification blocker: {qualification_entry.errors[0]}"
+                    ).classes(f"text-xs text-[{COLORS['error']}]")
+                elif qualification_entry.warnings:
+                    ui.label(
+                        f"Qualification warning: {qualification_entry.warnings[0]}"
+                    ).classes(f"text-xs text-[{COLORS['warning']}]")
 
             if entry.errors:
                 if entry.launch_blocked:
@@ -200,3 +251,12 @@ class ResearchHub:
         )
         ui.notify(message, type="positive" if ok else "warning", timeout=1800)
         self._refresh()
+
+    async def _run_qualification_probe(self) -> None:
+        ok, message, job_id = await self.readiness_service.run_qualification_probe(
+            qualification_profile="contract-v1",
+            strict=False,
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")

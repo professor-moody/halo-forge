@@ -389,6 +389,7 @@ class Dashboard:
             f'text-xs text-[{COLORS["text_muted"]}]'
         )
         burnin_meta = self.readiness_service.get_burnin_provenance()
+        qualification_meta = self.readiness_service.get_qualification_provenance()
         if burnin_meta.get("burnin_report_present"):
             burnin_status = str(burnin_meta.get("burnin_status") or "warn")
             burnin_color = self._status_color(burnin_status)
@@ -398,6 +399,18 @@ class Dashboard:
             ).classes(f'text-xs text-[{burnin_color}]')
         else:
             ui.label("burnin report unavailable (non-blocking)").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
+        if qualification_meta.get("qualification_report_present"):
+            qualification_status = str(qualification_meta.get("qualification_status") or "warn")
+            qualification_color = self._status_color(qualification_status)
+            ui.label(
+                f"qualification status={qualification_status} "
+                f"profile={qualification_meta.get('qualification_profile')} "
+                f"generated={qualification_meta.get('qualification_generated_at')}"
+            ).classes(f'text-xs text-[{qualification_color}]')
+        else:
+            ui.label("qualification report unavailable (non-blocking)").classes(
                 f'text-xs text-[{COLORS["warning"]}]'
             )
 

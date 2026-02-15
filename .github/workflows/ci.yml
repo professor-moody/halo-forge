@@ -67,6 +67,14 @@ jobs:
             --write-report \
             --report-file results/readiness/all_modules_readiness.v1.json
 
+      - name: All-module qualification report (informational)
+        run: |
+          python3 scripts/run_all_module_qualification.py \
+            --qualification-profile fixture-v1 \
+            --fixture-pack v1 \
+            --write-report \
+            --report-file results/readiness/all_module_qualification.v1.json
+
       - name: Upload ops readiness artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -76,6 +84,7 @@ jobs:
             results/readiness/ops_e2e_launch_reliability.v1.json
             results/readiness/ops_dataset_burnin.v1.json
             results/readiness/all_modules_readiness.v1.json
+            results/readiness/all_module_qualification.v1.json
           if-no-files-found: error
 
       - name: Core framework and UI regression checks
@@ -111,4 +120,5 @@ jobs:
             tests/test_phase13_ops_dataset_burnin_baselines.py \
             tests/test_phase14_all_module_parity.py \
             tests/test_phase16_all_module_ui_execution_parity.py \
-            tests/test_phase17_ui_execution_truth_and_professional_hardening.py
+            tests/test_phase17_ui_execution_truth_and_professional_hardening.py \
+            tests/test_phase18_all_module_qualification_orchestration.py

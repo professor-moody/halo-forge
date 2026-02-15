@@ -25,6 +25,7 @@ JobType = Literal[
     "data",
     "info",
     "plot",
+    "qualification",
 ]
 JobStatus = Literal["pending", "running", "completed", "failed", "stopped"]
 

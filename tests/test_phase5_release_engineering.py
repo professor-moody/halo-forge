@@ -35,17 +35,20 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase14_all_module_parity.py" in content
     assert "tests/test_phase16_all_module_ui_execution_parity.py" in content
     assert "tests/test_phase17_ui_execution_truth_and_professional_hardening.py" in content
+    assert "tests/test_phase18_all_module_qualification_orchestration.py" in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "scripts/run_ops_module_matrix.py" in content
     assert "scripts/run_ops_e2e_reliability.py" in content
     assert "scripts/run_ops_dataset_burnin.py" in content
     assert "scripts/run_all_module_matrix.py" in content
+    assert "scripts/run_all_module_qualification.py" in content
     assert "--fixture-pack v1" in content
     assert "tests/baselines/modality_runtime_baseline.v1.json" in content
     assert "ops-readiness-reports" in content
     assert "ops_e2e_launch_reliability.v1.json" in content
     assert "ops_dataset_burnin.v1.json" in content
     assert "all_modules_readiness.v1.json" in content
+    assert "all_module_qualification.v1.json" in content
 
     nightly_workflow = Path(".github/workflows/nightly_ops_readiness.yml")
     assert nightly_workflow.exists()
@@ -83,6 +86,17 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "scripts/run_all_module_matrix.py" in nightly_all_modules_content
     assert "--fixture-pack v1" in nightly_all_modules_content
     assert "--strict" in nightly_all_modules_content
+
+    nightly_qualification_workflow = Path(".github/workflows/nightly_all_module_qualification.yml")
+    assert nightly_qualification_workflow.exists()
+    nightly_qualification_content = nightly_qualification_workflow.read_text(encoding="utf-8")
+    assert "schedule:" in nightly_qualification_content
+    assert "workflow_dispatch:" in nightly_qualification_content
+    assert "scripts/run_all_module_qualification.py" in nightly_qualification_content
+    assert "--qualification-profile fixture-v1" in nightly_qualification_content
+    assert "--strict" in nightly_qualification_content
+    assert "--compare-baseline" in nightly_qualification_content
+    assert "tests/baselines/all_module_qualification_baseline.v1.json" in nightly_qualification_content
 
     # Phase 7K walkthroughs are local/operator flows only; no CI gating changes.
     assert "run_all_module_walkthroughs.py" not in content

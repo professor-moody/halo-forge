@@ -2313,6 +2313,188 @@ class TestRunner:
         self.run_test(f"All-module readiness ({profile})", _run_all_module_checks)
         return self.print_summary()
 
+    def run_all_module_qualification(
+        self,
+        *,
+        qualification_profile: str = "contract-v1",
+        seed: int = 42,
+        report_file: Optional[str] = None,
+        baseline_file: Optional[str] = None,
+        write_baseline: bool = False,
+        compare_baseline: bool = False,
+        strict: bool = False,
+        module_filters: Optional[List[str]] = None,
+        fixture_pack: str = "",
+    ) -> bool:
+        """Run all-module qualification lifecycle checks with optional drift compare."""
+        from halo_forge.all_module_readiness import ALL_MODULES
+        from halo_forge.all_module_qualification import (
+            ALL_MODULE_QUALIFICATION_STATUSES,
+            DEFAULT_ALL_MODULE_QUALIFICATION_BASELINE_FILE,
+            DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE,
+            build_qualification_baseline_payload,
+            compare_qualification_baselines,
+            compute_all_module_qualification,
+            format_qualification_drift_lines,
+            load_qualification_baseline_file,
+            validate_qualification_baseline_payload,
+            write_all_module_qualification_report,
+            write_qualification_baseline_file,
+        )
+
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header("All-Module Qualification", "Bounded lifecycle qualification checks")
+        else:
+            print(f"\n{'='*60}")
+            print("halo forge All-Module Qualification")
+            print(f"{'='*60}\n")
+
+        selected_modules: List[str] = []
+        for module in module_filters or []:
+            key = str(module or "").strip().lower()
+            if not key:
+                continue
+            if key not in ALL_MODULES:
+                raise RuntimeError(f"Unsupported module filter: {key}")
+            if key not in selected_modules:
+                selected_modules.append(key)
+        if not selected_modules:
+            selected_modules = list(ALL_MODULES)
+
+        report_path = (
+            Path(report_file)
+            if report_file
+            else DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE
+        )
+        baseline_path = (
+            Path(baseline_file)
+            if baseline_file
+            else DEFAULT_ALL_MODULE_QUALIFICATION_BASELINE_FILE
+        )
+
+        report = None
+        current_baseline = None
+        hard_drifts: List[Dict[str, Any]] = []
+        warn_drifts: List[Dict[str, Any]] = []
+
+        def _resolve_fixture_output_map(pack: str) -> Dict[str, str]:
+            text = str(pack or "").strip()
+            if not text:
+                return {}
+            if "/" in text or text.startswith("."):
+                pack_root = Path(text).expanduser()
+                if not pack_root.is_absolute():
+                    pack_root = (Path.cwd() / pack_root).resolve()
+            else:
+                pack_root = (Path.cwd() / "tests" / "fixtures" / "all_modules" / text).resolve()
+
+            if not pack_root.exists() or not pack_root.is_dir():
+                raise RuntimeError(f"Fixture pack directory not found: {pack_root}")
+
+            output_map: Dict[str, str] = {}
+            for module in ALL_MODULES:
+                if module == "ui_ops":
+                    output_map[module] = str(Path.cwd())
+                    continue
+                module_dir = pack_root / module
+                if not module_dir.exists() or not module_dir.is_dir():
+                    raise RuntimeError(f"Fixture pack missing module directory: {module_dir}")
+                output_map[module] = str(module_dir)
+            return output_map
+
+        def _run_qualification() -> bool:
+            nonlocal report, current_baseline
+            output_map: Dict[str, str] = {}
+            if qualification_profile == "fixture-v1":
+                output_map = _resolve_fixture_output_map(fixture_pack or "v1")
+            elif fixture_pack:
+                output_map = _resolve_fixture_output_map(fixture_pack)
+
+            report = compute_all_module_qualification(
+                output_map=output_map or None,
+                seed=seed,
+                profile=qualification_profile,
+                source="cli_test",
+                module_filters=selected_modules,
+            )
+
+            for module in selected_modules:
+                entry = report.modules[module]
+                print(
+                    "ALL_QUAL "
+                    f"module={module} status={entry.status} "
+                    f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+                )
+                if entry.status not in ALL_MODULE_QUALIFICATION_STATUSES:
+                    raise RuntimeError(
+                        f"Invalid qualification status for module={module}: {entry.status}"
+                    )
+
+            write_all_module_qualification_report(report_path, report)
+            self.log(f"Wrote all-module qualification report: {report_path}", "info")
+            current_baseline = build_qualification_baseline_payload(report)
+            return True
+
+        self.run_test(f"All-module qualification ({qualification_profile})", _run_qualification)
+
+        def _write_baseline() -> bool:
+            if current_baseline is None:
+                raise RuntimeError("Qualification baseline payload unavailable")
+            write_qualification_baseline_file(baseline_path, current_baseline)
+            self.log(f"Wrote qualification baseline: {baseline_path}", "info")
+            return True
+
+        self.run_test(
+            "Qualification baseline write",
+            _write_baseline,
+            skip_condition=not write_baseline,
+            skip_reason="--write-baseline not requested",
+        )
+
+        def _compare_baseline() -> bool:
+            nonlocal hard_drifts, warn_drifts
+            if current_baseline is None:
+                raise RuntimeError("Qualification baseline payload unavailable")
+            if not baseline_path.exists():
+                raise RuntimeError(f"Baseline file not found: {baseline_path}")
+            expected = load_qualification_baseline_file(baseline_path)
+            schema_errors = validate_qualification_baseline_payload(expected)
+            if schema_errors:
+                raise RuntimeError(
+                    "Invalid qualification baseline schema: " + "; ".join(schema_errors)
+                )
+            drifts = compare_qualification_baselines(expected=expected, current=current_baseline)
+            if drifts:
+                for line in format_qualification_drift_lines(drifts):
+                    print(line)
+            hard_drifts = [drift for drift in drifts if drift.get("severity") == "hard"]
+            warn_drifts = [drift for drift in drifts if drift.get("severity") != "hard"]
+            if hard_drifts:
+                raise RuntimeError("Hard qualification drift detected")
+            return True
+
+        self.run_test(
+            "Qualification baseline compare",
+            _compare_baseline,
+            skip_condition=not compare_baseline,
+            skip_reason="--compare-baseline not requested",
+        )
+
+        if strict and report is not None:
+            failing = [
+                module for module in selected_modules if report.modules[module].status == "fail"
+            ]
+            if failing:
+                self.failures += 1
+                self.log("Failing modules: " + ", ".join(sorted(failing)), "fail")
+            elif warn_drifts:
+                self.log(
+                    f"Qualification warning drift detected ({len(warn_drifts)} warn drift(s))",
+                    "warn",
+                )
+        return self.print_summary()
+
     def run_walkthroughs(
         self,
         *,
@@ -2397,10 +2579,11 @@ class TestRunner:
 
 def cmd_test(args):
     """Run pipeline validation tests."""
-    if args.level not in {"modality", "ops-burnin"} and (args.write_baseline or args.compare_baseline):
+    baseline_levels = {"modality", "ops-burnin", "all-module-qualification"}
+    if args.level not in baseline_levels and (args.write_baseline or args.compare_baseline):
         print(
             f"{RED}Error: --write-baseline/--compare-baseline are supported only with "
-            f"--level modality or --level ops-burnin{NC}"
+            f"--level modality, --level ops-burnin, or --level all-module-qualification{NC}"
         )
         sys.exit(2)
 
@@ -2471,9 +2654,30 @@ def cmd_test(args):
             strict=args.strict,
             execute=args.execute,
         )
+    elif args.level == "all-module-qualification":
+        report_file = args.report_file
+        baseline_file = args.baseline_file
+        if report_file == "results/readiness/ops_e2e_launch_reliability.v1.json":
+            report_file = "results/readiness/all_module_qualification.v1.json"
+        if baseline_file == "tests/baselines/modality_runtime_baseline.v1.json":
+            baseline_file = "tests/baselines/all_module_qualification_baseline.v1.json"
+        success = runner.run_all_module_qualification(
+            qualification_profile=args.qualification_profile,
+            seed=args.seed,
+            report_file=report_file,
+            baseline_file=baseline_file,
+            write_baseline=args.write_baseline,
+            compare_baseline=args.compare_baseline,
+            strict=args.strict,
+            module_filters=args.module,
+            fixture_pack=args.fixture_pack,
+        )
     else:
         print(f"Unknown test level: {args.level}")
-        print("Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs")
+        print(
+            "Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin, "
+            "all-modules, walkthroughs, all-module-qualification"
+        )
         sys.exit(1)
     
     sys.exit(0 if success else 1)
@@ -3775,8 +3979,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules', 'walkthroughs'],
-                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs')
+                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules', 'walkthroughs', 'all-module-qualification'],
+                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -3784,27 +3988,27 @@ def main():
     test_parser.add_argument(
         '--baseline-file',
         default='tests/baselines/modality_runtime_baseline.v1.json',
-        help='Baseline JSON path for modality/ops-burnin drift checks',
+        help='Baseline JSON path for modality/ops-burnin/all-module-qualification drift checks',
     )
     test_parser.add_argument(
         '--write-baseline',
         action='store_true',
-        help='Write/overwrite modality or ops-burnin baseline snapshot',
+        help='Write/overwrite modality, ops-burnin, or all-module-qualification baseline snapshot',
     )
     test_parser.add_argument(
         '--compare-baseline',
         action='store_true',
-        help='Compare modality or ops-burnin run against baseline and fail on hard drift',
+        help='Compare modality, ops-burnin, or all-module-qualification run against baseline and fail on hard drift',
     )
     test_parser.add_argument(
         '--report-file',
         default='results/readiness/ops_e2e_launch_reliability.v1.json',
-        help='Output report path for --level ops-e2e, ops-burnin, all-modules, or walkthroughs',
+        help='Output report path for --level ops-e2e, ops-burnin, all-modules, walkthroughs, or all-module-qualification',
     )
     test_parser.add_argument(
         '--strict',
         action='store_true',
-        help='Fail non-zero when module status is fail (used with --level ops-e2e, ops-burnin, all-modules, walkthroughs)',
+        help='Fail non-zero when module status is fail (used with --level ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification)',
     )
     test_parser.add_argument(
         '--seed',
@@ -3823,15 +4027,21 @@ def main():
         help='Readiness profile for --level all-modules (default: bounded-v1); walkthroughs uses contract-v1/live-local',
     )
     test_parser.add_argument(
+        '--qualification-profile',
+        default='contract-v1',
+        choices=['contract-v1', 'fixture-v1', 'live-local'],
+        help='Qualification profile for --level all-module-qualification (default: contract-v1)',
+    )
+    test_parser.add_argument(
         '--module',
         action='append',
         default=[],
-        help='Filter module(s) for --level all-modules or walkthroughs (repeatable)',
+        help='Filter module(s) for --level all-modules, walkthroughs, or all-module-qualification (repeatable)',
     )
     test_parser.add_argument(
         '--fixture-pack',
         default='',
-        help='Fixture pack for ops-e2e/all-modules checks (e.g., v1 or tests/fixtures/.../v1)',
+        help='Fixture pack for ops-e2e/all-modules/all-module-qualification checks (e.g., v1 or tests/fixtures/.../v1)',
     )
     test_parser.add_argument(
         '--execute',

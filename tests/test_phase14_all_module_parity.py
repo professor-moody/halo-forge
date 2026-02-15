@@ -98,6 +98,7 @@ def test_cli_surface_exposes_all_modules_level_and_flags():
     """CLI parser should include all-modules level and related flags."""
     cli_source = Path("halo_forge/cli.py").read_text(encoding="utf-8")
     assert "all-modules" in cli_source
+    assert "all-module-qualification" in cli_source
     assert "run_all_modules" in cli_source
     assert "walkthroughs" in cli_source
     assert "--profile" in cli_source

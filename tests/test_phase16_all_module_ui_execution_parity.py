@@ -112,10 +112,15 @@ def test_monitor_and_results_reference_module_ops_parity_paths():
     assert "self.module_ops_service.stop_job" in monitor_source
     assert "self.module_ops_service.relaunch_from_context" in monitor_source
     assert "ops_clone_payload" in monitor_source
+    assert "QUALIFICATION_JOB_TYPES" in monitor_source
+    assert "self.qualification_service.stop_job" in monitor_source
+    assert "self.qualification_service.relaunch_from_context" in monitor_source
 
     results_source = Path("ui/pages/results.py").read_text(encoding="utf-8")
     assert "UtilityRunSummary" in results_source
+    assert "QualificationReportSummary" in results_source
     assert "_render_utility_runs_table" in results_source
+    assert "_render_qualification_reports_table" in results_source
     assert "_clone_utility_to_form" in results_source
 
 

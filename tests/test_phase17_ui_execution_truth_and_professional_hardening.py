@@ -133,3 +133,7 @@ def test_runtime_surface_includes_page_guard_and_non_blocking_copy():
     inference_source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
     assert "Run contract probe" in inference_source
     assert "Launch blocked:" in inference_source
+
+    ops_service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
+    assert "get_qualification_provenance" in ops_service_source
+    assert "run_qualification_probe" in ops_service_source
