@@ -391,6 +391,7 @@ class Dashboard:
         burnin_meta = self.readiness_service.get_burnin_provenance()
         bootstrap_meta = self.readiness_service.get_bootstrap_provenance()
         qualification_meta = self.readiness_service.get_qualification_provenance()
+        live_meta = self.readiness_service.get_live_provenance()
         if burnin_meta.get("burnin_report_present"):
             burnin_status = str(burnin_meta.get("burnin_status") or "warn")
             burnin_color = self._status_color(burnin_status)
@@ -426,6 +427,18 @@ class Dashboard:
             ui.label("qualification report unavailable (non-blocking)").classes(
                 f'text-xs text-[{COLORS["warning"]}]'
             )
+        if live_meta.get("live_report_present"):
+            live_status = str(live_meta.get("live_status") or "warn")
+            live_color = self._status_color(live_status)
+            ui.label(
+                f"live status={live_status} "
+                f"profile={live_meta.get('live_profile')} "
+                f"generated={live_meta.get('live_generated_at')}"
+            ).classes(f'text-xs text-[{live_color}]')
+        else:
+            ui.label("live report unavailable (non-blocking)").classes(
+                f'text-xs text-[{COLORS["warning"]}]'
+            )
 
         status_counts = {"pass": 0, "warn": 0, "fail": 0}
         for module in report.modules.values():
@@ -449,6 +462,7 @@ class Dashboard:
                 ui.link('Ops', '/ops-console').classes(f'text-xs text-[{COLORS["accent"]}]')
                 ui.link('Research', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
                 ui.link('Run Bootstrap', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.link('Run Live Probe', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
 
         for module in (
             "config",

@@ -152,6 +152,7 @@ def test_cli_ui_monitor_results_surfaces_include_bootstrap_contracts():
     service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
     assert "get_bootstrap_provenance" in service_source
     assert "run_bootstrap_probe" in service_source
+    assert "get_live_provenance" in service_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "Run bootstrap probe" in research_hub_source
@@ -163,6 +164,7 @@ def test_cli_ui_monitor_results_surfaces_include_bootstrap_contracts():
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "BOOTSTRAP_JOB_TYPES" in monitor_source
     assert "self.bootstrap_service.stop_job" in monitor_source
+    assert "LIVE_PROBE_JOB_TYPES" in monitor_source
 
     results_service_source = Path("ui/services/results_service.py").read_text(encoding="utf-8")
     assert "BootstrapReportSummary" in results_service_source

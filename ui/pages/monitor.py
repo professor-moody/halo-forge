@@ -18,6 +18,7 @@ from ui.services import (
     get_benchmark_service,
     get_bootstrap_service,
     get_inference_service,
+    get_live_probe_service,
     get_module_ops_service,
     get_qualification_service,
     get_event_bus,
@@ -36,6 +37,7 @@ CYCLE_BASED_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
 UTILITY_JOB_TYPES = {"config", "data", "info", "plot"}
 QUALIFICATION_JOB_TYPES = {"qualification"}
 BOOTSTRAP_JOB_TYPES = {"bootstrap"}
+LIVE_PROBE_JOB_TYPES = {"live_probe"}
 
 
 class Monitor:
@@ -52,6 +54,7 @@ class Monitor:
         self.module_ops_service = get_module_ops_service(state)
         self.qualification_service = get_qualification_service(state)
         self.bootstrap_service = get_bootstrap_service(state)
+        self.live_probe_service = get_live_probe_service(state)
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
@@ -416,6 +419,9 @@ class Monitor:
         if self.job and self.job.type in QUALIFICATION_JOB_TYPES:
             self._render_qualification_metrics_panel()
             return
+        if self.job and self.job.type in LIVE_PROBE_JOB_TYPES:
+            self._render_live_probe_metrics_panel()
+            return
 
         ui.label('Current Metrics').classes(
             f'text-base font-semibold text-[{COLORS["text_primary"]}]'
@@ -513,6 +519,27 @@ class Monitor:
                 ("Fail Count", "fail_count"),
                 ("Top Issue", "top_issue"),
                 ("Fix Now", "fix_now"),
+                ("Profile", "profile"),
+            ):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    ui.label(summary[key]).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                    )
+
+    def _render_live_probe_metrics_panel(self) -> None:
+        """Render live-probe-specific metrics summary."""
+        ui.label('Live Probe Metrics').classes(
+            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        summary = self._derive_live_probe_outcome()
+        with ui.column().classes('w-full gap-3 mt-2'):
+            for label, key in (
+                ("Status", "status"),
+                ("Pass Count", "pass_count"),
+                ("Warn Count", "warn_count"),
+                ("Fail Count", "fail_count"),
+                ("Top Issue", "top_issue"),
                 ("Profile", "profile"),
             ):
                 with ui.row().classes('w-full items-center justify-between'):
@@ -686,6 +713,68 @@ class Monitor:
         except Exception:
             return None
         return payload if isinstance(payload, dict) else None
+
+    def _read_live_probe_report_payload(self) -> Optional[Dict[str, Any]]:
+        """Load live probe report payload if present in job output."""
+        if not self.job or not self.job.output_dir:
+            return None
+        candidate = Path(self.job.output_dir) / "all_module_live_execution.v1.json"
+        if not candidate.exists():
+            return None
+        try:
+            with open(candidate, encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _derive_live_probe_outcome(self) -> Dict[str, str]:
+        """Compute display-safe live probe summary fields from report payload."""
+        payload = self._read_live_probe_report_payload()
+        if not payload:
+            return {
+                "status": "--",
+                "pass_count": "--",
+                "warn_count": "--",
+                "fail_count": "--",
+                "top_issue": "--",
+                "profile": "--",
+            }
+
+        modules = payload.get("modules") if isinstance(payload.get("modules"), dict) else {}
+        pass_count = 0
+        warn_count = 0
+        fail_count = 0
+        top_issue = "--"
+        for _, entry in modules.items():
+            if not isinstance(entry, dict):
+                continue
+            status = str(entry.get("status") or "warn").strip().lower()
+            if status == "pass":
+                pass_count += 1
+            elif status == "fail":
+                fail_count += 1
+                if top_issue == "--" and entry.get("errors"):
+                    top_issue = str(entry.get("errors")[0])
+            else:
+                warn_count += 1
+                if top_issue == "--" and entry.get("warnings"):
+                    top_issue = str(entry.get("warnings")[0])
+
+        overall_status = "pass"
+        if fail_count > 0:
+            overall_status = "fail"
+        elif warn_count > 0:
+            overall_status = "warn"
+
+        return {
+            "status": overall_status,
+            "pass_count": str(pass_count),
+            "warn_count": str(warn_count),
+            "fail_count": str(fail_count),
+            "top_issue": top_issue,
+            "profile": str(payload.get("profile") or "--"),
+        }
     
     def _render_log_viewer(self):
         """Render the log viewer section."""
@@ -1047,6 +1136,8 @@ class Monitor:
                 success = await self.qualification_service.stop_job(self.job.id)
             elif self.job.type in BOOTSTRAP_JOB_TYPES:
                 success = await self.bootstrap_service.stop_job(self.job.id)
+            elif self.job.type in LIVE_PROBE_JOB_TYPES:
+                success = await self.live_probe_service.stop_job(self.job.id)
             else:
                 success = await self.training_service.stop_job(self.job.id)
             
@@ -1096,6 +1187,12 @@ class Monitor:
                 )
             elif self.job.type in BOOTSTRAP_JOB_TYPES:
                 new_job_id = await self.bootstrap_service.relaunch_from_context(
+                    context_path,
+                    origin_job_id=self.job.id,
+                    source_ui_page="/monitor",
+                )
+            elif self.job.type in LIVE_PROBE_JOB_TYPES:
+                new_job_id = await self.live_probe_service.relaunch_from_context(
                     context_path,
                     origin_job_id=self.job.id,
                     source_ui_page="/monitor",
@@ -1165,6 +1262,9 @@ class Monitor:
             elif self.job.type in BOOTSTRAP_JOB_TYPES:
                 app.storage.user["bootstrap_clone_payload"] = payload
                 ui.navigate.to("/research-hub")
+            elif self.job.type in LIVE_PROBE_JOB_TYPES:
+                app.storage.user["live_probe_clone_payload"] = payload
+                ui.navigate.to("/research-hub")
             else:
                 app.storage.user["training_clone_payload"] = payload
                 ui.navigate.to("/training")
@@ -1184,6 +1284,8 @@ class Monitor:
             return self.qualification_service.get_logs(self.job_id, last_n=1000)
         if self.job.type in BOOTSTRAP_JOB_TYPES:
             return self.bootstrap_service.get_logs(self.job_id, last_n=1000)
+        if self.job.type in LIVE_PROBE_JOB_TYPES:
+            return self.live_probe_service.get_logs(self.job_id, last_n=1000)
         return self.training_service.get_logs(self.job_id, last_n=1000)
 
     def _copy_artifacts_path(self):

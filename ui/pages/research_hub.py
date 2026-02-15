@@ -51,6 +51,11 @@ class ResearchHub:
                 )
                 with ui.row().classes("items-center gap-2"):
                     ui.button(
+                        "Run live probe",
+                        icon="play_circle",
+                        on_click=lambda: asyncio.create_task(self._run_live_probe()),
+                    ).props("flat").classes(f"text-[{COLORS['accent']}]")
+                    ui.button(
                         "Run bootstrap probe",
                         icon="build",
                         on_click=lambda: asyncio.create_task(self._run_bootstrap_probe()),
@@ -87,6 +92,13 @@ class ResearchHub:
                 )
             except Exception:
                 bootstrap_report = None
+        live_meta = self.readiness_service.get_live_provenance(force_refresh=force_refresh)
+        live_report = None
+        if live_meta.get("live_report_present"):
+            try:
+                live_report = self.readiness_service.load_live_report(force_refresh=force_refresh)
+            except Exception:
+                live_report = None
         qualification_meta = self.readiness_service.get_qualification_provenance(force_refresh=force_refresh)
         qualification_report = None
         if qualification_meta.get("qualification_report_present"):
@@ -137,6 +149,18 @@ class ResearchHub:
                 ui.label("bootstrap report unavailable (non-blocking)").classes(
                     f"text-xs text-[{COLORS['warning']}]"
                 )
+            if live_meta.get("live_report_present"):
+                ui.label(
+                    "live "
+                    f"status={live_meta.get('live_status')} "
+                    f"profile={live_meta.get('live_profile')} "
+                    f"source={live_meta.get('live_source')} "
+                    f"generated_at={live_meta.get('live_generated_at')}"
+                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+            else:
+                ui.label("live report unavailable (non-blocking)").classes(
+                    f"text-xs text-[{COLORS['warning']}]"
+                )
             if qualification_meta.get("qualification_report_present"):
                 ui.label(
                     "qualification "
@@ -175,6 +199,9 @@ class ResearchHub:
                 burnin_entry = burnin_report.modules[module]
             if bootstrap_report and module in bootstrap_report.modules:
                 bootstrap_entry = bootstrap_report.modules[module]
+            live_entry = None
+            if live_report and module in live_report.modules:
+                live_entry = live_report.modules[module]
             if qualification_report and module in qualification_report.modules:
                 qualification_entry = qualification_report.modules[module]
             self._render_module_card(
@@ -182,6 +209,7 @@ class ResearchHub:
                 report.modules[module],
                 burnin_entry,
                 bootstrap_entry,
+                live_entry,
                 qualification_entry,
                 report.source,
                 bool(report.stale),
@@ -193,6 +221,7 @@ class ResearchHub:
         entry,
         burnin_entry=None,
         bootstrap_entry=None,
+        live_entry=None,
         qualification_entry=None,
         source: str = "ui_live_compute",
         stale: bool = False,
@@ -231,6 +260,11 @@ class ResearchHub:
                     icon="build",
                     on_click=lambda m=module: asyncio.create_task(self._run_module_bootstrap(m)),
                 ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
+                ui.button(
+                    "Run Live Probe",
+                    icon="play_circle",
+                    on_click=lambda m=module: asyncio.create_task(self._run_module_live_probe(m)),
+                ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
 
             ui.label(f"errors={len(entry.errors)} warnings={len(entry.warnings)}").classes(
                 f"text-xs text-[{COLORS['text_muted']}] font-mono"
@@ -263,6 +297,27 @@ class ResearchHub:
                 elif bootstrap_entry.warnings:
                     ui.label(
                         f"Bootstrap warning: {bootstrap_entry.warnings[0]}"
+                    ).classes(f"text-xs text-[{COLORS['warning']}]")
+            if live_entry is not None:
+                live_color = {
+                    "pass": COLORS["success"],
+                    "warn": COLORS["warning"],
+                    "fail": COLORS["error"],
+                }.get(live_entry.status, COLORS["text_secondary"])
+                ui.label(
+                    f"live status={live_entry.status} "
+                    f"launch={1 if live_entry.launch_ok else 0} "
+                    f"monitor={1 if live_entry.monitor_ok else 0} "
+                    f"results={1 if live_entry.results_ok else 0} "
+                    f"deps={live_entry.dependency_status}"
+                ).classes(f"text-xs text-[{live_color}] font-mono")
+                if live_entry.errors:
+                    ui.label(
+                        f"Live blocker: {live_entry.errors[0]}"
+                    ).classes(f"text-xs text-[{COLORS['error']}]")
+                elif live_entry.warnings:
+                    ui.label(
+                        f"Live warning: {live_entry.warnings[0]}"
                     ).classes(f"text-xs text-[{COLORS['warning']}]")
             if qualification_entry is not None:
                 qual_color = {
@@ -324,6 +379,26 @@ class ResearchHub:
     async def _run_module_bootstrap(self, module: str) -> None:
         ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
             bootstrap_profile="contract-v1",
+            strict=False,
+            modules=[module],
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")
+
+    async def _run_live_probe(self) -> None:
+        ok, message, job_id = await self.readiness_service.run_live_probe(
+            live_profile="live-smoke-v1",
+            strict=False,
+            modules=[],
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")
+
+    async def _run_module_live_probe(self, module: str) -> None:
+        ok, message, job_id = await self.readiness_service.run_live_probe(
+            live_profile="live-smoke-v1",
             strict=False,
             modules=[module],
         )

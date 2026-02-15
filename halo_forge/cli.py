@@ -2595,6 +2595,101 @@ class TestRunner:
                 self.log("Failing modules: " + ", ".join(sorted(failing)), "fail")
         return self.print_summary()
 
+    def run_all_module_live(
+        self,
+        *,
+        live_profile: str = "live-smoke-v1",
+        seed: int = 42,
+        output_root: Optional[str] = None,
+        report_file: Optional[str] = None,
+        module_filters: Optional[List[str]] = None,
+        strict: bool = False,
+    ) -> bool:
+        """Run bounded all-module live execution probes."""
+        from halo_forge.all_module_readiness import ALL_MODULES
+        from halo_forge.all_module_live_execution import (
+            DEFAULT_ALL_MODULE_LIVE_OUTPUT_ROOT,
+            DEFAULT_ALL_MODULE_LIVE_REPORT_FILE,
+            compute_all_module_live_execution,
+            write_all_module_live_execution_report,
+        )
+
+        if self.use_rich:
+            self.ui.print_banner()
+            self.ui.print_header(
+                "All-Module Live Execution",
+                "Bounded live-local/smoke probe closure checks",
+            )
+        else:
+            print(f"\n{'='*60}")
+            print("halo forge All-Module Live Execution")
+            print(f"{'='*60}\n")
+
+        selected_modules: List[str] = []
+        for module in module_filters or []:
+            key = str(module or "").strip().lower()
+            if not key:
+                continue
+            if key not in ALL_MODULES:
+                raise RuntimeError(f"Unsupported module filter: {key}")
+            if key not in selected_modules:
+                selected_modules.append(key)
+        if not selected_modules:
+            selected_modules = list(ALL_MODULES)
+
+        report_path = (
+            Path(report_file)
+            if report_file
+            else DEFAULT_ALL_MODULE_LIVE_REPORT_FILE
+        )
+        output_root_path = (
+            Path(output_root)
+            if output_root
+            else DEFAULT_ALL_MODULE_LIVE_OUTPUT_ROOT
+        )
+
+        report = None
+
+        def _run_live() -> bool:
+            nonlocal report
+            report = compute_all_module_live_execution(
+                live_profile=live_profile,
+                seed=seed,
+                source="cli_test",
+                output_root=output_root_path,
+                module_filters=selected_modules,
+                strict=strict,
+            )
+
+            for module in selected_modules:
+                entry = report.modules[module]
+                print(
+                    "ALL_LIVE "
+                    f"module={module} status={entry.status} "
+                    f"launch={1 if entry.launch_ok else 0} "
+                    f"monitor={1 if entry.monitor_ok else 0} "
+                    f"results={1 if entry.results_ok else 0} "
+                    f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+                )
+
+            write_all_module_live_execution_report(report_path, report)
+            self.log(f"Wrote all-module live execution report: {report_path}", "info")
+            return True
+
+        self.run_test(
+            f"All-module live execution ({live_profile})",
+            _run_live,
+        )
+
+        if strict and report is not None:
+            failing = [
+                module for module in selected_modules if report.modules[module].status == "fail"
+            ]
+            if failing:
+                self.failures += 1
+                self.log("Failing modules: " + ", ".join(sorted(failing)), "fail")
+        return self.print_summary()
+
     def run_walkthroughs(
         self,
         *,
@@ -2785,11 +2880,26 @@ def cmd_test(args):
             module_filters=args.module,
             strict=args.strict,
         )
+    elif args.level == "all-module-live":
+        report_file = args.report_file
+        output_root = args.output_root
+        if report_file == "results/readiness/ops_e2e_launch_reliability.v1.json":
+            report_file = "results/readiness/all_module_live_execution.v1.json"
+        if output_root == "results/bootstrap":
+            output_root = "results/live_probes"
+        success = runner.run_all_module_live(
+            live_profile=args.live_profile,
+            seed=args.seed,
+            output_root=output_root,
+            report_file=report_file,
+            module_filters=args.module,
+            strict=args.strict,
+        )
     else:
         print(f"Unknown test level: {args.level}")
         print(
             "Valid levels: smoke, standard, full, modality, ops-e2e, ops-burnin, "
-            "all-modules, walkthroughs, all-module-qualification, all-module-bootstrap"
+            "all-modules, walkthroughs, all-module-qualification, all-module-bootstrap, all-module-live"
         )
         sys.exit(1)
     
@@ -4092,8 +4202,8 @@ def main():
     # test command
     test_parser = subparsers.add_parser('test', help='Run pipeline validation tests')
     test_parser.add_argument('--level', '-l', default='standard',
-                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules', 'walkthroughs', 'all-module-qualification', 'all-module-bootstrap'],
-                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification, all-module-bootstrap')
+                             choices=['smoke', 'standard', 'full', 'modality', 'ops-e2e', 'ops-burnin', 'all-modules', 'walkthroughs', 'all-module-qualification', 'all-module-bootstrap', 'all-module-live'],
+                             help='Test level: smoke, standard, full, modality, ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification, all-module-bootstrap, all-module-live')
     test_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-0.5B',
                              help='Model to use for testing (default: Qwen2.5-Coder-0.5B)')
     test_parser.add_argument('--verbose', '-v', action='store_true',
@@ -4116,18 +4226,18 @@ def main():
     test_parser.add_argument(
         '--report-file',
         default='results/readiness/ops_e2e_launch_reliability.v1.json',
-        help='Output report path for --level ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification, or all-module-bootstrap',
+        help='Output report path for --level ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification, all-module-bootstrap, or all-module-live',
     )
     test_parser.add_argument(
         '--strict',
         action='store_true',
-        help='Fail non-zero when module status is fail (used with --level ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification, all-module-bootstrap)',
+        help='Fail non-zero when module status is fail (used with --level ops-e2e, ops-burnin, all-modules, walkthroughs, all-module-qualification, all-module-bootstrap, all-module-live)',
     )
     test_parser.add_argument(
         '--seed',
         type=int,
         default=42,
-        help='Deterministic seed for ops-e2e/ops-burnin/all-modules/walkthroughs/all-module-qualification/all-module-bootstrap checks (default: 42)',
+        help='Deterministic seed for ops-e2e/ops-burnin/all-modules/walkthroughs/all-module-qualification/all-module-bootstrap/all-module-live checks (default: 42)',
     )
     test_parser.add_argument(
         '--burnin-profile',
@@ -4149,7 +4259,7 @@ def main():
         '--module',
         action='append',
         default=[],
-        help='Filter module(s) for --level all-modules, walkthroughs, all-module-qualification, or all-module-bootstrap (repeatable)',
+        help='Filter module(s) for --level all-modules, walkthroughs, all-module-qualification, all-module-bootstrap, or all-module-live (repeatable)',
     )
     test_parser.add_argument(
         '--fixture-pack',
@@ -4170,7 +4280,13 @@ def main():
     test_parser.add_argument(
         '--output-root',
         default='results/bootstrap',
-        help='Evidence output root for --level all-module-bootstrap (default: results/bootstrap)',
+        help='Evidence output root for --level all-module-bootstrap or --level all-module-live (default: results/bootstrap)',
+    )
+    test_parser.add_argument(
+        '--live-profile',
+        default='live-smoke-v1',
+        choices=['live-smoke-v1', 'live-local'],
+        help='Live execution profile for --level all-module-live (default: live-smoke-v1)',
     )
     test_parser.add_argument(
         '--execute',

@@ -160,6 +160,8 @@ Cross-module ops readiness visibility:
   - `results/readiness/all_module_qualification.v1.json`
 - Reads canonical all-module bootstrap report when available:
   - `results/readiness/all_module_bootstrap.v1.json`
+- Reads canonical all-module live execution report when available:
+  - `results/readiness/all_module_live_execution.v1.json`
 - Falls back to live contract checks when report missing/corrupt
 - Shows actionable pass/warn/fail evidence by module
 - Shows optional dataset burn-in provenance when available:
@@ -176,8 +178,15 @@ Cross-module ops readiness visibility:
   - `bootstrap_generated_at`
   - `bootstrap_status`
   - `bootstrap_profile`
+- Shows live execution provenance when available:
+  - `live_report_present`
+  - `live_generated_at`
+  - `live_status`
+  - `live_profile`
 - Supports `Run bootstrap probe` action (tracked, non-blocking job in Monitor)
+- Supports `Run live probe` action (tracked, non-blocking job in Monitor)
 - Supports module-level `Generate Evidence` actions to bootstrap evidence roots on demand
+- Supports module-level `Run Live Probe` actions for bounded per-module execution checks
 - Supports `Run qualification probe` action (tracked, non-blocking job in Monitor)
 
 ## Readiness Semantics (Warn-and-Launch)
@@ -193,6 +202,7 @@ Banner wording:
 - `Launch blocked` means the current contract/preflight is invalid and should be fixed before launch.
 - `Qualification blocker` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
 - `Bootstrap blocker` means evidence generation encountered a hard contract write/validation failure.
+- `Live blocker` means bounded live probe execution failed for the module in the selected profile.
 
 Each readiness banner includes:
 - Stable issue metadata (`issue_code`, `severity`, `issue_scope`).
@@ -200,6 +210,7 @@ Each readiness banner includes:
 - `What is missing?` evidence gaps or expected evidence root path.
 - `Run contract probe` button to refresh module contract evidence.
 - `Generate Evidence` button to create bounded bootstrap artifacts for the selected module.
+- `Run Live Probe` button to execute bounded live command probes for the selected module.
 
 ## Architecture
 
@@ -333,6 +344,17 @@ python3 scripts/run_all_module_qualification.py \
   --fixture-pack v1 \
   --write-report \
   --report-file results/readiness/all_module_qualification.v1.json
+```
+
+### All-module live execution unavailable
+
+If live execution status is unavailable in Dashboard or Research Hub, generate the canonical live report:
+
+```bash
+python3 scripts/run_all_module_live_matrix.py \
+  --live-profile live-smoke-v1 \
+  --write-report \
+  --report-file results/readiness/all_module_live_execution.v1.json
 ```
 
 ### Duration/Progress not updating

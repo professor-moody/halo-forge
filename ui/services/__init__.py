@@ -88,6 +88,7 @@ from .results_service import (
     UtilityRunSummary,
     QualificationReportSummary,
     BootstrapReportSummary,
+    LiveProbeReportSummary,
     get_results_service,
 )
 
@@ -155,6 +156,10 @@ from .qualification_service import (
 from .bootstrap_service import (
     BootstrapService,
     get_bootstrap_service,
+)
+from .live_probe_service import (
+    LiveProbeService,
+    get_live_probe_service,
 )
 
 # Launch contracts
@@ -256,6 +261,7 @@ __all__ = [
     'UtilityRunSummary',
     'QualificationReportSummary',
     'BootstrapReportSummary',
+    'LiveProbeReportSummary',
     'get_results_service',
     
     # Datasets
@@ -295,6 +301,8 @@ __all__ = [
     'get_qualification_service',
     'BootstrapService',
     'get_bootstrap_service',
+    'LiveProbeService',
+    'get_live_probe_service',
 
     # Launch contracts
     'LaunchContract',

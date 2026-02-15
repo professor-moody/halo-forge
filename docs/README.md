@@ -19,6 +19,7 @@ These files contain additional detail or unique content:
 
 | Document | Description |
 |----------|-------------|
+| [MASTER_PLAN.md](MASTER_PLAN.md) | Consolidated remediation roadmap from deep project audit |
 | [VERIFIERS.md](VERIFIERS.md) | Verifier guide with safety considerations |
 | [MODELS.md](MODELS.md) | Supported models reference |
 | [HARDWARE_NOTES.md](HARDWARE_NOTES.md) | AMD Strix Halo configuration details |

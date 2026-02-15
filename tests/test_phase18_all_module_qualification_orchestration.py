@@ -178,10 +178,12 @@ def test_cli_ui_and_monitor_surfaces_include_qualification_contracts():
     assert "--qualification-profile" in cli_source
     assert "--show-fix-commands" in cli_source
     assert "all-module-bootstrap" in cli_source
+    assert "all-module-live" in cli_source
 
     service_source = Path("ui/services/ops_readiness_service.py").read_text(encoding="utf-8")
     assert "get_qualification_provenance" in service_source
     assert "run_qualification_probe" in service_source
+    assert "get_live_provenance" in service_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
     assert "qualification status=" in dashboard_source
@@ -189,6 +191,7 @@ def test_cli_ui_and_monitor_surfaces_include_qualification_contracts():
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "Run qualification probe" in research_hub_source
     assert "Qualification blocker" in research_hub_source
+    assert "Run live probe" in research_hub_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "QUALIFICATION_JOB_TYPES" in monitor_source

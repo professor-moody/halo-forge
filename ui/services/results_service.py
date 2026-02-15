@@ -181,6 +181,27 @@ class BootstrapReportSummary:
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class LiveProbeReportSummary:
+    """Normalized all-module live execution report entry."""
+
+    id: str
+    report_path: Path
+    profile: str
+    source: str
+    status: str
+    pass_count: int
+    warn_count: int
+    fail_count: int
+    timestamp: datetime = field(default_factory=datetime.now)
+    module_statuses: Dict[str, str] = field(default_factory=dict)
+    failed_modules: List[str] = field(default_factory=list)
+    top_error: Optional[str] = None
+    launch_context_path: Optional[Path] = None
+    has_relaunch_context: bool = False
+    raw_data: Dict[str, Any] = field(default_factory=dict)
+
+
 class ResultsService:
     """Authoritative results ingestion/parsing and aggregation service."""
 
@@ -204,6 +225,10 @@ class ResultsService:
     BOOTSTRAP_DIRS = [
         Path("results/readiness"),
         Path("results/readiness/bootstrap"),
+    ]
+    LIVE_PROBE_DIRS = [
+        Path("results/readiness"),
+        Path("results/readiness/live"),
     ]
 
     DOMAIN_KEYWORDS = {
@@ -243,6 +268,8 @@ class ResultsService:
         self._qualification_cache_time: Optional[datetime] = None
         self._bootstrap_cache: List[BootstrapReportSummary] = []
         self._bootstrap_cache_time: Optional[datetime] = None
+        self._live_probe_cache: List[LiveProbeReportSummary] = []
+        self._live_probe_cache_time: Optional[datetime] = None
         self._cache_ttl = 30  # seconds
 
     def scan_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
@@ -428,6 +455,43 @@ class ResultsService:
     def get_recent_bootstrap_reports(self, n: int = 10) -> List[BootstrapReportSummary]:
         """Return newest bootstrap report artifacts."""
         return self.list_bootstrap_reports()[:n]
+
+    def list_live_probe_reports(
+        self,
+        force_refresh: bool = False,
+    ) -> List[LiveProbeReportSummary]:
+        """Scan canonical all-module live execution report artifacts."""
+        if not force_refresh and self._live_probe_cache_time:
+            age = (datetime.now() - self._live_probe_cache_time).total_seconds()
+            if age < self._cache_ttl:
+                return self._live_probe_cache
+
+        reports: List[LiveProbeReportSummary] = []
+        seen_files: set[Path] = set()
+
+        for live_dir in self.LIVE_PROBE_DIRS:
+            full_path = self.base_path / live_dir
+            if not full_path.exists():
+                continue
+            for json_file in full_path.glob("**/all_module_live_execution.v1.json"):
+                if json_file in seen_files:
+                    continue
+                seen_files.add(json_file)
+                try:
+                    parsed = self._parse_live_probe_report_file(json_file)
+                    if parsed:
+                        reports.append(parsed)
+                except Exception as e:
+                    print(f"[ResultsService] Failed to parse live probe report {json_file}: {e}")
+
+        reports.sort(key=lambda report: report.timestamp, reverse=True)
+        self._live_probe_cache = reports
+        self._live_probe_cache_time = datetime.now()
+        return reports
+
+    def get_recent_live_probe_reports(self, n: int = 10) -> List[LiveProbeReportSummary]:
+        """Return newest live probe report artifacts."""
+        return self.list_live_probe_reports()[:n]
 
     def get_dashboard_training_summary(self, max_runs: int = 3) -> Dict[str, Any]:
         """Build chart-ready training loss series from canonical training summaries."""
@@ -962,9 +1026,93 @@ class ResultsService:
             raw_data=data,
         )
 
+    def _parse_live_probe_report_file(self, path: Path) -> Optional[LiveProbeReportSummary]:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+
+        modules = data.get("modules")
+        if not isinstance(modules, dict):
+            return None
+
+        module_statuses: Dict[str, str] = {}
+        pass_count = 0
+        warn_count = 0
+        fail_count = 0
+        failed_modules: List[str] = []
+        top_error: Optional[str] = None
+
+        for module, payload in modules.items():
+            if not isinstance(payload, dict):
+                continue
+            status = str(payload.get("status") or "").strip().lower() or "warn"
+            module_statuses[str(module)] = status
+            if status == "pass":
+                pass_count += 1
+            elif status == "fail":
+                fail_count += 1
+                failed_modules.append(str(module))
+                if top_error is None and payload.get("errors"):
+                    first_error = payload.get("errors", [None])[0]
+                    if first_error:
+                        top_error = str(first_error)
+            else:
+                warn_count += 1
+                if top_error is None and payload.get("warnings"):
+                    first_warn = payload.get("warnings", [None])[0]
+                    if first_warn:
+                        top_error = str(first_warn)
+
+        overall_status = "pass"
+        if fail_count > 0:
+            overall_status = "fail"
+        elif warn_count > 0:
+            overall_status = "warn"
+
+        timestamp = self._parse_timestamp(data, path)
+        launch_context_path = path.parent / "launch_context.json"
+
+        try:
+            relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
+        except Exception:
+            relative_id = path.as_posix()
+
+        return LiveProbeReportSummary(
+            id=relative_id.replace("/", "_"),
+            report_path=path,
+            profile=str(data.get("profile") or "live-smoke-v1"),
+            source=str(data.get("source") or "script"),
+            status=overall_status,
+            pass_count=pass_count,
+            warn_count=warn_count,
+            fail_count=fail_count,
+            timestamp=timestamp,
+            module_statuses=module_statuses,
+            failed_modules=failed_modules,
+            top_error=top_error,
+            launch_context_path=launch_context_path if launch_context_path.exists() else None,
+            has_relaunch_context=launch_context_path.exists(),
+            raw_data=data,
+        )
+
     def get_latest_artifact_roots(self) -> Dict[str, str]:
         """Return best-known output roots discovered from parsed result artifacts."""
         mapping: Dict[str, str] = {}
+
+        for report in self.list_live_probe_reports():
+            modules = report.raw_data.get("modules")
+            if not isinstance(modules, dict):
+                continue
+            for module, payload in modules.items():
+                if not isinstance(payload, dict):
+                    continue
+                evidence_root = payload.get("evidence_root")
+                if not evidence_root:
+                    continue
+                module_key = str(module).strip().lower()
+                if module_key:
+                    mapping[module_key] = str(evidence_root)
 
         for run in self.list_training_runs():
             module = str(run.modality or "").strip().lower()

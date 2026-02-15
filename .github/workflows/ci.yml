@@ -82,6 +82,13 @@ jobs:
             --write-report \
             --report-file results/readiness/all_module_bootstrap.v1.json
 
+      - name: All-module live execution report (informational)
+        run: |
+          python3 scripts/run_all_module_live_matrix.py \
+            --live-profile live-smoke-v1 \
+            --write-report \
+            --report-file results/readiness/all_module_live_execution.v1.json
+
       - name: Upload ops readiness artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -93,6 +100,7 @@ jobs:
             results/readiness/all_modules_readiness.v1.json
             results/readiness/all_module_qualification.v1.json
             results/readiness/all_module_bootstrap.v1.json
+            results/readiness/all_module_live_execution.v1.json
           if-no-files-found: error
 
       - name: Core framework and UI regression checks
@@ -130,4 +138,5 @@ jobs:
             tests/test_phase16_all_module_ui_execution_parity.py \
             tests/test_phase17_ui_execution_truth_and_professional_hardening.py \
             tests/test_phase18_all_module_qualification_orchestration.py \
-            tests/test_phase20_all_module_bootstrap_enablement.py
+            tests/test_phase20_all_module_bootstrap_enablement.py \
+            tests/test_phase21_all_module_live_execution_closure.py

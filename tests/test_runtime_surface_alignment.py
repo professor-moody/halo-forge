@@ -133,10 +133,12 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "walkthroughs" in cli_source
     assert "all-module-qualification" in cli_source
     assert "all-module-bootstrap" in cli_source
+    assert "all-module-live" in cli_source
     assert "--burnin-profile" in cli_source
     assert "--profile" in cli_source
     assert "--qualification-profile" in cli_source
     assert "--bootstrap-profile" in cli_source
+    assert "--live-profile" in cli_source
     assert "--output-root" in cli_source
     assert "--module" in cli_source
     assert "--execute" in cli_source
@@ -161,10 +163,13 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "walkthrough report unavailable" in research_hub_source
     assert "Run qualification probe" in research_hub_source
     assert "Run bootstrap probe" in research_hub_source
+    assert "Run live probe" in research_hub_source
+    assert "Run Live Probe" in research_hub_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "QUALIFICATION_JOB_TYPES" in monitor_source
     assert "self.qualification_service.stop_job" in monitor_source
+    assert "LIVE_PROBE_JOB_TYPES" in monitor_source
 
 
 def test_inference_readiness_banner_has_no_out_of_scope_filepicker_callback():

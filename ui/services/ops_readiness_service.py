@@ -44,10 +44,15 @@ from halo_forge.all_module_bootstrap import (
     DEFAULT_ALL_MODULE_BOOTSTRAP_REPORT_FILE,
     load_all_module_bootstrap_report,
 )
+from halo_forge.all_module_live_execution import (
+    DEFAULT_ALL_MODULE_LIVE_REPORT_FILE,
+    load_all_module_live_execution_report,
+)
 from .results_service import get_results_service
 from .launch_context import find_latest_launch_context
 from .qualification_service import get_qualification_service
 from .bootstrap_service import get_bootstrap_service
+from .live_probe_service import get_live_probe_service
 from ui.state import state as app_state
 
 
@@ -62,6 +67,7 @@ class OpsReadinessService:
         all_module_report_path: Path = DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
         qualification_report_path: Path = DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE,
         bootstrap_report_path: Path = DEFAULT_ALL_MODULE_BOOTSTRAP_REPORT_FILE,
+        live_report_path: Path = DEFAULT_ALL_MODULE_LIVE_REPORT_FILE,
         burnin_report_path: Path = Path("results/readiness/ops_dataset_burnin.v1.json"),
         walkthrough_report_path: Path = Path(
             ".internal_docs/research_testing/walkthroughs/reports/all_module_e2e_walkthrough_report.v1.json"
@@ -72,6 +78,7 @@ class OpsReadinessService:
         self.all_module_report_path = all_module_report_path
         self.qualification_report_path = qualification_report_path
         self.bootstrap_report_path = bootstrap_report_path
+        self.live_report_path = live_report_path
         self.burnin_report_path = burnin_report_path
         self.walkthrough_report_path = walkthrough_report_path
         self._cache: Optional[OpsReadinessReport] = None
@@ -85,6 +92,8 @@ class OpsReadinessService:
         self._qualification_cache_time: Optional[datetime] = None
         self._bootstrap_cache = None
         self._bootstrap_cache_time: Optional[datetime] = None
+        self._live_cache = None
+        self._live_cache_time: Optional[datetime] = None
         self._walkthrough_cache = None
         self._walkthrough_cache_time: Optional[datetime] = None
 
@@ -98,10 +107,11 @@ class OpsReadinessService:
         Resolve output roots using newest evidence first, then static defaults.
 
         Priority:
-        1. Bootstrap report evidence roots (when available)
-        2. Recent parsed results/training/utility artifacts
-        3. Latest launch_context.json discovery
-        4. Static default output map
+        1. Live execution report evidence roots (when available)
+        2. Bootstrap report evidence roots (when available)
+        3. Recent parsed results/training/utility artifacts
+        4. Latest launch_context.json discovery
+        5. Static default output map
         """
         if include_all_modules:
             resolved = self._default_all_module_output_map()
@@ -109,6 +119,20 @@ class OpsReadinessService:
         else:
             resolved = self._default_output_map()
             valid_keys = set(OPS_MODULES)
+
+        # Prefer explicit live-probe evidence roots over all other sources.
+        try:
+            live_report = self.load_live_report(force_refresh=force_refresh)
+            for module, entry in live_report.modules.items():
+                root = str(entry.evidence_root or "").strip()
+                if not root:
+                    continue
+                if module in valid_keys:
+                    resolved[module] = root
+                elif module == "benchmark_non_code" and "benchmark" in valid_keys:
+                    resolved["benchmark"] = root
+        except Exception:
+            pass
 
         # Prefer explicit bootstrap evidence roots over static defaults.
         try:
@@ -328,6 +352,11 @@ class OpsReadinessService:
         if self.bootstrap_report_path.is_absolute():
             return self.bootstrap_report_path
         return self.base_path / self.bootstrap_report_path
+
+    def _resolve_live_report_path(self) -> Path:
+        if self.live_report_path.is_absolute():
+            return self.live_report_path
+        return self.base_path / self.live_report_path
 
     def _resolve_walkthrough_report_path(self) -> Path:
         if self.walkthrough_report_path.is_absolute():
@@ -696,6 +725,62 @@ class OpsReadinessService:
             "bootstrap_report_path": str(self._resolve_bootstrap_report_path()),
         }
 
+    def load_live_report(self, force_refresh: bool = False):
+        """Load all-module live execution report when present and schema-valid."""
+        if not force_refresh and self._live_cache and self._live_cache_time:
+            age = (datetime.now() - self._live_cache_time).total_seconds()
+            if age < self._cache_ttl_seconds:
+                return self._live_cache
+
+        report_file = self._resolve_live_report_path()
+        if not report_file.exists():
+            raise FileNotFoundError(f"All-module live report not found: {report_file}")
+
+        report = load_all_module_live_execution_report(report_file)
+        self._live_cache = report
+        self._live_cache_time = datetime.now()
+        return report
+
+    def get_live_provenance(self, force_refresh: bool = False) -> Dict[str, object]:
+        """
+        Return optional live execution report provenance for dashboard/research surfaces.
+
+        Keys:
+        - live_report_present: bool
+        - live_generated_at: Optional[str]
+        - live_status: Optional[str]
+        - live_source: Optional[str]
+        - live_profile: Optional[str]
+        - live_report_path: Optional[str]
+        """
+        try:
+            report = self.load_live_report(force_refresh=force_refresh)
+        except Exception:
+            return {
+                "live_report_present": False,
+                "live_generated_at": None,
+                "live_status": None,
+                "live_source": None,
+                "live_profile": None,
+                "live_report_path": None,
+            }
+
+        statuses = [entry.status for entry in report.modules.values()]
+        overall_status = "pass"
+        if any(status == "fail" for status in statuses):
+            overall_status = "fail"
+        elif any(status == "warn" for status in statuses):
+            overall_status = "warn"
+
+        return {
+            "live_report_present": True,
+            "live_generated_at": report.generated_at,
+            "live_status": overall_status,
+            "live_source": report.source,
+            "live_profile": report.profile,
+            "live_report_path": str(self._resolve_live_report_path()),
+        }
+
     async def run_qualification_probe(
         self,
         *,
@@ -755,6 +840,37 @@ class OpsReadinessService:
             return True, f"Started bootstrap probe job {job_id}", job_id
         except Exception as exc:
             return False, f"Bootstrap probe failed: {exc}", None
+
+    async def run_live_probe(
+        self,
+        *,
+        live_profile: str = "live-smoke-v1",
+        strict: bool = False,
+        modules: Optional[list[str]] = None,
+        output_root: str = "results/readiness/live",
+    ) -> tuple[bool, str, Optional[str]]:
+        """
+        Launch a tracked live probe job from UI.
+
+        Returns:
+            (success, message, job_id)
+        """
+        try:
+            service = get_live_probe_service(app_state)
+            job_id = await service.launch_live_probe(
+                live_profile=live_profile,
+                strict=strict,
+                module_filters=modules or [],
+                output_root=output_root,
+                source_ui_page="/research-hub",
+            )
+            self._live_cache = None
+            self._live_cache_time = None
+            self._all_module_cache = None
+            self._all_module_cache_time = None
+            return True, f"Started live probe job {job_id}", job_id
+        except Exception as exc:
+            return False, f"Live probe failed: {exc}", None
 
     def load_walkthrough_report(self, force_refresh: bool = False):
         """Load internal all-module walkthrough report if present and valid."""
