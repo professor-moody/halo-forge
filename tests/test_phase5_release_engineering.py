@@ -33,6 +33,7 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase12_ops_e2e_launch_reliability.py" in content
     assert "tests/test_phase13_ops_dataset_burnin_baselines.py" in content
     assert "tests/test_phase14_all_module_parity.py" in content
+    assert "tests/test_phase16_all_module_ui_execution_parity.py" in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "scripts/run_ops_module_matrix.py" in content
     assert "scripts/run_ops_e2e_reliability.py" in content

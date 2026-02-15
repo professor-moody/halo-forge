@@ -148,3 +148,12 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "get_walkthrough_provenance" in research_hub_source
     assert "walkthrough report unavailable" in research_hub_source
+
+
+def test_inference_readiness_banner_has_no_out_of_scope_filepicker_callback():
+    """Inference readiness banner must not reference _set_path callback from _browse_file scope."""
+    source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
+    assert "def _browse_file" in source
+    assert "on_select=_set_path" in source
+    banner_source = source.split("def _render_all_module_readiness_banner", 1)[1]
+    assert "FilePicker(" not in banner_source

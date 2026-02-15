@@ -109,4 +109,5 @@ jobs:
             tests/test_phase11_ops_module_ui_expansion.py \
             tests/test_phase12_ops_e2e_launch_reliability.py \
             tests/test_phase13_ops_dataset_burnin_baselines.py \
-            tests/test_phase14_all_module_parity.py
+            tests/test_phase14_all_module_parity.py \
+            tests/test_phase16_all_module_ui_execution_parity.py

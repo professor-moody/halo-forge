@@ -137,6 +137,15 @@ def benchmark_page():
         Benchmark().render()
 
 
+@ui.page('/ops-console')
+def ops_console_page():
+    """Utility module operations console."""
+    create_layout("Ops Console")
+    with ui.column().classes('w-full h-full'):
+        from ui.pages.ops_console import OpsConsole
+        OpsConsole().render()
+
+
 @ui.page('/inference')
 def inference_page():
     """Inference launch page (feature-flagged)."""

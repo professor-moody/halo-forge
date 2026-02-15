@@ -323,6 +323,12 @@ class Inference:
             with self._form_container:
                 self._render_form()
 
+        FilePicker(
+            start_path=".",
+            on_select=_set_path,
+            directories_only=False,
+        )
+
     def _render_all_module_readiness_banner(self) -> None:
         """Render all-module readiness status for inference surface."""
         try:
@@ -367,9 +373,3 @@ class Inference:
                 ui.label(f"Warning: {entry.warnings[0]}").classes(
                     f"text-xs text-[{COLORS['warning']}]"
                 )
-
-        FilePicker(
-            start_path=".",
-            on_select=_set_path,
-            directories_only=False,
-        )

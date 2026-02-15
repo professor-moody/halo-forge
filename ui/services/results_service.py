@@ -114,6 +114,28 @@ class TrainingRunSummary:
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class UtilityRunSummary:
+    """Normalized utility-module run summary entry."""
+
+    id: str
+    module: str
+    execution_mode: str
+    status: str
+    return_code: int
+    output_dir: Path
+    run_summary_path: Path
+    timestamp: datetime = field(default_factory=datetime.now)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    command: List[str] = field(default_factory=list)
+    launch_context_path: Optional[Path] = None
+    has_relaunch_context: bool = False
+    error_message: Optional[str] = None
+    raw_data: Dict[str, Any] = field(default_factory=dict)
+
+
 class ResultsService:
     """Authoritative results ingestion/parsing and aggregation service."""
 
@@ -126,6 +148,9 @@ class ResultsService:
         Path("models"),
         Path("outputs"),
         Path("results"),
+    ]
+    UTILITY_DIRS = [
+        Path("results/ops"),
     ]
 
     DOMAIN_KEYWORDS = {
@@ -159,6 +184,8 @@ class ResultsService:
         self._cache_time: Optional[datetime] = None
         self._training_cache: List[TrainingRunSummary] = []
         self._training_cache_time: Optional[datetime] = None
+        self._utility_cache: List[UtilityRunSummary] = []
+        self._utility_cache_time: Optional[datetime] = None
         self._cache_ttl = 30  # seconds
 
     def scan_results(self, force_refresh: bool = False) -> List[BenchmarkResult]:
@@ -235,6 +262,41 @@ class ResultsService:
     def get_recent_training_runs(self, n: int = 5) -> List[TrainingRunSummary]:
         """Return the newest modality training runs."""
         return self.list_training_runs()[:n]
+
+    def list_utility_runs(self, force_refresh: bool = False) -> List[UtilityRunSummary]:
+        """Scan canonical utility run summaries for config/data/info/plot jobs."""
+        if not force_refresh and self._utility_cache_time:
+            age = (datetime.now() - self._utility_cache_time).total_seconds()
+            if age < self._cache_ttl:
+                return self._utility_cache
+
+        runs: List[UtilityRunSummary] = []
+        seen_files: set[Path] = set()
+
+        for utility_dir in self.UTILITY_DIRS:
+            full_path = self.base_path / utility_dir
+            if not full_path.exists():
+                continue
+
+            for json_file in full_path.glob("**/run_summary.json"):
+                if json_file in seen_files:
+                    continue
+                seen_files.add(json_file)
+                try:
+                    parsed = self._parse_utility_run_summary_file(json_file)
+                    if parsed:
+                        runs.append(parsed)
+                except Exception as e:
+                    print(f"[ResultsService] Failed to parse utility run summary {json_file}: {e}")
+
+        runs.sort(key=lambda r: r.timestamp, reverse=True)
+        self._utility_cache = runs
+        self._utility_cache_time = datetime.now()
+        return runs
+
+    def get_recent_utility_runs(self, n: int = 10) -> List[UtilityRunSummary]:
+        """Return newest utility module runs."""
+        return self.list_utility_runs()[:n]
 
     def get_dashboard_training_summary(self, max_runs: int = 3) -> Dict[str, Any]:
         """Build chart-ready training loss series from canonical training summaries."""
@@ -556,6 +618,63 @@ class ResultsService:
             launch_context_path=launch_context_path if launch_context_path.exists() else None,
             has_relaunch_context=launch_context_path.exists(),
             cycle_losses=cycle_losses,
+            raw_data=data,
+        )
+
+    def _parse_utility_run_summary_file(self, path: Path) -> Optional[UtilityRunSummary]:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+
+        module = str(data.get("module") or "").strip().lower() or path.parent.parent.name.lower()
+        execution_mode = str(data.get("execution_mode") or "contract").strip().lower()
+        status = str(data.get("status") or "failed").strip().lower()
+        return_code = self._as_int(data.get("return_code"))
+        timestamp = self._parse_timestamp(data, path)
+        started_at = None
+        completed_at = None
+        started_raw = data.get("started_at")
+        completed_raw = data.get("completed_at")
+        if isinstance(started_raw, str):
+            try:
+                started_at = datetime.fromisoformat(started_raw.replace("Z", "+00:00"))
+            except Exception:
+                started_at = None
+        if isinstance(completed_raw, str):
+            try:
+                completed_at = datetime.fromisoformat(completed_raw.replace("Z", "+00:00"))
+            except Exception:
+                completed_at = None
+
+        command = []
+        if isinstance(data.get("command"), list):
+            command = [str(item) for item in data.get("command") if isinstance(item, str)]
+
+        launch_context_path = path.parent / "launch_context.json"
+        duration_seconds = self._as_float(data.get("duration_seconds"))
+
+        try:
+            relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
+        except Exception:
+            relative_id = path.as_posix()
+
+        return UtilityRunSummary(
+            id=relative_id.replace("/", "_"),
+            module=module,
+            execution_mode=execution_mode,
+            status=status,
+            return_code=return_code,
+            output_dir=path.parent,
+            run_summary_path=path,
+            timestamp=timestamp,
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_seconds=duration_seconds,
+            command=command,
+            launch_context_path=launch_context_path if launch_context_path.exists() else None,
+            has_relaunch_context=launch_context_path.exists(),
+            error_message=str(data.get("error_message")) if data.get("error_message") else None,
             raw_data=data,
         )
 

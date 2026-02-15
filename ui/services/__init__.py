@@ -85,6 +85,7 @@ from .results_service import (
     ResultsService,
     BenchmarkResult,
     TrainingRunSummary,
+    UtilityRunSummary,
     get_results_service,
 )
 
@@ -141,6 +142,10 @@ from .inference_service import (
     InferenceService,
     get_inference_service,
 )
+from .module_ops_service import (
+    ModuleOpsService,
+    get_module_ops_service,
+)
 
 # Launch contracts
 from .launch_contracts import (
@@ -155,6 +160,9 @@ from .launch_contracts import (
     REASONING_TRAIN_LAUNCH_CONTRACT,
     AGENTIC_TRAIN_LAUNCH_CONTRACT,
     MODALITY_TRAIN_LAUNCH_CONTRACTS,
+    MODULE_OPS_LAUNCH_CONTRACT,
+    UTILITY_MODULE_TYPES,
+    UTILITY_EXECUTION_MODES,
     UI_SUPPORTED_TRAINING_MODES,
     UI_DEFERRED_TRAINING_MODES,
     validate_launch_payload,
@@ -235,6 +243,7 @@ __all__ = [
     'ResultsService',
     'BenchmarkResult',
     'TrainingRunSummary',
+    'UtilityRunSummary',
     'get_results_service',
     
     # Datasets
@@ -268,6 +277,8 @@ __all__ = [
     # Inference
     'InferenceService',
     'get_inference_service',
+    'ModuleOpsService',
+    'get_module_ops_service',
 
     # Launch contracts
     'LaunchContract',
@@ -281,6 +292,9 @@ __all__ = [
     'REASONING_TRAIN_LAUNCH_CONTRACT',
     'AGENTIC_TRAIN_LAUNCH_CONTRACT',
     'MODALITY_TRAIN_LAUNCH_CONTRACTS',
+    'MODULE_OPS_LAUNCH_CONTRACT',
+    'UTILITY_MODULE_TYPES',
+    'UTILITY_EXECUTION_MODES',
     'UI_SUPPORTED_TRAINING_MODES',
     'UI_DEFERRED_TRAINING_MODES',
     'validate_launch_payload',

@@ -66,6 +66,10 @@ AGENTIC_TRAIN_LAUNCH_CONTRACT = LaunchContract(
     optional_positive_int_fields=("limit",),
 )
 
+MODULE_OPS_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("module", "execution_mode", "output_root"),
+)
+
 INFERENCE_OPTIMIZE_LAUNCH_CONTRACT = LaunchContract(
     required_text_fields=("model", "output_dir", "target_precision"),
     non_negative_float_fields=("target_latency",),
@@ -82,6 +86,9 @@ MODALITY_TRAIN_LAUNCH_CONTRACTS: dict[str, LaunchContract] = {
     "reasoning": REASONING_TRAIN_LAUNCH_CONTRACT,
     "agentic": AGENTIC_TRAIN_LAUNCH_CONTRACT,
 }
+
+UTILITY_MODULE_TYPES: tuple[str, ...] = ("config", "data", "info", "plot")
+UTILITY_EXECUTION_MODES: tuple[str, ...] = ("contract", "live")
 
 # UI supports launching these training modes end-to-end today.
 UI_SUPPORTED_TRAINING_MODES: tuple[str, ...] = (

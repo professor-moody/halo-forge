@@ -23,6 +23,10 @@ SUPPORTED_JOB_TYPES = {
     "audio",
     "reasoning",
     "agentic",
+    "config",
+    "data",
+    "info",
+    "plot",
 }
 
 CYCLE_BASED_TRAINING_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
@@ -155,6 +159,42 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "warmup",
         "measure_memory",
     ),
+    "config": (
+        "module",
+        "execution_mode",
+        "output_root",
+        "config_path",
+        "config_type",
+        "verbose",
+    ),
+    "data": (
+        "module",
+        "execution_mode",
+        "output_root",
+        "data_action",
+        "data_file",
+        "dataset",
+        "topic",
+        "backend",
+        "backend_model",
+        "data_output",
+        "template",
+        "system_prompt",
+    ),
+    "info": (
+        "module",
+        "execution_mode",
+        "output_root",
+    ),
+    "plot": (
+        "module",
+        "execution_mode",
+        "output_root",
+        "plot_action",
+        "plot_input",
+        "plot_output",
+        "plot_compare",
+    ),
 }
 
 
@@ -195,7 +235,7 @@ class LaunchContextV1:
             raise ValueError(f"Unsupported launch context job_type: {job_type}")
 
         service = str(data.get("service") or "").strip().lower()
-        if service not in {"training", "benchmark", "inference"}:
+        if service not in {"training", "benchmark", "inference", "module_ops"}:
             raise ValueError(f"Unsupported launch context service: {service}")
 
         command = data.get("command")

@@ -16,10 +16,10 @@ from ui.theme import COLORS
 
 
 MODULE_ROUTE_MAP: Dict[str, str] = {
-    "config": "/config",
-    "data": "/datasets",
-    "info": "/",
-    "plot": "/results",
+    "config": "/ops-console",
+    "data": "/ops-console",
+    "info": "/ops-console",
+    "plot": "/ops-console",
     "sft": "/training",
     "raft": "/training",
     "benchmark_code": "/benchmark",

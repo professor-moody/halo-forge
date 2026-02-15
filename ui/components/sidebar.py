@@ -86,6 +86,7 @@ class Sidebar:
             {"icon": "dashboard", "label": "Dashboard", "path": "/"},
             {"icon": "model_training", "label": "Training", "path": "/training"},
             {"icon": "speed", "label": "Benchmark", "path": "/benchmark"},
+            {"icon": "terminal", "label": "Ops Console", "path": "/ops-console"},
             {"icon": "computer", "label": "Monitor", "path": "/monitor"},
             {"icon": "settings", "label": "Config", "path": "/config"},
             {"icon": "verified", "label": "Verifiers", "path": "/verifiers"},

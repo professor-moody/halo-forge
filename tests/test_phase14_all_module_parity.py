@@ -118,6 +118,10 @@ def test_ui_surfaces_include_all_module_readiness_hooks():
     training_source = Path("ui/pages/training.py").read_text(encoding="utf-8")
     assert "_render_all_module_readiness_banner" in training_source
 
+    ops_console_source = Path("ui/pages/ops_console.py").read_text(encoding="utf-8")
+    assert "get_effective_all_module_readiness" in ops_console_source
+    assert "module_ops_service" in ops_console_source
+
 
 def test_all_module_fixture_pack_contains_expected_directories():
     """Fixture pack should include deterministic module directories."""

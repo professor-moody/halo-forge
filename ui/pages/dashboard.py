@@ -107,7 +107,7 @@ class Dashboard:
                 f'border border-[#2d343c] animate-in stagger-2'
             ):
                 with ui.row().classes('w-full items-center justify-between'):
-                    ui.label('All-Module Readiness (Non-Code Modality Readiness)').classes(
+                    ui.label('All-Module Readiness').classes(
                         f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                     )
                     ui.button(
@@ -194,6 +194,7 @@ class Dashboard:
                     self._render_action_button('SFT Training', 'school', '/training?type=sft')
                     self._render_action_button('RAFT Training', 'autorenew', '/training?type=raft')
                     self._render_action_button('Run Benchmark', 'speed', '/benchmark')
+                    self._render_action_button('Ops Console', 'terminal', '/ops-console')
                     flags = get_ui_feature_flags()
                     if flags.enable_inference_page:
                         self._render_action_button('Inference', 'bolt', '/inference')

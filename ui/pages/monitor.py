@@ -17,6 +17,7 @@ from ui.services import (
     TrainingService,
     get_benchmark_service,
     get_inference_service,
+    get_module_ops_service,
     get_event_bus,
     Event,
     EventType,
@@ -29,6 +30,7 @@ from ui.components.notifications import (
 )
 
 CYCLE_BASED_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
+UTILITY_JOB_TYPES = {"config", "data", "info", "plot"}
 
 
 class Monitor:
@@ -42,6 +44,7 @@ class Monitor:
         self.training_service = TrainingService(state)
         self.benchmark_service = get_benchmark_service(state)
         self.inference_service = get_inference_service(state)
+        self.module_ops_service = get_module_ops_service(state)
         self._update_task: Optional[asyncio.Task] = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         
@@ -940,6 +943,8 @@ class Monitor:
                 success = await self.benchmark_service.stop_job(self.job.id)
             elif self.job.type == "inference":
                 success = await self.inference_service.stop_job(self.job.id)
+            elif self.job.type in UTILITY_JOB_TYPES:
+                success = await self.module_ops_service.stop_job(self.job.id)
             else:
                 success = await self.training_service.stop_job(self.job.id)
             
@@ -971,6 +976,12 @@ class Monitor:
                 )
             elif self.job.type == "inference":
                 new_job_id = await self.inference_service.relaunch_from_context(
+                    context_path,
+                    origin_job_id=self.job.id,
+                    source_ui_page="/monitor",
+                )
+            elif self.job.type in UTILITY_JOB_TYPES:
+                new_job_id = await self.module_ops_service.relaunch_from_context(
                     context_path,
                     origin_job_id=self.job.id,
                     source_ui_page="/monitor",
@@ -1031,11 +1042,25 @@ class Monitor:
             elif self.job.type == "inference":
                 app.storage.user["inference_clone_payload"] = payload
                 ui.navigate.to("/inference")
+            elif self.job.type in UTILITY_JOB_TYPES:
+                app.storage.user["ops_clone_payload"] = payload
+                ui.navigate.to("/ops-console")
             else:
                 app.storage.user["training_clone_payload"] = payload
                 ui.navigate.to("/training")
         except Exception as e:
             notify_job_failed(self.job.name, f"Clone to form failed: {e}")
+
+    def _service_logs_for_job(self) -> list[dict]:
+        if not self.job:
+            return []
+        if self.job.type == "benchmark":
+            return self.benchmark_service.get_logs(self.job_id, last_n=1000)
+        if self.job.type == "inference":
+            return self.inference_service.get_logs(self.job_id, last_n=1000)
+        if self.job.type in UTILITY_JOB_TYPES:
+            return self.module_ops_service.get_logs(self.job_id, last_n=1000)
+        return self.training_service.get_logs(self.job_id, last_n=1000)
 
     def _copy_artifacts_path(self):
         """Copy artifact output directory to clipboard."""
@@ -1071,7 +1096,7 @@ class Monitor:
         
         # Final fallback to service buffer
         if not log_text:
-            logs = self.training_service.get_logs(self.job_id, last_n=1000)
+            logs = self._service_logs_for_job()
             log_text = '\n'.join([entry.get('line', '') for entry in logs]).strip()
         
         if not log_text:
@@ -1114,7 +1139,7 @@ class Monitor:
         
         # Final fallback to service buffer
         if not log_text:
-            logs = self.training_service.get_logs(self.job_id, last_n=1000)
+            logs = self._service_logs_for_job()
             log_text = '\n'.join([entry.get('line', '') for entry in logs]).strip()
         
         if not log_text:
