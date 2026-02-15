@@ -13,20 +13,29 @@ from halo_forge.ops_module_readiness import (
     OPS_MODULES,
     OPS_READINESS_STALE_AFTER_SECONDS,
     OpsReadinessReport,
+    OpsModuleReadiness,
     apply_staleness_policy,
+    build_ops_readiness_report,
     compute_ops_module_readiness,
     default_output_map,
     load_ops_readiness_report,
+    write_ops_readiness_report,
 )
 from halo_forge.all_module_readiness import (
     ALL_MODULES,
     DEFAULT_ALL_MODULE_READINESS_REPORT_FILE,
+    AllModuleReadiness,
     AllModuleReadinessReport,
     apply_staleness_policy as apply_all_module_staleness_policy,
+    build_all_module_readiness_report,
     compute_all_module_readiness,
     default_output_map as default_all_module_output_map,
     load_all_module_readiness_report,
+    validate_all_module,
+    write_all_module_readiness_report,
 )
+from .results_service import get_results_service
+from .launch_context import find_latest_launch_context
 
 
 class OpsReadinessService:
@@ -58,6 +67,101 @@ class OpsReadinessService:
         self._walkthrough_cache = None
         self._walkthrough_cache_time: Optional[datetime] = None
 
+    def resolve_effective_output_map(
+        self,
+        *,
+        include_all_modules: bool = False,
+        force_refresh: bool = False,
+    ) -> Dict[str, str]:
+        """
+        Resolve output roots using newest evidence first, then static defaults.
+
+        Priority:
+        1. Recent parsed results/training/utility artifacts
+        2. Latest launch_context.json discovery
+        3. Static default output map
+        """
+        if include_all_modules:
+            resolved = self._default_all_module_output_map()
+            valid_keys = set(ALL_MODULES)
+        else:
+            resolved = self._default_output_map()
+            valid_keys = set(OPS_MODULES)
+
+        try:
+            results_service = get_results_service()
+            artifact_roots = results_service.get_latest_artifact_roots()
+            training_runs = results_service.list_training_runs(force_refresh=force_refresh)
+            benchmark_results = results_service.list_results(force_refresh=force_refresh)
+        except Exception:
+            artifact_roots = {}
+            training_runs = []
+            benchmark_results = []
+
+        for module, path in artifact_roots.items():
+            if module in valid_keys and path:
+                resolved[module] = str(path)
+
+        for run in training_runs:
+            module = str(run.modality or "").strip().lower()
+            if module in valid_keys:
+                resolved[module] = str(run.output_dir)
+
+        # Prefer latest benchmark file parent discovered by domain.
+        for result in benchmark_results:
+            if not result.file_path:
+                continue
+            parent = str(result.file_path.parent)
+            domain = str(result.domain or "").strip().lower()
+            if include_all_modules:
+                if domain == "code" and "benchmark_code" in valid_keys:
+                    resolved["benchmark_code"] = parent
+                if domain in {"vlm", "audio", "reasoning", "agentic"} and "benchmark_non_code" in valid_keys:
+                    resolved["benchmark_non_code"] = parent
+            if domain in {"vlm", "audio", "reasoning", "agentic"} and "benchmark" in valid_keys:
+                resolved["benchmark"] = parent
+
+        model_root = self.base_path / "models"
+        results_root = self.base_path / "results"
+        repo_root = self.base_path
+
+        launch_lookup = {
+            "sft": ("training", model_root),
+            "raft": ("training", model_root),
+            "vlm": ("training", model_root),
+            "audio": ("training", model_root),
+            "reasoning": ("training", model_root),
+            "agentic": ("training", model_root),
+            "inference": ("inference", model_root),
+            "benchmark": ("benchmark", results_root),
+        }
+
+        for module, (service, root) in launch_lookup.items():
+            if module not in valid_keys:
+                continue
+            context_path = find_latest_launch_context(
+                root=root,
+                job_type=module,
+                service=service,
+            )
+            if context_path:
+                resolved[module] = str(context_path.parent)
+
+        if include_all_modules and "benchmark_code" in valid_keys:
+            # Fallback: if only benchmark contexts exist and no code-domain parse yet.
+            context_path = find_latest_launch_context(
+                root=results_root,
+                job_type="benchmark",
+                service="benchmark",
+            )
+            if context_path and not Path(resolved["benchmark_code"]).exists():
+                resolved["benchmark_code"] = str(context_path.parent)
+
+        if "ui_ops" in valid_keys:
+            resolved["ui_ops"] = str(repo_root)
+
+        return resolved
+
     def load_readiness_report(self, force_refresh: bool = False) -> OpsReadinessReport:
         """Load canonical ops readiness report from disk."""
         if not force_refresh and self._cache and self._cache_time:
@@ -82,18 +186,25 @@ class OpsReadinessService:
         self,
         output_map: Optional[Dict[str, str]] = None,
         seed: int = 42,
+        force_refresh: bool = False,
     ) -> OpsReadinessReport:
         """Compute readiness directly from local contracts/artifacts."""
-        merged_output_map = self._default_output_map()
+        merged_output_map = self.resolve_effective_output_map(
+            include_all_modules=False,
+            force_refresh=force_refresh,
+        )
         if output_map:
-            for key, value in output_map.items():
-                if key in OPS_MODULES and value:
-                    merged_output_map[key] = value
+            merged_output_map = self._apply_output_overrides(
+                merged_output_map,
+                output_map,
+                valid_keys=set(OPS_MODULES),
+            )
 
         report = compute_ops_module_readiness(
             output_map=merged_output_map,
             seed=seed,
             source="ui_live_compute",
+            require_artifacts=False,
         )
         report = apply_staleness_policy(
             report,
@@ -118,10 +229,18 @@ class OpsReadinessService:
         try:
             report = self.load_readiness_report(force_refresh=force_refresh)
             if report.stale and not self._has_usable_entries(report):
-                return self.compute_live_readiness(output_map=output_map, seed=seed)
+                return self.compute_live_readiness(
+                    output_map=output_map,
+                    seed=seed,
+                    force_refresh=force_refresh,
+                )
             return report
         except Exception:
-            return self.compute_live_readiness(output_map=output_map, seed=seed)
+            return self.compute_live_readiness(
+                output_map=output_map,
+                seed=seed,
+                force_refresh=force_refresh,
+            )
 
     def _default_output_map(self) -> Dict[str, str]:
         defaults = default_output_map()
@@ -129,6 +248,19 @@ class OpsReadinessService:
             module: str(Path(path))
             for module, path in defaults.items()
         }
+
+    def _apply_output_overrides(
+        self,
+        base_map: Dict[str, str],
+        overrides: Dict[str, str],
+        *,
+        valid_keys: set[str],
+    ) -> Dict[str, str]:
+        merged = dict(base_map)
+        for key, value in overrides.items():
+            if key in valid_keys and value:
+                merged[key] = str(value)
+        return merged
 
     def _has_usable_entries(self, report: OpsReadinessReport) -> bool:
         for module in OPS_MODULES:
@@ -183,13 +315,19 @@ class OpsReadinessService:
         self,
         output_map: Optional[Dict[str, str]] = None,
         seed: int = 42,
+        force_refresh: bool = False,
     ) -> AllModuleReadinessReport:
         """Compute all-module readiness directly from local contracts/artifacts."""
-        merged_output_map = self._default_all_module_output_map()
+        merged_output_map = self.resolve_effective_output_map(
+            include_all_modules=True,
+            force_refresh=force_refresh,
+        )
         if output_map:
-            for key, value in output_map.items():
-                if key in ALL_MODULES and value:
-                    merged_output_map[key] = value
+            merged_output_map = self._apply_output_overrides(
+                merged_output_map,
+                output_map,
+                valid_keys=set(ALL_MODULES),
+            )
 
         report = compute_all_module_readiness(
             output_map=merged_output_map,
@@ -220,10 +358,18 @@ class OpsReadinessService:
         try:
             report = self.load_all_module_readiness_report(force_refresh=force_refresh)
             if report.stale and not self._has_usable_all_module_entries(report):
-                return self.compute_live_all_module_readiness(output_map=output_map, seed=seed)
+                return self.compute_live_all_module_readiness(
+                    output_map=output_map,
+                    seed=seed,
+                    force_refresh=force_refresh,
+                )
             return report
         except Exception:
-            return self.compute_live_all_module_readiness(output_map=output_map, seed=seed)
+            return self.compute_live_all_module_readiness(
+                output_map=output_map,
+                seed=seed,
+                force_refresh=force_refresh,
+            )
 
     def _default_all_module_output_map(self) -> Dict[str, str]:
         defaults = default_all_module_output_map()
@@ -231,6 +377,81 @@ class OpsReadinessService:
             module: str(Path(path))
             for module, path in defaults.items()
         }
+
+    def run_contract_probe(
+        self,
+        *,
+        module: str,
+        seed: int = 42,
+        include_all_modules: bool = True,
+    ) -> tuple[bool, str]:
+        """
+        Recompute readiness for one module and persist updated report.
+
+        Returns:
+            (success, message)
+        """
+        module_key = str(module or "").strip().lower()
+        if include_all_modules:
+            if module_key not in ALL_MODULES:
+                return False, f"Unsupported module: {module_key}"
+            mapping = self.resolve_effective_output_map(include_all_modules=True, force_refresh=True)
+            entry = validate_all_module(
+                module=module_key,
+                output_dir=Path(mapping[module_key]),
+                seed=seed,
+                require_artifacts=False,
+            )
+            existing: Dict[str, AllModuleReadiness] = {}
+            try:
+                report = self.load_all_module_readiness_report(force_refresh=True)
+                existing = dict(report.modules)
+            except Exception:
+                existing = {}
+            existing[module_key] = entry
+            updated = build_all_module_readiness_report(
+                module_entries=existing,
+                seed=seed,
+                source="ui_live_compute",
+            )
+            path = self._resolve_all_module_report_path()
+            write_all_module_readiness_report(path, updated)
+            self._all_module_cache = apply_all_module_staleness_policy(
+                updated,
+                stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
+            )
+            self._all_module_cache_time = datetime.now()
+            return True, f"Wrote contract probe readiness for {module_key} to {path}"
+
+        if module_key not in OPS_MODULES:
+            return False, f"Unsupported module: {module_key}"
+        mapping = self.resolve_effective_output_map(include_all_modules=False, force_refresh=True)
+        entry = validate_ops_module(
+            module=module_key,
+            output_dir=Path(mapping[module_key]),
+            seed=seed,
+            require_artifacts=False,
+        )
+        existing_ops: Dict[str, OpsModuleReadiness] = {}
+        try:
+            report = self.load_readiness_report(force_refresh=True)
+            existing_ops = dict(report.modules)
+        except Exception:
+            existing_ops = {}
+        existing_ops[module_key] = entry
+        updated = build_ops_readiness_report(
+            module_entries=existing_ops,
+            seed=seed,
+            source="ui_live_compute",
+        )
+        path = self._resolve_report_path()
+        write_ops_readiness_report(path, updated)
+        self._cache = apply_staleness_policy(
+            updated,
+            stale_after_seconds=OPS_READINESS_STALE_AFTER_SECONDS,
+        )
+        self._cache_time = datetime.now()
+        return True, f"Wrote contract probe readiness for {module_key} to {path}"
 
     def _has_usable_all_module_entries(self, report: AllModuleReadinessReport) -> bool:
         for module in ALL_MODULES:

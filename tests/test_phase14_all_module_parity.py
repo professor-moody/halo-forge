@@ -21,6 +21,9 @@ def test_all_module_readiness_schema_validation_pass_and_fail():
     payload = report.to_dict()
     errors = validate_all_module_readiness_payload(payload)
     assert errors == []
+    assert "launch_blocked" in payload["modules"]["config"]
+    assert "issue_class" in payload["modules"]["config"]
+    assert "action_hint" in payload["modules"]["config"]
 
     broken = dict(payload)
     broken.pop("modules")

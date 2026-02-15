@@ -385,6 +385,9 @@ class Dashboard:
         ui.label(source_text).classes(
             f'text-xs text-[{COLORS["text_muted"]}]'
         )
+        ui.label("Non-Code Modality Readiness is included in this all-module summary.").classes(
+            f'text-xs text-[{COLORS["text_muted"]}]'
+        )
         burnin_meta = self.readiness_service.get_burnin_provenance()
         if burnin_meta.get("burnin_report_present"):
             burnin_status = str(burnin_meta.get("burnin_status") or "warn")
@@ -397,6 +400,28 @@ class Dashboard:
             ui.label("burnin report unavailable (non-blocking)").classes(
                 f'text-xs text-[{COLORS["warning"]}]'
             )
+
+        status_counts = {"pass": 0, "warn": 0, "fail": 0}
+        for module in report.modules.values():
+            status = str(module.status).lower()
+            if status in status_counts:
+                status_counts[status] += 1
+        with ui.row().classes(
+            f'w-full items-center justify-between gap-4 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}]'
+        ):
+            with ui.row().classes('items-center gap-4'):
+                ui.label(
+                    f"All Modules • pass={status_counts['pass']} warn={status_counts['warn']} fail={status_counts['fail']}"
+                ).classes(f'text-xs font-semibold text-[{COLORS["text_primary"]}]')
+                ui.label("warn-and-launch enabled").classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+            with ui.row().classes('items-center gap-2'):
+                ui.link('Training', '/training').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.link('Benchmark', '/benchmark').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.link('Inference', '/inference').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.link('Ops', '/ops-console').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.link('Research', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
 
         for module in (
             "config",
@@ -431,12 +456,21 @@ class Dashboard:
                         f"errors={len(entry.errors)} • warnings={len(entry.warnings)}"
                     ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
                     if entry.errors:
-                        ui.label(entry.errors[0]).classes(
-                            f'text-xs text-[{COLORS["error"]}]'
-                        )
+                        if entry.launch_blocked:
+                            ui.label(f"Launch blocked: {entry.errors[0]}").classes(
+                                f'text-xs text-[{COLORS["error"]}]'
+                            )
+                        else:
+                            ui.label(f"Evidence missing (non-blocking): {entry.errors[0]}").classes(
+                                f'text-xs text-[{COLORS["warning"]}]'
+                            )
                     elif entry.warnings:
-                        ui.label(entry.warnings[0]).classes(
+                        ui.label(f"Evidence missing (non-blocking): {entry.warnings[0]}").classes(
                             f'text-xs text-[{COLORS["warning"]}]'
+                        )
+                    if entry.action_hint:
+                        ui.label(f"Action: {entry.action_hint}").classes(
+                            f'text-xs text-[{COLORS["text_secondary"]}]'
                         )
                 ui.label(entry.last_output_dir or "--").classes(
                     f'text-xs font-mono text-[{COLORS["text_muted"]}] max-w-[50%] truncate'

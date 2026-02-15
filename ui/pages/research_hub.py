@@ -1,7 +1,7 @@
 """
 Research Hub Page
 
-Cross-module readiness and operational testing summary for non-coding modules.
+Cross-module readiness and operational testing summary for all CLI modules.
 """
 
 from __future__ import annotations
@@ -143,6 +143,11 @@ class ResearchHub:
                         icon="open_in_new",
                         on_click=lambda r=route: ui.navigate.to(r),
                     ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
+                ui.button(
+                    "Run contract probe",
+                    icon="play_arrow",
+                    on_click=lambda m=module: self._run_contract_probe(m),
+                ).props("flat dense").classes(f"text-[{COLORS['text_secondary']}]")
 
             ui.label(f"errors={len(entry.errors)} warnings={len(entry.warnings)}").classes(
                 f"text-xs text-[{COLORS['text_muted']}] font-mono"
@@ -159,16 +164,25 @@ class ResearchHub:
                 ).classes(f"text-xs text-[{burnin_color}] font-mono")
 
             if entry.errors:
-                ui.label(f"Blocker: {entry.errors[0]}").classes(
-                    f"text-xs text-[{COLORS['error']}]"
-                )
+                if entry.launch_blocked:
+                    ui.label(f"Launch blocked: {entry.errors[0]}").classes(
+                        f"text-xs text-[{COLORS['error']}]"
+                    )
+                else:
+                    ui.label(f"Evidence missing (non-blocking): {entry.errors[0]}").classes(
+                        f"text-xs text-[{COLORS['warning']}]"
+                    )
             elif entry.warnings:
-                ui.label(f"Warning: {entry.warnings[0]}").classes(
+                ui.label(f"Evidence missing (non-blocking): {entry.warnings[0]}").classes(
                     f"text-xs text-[{COLORS['warning']}]"
                 )
             else:
                 ui.label("All required contract checks passed.").classes(
                     f"text-xs text-[{COLORS['success']}]"
+                )
+            if entry.action_hint:
+                ui.label(f"Action: {entry.action_hint}").classes(
+                    f"text-xs text-[{COLORS['text_secondary']}]"
                 )
 
             if entry.evidence:
@@ -178,3 +192,11 @@ class ResearchHub:
                 ui.label(f"evidence: {evidence_preview}").classes(
                     f"text-xs text-[{COLORS['text_muted']}] font-mono"
                 )
+
+    def _run_contract_probe(self, module: str) -> None:
+        ok, message = self.readiness_service.run_contract_probe(
+            module=module,
+            include_all_modules=True,
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=1800)
+        self._refresh()

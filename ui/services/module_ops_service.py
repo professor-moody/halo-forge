@@ -574,6 +574,11 @@ class ModuleOpsService:
             "stdout_log": str(stdout_log),
             "stderr_log": None,
             "launch_context": str(launch_context),
+            "artifact_pointers": {
+                "run_summary": str(summary_path),
+                "stdout_log": str(stdout_log),
+                "launch_context": str(launch_context),
+            },
             "error_message": job.error_message,
             "metadata": dict(job.lifecycle_metadata or {}),
         }

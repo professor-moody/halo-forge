@@ -110,4 +110,5 @@ jobs:
             tests/test_phase12_ops_e2e_launch_reliability.py \
             tests/test_phase13_ops_dataset_burnin_baselines.py \
             tests/test_phase14_all_module_parity.py \
-            tests/test_phase16_all_module_ui_execution_parity.py
+            tests/test_phase16_all_module_ui_execution_parity.py \
+            tests/test_phase17_ui_execution_truth_and_professional_hardening.py

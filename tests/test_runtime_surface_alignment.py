@@ -144,6 +144,7 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "show=open_browser" in app_source
     assert "UI_START base_url=" in app_source
     assert "UI_ROUTE root=" in app_source
+    assert "render_guarded_page" in app_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "get_walkthrough_provenance" in research_hub_source

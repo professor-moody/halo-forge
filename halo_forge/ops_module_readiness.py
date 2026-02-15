@@ -34,6 +34,7 @@ DEFAULT_OPS_READINESS_REPORT_FILE = Path(
 OPS_READINESS_STALE_AFTER_SECONDS = 24 * 60 * 60
 OPS_READINESS_STATUSES = ("pass", "warn", "fail")
 OPS_READINESS_SOURCES = ("script", "ui_live_compute")
+OPS_READINESS_ISSUE_CLASSES = ("none", "evidence_gap", "preflight_blocker", "contract_break")
 
 
 @dataclass
@@ -47,6 +48,9 @@ class OpsModuleReadiness:
     warnings: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
     last_output_dir: str = ""
+    launch_blocked: bool = False
+    issue_class: str = "none"
+    action_hint: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -58,6 +62,9 @@ class OpsModuleReadiness:
             "warnings": list(self.warnings),
             "evidence": dict(self.evidence),
             "last_output_dir": self.last_output_dir,
+            "launch_blocked": bool(self.launch_blocked),
+            "issue_class": self.issue_class,
+            "action_hint": self.action_hint,
         }
 
     @staticmethod
@@ -83,6 +90,9 @@ class OpsModuleReadiness:
             if isinstance(payload.get("evidence"), Mapping)
             else {},
             last_output_dir=str(payload.get("last_output_dir") or ""),
+            launch_blocked=bool(payload.get("launch_blocked", False)),
+            issue_class=str(payload.get("issue_class") or "none"),
+            action_hint=str(payload.get("action_hint") or ""),
         )
 
 
@@ -166,6 +176,9 @@ def build_ops_readiness_report(
             module=module,
             status="fail",
             errors=[f"no readiness entry available for module: {module}"],
+            launch_blocked=True,
+            issue_class="contract_break",
+            action_hint="Generate a readiness report for this module or provide a valid validation target.",
         )
 
     return OpsReadinessReport(
@@ -244,6 +257,15 @@ def validate_ops_readiness_payload(payload: Mapping[str, Any]) -> List[str]:
         evidence = entry.get("evidence")
         if evidence is not None and not isinstance(evidence, Mapping):
             errors.append(f"evidence must be an object for {module}")
+        launch_blocked = entry.get("launch_blocked")
+        if launch_blocked is not None and not isinstance(launch_blocked, bool):
+            errors.append(f"launch_blocked must be a boolean for {module}")
+        issue_class = entry.get("issue_class")
+        if issue_class is not None and str(issue_class) not in OPS_READINESS_ISSUE_CLASSES:
+            errors.append(f"invalid issue_class for {module}: {issue_class}")
+        action_hint = entry.get("action_hint")
+        if action_hint is not None and not isinstance(action_hint, str):
+            errors.append(f"action_hint must be a string for {module}")
 
     return errors
 
@@ -312,6 +334,9 @@ def apply_staleness_policy(
             entry.warnings.append(stale_warning)
         if entry.status == "pass":
             entry.status = "warn"
+            entry.launch_blocked = False
+            entry.issue_class = "evidence_gap"
+            entry.action_hint = "Refresh or regenerate readiness evidence for this module."
     return cloned
 
 
@@ -335,6 +360,7 @@ def compute_ops_module_readiness(
     *,
     seed: int = DEFAULT_TRAINING_SEED,
     source: str = "ui_live_compute",
+    require_artifacts: bool = False,
 ) -> OpsReadinessReport:
     """Compute live readiness for all ops modules."""
     mapping = default_output_map()
@@ -349,6 +375,7 @@ def compute_ops_module_readiness(
             module=module,
             output_dir=Path(mapping[module]),
             seed=seed,
+            require_artifacts=require_artifacts,
         )
 
     return build_ops_readiness_report(
@@ -363,6 +390,7 @@ def validate_ops_module(
     module: str,
     output_dir: Path,
     seed: int = DEFAULT_TRAINING_SEED,
+    require_artifacts: bool = False,
 ) -> OpsModuleReadiness:
     """Validate one module readiness from its canonical output directory."""
     key = str(module).strip().lower()
@@ -372,14 +400,22 @@ def validate_ops_module(
             status="fail",
             errors=[f"unsupported module: {key}"],
             last_output_dir=str(output_dir),
+            launch_blocked=True,
+            issue_class="contract_break",
+            action_hint=f"Use one of: {', '.join(OPS_MODULES)}.",
         )
 
     if key in NON_CODE_MODALITIES:
-        return _modality_module_readiness(key, output_dir, seed=seed)
+        return _modality_module_readiness(
+            key,
+            output_dir,
+            seed=seed,
+            require_artifacts=require_artifacts,
+        )
     if key == "inference":
-        return _inference_module_readiness(output_dir)
+        return _inference_module_readiness(output_dir, require_artifacts=require_artifacts)
     if key == "benchmark":
-        return _benchmark_module_readiness(output_dir)
+        return _benchmark_module_readiness(output_dir, require_artifacts=require_artifacts)
     return _ui_ops_module_readiness(output_dir)
 
 
@@ -388,31 +424,52 @@ def _modality_module_readiness(
     output_dir: Path,
     *,
     seed: int,
+    require_artifacts: bool,
 ) -> OpsModuleReadiness:
     result = validate_modality_training_artifacts(
         modality=module,
         output_dir=output_dir,
         expected_seed=seed,
     )
+    errors: List[str] = []
+    warnings: List[str] = list(result.warnings)
+    if require_artifacts:
+        errors.extend(result.errors)
+    else:
+        for message in result.errors:
+            text = str(message).lower()
+            if text.startswith("missing ") or "not found" in text:
+                warnings.append(message)
+            else:
+                errors.append(message)
     evidence = dict(result.evidence)
     checks = _build_path_checks(
         evidence=evidence,
         required_keys=("training_summary", "launch_context", "latest_checkpoint"),
         optional_keys=("final_model",),
+        require_required_keys=require_artifacts,
     )
-    status = readiness_status_from_lists(result.errors, result.warnings)
+    status = readiness_status_from_lists(errors, warnings)
+    issue_class, action_hint = _derive_issue_fields(
+        errors=errors,
+        warnings=warnings,
+        launch_blocked=bool(errors),
+    )
     return OpsModuleReadiness(
         module=module,
         status=status,
         checks=checks,
-        errors=list(result.errors),
-        warnings=list(result.warnings),
+        errors=errors,
+        warnings=warnings,
         evidence=evidence,
         last_output_dir=result.output_dir,
+        launch_blocked=bool(errors),
+        issue_class=issue_class,
+        action_hint=action_hint,
     )
 
 
-def _inference_module_readiness(output_dir: Path) -> OpsModuleReadiness:
+def _inference_module_readiness(output_dir: Path, *, require_artifacts: bool) -> OpsModuleReadiness:
     errors: List[str] = []
     warnings: List[str] = []
     evidence: Dict[str, Any] = {
@@ -424,11 +481,19 @@ def _inference_module_readiness(output_dir: Path) -> OpsModuleReadiness:
     }
 
     if not output_dir.exists():
-        errors.append(f"inference output directory not found: {output_dir}")
+        message = f"inference output directory not found: {output_dir}"
+        if require_artifacts:
+            errors.append(message)
+        else:
+            warnings.append(message)
 
     launch_context_path = output_dir / "launch_context.json"
     if not launch_context_path.exists():
-        errors.append(f"missing launch_context.json: {launch_context_path}")
+        message = f"missing launch_context.json: {launch_context_path}"
+        if require_artifacts:
+            errors.append(message)
+        else:
+            warnings.append(message)
     else:
         try:
             from ui.services.launch_context import read_launch_context
@@ -460,8 +525,14 @@ def _inference_module_readiness(output_dir: Path) -> OpsModuleReadiness:
         evidence=evidence,
         required_keys=("launch_context",),
         optional_keys=("quantized_dir", "model_gguf", "model_onnx"),
+        require_required_keys=require_artifacts,
     )
     status = readiness_status_from_lists(errors, warnings)
+    issue_class, action_hint = _derive_issue_fields(
+        errors=errors,
+        warnings=warnings,
+        launch_blocked=bool(errors),
+    )
     return OpsModuleReadiness(
         module="inference",
         status=status,
@@ -470,23 +541,38 @@ def _inference_module_readiness(output_dir: Path) -> OpsModuleReadiness:
         warnings=warnings,
         evidence=evidence,
         last_output_dir=str(output_dir),
+        launch_blocked=bool(errors),
+        issue_class=issue_class,
+        action_hint=action_hint,
     )
 
 
-def _benchmark_module_readiness(output_dir: Path) -> OpsModuleReadiness:
+def _benchmark_module_readiness(output_dir: Path, *, require_artifacts: bool) -> OpsModuleReadiness:
     errors: List[str] = []
     warnings: List[str] = []
     evidence: Dict[str, Any] = {"output_dir": str(output_dir)}
 
     if not output_dir.exists():
-        errors.append(f"benchmark output directory not found: {output_dir}")
+        message = f"benchmark output directory not found: {output_dir}"
+        if require_artifacts:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        issue_class, action_hint = _derive_issue_fields(
+            errors=errors,
+            warnings=warnings,
+            launch_blocked=bool(errors),
+        )
         return OpsModuleReadiness(
             module="benchmark",
-            status="fail",
+            status=readiness_status_from_lists(errors, warnings),
             errors=errors,
             warnings=warnings,
             evidence=evidence,
             last_output_dir=str(output_dir),
+            launch_blocked=bool(errors),
+            issue_class=issue_class,
+            action_hint=action_hint,
         )
 
     benchmark_files = sorted(output_dir.glob("**/benchmark.json"))
@@ -513,7 +599,11 @@ def _benchmark_module_readiness(output_dir: Path) -> OpsModuleReadiness:
     evidence["parse_errors"] = parse_errors
 
     if not benchmark_files:
-        errors.append(f"no benchmark.json files found under: {output_dir}")
+        message = f"no benchmark.json files found under: {output_dir}"
+        if require_artifacts:
+            errors.append(message)
+        else:
+            warnings.append(message)
     if parse_errors:
         warnings.append(f"{parse_errors} benchmark result file(s) failed JSON parse")
     if not discovered_domains:
@@ -522,12 +612,17 @@ def _benchmark_module_readiness(output_dir: Path) -> OpsModuleReadiness:
     checks = {
         "benchmark_results": ReadinessCheck(
             name="benchmark_results",
-            status="pass" if benchmark_files else "fail",
-            required=True,
+            status="pass" if benchmark_files else ("fail" if require_artifacts else "warn"),
+            required=require_artifacts,
             message="benchmark result files discovered" if benchmark_files else "missing benchmark results",
         ),
     }
     status = readiness_status_from_lists(errors, warnings)
+    issue_class, action_hint = _derive_issue_fields(
+        errors=errors,
+        warnings=warnings,
+        launch_blocked=bool(errors),
+    )
     return OpsModuleReadiness(
         module="benchmark",
         status=status,
@@ -536,6 +631,9 @@ def _benchmark_module_readiness(output_dir: Path) -> OpsModuleReadiness:
         warnings=warnings,
         evidence=evidence,
         last_output_dir=str(output_dir),
+        launch_blocked=bool(errors),
+        issue_class=issue_class,
+        action_hint=action_hint,
     )
 
 
@@ -601,6 +699,11 @@ def _ui_ops_module_readiness(repo_root: Path) -> OpsModuleReadiness:
         ),
     }
     status = readiness_status_from_lists(errors, warnings)
+    issue_class, action_hint = _derive_issue_fields(
+        errors=errors,
+        warnings=warnings,
+        launch_blocked=bool(errors),
+    )
     return OpsModuleReadiness(
         module="ui_ops",
         status=status,
@@ -609,6 +712,9 @@ def _ui_ops_module_readiness(repo_root: Path) -> OpsModuleReadiness:
         warnings=warnings,
         evidence=evidence,
         last_output_dir=str(repo_root),
+        launch_blocked=bool(errors),
+        issue_class=issue_class,
+        action_hint=action_hint,
     )
 
 
@@ -617,6 +723,7 @@ def _build_path_checks(
     evidence: Mapping[str, Any],
     required_keys: Iterable[str],
     optional_keys: Iterable[str],
+    require_required_keys: bool = True,
 ) -> Dict[str, ReadinessCheck]:
     checks: Dict[str, ReadinessCheck] = {}
 
@@ -631,8 +738,32 @@ def _build_path_checks(
         )
 
     for key in required_keys:
-        _add(key, required=True)
+        _add(key, required=require_required_keys)
     for key in optional_keys:
         _add(key, required=False)
 
     return checks
+
+
+def _derive_issue_fields(
+    *,
+    errors: List[str],
+    warnings: List[str],
+    launch_blocked: bool,
+) -> tuple[str, str]:
+    if errors:
+        if launch_blocked:
+            return (
+                "preflight_blocker",
+                "Resolve blocking contract errors before launching this module from the UI.",
+            )
+        return (
+            "contract_break",
+            "Fix malformed contract artifacts for this module and rerun readiness.",
+        )
+    if warnings:
+        return (
+            "evidence_gap",
+            "Run a contract probe or a module launch to generate fresh evidence artifacts.",
+        )
+    return ("none", "No action needed.")

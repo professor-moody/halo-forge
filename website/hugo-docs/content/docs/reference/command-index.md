@@ -512,6 +512,10 @@ CI policy:
 - PR/push CI uses non-strict report generation (informational for readiness status).
 - Nightly CI uses strict mode and fails on module `status=fail` plus hard contract drift (readiness + E2E + dataset burn-in reports).
 
+Readiness interpretation:
+- `WARN` commonly indicates missing historical evidence (for example prior `training_summary.json` or benchmark outputs) and remains non-blocking for UI launches.
+- `FAIL` indicates a contract/preflight issue; check `launch_blocked`, `issue_class`, and `action_hint` in readiness payload entries.
+
 ---
 
 ## Experimental Commands

@@ -38,6 +38,7 @@ ALL_MODULES: tuple[str, ...] = (
 ALL_MODULE_READINESS_CONTRACT_VERSION = 1
 ALL_MODULE_READINESS_STATUSES = ("pass", "warn", "fail")
 ALL_MODULE_READINESS_SOURCES = ("script", "ui_live_compute", "cli_test")
+ALL_MODULE_ISSUE_CLASSES = ("none", "evidence_gap", "preflight_blocker", "contract_break")
 DEFAULT_ALL_MODULE_READINESS_REPORT_FILE = Path(
     "results/readiness/all_modules_readiness.v1.json"
 )
@@ -62,6 +63,9 @@ class AllModuleReadiness:
     warnings: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
     last_output_dir: str = ""
+    launch_blocked: bool = False
+    issue_class: str = "none"
+    action_hint: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -73,6 +77,9 @@ class AllModuleReadiness:
             "warnings": list(self.warnings),
             "evidence": dict(self.evidence),
             "last_output_dir": self.last_output_dir,
+            "launch_blocked": bool(self.launch_blocked),
+            "issue_class": self.issue_class,
+            "action_hint": self.action_hint,
         }
 
     @staticmethod
@@ -98,6 +105,9 @@ class AllModuleReadiness:
             if isinstance(payload.get("evidence"), Mapping)
             else {},
             last_output_dir=str(payload.get("last_output_dir") or ""),
+            launch_blocked=bool(payload.get("launch_blocked", False)),
+            issue_class=str(payload.get("issue_class") or "none"),
+            action_hint=str(payload.get("action_hint") or ""),
         )
 
 
@@ -172,6 +182,9 @@ def build_all_module_readiness_report(
             status="fail",
             errors=[f"no readiness entry available for module: {module}"],
             last_output_dir="",
+            launch_blocked=True,
+            issue_class="contract_break",
+            action_hint="Generate or compute readiness for this module before reviewing status.",
         )
 
     return AllModuleReadinessReport(
@@ -251,6 +264,15 @@ def validate_all_module_readiness_payload(payload: Mapping[str, Any]) -> List[st
         evidence = entry.get("evidence")
         if evidence is not None and not isinstance(evidence, Mapping):
             errors.append(f"evidence must be an object for {module}")
+        launch_blocked = entry.get("launch_blocked")
+        if launch_blocked is not None and not isinstance(launch_blocked, bool):
+            errors.append(f"launch_blocked must be a boolean for {module}")
+        issue_class = entry.get("issue_class")
+        if issue_class is not None and str(issue_class) not in ALL_MODULE_ISSUE_CLASSES:
+            errors.append(f"invalid issue_class for {module}: {issue_class}")
+        action_hint = entry.get("action_hint")
+        if action_hint is not None and not isinstance(action_hint, str):
+            errors.append(f"action_hint must be a string for {module}")
 
     return errors
 
@@ -311,6 +333,9 @@ def apply_staleness_policy(
             entry.warnings.append(stale_warning)
         if entry.status == "pass":
             entry.status = "warn"
+            entry.issue_class = "evidence_gap"
+            entry.action_hint = "Refresh or regenerate readiness evidence for this module."
+            entry.launch_blocked = False
     return cloned
 
 
@@ -376,20 +401,35 @@ def validate_all_module(
     """Validate readiness contracts for one module."""
     key = str(module).strip().lower()
     if key not in ALL_MODULES:
-        return AllModuleReadiness(
+        return _create_readiness(
             module=key,
-            status="fail",
+            checks={},
             errors=[f"unsupported module: {key}"],
+            warnings=[],
+            evidence={},
             last_output_dir=str(output_dir),
+            launch_blocked=True,
+            issue_class="contract_break",
+            action_hint=f"Use one of: {', '.join(ALL_MODULES)}.",
         )
 
     if key in {"vlm", "audio", "reasoning", "agentic", "inference", "ui_ops"}:
         return _from_ops_module(
-            validate_ops_module(module=key, output_dir=output_dir, seed=seed)
+            validate_ops_module(
+                module=key,
+                output_dir=output_dir,
+                seed=seed,
+                require_artifacts=require_artifacts,
+            )
         )
     if key == "benchmark_non_code":
         return _from_ops_module(
-            validate_ops_module(module="benchmark", output_dir=output_dir, seed=seed),
+            validate_ops_module(
+                module="benchmark",
+                output_dir=output_dir,
+                seed=seed,
+                require_artifacts=require_artifacts,
+            ),
             module_name="benchmark_non_code",
         )
 
@@ -408,11 +448,16 @@ def validate_all_module(
     if key == "benchmark_code":
         return _validate_benchmark_code_module(output_dir=output_dir, require_artifacts=require_artifacts)
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module=key,
-        status="fail",
+        checks={},
         errors=[f"unhandled module: {key}"],
+        warnings=[],
+        evidence={},
         last_output_dir=str(output_dir),
+        launch_blocked=True,
+        issue_class="contract_break",
+        action_hint="Add readiness validator wiring for this module.",
     )
 
 
@@ -426,6 +471,9 @@ def _from_ops_module(entry: OpsModuleReadiness, module_name: Optional[str] = Non
         warnings=entry.warnings,
         evidence=entry.evidence,
         last_output_dir=entry.last_output_dir,
+        launch_blocked=entry.launch_blocked,
+        issue_class=entry.issue_class,
+        action_hint=entry.action_hint,
     )
 
 
@@ -455,6 +503,63 @@ def _check_path(
         message=f"{key} present" if exists else f"{key} missing",
     )
     return exists
+
+
+def _derive_issue_fields(
+    *,
+    errors: List[str],
+    warnings: List[str],
+    launch_blocked: bool,
+) -> tuple[str, str]:
+    if errors:
+        if launch_blocked:
+            return (
+                "preflight_blocker",
+                "Resolve blocking contract/preflight errors before launching this module.",
+            )
+        return (
+            "contract_break",
+            "Fix malformed contract artifacts and rerun readiness validation.",
+        )
+    if warnings:
+        return (
+            "evidence_gap",
+            "Run a contract probe or launch flow to generate fresh evidence artifacts.",
+        )
+    return ("none", "No action needed.")
+
+
+def _create_readiness(
+    *,
+    module: str,
+    checks: Dict[str, ReadinessCheck],
+    errors: List[str],
+    warnings: List[str],
+    evidence: Dict[str, Any],
+    last_output_dir: str,
+    launch_blocked: Optional[bool] = None,
+    issue_class: Optional[str] = None,
+    action_hint: Optional[str] = None,
+) -> AllModuleReadiness:
+    status = readiness_status_from_lists(errors, warnings)
+    blocked = bool(errors) if launch_blocked is None else bool(launch_blocked)
+    derived_issue, derived_hint = _derive_issue_fields(
+        errors=errors,
+        warnings=warnings,
+        launch_blocked=blocked,
+    )
+    return AllModuleReadiness(
+        module=module,
+        status=status,
+        checks=checks,
+        errors=errors,
+        warnings=warnings,
+        evidence=evidence,
+        last_output_dir=last_output_dir,
+        launch_blocked=blocked,
+        issue_class=issue_class or derived_issue,
+        action_hint=action_hint or derived_hint,
+    )
 
 
 def _validate_config_module(*, output_dir: Path, require_artifacts: bool) -> AllModuleReadiness:
@@ -490,9 +595,8 @@ def _validate_config_module(*, output_dir: Path, require_artifacts: bool) -> All
         else:
             warnings.append(f"no config files discovered in {output_dir}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="config",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,
@@ -549,9 +653,8 @@ def _validate_data_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
         else:
             warnings.append(f"no .jsonl files discovered in {output_dir}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="data",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,
@@ -591,9 +694,8 @@ def _validate_info_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
         else:
             warnings.append(f"hardware snapshot not found: {snapshot_path}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="info",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,
@@ -650,9 +752,8 @@ def _validate_plot_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
         else:
             warnings.append(f"no plot artifacts discovered in {output_dir}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="plot",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,
@@ -705,9 +806,8 @@ def _validate_sft_module(*, output_dir: Path, require_artifacts: bool) -> AllMod
         if not launch_context_exists:
             warnings.append(f"launch_context.json not found: {output_dir / 'launch_context.json'}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="sft",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,
@@ -772,9 +872,8 @@ def _validate_raft_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
         if not checkpoint_exists:
             warnings.append(f"latest_checkpoint.json not found: {output_dir / 'latest_checkpoint.json'}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="raft",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,
@@ -852,9 +951,8 @@ def _validate_benchmark_code_module(*, output_dir: Path, require_artifacts: bool
         else:
             warnings.append(f"no code benchmark results detected under {output_dir}")
 
-    return AllModuleReadiness(
+    return _create_readiness(
         module="benchmark_code",
-        status=readiness_status_from_lists(errors, warnings),
         checks=checks,
         errors=errors,
         warnings=warnings,

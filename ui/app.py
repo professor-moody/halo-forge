@@ -10,6 +10,7 @@ from pathlib import Path
 from ui.theme import apply_theme, COLORS
 from ui.components.sidebar import Sidebar
 from ui.components.header import Header
+from ui.components.page_guard import render_guarded_page
 from ui.feature_flags import get_ui_feature_flags
 
 
@@ -61,8 +62,10 @@ def dashboard_page():
     """Dashboard page."""
     create_layout("Dashboard")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.dashboard import Dashboard
-        Dashboard().render()
+        render_guarded_page(
+            "Dashboard",
+            lambda: __import__("ui.pages.dashboard", fromlist=["Dashboard"]).Dashboard().render(),
+        )
 
 
 @ui.page('/training')
@@ -70,8 +73,10 @@ def training_page():
     """Training configuration and launch page."""
     create_layout("Training")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.training import Training
-        Training().render()
+        render_guarded_page(
+            "Training",
+            lambda: __import__("ui.pages.training", fromlist=["Training"]).Training().render(),
+        )
 
 
 @ui.page('/monitor')
@@ -79,8 +84,10 @@ def monitor_list_page():
     """Job monitor list page."""
     create_layout("Monitor")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.monitor import MonitorList
-        MonitorList().render()
+        render_guarded_page(
+            "Monitor",
+            lambda: __import__("ui.pages.monitor", fromlist=["MonitorList"]).MonitorList().render(),
+        )
 
 
 @ui.page('/monitor/{job_id}')
@@ -88,8 +95,10 @@ def monitor_page(job_id: str):
     """Job monitor detail page."""
     create_layout("Job Monitor")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.monitor import Monitor
-        Monitor(job_id=job_id).render()
+        render_guarded_page(
+            "Job Monitor",
+            lambda: __import__("ui.pages.monitor", fromlist=["Monitor"]).Monitor(job_id=job_id).render(),
+        )
 
 
 @ui.page('/config')
@@ -97,8 +106,10 @@ def config_page():
     """Configuration editor page."""
     create_layout("Configuration")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.config import ConfigEditor
-        ConfigEditor().render()
+        render_guarded_page(
+            "Configuration",
+            lambda: __import__("ui.pages.config", fromlist=["ConfigEditor"]).ConfigEditor().render(),
+        )
 
 
 @ui.page('/verifiers')
@@ -106,8 +117,10 @@ def verifiers_page():
     """Verifier management page."""
     create_layout("Verifiers")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.verifiers import Verifiers
-        Verifiers().render()
+        render_guarded_page(
+            "Verifiers",
+            lambda: __import__("ui.pages.verifiers", fromlist=["Verifiers"]).Verifiers().render(),
+        )
 
 
 @ui.page('/datasets')
@@ -115,8 +128,10 @@ def datasets_page():
     """Dataset browser page."""
     create_layout("Datasets")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.datasets import Datasets
-        Datasets().render()
+        render_guarded_page(
+            "Datasets",
+            lambda: __import__("ui.pages.datasets", fromlist=["Datasets"]).Datasets().render(),
+        )
 
 
 @ui.page('/results')
@@ -124,8 +139,10 @@ def results_page():
     """Benchmark results page."""
     create_layout("Results")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.results import Results
-        Results().render()
+        render_guarded_page(
+            "Results",
+            lambda: __import__("ui.pages.results", fromlist=["Results"]).Results().render(),
+        )
 
 
 @ui.page('/benchmark')
@@ -133,8 +150,10 @@ def benchmark_page():
     """Benchmark launcher page."""
     create_layout("Benchmark")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.benchmark import Benchmark
-        Benchmark().render()
+        render_guarded_page(
+            "Benchmark",
+            lambda: __import__("ui.pages.benchmark", fromlist=["Benchmark"]).Benchmark().render(),
+        )
 
 
 @ui.page('/ops-console')
@@ -142,8 +161,10 @@ def ops_console_page():
     """Utility module operations console."""
     create_layout("Ops Console")
     with ui.column().classes('w-full h-full'):
-        from ui.pages.ops_console import OpsConsole
-        OpsConsole().render()
+        render_guarded_page(
+            "Ops Console",
+            lambda: __import__("ui.pages.ops_console", fromlist=["OpsConsole"]).OpsConsole().render(),
+        )
 
 
 @ui.page('/inference')
@@ -155,8 +176,10 @@ def inference_page():
         if not flags.enable_inference_page:
             _render_feature_disabled("Inference", "HALO_UI_ENABLE_INFERENCE_PAGE")
             return
-        from ui.pages.inference import Inference
-        Inference().render()
+        render_guarded_page(
+            "Inference",
+            lambda: __import__("ui.pages.inference", fromlist=["Inference"]).Inference().render(),
+        )
 
 
 @ui.page('/benchmark-advanced')
@@ -171,8 +194,10 @@ def benchmark_advanced_page():
                 "HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE",
             )
             return
-        from ui.pages.benchmark_advanced import BenchmarkAdvanced
-        BenchmarkAdvanced().render()
+        render_guarded_page(
+            "Benchmark Advanced",
+            lambda: __import__("ui.pages.benchmark_advanced", fromlist=["BenchmarkAdvanced"]).BenchmarkAdvanced().render(),
+        )
 
 
 @ui.page('/research-hub')
@@ -187,8 +212,10 @@ def research_hub_page():
                 "HALO_UI_ENABLE_RESEARCH_HUB_PAGE",
             )
             return
-        from ui.pages.research_hub import ResearchHub
-        ResearchHub().render()
+        render_guarded_page(
+            "Research Hub",
+            lambda: __import__("ui.pages.research_hub", fromlist=["ResearchHub"]).ResearchHub().render(),
+        )
 
 
 def run(

@@ -163,6 +163,23 @@ Cross-module ops readiness visibility:
   - `burnin_generated_at`
   - `burnin_status`
 
+## Readiness Semantics (Warn-and-Launch)
+
+UI readiness is contract-based and **does not block launches** for missing historical evidence.
+
+- **PASS**: Required contracts are healthy.
+- **WARN**: Evidence missing/stale; launch is still allowed.
+- **FAIL**: Contract/preflight issue. Launch may be blocked when `launch_blocked=true`.
+
+Banner wording:
+- `Evidence missing (non-blocking)` means files like prior `training_summary.json` or benchmark outputs were not found yet.
+- `Launch blocked` means the current contract/preflight is invalid and should be fixed before launch.
+
+Each readiness banner includes:
+- `Action` hint from readiness diagnostics.
+- `What is missing?` expected evidence root path.
+- `Run contract probe` button to refresh module contract evidence.
+
 ## Architecture
 
 ### Services Layer

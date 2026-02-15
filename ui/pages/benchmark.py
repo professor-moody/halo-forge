@@ -289,6 +289,9 @@ class Benchmark:
         )
         try:
             report = self.ops_readiness_service.get_effective_all_module_readiness()
+            output_map = self.ops_readiness_service.resolve_effective_output_map(
+                include_all_modules=True
+            )
         except Exception as e:
             ui.label(f"All-module readiness unavailable: {e}").classes(
                 f'text-xs text-[{COLORS["warning"]}]'
@@ -313,22 +316,54 @@ class Benchmark:
         with ui.column().classes(
             f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
         ):
-            with ui.row().classes('items-center gap-2'):
-                ui.icon(icon, size='16px').classes(f'text-[{color}]')
-                source = f"{report.source}"
-                if report.stale:
-                    source += " (stale)"
-                ui.label(
-                    f"All-module readiness {status.upper()} • module={module_key} • source={source}"
-                ).classes(f'text-xs text-[{color}] font-medium')
-            if entry.errors:
-                ui.label(f"Blocking reason: {entry.errors[0]}").classes(
-                    f'text-xs text-[{COLORS["error"]}]'
+            with ui.row().classes('items-center justify-between gap-2'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.icon(icon, size='16px').classes(f'text-[{color}]')
+                    source = f"{report.source}"
+                    if report.stale:
+                        source += " (stale)"
+                    ui.label(
+                        f"All-module readiness {status.upper()} • module={module_key} • source={source}"
+                    ).classes(f'text-xs text-[{color}] font-medium')
+                ui.button(
+                    'Run contract probe',
+                    icon='play_arrow',
+                    on_click=lambda key=module_key: self._run_contract_probe(key),
+                ).props('flat dense size=sm').classes(
+                    f'text-[{COLORS["text_secondary"]}]'
                 )
+            if entry.errors:
+                if entry.launch_blocked:
+                    ui.label(f"Launch blocked: {entry.errors[0]}").classes(
+                        f'text-xs text-[{COLORS["error"]}]'
+                    )
+                else:
+                    ui.label(f"Evidence missing (non-blocking): {entry.errors[0]}").classes(
+                        f'text-xs text-[{COLORS["warning"]}]'
+                    )
             elif entry.warnings:
-                ui.label(f"Warning: {entry.warnings[0]}").classes(
+                ui.label(f"Evidence missing (non-blocking): {entry.warnings[0]}").classes(
                     f'text-xs text-[{COLORS["warning"]}]'
                 )
+            if entry.action_hint:
+                ui.label(f"Action: {entry.action_hint}").classes(
+                    f'text-xs text-[{COLORS["text_secondary"]}]'
+                )
+            expected_path = output_map.get(module_key) or entry.last_output_dir
+            if expected_path:
+                ui.label(f"What is missing? Expected evidence root: {expected_path}").classes(
+                    f'text-xs font-mono text-[{COLORS["text_muted"]}]'
+                )
+
+    def _run_contract_probe(self, module_key: str) -> None:
+        ok, message = self.ops_readiness_service.run_contract_probe(
+            module=module_key,
+            include_all_modules=True,
+        )
+        ui.notify(message, type='positive' if ok else 'warning', timeout=1800)
+        self._config_container.clear()
+        with self._config_container:
+            self._render_form()
     
     def _get_models_for_type(self, btype: BenchmarkType) -> list[str]:
         """Get suggested models for benchmark type."""

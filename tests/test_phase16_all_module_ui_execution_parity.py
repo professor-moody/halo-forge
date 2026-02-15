@@ -160,6 +160,11 @@ def test_results_service_parses_utility_run_summary(tmp_path):
                 "started_at": "2026-01-01T00:00:00",
                 "completed_at": "2026-01-01T00:00:02",
                 "duration_seconds": 2.0,
+                "artifact_pointers": {
+                    "run_summary": str(run_dir / "run_summary.json"),
+                    "stdout_log": str(run_dir / "stdout.log"),
+                    "launch_context": str(run_dir / "launch_context.json"),
+                },
             }
         ),
         encoding="utf-8",
@@ -174,6 +179,7 @@ def test_results_service_parses_utility_run_summary(tmp_path):
     assert run.status == "completed"
     assert run.return_code == 0
     assert run.has_relaunch_context is True
+    assert run.artifact_pointers["launch_context"].endswith("launch_context.json")
 
 
 def test_launch_context_supports_module_ops_service_and_utility_job_types():

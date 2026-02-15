@@ -130,6 +130,7 @@ class UtilityRunSummary:
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     command: List[str] = field(default_factory=list)
+    artifact_pointers: Dict[str, str] = field(default_factory=dict)
     launch_context_path: Optional[Path] = None
     has_relaunch_context: bool = False
     error_message: Optional[str] = None
@@ -650,6 +651,11 @@ class ResultsService:
         command = []
         if isinstance(data.get("command"), list):
             command = [str(item) for item in data.get("command") if isinstance(item, str)]
+        artifact_pointers: Dict[str, str] = {}
+        if isinstance(data.get("artifact_pointers"), dict):
+            for key, value in data.get("artifact_pointers", {}).items():
+                if isinstance(key, str) and value is not None:
+                    artifact_pointers[key] = str(value)
 
         launch_context_path = path.parent / "launch_context.json"
         duration_seconds = self._as_float(data.get("duration_seconds"))
@@ -672,11 +678,41 @@ class ResultsService:
             completed_at=completed_at,
             duration_seconds=duration_seconds,
             command=command,
+            artifact_pointers=artifact_pointers,
             launch_context_path=launch_context_path if launch_context_path.exists() else None,
             has_relaunch_context=launch_context_path.exists(),
             error_message=str(data.get("error_message")) if data.get("error_message") else None,
             raw_data=data,
         )
+
+    def get_latest_artifact_roots(self) -> Dict[str, str]:
+        """Return best-known output roots discovered from parsed result artifacts."""
+        mapping: Dict[str, str] = {}
+
+        for run in self.list_training_runs():
+            module = str(run.modality or "").strip().lower()
+            if module and module not in mapping:
+                mapping[module] = str(run.output_dir)
+
+        for run in self.list_utility_runs():
+            module = str(run.module or "").strip().lower()
+            if module and module not in mapping:
+                mapping[module] = str(run.output_dir)
+
+        for result in self.list_results():
+            if not result.file_path:
+                continue
+            domain = str(result.domain or "").strip().lower()
+            parent = str(result.file_path.parent)
+            if domain == "code" and "benchmark_code" not in mapping:
+                mapping["benchmark_code"] = parent
+            if domain in {"vlm", "audio", "reasoning", "agentic"}:
+                if "benchmark_non_code" not in mapping:
+                    mapping["benchmark_non_code"] = parent
+                if "benchmark" not in mapping:
+                    mapping["benchmark"] = parent
+
+        return mapping
 
     def _metric_sources(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Return ordered dictionaries that may carry metric values."""

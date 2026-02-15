@@ -271,14 +271,23 @@ def main() -> int:
     if targets:
         entries: Dict[str, OpsModuleReadiness] = {}
         for module, path in targets:
-            entries[module] = validate_ops_module(module=module, output_dir=path, seed=seed)
+            entries[module] = validate_ops_module(
+                module=module,
+                output_dir=path,
+                seed=seed,
+                require_artifacts=True,
+            )
         report = build_ops_readiness_report(
             module_entries=entries,
             seed=seed,
             source="script",
         )
     else:
-        report = compute_ops_module_readiness(seed=seed, source="script")
+        report = compute_ops_module_readiness(
+            seed=seed,
+            source="script",
+            require_artifacts=False,
+        )
 
     _print_report_lines(report.modules)
 

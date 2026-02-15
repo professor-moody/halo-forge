@@ -340,3 +340,41 @@ def read_launch_context(path: Path | str) -> LaunchContextV1:
     if not isinstance(raw, dict):
         raise ValueError("launch_context.json must contain an object")
     return LaunchContextV1.from_dict(raw)
+
+
+def find_latest_launch_context(
+    *,
+    root: Path | str,
+    job_type: str,
+    service: Optional[str] = None,
+) -> Optional[Path]:
+    """
+    Find most recent launch_context.json for a given job type under a root.
+
+    Returns:
+        Path to launch_context.json if found and valid, otherwise None.
+    """
+    search_root = Path(root)
+    if not search_root.exists():
+        return None
+
+    job_key = str(job_type or "").strip().lower()
+    if job_key not in SUPPORTED_JOB_TYPES:
+        return None
+    service_key = str(service or "").strip().lower() if service else None
+
+    candidates: list[Path] = []
+    for context_path in search_root.glob(f"**/{LAUNCH_CONTEXT_FILENAME}"):
+        try:
+            context = read_launch_context(context_path)
+        except Exception:
+            continue
+        if context.job_type != job_key:
+            continue
+        if service_key and context.service != service_key:
+            continue
+        candidates.append(context_path)
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
