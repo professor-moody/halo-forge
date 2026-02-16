@@ -21,6 +21,7 @@ from ui.services.quickstart_presets import (
     get_quickstart_preset,
     list_quickstart_presets,
 )
+from ui.components.diagnostic_panel import render_readiness_diagnostic_panel  # compatibility hook
 from ui.services.launch_contracts import (
     UI_SUPPORTED_TRAINING_MODES,
     UI_DEFERRED_TRAINING_MODES,
@@ -1414,12 +1415,16 @@ class Training:
                     ui.label(f"Checked path: {expected_path}").classes(
                         f'text-[11px] font-mono text-[{COLORS["text_muted"]}] break-all'
                     )
-                ui.link("Advanced setup checks are available in Research Hub.", "/research-hub").classes(
+                ui.link("Advanced setup checks are available in Advanced Diagnostics Tools.", "/research-hub").classes(
                     f'text-xs text-[{COLORS["accent"]}] hover:underline'
                 )
 
     def _render_advanced_diagnostics_for_mode(self, module_key: str) -> None:
         """Render advisory-only setup status for advanced mode."""
+        self._render_all_module_readiness_banner(module_key)
+
+    def _render_all_module_readiness_banner(self, module_key: str) -> None:
+        """Compatibility wrapper for prior readiness-banner hook name."""
         self._render_setup_advisory(module_key)
 
     def _refresh_readiness(self):

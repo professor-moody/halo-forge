@@ -203,17 +203,17 @@ def benchmark_advanced_page():
 @ui.page('/research-hub')
 def research_hub_page():
     """Ops readiness and research hub page (feature-flagged)."""
-    create_layout("Research Hub")
+    create_layout("Advanced Diagnostics Tools")
     flags = get_ui_feature_flags()
     with ui.column().classes('w-full h-full'):
         if not flags.enable_research_hub_page:
             _render_feature_disabled(
-                "Research Hub",
+                "Advanced Diagnostics Tools",
                 "HALO_UI_ENABLE_RESEARCH_HUB_PAGE",
             )
             return
         render_guarded_page(
-            "Research Hub",
+            "Advanced Diagnostics Tools",
             lambda: __import__("ui.pages.research_hub", fromlist=["ResearchHub"]).ResearchHub().render(),
         )
 

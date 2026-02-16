@@ -110,8 +110,8 @@ def test_dashboard_and_sidebar_expose_ops_hub_navigation_contract():
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
     assert "get_dashboard_hub_service" in dashboard_source
     assert "Training Launcher" in dashboard_source
-    assert "Advanced Diagnostics (Optional)" in dashboard_source
-    assert "Open Research Hub" in dashboard_source
+    assert "Advanced Diagnostics Tools (Optional)" in dashboard_source
+    assert "Open Advanced Diagnostics Tools" in dashboard_source
     assert "Generate Setup Artifacts (All • Advanced)" not in dashboard_source
     assert "Run System Health Check (All • Advanced)" not in dashboard_source
     assert "_render_module_group(" in dashboard_source
@@ -148,4 +148,4 @@ def test_cross_surface_pages_include_query_preselection_hooks():
     assert "ignored invalid ops module query param" in ops_source
 
     research_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
-    assert "Module filter active" in research_source
+    assert "Diagnostics focus" in research_source

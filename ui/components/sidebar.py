@@ -110,7 +110,10 @@ class Sidebar:
                 {"icon": "view_array", "label": "Benchmark+", "path": "/benchmark-advanced"}
             )
         if flags.enable_research_hub_page:
-            validation.insert(0, {"icon": "science", "label": "Research Hub", "path": "/research-hub"})
+            validation.insert(
+                0,
+                {"icon": "science", "label": "Advanced Diagnostics Tools", "path": "/research-hub"},
+            )
 
         return [
             ("Core Workflows", core_workflows),

@@ -15,6 +15,7 @@ from nicegui import app, ui
 
 from ui.components.file_picker import FilePicker
 from ui.components.notifications import notify_job_failed, notify_job_started
+from ui.components.diagnostic_panel import render_readiness_diagnostic_panel  # compatibility hook
 from ui.services import get_inference_service
 from ui.services.ops_readiness_service import get_ops_readiness_service
 from ui.services.quickstart_presets import (
@@ -559,6 +560,6 @@ class Inference:
                     ui.label(f"Checked path: {expected_path}").classes(
                         f"text-[11px] font-mono text-[{COLORS['text_muted']}] break-all"
                     )
-                ui.link("Advanced setup checks are available in Research Hub.", "/research-hub").classes(
+                ui.link("Advanced setup checks are available in Advanced Diagnostics Tools.", "/research-hub").classes(
                     f"text-xs text-[{COLORS['accent']}] hover:underline"
                 )

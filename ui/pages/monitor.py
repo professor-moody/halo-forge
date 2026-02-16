@@ -162,6 +162,10 @@ class Monitor:
                     with ui.row().classes('items-center gap-3'):
                         # Status badge
                         self._render_status_badge()
+                        if self.job.type in (QUALIFICATION_JOB_TYPES | BOOTSTRAP_JOB_TYPES | LIVE_PROBE_JOB_TYPES):
+                            ui.label("Advanced Diagnostics").classes(
+                                f'text-xs px-2 py-0.5 rounded-full bg-[{COLORS["warning"]}]/20 text-[{COLORS["warning"]}]'
+                            )
                         # Duration (stored for live updates)
                         self._duration_label = ui.label(f'Duration: {self.job.duration_str}').classes(
                             f'text-sm text-[{COLORS["text_secondary"]}]'
@@ -1383,16 +1387,39 @@ class Monitor:
 
 class MonitorList:
     """List of all jobs for monitoring."""
-    
+
+    def __init__(self) -> None:
+        self.show_advanced_diagnostics = bool(
+            app.storage.user.get("monitor_show_advanced_diagnostics", False)
+        )
+
+    def _is_advanced_diagnostics_job(self, job: JobState) -> bool:
+        return job.type in (QUALIFICATION_JOB_TYPES | BOOTSTRAP_JOB_TYPES | LIVE_PROBE_JOB_TYPES)
+
+    def _on_toggle_advanced(self, value: bool) -> None:
+        self.show_advanced_diagnostics = bool(value)
+        app.storage.user["monitor_show_advanced_diagnostics"] = self.show_advanced_diagnostics
+        ui.navigate.to("/monitor")
+
     def render(self):
         """Render the job list page."""
         with ui.column().classes('page-content w-full gap-6 p-6'):
-            ui.label('Monitor Jobs').classes(
-                f'text-2xl font-bold text-[{COLORS["text_primary"]}] animate-in'
-            )
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label('Monitor Jobs').classes(
+                    f'text-2xl font-bold text-[{COLORS["text_primary"]}] animate-in'
+                )
+                ui.checkbox(
+                    "Show advanced diagnostics runs",
+                    value=self.show_advanced_diagnostics,
+                    on_change=lambda e: self._on_toggle_advanced(bool(e.value)),
+                ).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
             
             # Active jobs
             active_jobs = state.get_active_jobs()
+            if not self.show_advanced_diagnostics:
+                active_jobs = [
+                    job for job in active_jobs if not self._is_advanced_diagnostics_job(job)
+                ]
             if active_jobs:
                 with ui.column().classes(
                     f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
@@ -1408,6 +1435,18 @@ class MonitorList:
             # Recent jobs
             recent = state.get_recent_jobs(10)
             completed = [j for j in recent if j.status != 'running']
+            if not self.show_advanced_diagnostics:
+                completed = [
+                    job for job in completed if not self._is_advanced_diagnostics_job(job)
+                ]
+            hidden_count = 0
+            if not self.show_advanced_diagnostics:
+                hidden_count = sum(
+                    1 for job in state.get_recent_jobs(50) if self._is_advanced_diagnostics_job(job)
+                )
+                hidden_count += sum(
+                    1 for job in state.get_active_jobs() if self._is_advanced_diagnostics_job(job)
+                )
             
             with ui.column().classes(
                 f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
@@ -1416,6 +1455,10 @@ class MonitorList:
                 ui.label('Recent Jobs').classes(
                     f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                 )
+                if hidden_count:
+                    ui.label(
+                        f"{hidden_count} advanced diagnostics run(s) hidden. Enable the toggle to view them."
+                    ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
                 
                 if not completed and not active_jobs:
                     with ui.column().classes('w-full items-center py-8 gap-2'):

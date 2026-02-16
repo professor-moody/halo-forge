@@ -121,9 +121,9 @@ def test_default_on_ops_routes_and_quick_actions_are_declared():
     assert "/benchmark-advanced" in dashboard_source
     assert "/research-hub" in dashboard_source
     assert "Training Launcher" in dashboard_source
-    assert "Advanced Diagnostics (Optional)" in dashboard_source
+    assert "Advanced Diagnostics Tools (Optional)" in dashboard_source
     assert "Run System Health Check (All • Advanced)" not in dashboard_source
-    assert "Open Research Hub" in dashboard_source
+    assert "Open Advanced Diagnostics Tools" in dashboard_source
 
 
 def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
@@ -165,10 +165,9 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "get_walkthrough_provenance" in research_hub_source
     assert "walkthrough report unavailable" in research_hub_source
-    assert "Run setup check" in research_hub_source
-    assert "Generate setup artifacts" in research_hub_source
-    assert "Run system health check" in research_hub_source
-    assert "Run System Health Check (Advanced)" in research_hub_source
+    assert "Run Setup Check" in research_hub_source
+    assert "Generate Setup Files" in research_hub_source
+    assert "Run System Health Check" in research_hub_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "QUALIFICATION_JOB_TYPES" in monitor_source
@@ -207,7 +206,7 @@ def test_ui_pages_support_query_param_preselection_contracts():
     assert "ignored invalid ops execution_mode query param" in ops_source
 
     hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
-    assert "Module filter active" in hub_source
+    assert "Diagnostics focus" in hub_source
 
 
 def test_inference_readiness_banner_has_no_out_of_scope_filepicker_callback():

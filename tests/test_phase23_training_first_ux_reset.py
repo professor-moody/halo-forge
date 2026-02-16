@@ -36,11 +36,11 @@ def test_dashboard_uses_training_first_copy_and_advanced_diagnostics_labels():
     """Dashboard should prioritize launch UX and demote diagnostics language."""
     source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
     assert "Training Launcher" in source
-    assert "Advanced Diagnostics (Optional)" in source
+    assert "Advanced Diagnostics Tools (Optional)" in source
     assert "Run Contract Probe" not in source
     assert "Run Live Probe (All)" not in source
     assert "Run System Health Check (All • Advanced)" not in source
-    assert "Open Research Hub" in source
+    assert "Open Advanced Diagnostics Tools" in source
 
 
 def test_dashboard_primary_actions_always_open_surface(monkeypatch):

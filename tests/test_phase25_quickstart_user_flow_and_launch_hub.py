@@ -53,7 +53,7 @@ def test_workflow_pages_keep_probe_controls_off_primary_paths():
         assert "Run Setup Check (Advanced)" not in source
         assert "Run Live Probe" not in source
         assert "Generate Evidence" not in source
-        assert "Advanced setup checks are available in Research Hub." in source
+        assert "Advanced setup checks are available in Advanced Diagnostics Tools." in source
 
 
 def test_dashboard_primary_ctas_deep_link_to_quickstart_routes():

@@ -72,7 +72,9 @@ def test_live_smoke_data_module_passes_in_strict_mode(tmp_path):
 def test_dashboard_is_navigation_first_and_probe_actions_demoted():
     """Dashboard should avoid in-place probe handlers and route users to research hub."""
     source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "Open Research Hub" in source
+    assert "import asyncio" in source
+    assert "asyncio.create_task(self.hardware_monitor.start())" in source
+    assert "Open Advanced Diagnostics Tools" in source
     assert "Generate Setup Artifacts (All • Advanced)" not in source
     assert "Run System Health Check (All • Advanced)" not in source
     assert "def _run_card_action(" not in source

@@ -4,6 +4,7 @@ Dashboard Page
 Main overview page with system status, active jobs, and recent runs.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Callable, List
 from nicegui import ui
@@ -20,6 +21,8 @@ from ui.services import (
     Event,
     EventType,
 )
+
+BENCHMARK_QUICKSTART_ROUTE = "/benchmark?view=code&ui_mode=quickstart&preset=code_smoke"
 
 
 class Dashboard:
@@ -64,7 +67,7 @@ class Dashboard:
                 ui.label('Training Launcher').classes(
                     f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                 )
-                ui.label('Start training runs quickly. Advanced setup checks are available in Research Hub.').classes(
+                ui.label('Start training runs quickly. Advanced setup checks are available in Advanced Diagnostics Tools.').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
                 with ui.row().classes('gap-3 flex-wrap'):
@@ -74,7 +77,7 @@ class Dashboard:
                     self._render_action_button('Audio Training', 'graphic_eq', '/training?mode=audio&ui_mode=quickstart&preset=audio_whisper_tiny')
                     self._render_action_button('Reasoning Training', 'calculate', '/training?mode=reasoning&ui_mode=quickstart&preset=reasoning_small')
                     self._render_action_button('Agentic Training', 'extension', '/training?mode=agentic&ui_mode=quickstart&preset=agentic_small')
-                    self._render_action_button('Run Benchmark', 'speed', '/benchmark?view=code&ui_mode=quickstart&preset=code_smoke')
+                    self._render_action_button('Run Benchmark', 'speed', '/benchmark')
                     self._render_action_button('Inference Quickstart', 'bolt', '/inference?mode=optimize&ui_mode=quickstart&preset=optimize_int4_smoke')
                     self._render_action_button('Open Monitor', 'computer', '/monitor')
                     self._render_action_button('View Results', 'analytics', '/results')
@@ -125,7 +128,7 @@ class Dashboard:
 
             # Advanced diagnostics (secondary surface)
             with ui.expansion(
-                text='Advanced Diagnostics (Optional)',
+                text='Advanced Diagnostics Tools (Optional)',
                 icon='science',
                 value=False,
             ).classes(
@@ -223,7 +226,7 @@ class Dashboard:
                     if flags.enable_benchmark_advanced_page:
                         self._render_action_button('Benchmark+', 'view_array', '/benchmark-advanced')
                     if flags.enable_research_hub_page:
-                        self._render_action_button('Research Hub', 'science', '/research-hub')
+                        self._render_action_button('Advanced Diagnostics Tools', 'science', '/research-hub')
                     self._render_action_button('Config', 'settings', '/config')
                     self._render_action_button('Datasets', 'storage', '/datasets')
                     self._render_action_button('Verifiers', 'verified', '/verifiers')
@@ -433,7 +436,7 @@ class Dashboard:
 
         with ui.row().classes("w-full gap-2 flex-wrap"):
             ui.button(
-                "Open Research Hub",
+                "Open Advanced Diagnostics Tools",
                 icon="science",
                 on_click=lambda: ui.navigate.to("/research-hub"),
             ).props("flat dense").classes(f'text-[{COLORS["text_secondary"]}]')

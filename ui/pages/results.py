@@ -60,6 +60,9 @@ class Results:
         self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
         self.sort_by: str = app.storage.user.get("results_sort_by", "timestamp")
         self.sort_desc: bool = app.storage.user.get("results_sort_desc", True)
+        self.show_advanced_diagnostics: bool = bool(
+            app.storage.user.get("results_show_advanced_diagnostics", False)
+        )
 
     def render(self):
         with ui.column().classes("page-content w-full gap-6 p-6"):
@@ -70,14 +73,34 @@ class Results:
                 with ui.row().classes("items-center gap-2"):
                     ui.button("Refresh", icon="refresh", on_click=self._refresh).props("flat")
                     ui.button("Export", icon="download", on_click=self._export).props("flat")
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.checkbox(
+                    "Show advanced diagnostics runs",
+                    value=self.show_advanced_diagnostics,
+                    on_change=lambda e: self._toggle_advanced_diagnostics(bool(e.value)),
+                ).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                hidden_count = (
+                    len(self.qualification_reports)
+                    + len(self.bootstrap_reports)
+                    + len(self.live_probe_reports)
+                )
+                if not self.show_advanced_diagnostics and hidden_count:
+                    ui.label(
+                        f"{hidden_count} advanced diagnostics report(s) hidden."
+                    ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
 
             if (
                 not self.results
                 and not self.training_runs
                 and not self.utility_runs
-                and not self.qualification_reports
-                and not self.bootstrap_reports
-                and not self.live_probe_reports
+                and (
+                    self.show_advanced_diagnostics
+                    or (
+                        not self.qualification_reports
+                        and not self.bootstrap_reports
+                        and not self.live_probe_reports
+                    )
+                )
             ):
                 self._render_empty_state()
                 return
@@ -112,15 +135,15 @@ class Results:
                 displayed_any = True
                 self._render_utility_runs_table(self.utility_runs)
 
-            if self.qualification_reports:
+            if self.show_advanced_diagnostics and self.qualification_reports:
                 displayed_any = True
                 self._render_qualification_reports_table(self.qualification_reports)
 
-            if self.bootstrap_reports:
+            if self.show_advanced_diagnostics and self.bootstrap_reports:
                 displayed_any = True
                 self._render_bootstrap_reports_table(self.bootstrap_reports)
 
-            if self.live_probe_reports:
+            if self.show_advanced_diagnostics and self.live_probe_reports:
                 displayed_any = True
                 self._render_live_probe_reports_table(self.live_probe_reports)
 
@@ -148,12 +171,18 @@ class Results:
             self._stat_card("Total Runs", str(len(self.results)), "analytics")
             self._stat_card("Training Runs", str(len(self.training_runs)), "auto_awesome")
             self._stat_card("Utility Runs", str(len(self.utility_runs)), "terminal")
-            self._stat_card("Qualification", str(len(self.qualification_reports)), "fact_check")
-            self._stat_card("Bootstrap", str(len(self.bootstrap_reports)), "build")
-            self._stat_card("Live Probes", str(len(self.live_probe_reports)), "play_circle")
+            if self.show_advanced_diagnostics:
+                self._stat_card("Setup Checks", str(len(self.qualification_reports)), "fact_check")
+                self._stat_card("Setup Files", str(len(self.bootstrap_reports)), "build")
+                self._stat_card("Health Checks", str(len(self.live_probe_reports)), "play_circle")
             self._stat_card("Unique Models", str(unique_models), "psychology")
             self._stat_card("Latest", latest_timestamp.strftime("%Y-%m-%d") if latest_timestamp else "--", "schedule")
             self._stat_card("Domains", str(len(by_domain)), "dashboard")
+
+    def _toggle_advanced_diagnostics(self, value: bool) -> None:
+        self.show_advanced_diagnostics = bool(value)
+        app.storage.user["results_show_advanced_diagnostics"] = self.show_advanced_diagnostics
+        ui.navigate.to("/results")
 
     def _stat_card(self, label: str, value: str, icon: str):
         with ui.column().classes(
@@ -478,9 +507,13 @@ class Results:
             f'border border-[#2d343c] animate-in'
         ):
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(f"Qualification Reports ({len(rows)})").classes(
-                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
-                )
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(f"Qualification Reports ({len(rows)})").classes(
+                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label("Advanced Diagnostics").classes(
+                        f'text-[11px] px-2 py-0.5 rounded-full bg-[{COLORS["warning"]}]/20 text-[{COLORS["warning"]}]'
+                    )
                 ui.label("results/readiness/all_module_qualification.v1.json").classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
@@ -574,9 +607,13 @@ class Results:
             f'border border-[#2d343c] animate-in'
         ):
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(f"Bootstrap Reports ({len(rows)})").classes(
-                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
-                )
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(f"Bootstrap Reports ({len(rows)})").classes(
+                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label("Advanced Diagnostics").classes(
+                        f'text-[11px] px-2 py-0.5 rounded-full bg-[{COLORS["warning"]}]/20 text-[{COLORS["warning"]}]'
+                    )
                 ui.label("results/readiness/all_module_bootstrap.v1.json").classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
@@ -659,7 +696,7 @@ class Results:
                                 on_click=lambda r=report: self._clone_bootstrap_to_form(r),
                             ).props("flat round dense").classes(
                                 f'text-[{COLORS["text_secondary"]}]'
-                            ).tooltip("Clone to Research Hub")
+                            ).tooltip("Clone to Advanced Diagnostics Tools")
                         else:
                             ui.label("--").classes(
                                 f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
@@ -671,9 +708,13 @@ class Results:
             f'border border-[#2d343c] animate-in'
         ):
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(f"Live Probe Reports ({len(rows)})").classes(
-                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
-                )
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(f"Live Probe Reports ({len(rows)})").classes(
+                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label("Advanced Diagnostics").classes(
+                        f'text-[11px] px-2 py-0.5 rounded-full bg-[{COLORS["warning"]}]/20 text-[{COLORS["warning"]}]'
+                    )
                 ui.label("results/readiness/all_module_live_execution.v1.json").classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
@@ -756,7 +797,7 @@ class Results:
                                 on_click=lambda r=report: self._clone_live_probe_to_form(r),
                             ).props("flat round dense").classes(
                                 f'text-[{COLORS["text_secondary"]}]'
-                            ).tooltip("Clone to Research Hub")
+                            ).tooltip("Clone to Advanced Diagnostics Tools")
                         else:
                             ui.label("--").classes(
                                 f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
@@ -973,7 +1014,7 @@ class Results:
         ui.navigate.to("/ops-console")
 
     def _clone_bootstrap_to_form(self, report: BootstrapReportSummary):
-        """Clone bootstrap launch args into research hub form."""
+        """Clone bootstrap launch args into advanced diagnostics form."""
         if not report.launch_context_path:
             ui.notify("No launch context found for this bootstrap run", type="warning")
             return
@@ -990,7 +1031,7 @@ class Results:
         ui.navigate.to("/research-hub")
 
     def _clone_live_probe_to_form(self, report: LiveProbeReportSummary):
-        """Clone live probe launch args into research hub form."""
+        """Clone live probe launch args into advanced diagnostics form."""
         if not report.launch_context_path:
             ui.notify("No launch context found for this live probe run", type="warning")
             return

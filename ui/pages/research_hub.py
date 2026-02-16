@@ -1,7 +1,7 @@
 """
-Research Hub Page
+Advanced diagnostics page.
 
-Cross-module readiness and operational testing summary for all CLI modules.
+Cross-module readiness and troubleshooting summary for all CLI modules.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ MODULE_ROUTE_MAP: Dict[str, str] = {
 
 
 class ResearchHub:
-    """Render ops readiness report and actionable module diagnostics."""
+    """Render advanced diagnostics and troubleshooting actions."""
 
     def __init__(self):
         self.readiness_service = get_ops_readiness_service()
@@ -52,40 +52,54 @@ class ResearchHub:
         if module in ALL_MODULES:
             self.selected_module = module
             return
-        self._query_warnings.append(f"ignored invalid research module query param: {module}")
+        self._query_warnings.append(f"ignored invalid diagnostics module query param: {module}")
 
     def render(self) -> None:
         with ui.column().classes("page-content w-full gap-6 p-6"):
             with ui.row().classes("w-full items-center justify-between animate-in"):
-                ui.label("Research Hub").classes(
+                ui.label("Advanced Diagnostics Tools").classes(
                     f"text-2xl font-bold text-[{COLORS['text_primary']}]"
                 )
                 with ui.row().classes("items-center gap-2"):
                     ui.button(
-                        "Run system health check",
+                        "Run System Health Check",
                         icon="play_circle",
                         on_click=self._run_live_probe,
                     ).props("flat").classes(f"text-[{COLORS['accent']}]")
                     ui.button(
-                        "Generate setup artifacts",
+                        "Generate Setup Files",
                         icon="build",
                         on_click=self._run_bootstrap_probe,
                     ).props("flat").classes(f"text-[{COLORS['accent']}]")
                     ui.button(
-                        "Run setup check",
+                        "Run Setup Check",
                         icon="play_arrow",
                         on_click=self._run_qualification_probe,
                     ).props("flat").classes(f"text-[{COLORS['accent']}]")
                     ui.button(
-                        "Refresh readiness",
+                        "Refresh Status",
                         icon="refresh",
                         on_click=self._refresh,
                     ).props("flat").classes(f"text-[{COLORS['text_secondary']}]")
+            ui.label(
+                "For troubleshooting only. Normal training, benchmark, and inference runs do not require these tools."
+            ).classes(f"text-sm text-[{COLORS['text_secondary']}]")
+            with ui.column().classes("gap-1"):
+                ui.label("What this does:").classes(f"text-xs font-semibold text-[{COLORS['text_primary']}]")
+                ui.label("Run Setup Check: verifies setup contracts for selected modules.").classes(
+                    f"text-xs text-[{COLORS['text_muted']}]"
+                )
+                ui.label("Generate Setup Files: creates bounded evidence files used by diagnostics.").classes(
+                    f"text-xs text-[{COLORS['text_muted']}]"
+                )
+                ui.label("Run System Health Check: runs bounded live checks in your local environment.").classes(
+                    f"text-xs text-[{COLORS['text_muted']}]"
+                )
             for warning in self._query_warnings:
                 ui.label(warning).classes(f"text-xs text-[{COLORS['warning']}]")
             if self.selected_module:
                 ui.label(
-                    f"Module filter active: {self.selected_module} (from query param)"
+                    f"Diagnostics focus: {self.selected_module} (from query param)"
                 ).classes(f"text-xs text-[{COLORS['text_muted']}]")
 
             self._content_container = ui.column().classes("w-full gap-4")
@@ -136,77 +150,95 @@ class ResearchHub:
         with ui.column().classes(
             f"w-full gap-2 p-4 rounded-xl bg-[{COLORS['bg_card']}] border border-[#2d343c]"
         ):
-            ui.label("Ops Readiness Report").classes(
+            ui.label("Setup diagnostics overview").classes(
                 f"text-base font-semibold text-[{COLORS['text_primary']}]"
             )
-            source_text = f"source={report.source} generated_at={report.generated_at}"
-            if report.stale:
-                source_text += f" stale={report.age_seconds}s"
-            ui.label(source_text).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
-            if burnin_meta.get("burnin_report_present"):
-                ui.label(
-                    "burnin "
-                    f"status={burnin_meta.get('burnin_status')} "
-                    f"source={burnin_meta.get('burnin_source')} "
-                    f"generated_at={burnin_meta.get('burnin_generated_at')}"
-                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
-            else:
-                ui.label("burnin report unavailable (non-blocking)").classes(
-                    f"text-xs text-[{COLORS['warning']}]"
-                )
-            if bootstrap_meta.get("bootstrap_report_present"):
-                ui.label(
-                    "bootstrap "
-                    f"status={bootstrap_meta.get('bootstrap_status')} "
-                    f"profile={bootstrap_meta.get('bootstrap_profile')} "
-                    f"source={bootstrap_meta.get('bootstrap_source')} "
-                    f"generated_at={bootstrap_meta.get('bootstrap_generated_at')}"
-                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
-            else:
-                ui.label("bootstrap report unavailable (non-blocking)").classes(
-                    f"text-xs text-[{COLORS['warning']}]"
-                )
-            if live_meta.get("live_report_present"):
-                ui.label(
-                    "live "
-                    f"status={live_meta.get('live_status')} "
-                    f"profile={live_meta.get('live_profile')} "
-                    f"source={live_meta.get('live_source')} "
-                    f"generated_at={live_meta.get('live_generated_at')}"
-                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
-            else:
-                ui.label("live report unavailable (non-blocking)").classes(
-                    f"text-xs text-[{COLORS['warning']}]"
-                )
-            if qualification_meta.get("qualification_report_present"):
-                ui.label(
-                    "qualification "
-                    f"status={qualification_meta.get('qualification_status')} "
-                    f"profile={qualification_meta.get('qualification_profile')} "
-                    f"source={qualification_meta.get('qualification_source')} "
-                    f"generated_at={qualification_meta.get('qualification_generated_at')}"
-                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
-            else:
-                ui.label("qualification report unavailable (non-blocking)").classes(
-                    f"text-xs text-[{COLORS['warning']}]"
-                )
-            if walkthrough_meta.get("walkthrough_report_present"):
-                summary = walkthrough_meta.get("walkthrough_status_summary") or {}
-                ui.label(
-                    "walkthrough "
-                    f"profile={walkthrough_meta.get('walkthrough_profile')} "
-                    f"generated_at={walkthrough_meta.get('walkthrough_generated_at')} "
-                    f"pass={summary.get('pass', 0)} "
-                    f"warn={summary.get('warn', 0)} "
-                    f"fail={summary.get('fail', 0)}"
-                ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
-            else:
-                ui.label("walkthrough report unavailable (internal/non-blocking)").classes(
-                    f"text-xs text-[{COLORS['warning']}]"
-                )
             ui.label(
-                "Readiness is warn-but-allow: launches remain enabled for debugging and validation."
+                "These checks are advisory by default. Use them when troubleshooting setup issues."
             ).classes(f"text-xs text-[{COLORS['text_secondary']}]")
+            status_bits = [
+                f"readiness={report.source}",
+                f"burn-in={burnin_meta.get('burnin_status', 'unavailable')}",
+                f"setup-files={bootstrap_meta.get('bootstrap_status', 'unavailable')}",
+                f"setup-check={qualification_meta.get('qualification_status', 'unavailable')}",
+                f"health-check={live_meta.get('live_status', 'unavailable')}",
+            ]
+            ui.label(" • ".join(status_bits)).classes(
+                f"text-xs text-[{COLORS['text_muted']}]"
+            )
+            with ui.expansion(
+                text="Technical details",
+                icon="terminal",
+                value=False,
+            ).classes(
+                f"w-full rounded-lg bg-[{COLORS['bg_secondary']}] border border-[#2d343c]"
+            ).props("dense dark"):
+                with ui.column().classes("w-full gap-1 p-3"):
+                    source_text = f"source={report.source} generated_at={report.generated_at}"
+                    if report.stale:
+                        source_text += f" stale={report.age_seconds}s"
+                    ui.label(source_text).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+                    if burnin_meta.get("burnin_report_present"):
+                        ui.label(
+                            "burnin "
+                            f"status={burnin_meta.get('burnin_status')} "
+                            f"source={burnin_meta.get('burnin_source')} "
+                            f"generated_at={burnin_meta.get('burnin_generated_at')}"
+                        ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+                    else:
+                        ui.label("burnin report unavailable (non-blocking)").classes(
+                            f"text-xs text-[{COLORS['warning']}]"
+                        )
+                    if bootstrap_meta.get("bootstrap_report_present"):
+                        ui.label(
+                            "bootstrap "
+                            f"status={bootstrap_meta.get('bootstrap_status')} "
+                            f"profile={bootstrap_meta.get('bootstrap_profile')} "
+                            f"source={bootstrap_meta.get('bootstrap_source')} "
+                            f"generated_at={bootstrap_meta.get('bootstrap_generated_at')}"
+                        ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+                    else:
+                        ui.label("bootstrap report unavailable (non-blocking)").classes(
+                            f"text-xs text-[{COLORS['warning']}]"
+                        )
+                    if live_meta.get("live_report_present"):
+                        ui.label(
+                            "live "
+                            f"status={live_meta.get('live_status')} "
+                            f"profile={live_meta.get('live_profile')} "
+                            f"source={live_meta.get('live_source')} "
+                            f"generated_at={live_meta.get('live_generated_at')}"
+                        ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+                    else:
+                        ui.label("live report unavailable (non-blocking)").classes(
+                            f"text-xs text-[{COLORS['warning']}]"
+                        )
+                    if qualification_meta.get("qualification_report_present"):
+                        ui.label(
+                            "qualification "
+                            f"status={qualification_meta.get('qualification_status')} "
+                            f"profile={qualification_meta.get('qualification_profile')} "
+                            f"source={qualification_meta.get('qualification_source')} "
+                            f"generated_at={qualification_meta.get('qualification_generated_at')}"
+                        ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+                    else:
+                        ui.label("qualification report unavailable (non-blocking)").classes(
+                            f"text-xs text-[{COLORS['warning']}]"
+                        )
+                    if walkthrough_meta.get("walkthrough_report_present"):
+                        summary = walkthrough_meta.get("walkthrough_status_summary") or {}
+                        ui.label(
+                            "walkthrough "
+                            f"profile={walkthrough_meta.get('walkthrough_profile')} "
+                            f"generated_at={walkthrough_meta.get('walkthrough_generated_at')} "
+                            f"pass={summary.get('pass', 0)} "
+                            f"warn={summary.get('warn', 0)} "
+                            f"fail={summary.get('fail', 0)}"
+                        ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
+                    else:
+                        ui.label("walkthrough report unavailable (internal/non-blocking)").classes(
+                            f"text-xs text-[{COLORS['warning']}]"
+                        )
 
         module_list = [self.selected_module] if self.selected_module else list(ALL_MODULES)
         for module in module_list:
@@ -269,17 +301,17 @@ class ResearchHub:
                         on_click=lambda r=route: ui.navigate.to(r),
                     ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
                 ui.button(
-                    "Run Setup Check (Advanced)",
+                    "Run Setup Check",
                     icon="play_arrow",
                     on_click=lambda m=module: self._run_contract_probe(m),
                 ).props("flat dense").classes(f"text-[{COLORS['text_secondary']}]")
                 ui.button(
-                    "Generate Setup Artifacts (Advanced)",
+                    "Generate Setup Files",
                     icon="build",
                     on_click=self._make_module_bootstrap_handler(module),
                 ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
                 ui.button(
-                    "Run System Health Check (Advanced)",
+                    "Run System Health Check",
                     icon="play_circle",
                     on_click=self._make_module_live_probe_handler(module),
                 ).props("flat dense").classes(f"text-[{COLORS['accent']}]")

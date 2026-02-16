@@ -464,7 +464,7 @@ class Benchmark:
                     ui.label(f"Checked path: {expected_path}").classes(
                         f'text-[11px] font-mono text-[{COLORS["text_muted"]}] break-all'
                     )
-                ui.link("Advanced setup checks are available in Research Hub.", "/research-hub").classes(
+                ui.link("Advanced setup checks are available in Advanced Diagnostics Tools.", "/research-hub").classes(
                     f'text-xs text-[{COLORS["accent"]}] hover:underline'
                 )
     

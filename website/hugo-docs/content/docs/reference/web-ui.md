@@ -40,7 +40,7 @@ The main landing page showing:
 - **Training History Chart**: Loss curves from recent runs
 - **Benchmark Scores Chart**: Pass@1 comparisons across models
 - **Recent Runs**: Quick access to completed jobs
-- **Advanced Diagnostics (Optional)**: status summary with direct link to Research Hub
+- **Advanced Diagnostics Tools (Optional)**: status summary with direct link to `/research-hub`
 
 ### Training (`/training`)
 
@@ -48,7 +48,7 @@ Configure and launch training jobs:
 - **Quickstart mode (default)**: minimal required inputs for first successful run
 - **Advanced mode**: full tuning controls when needed
 - **Setup advisory (non-blocking)**: diagnostics status is informational; invalid form inputs are the only launch blockers
-- **Diagnostics actions**: available in **Research Hub** only
+- **Diagnostics actions**: available in **Advanced Diagnostics Tools** only
 
 **SFT (Supervised Fine-Tuning)**
 - Model selection (HuggingFace or local path)
@@ -85,7 +85,7 @@ Features:
 - Custom output directory
 - One-click launch with redirect to Monitor
 - Quickstart mode + optional Advanced mode
-- Setup advisory (non-blocking), with advanced checks moved to Research Hub
+- Setup advisory (non-blocking), with advanced checks moved to Advanced Diagnostics Tools
 
 ### Monitor (`/monitor`)
 
@@ -148,7 +148,7 @@ Launch inference optimize and benchmark jobs from the UI:
 - `inference benchmark` launch contract (prompts, tokens, warmup)
 - Durable launch context + monitor/relaunch parity
 - Quickstart mode + optional Advanced mode
-- Setup advisory (non-blocking), with advanced checks moved to Research Hub
+- Setup advisory (non-blocking), with advanced checks moved to Advanced Diagnostics Tools
 
 ### Benchmark Advanced (`/benchmark-advanced`)
 
@@ -158,7 +158,7 @@ Batch orchestration for non-code benchmark runs:
 - Monitor handoff to first launched job
 - All-module readiness banner for non-code benchmark contract status
 
-### Research Hub (`/research-hub`)
+### Advanced Diagnostics Tools (`/research-hub`)
 
 Cross-module ops readiness visibility:
 - Reads canonical ops readiness report when available
@@ -225,7 +225,7 @@ Banner wording:
 - `Bootstrap issue` means evidence generation encountered a contract/probe failure.
 - `Live probe issue` means bounded live probe execution failed for the module in the selected profile.
 
-Advanced remediation actions are available in **Research Hub**:
+Advanced remediation actions are available in **Advanced Diagnostics Tools**:
 - `Generate setup artifacts` for bounded bootstrap artifacts.
 - `Run system health check` for bounded live command probes.
 - `Run setup check` for bounded contract checks.
@@ -332,7 +332,7 @@ Only use `--open-browser` when desktop browser integration is available.
 
 ### Burn-in provenance unavailable
 
-If burn-in status is unavailable in Dashboard or Research Hub, generate the report:
+If burn-in status is unavailable in Dashboard or Advanced Diagnostics Tools, generate the report:
 
 ```bash
 python3 scripts/run_ops_dataset_burnin.py \
@@ -343,7 +343,7 @@ python3 scripts/run_ops_dataset_burnin.py \
 
 ### All-module readiness unavailable
 
-If coding/non-coding readiness is unavailable in Dashboard or Research Hub, generate the canonical report:
+If coding/non-coding readiness is unavailable in Dashboard or Advanced Diagnostics Tools, generate the canonical report:
 
 ```bash
 python3 scripts/run_all_module_matrix.py \
@@ -354,7 +354,7 @@ python3 scripts/run_all_module_matrix.py \
 
 ### All-module qualification unavailable
 
-If qualification status is unavailable in Dashboard or Research Hub, generate the canonical qualification report:
+If qualification status is unavailable in Dashboard or Advanced Diagnostics Tools, generate the canonical qualification report:
 
 ```bash
 python3 scripts/run_all_module_qualification.py \
@@ -366,7 +366,7 @@ python3 scripts/run_all_module_qualification.py \
 
 ### All-module live execution unavailable
 
-If live execution status is unavailable in Dashboard or Research Hub, generate the canonical live report:
+If live execution status is unavailable in Dashboard or Advanced Diagnostics Tools, generate the canonical live report:
 
 ```bash
 python3 scripts/run_all_module_live_matrix.py \

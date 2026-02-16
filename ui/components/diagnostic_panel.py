@@ -66,14 +66,6 @@ def render_readiness_diagnostic_panel(
                     f"text-[{COLORS['text_secondary']}]"
                 )
 
-        issue_code = str(getattr(entry, "issue_code", "") or "")
-        severity = str(getattr(entry, "severity", "") or "")
-        issue_scope = str(getattr(entry, "issue_scope", "") or "")
-        if issue_code:
-            ui.label(
-                f"Issue: code={issue_code} • severity={severity or '--'} • scope={issue_scope or '--'}"
-            ).classes(f"text-xs font-mono text-[{COLORS['text_muted']}]")
-
         ui.label(_status_summary(status, launch_blocked)).classes(
             f"text-xs text-[{COLORS['text_secondary']}]"
         )
@@ -102,14 +94,29 @@ def render_readiness_diagnostic_panel(
                 f"text-xs text-[{COLORS['text_secondary']}]"
             )
 
-        if not compact:
-            options = list(getattr(entry, "fix_options", []) or [])
-            if options:
-                ui.label("Fix options:").classes(f"text-xs text-[{COLORS['text_muted']}]")
-                for option in options[:3]:
-                    ui.label(f"- {option}").classes(
-                        f"text-xs font-mono text-[{COLORS['text_muted']}]"
-                    )
+        issue_code = str(getattr(entry, "issue_code", "") or "")
+        severity = str(getattr(entry, "severity", "") or "")
+        issue_scope = str(getattr(entry, "issue_scope", "") or "")
+        options = list(getattr(entry, "fix_options", []) or [])
+        if issue_code or options:
+            with ui.expansion(
+                text="Technical details",
+                icon="terminal",
+                value=False,
+            ).classes(
+                f"w-full rounded bg-[{COLORS['bg_secondary']}] border border-[#2d343c]"
+            ).props("dense dark"):
+                with ui.column().classes("w-full gap-1 p-2"):
+                    if issue_code:
+                        ui.label(
+                            f"Issue: code={issue_code} • severity={severity or '--'} • scope={issue_scope or '--'}"
+                        ).classes(f"text-xs font-mono text-[{COLORS['text_muted']}]")
+                    if not compact and options:
+                        ui.label("Fix options:").classes(f"text-xs text-[{COLORS['text_muted']}]")
+                        for option in options[:3]:
+                            ui.label(f"- {option}").classes(
+                                f"text-xs font-mono text-[{COLORS['text_muted']}]"
+                            )
 
 
 def _primary_message(entry) -> str:
@@ -134,5 +141,5 @@ def _status_summary(status: str, launch_blocked: bool) -> str:
     if key == "warn":
         return "Evidence is missing or stale; launch remains enabled."
     if launch_blocked:
-        return "Setup checks are not satisfied; complete required setup before relying on diagnostics."
-    return "Setup diagnostics reported issues; launch may still proceed for debugging."
+        return "Setup checks found required issues; fix the listed inputs before launch."
+    return "Setup checks found issues; launch may still proceed for troubleshooting."
