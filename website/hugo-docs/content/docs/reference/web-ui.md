@@ -45,8 +45,10 @@ The main landing page showing:
 ### Training (`/training`)
 
 Configure and launch training jobs:
-- **Training-first flow**: model + dataset + output + start controls are primary
-- **Advanced setup diagnostics**: optional collapsed panel for troubleshooting checks
+- **Quickstart mode (default)**: minimal required inputs for first successful run
+- **Advanced mode**: full tuning controls when needed
+- **Setup advisory (non-blocking)**: diagnostics status is informational; invalid form inputs are the only launch blockers
+- **Diagnostics actions**: available in **Research Hub** only
 
 **SFT (Supervised Fine-Tuning)**
 - Model selection (HuggingFace or local path)
@@ -82,6 +84,8 @@ Features:
 - Sample limit slider
 - Custom output directory
 - One-click launch with redirect to Monitor
+- Quickstart mode + optional Advanced mode
+- Setup advisory (non-blocking), with advanced checks moved to Research Hub
 
 ### Monitor (`/monitor`)
 
@@ -143,7 +147,8 @@ Launch inference optimize and benchmark jobs from the UI:
 - `inference optimize` launch contract (precision/latency/calibration)
 - `inference benchmark` launch contract (prompts, tokens, warmup)
 - Durable launch context + monitor/relaunch parity
-- All-module readiness banner for inference contract status
+- Quickstart mode + optional Advanced mode
+- Setup advisory (non-blocking), with advanced checks moved to Research Hub
 
 ### Benchmark Advanced (`/benchmark-advanced`)
 
@@ -196,10 +201,10 @@ Cross-module ops readiness visibility:
 
 UI routes support deterministic preselection via query params:
 
-- `/training?mode=<sft|raft|vlm|audio|reasoning|agentic>`
-- `/benchmark?view=<code|non_code>`
+- `/training?mode=<sft|raft|vlm|audio|reasoning|agentic>&ui_mode=<quickstart|advanced>&preset=<name>`
+- `/benchmark?view=<code|non_code>&ui_mode=<quickstart|advanced>&preset=<name>`
 - `/benchmark-advanced?domains=<csv>` (example: `domains=vlm,audio`)
-- `/inference?mode=<optimize|benchmark>`
+- `/inference?mode=<optimize|benchmark>&ui_mode=<quickstart|advanced>&preset=<name>`
 - `/ops-console?module=<config|data|info|plot>&execution_mode=<contract|live>`
 - `/research-hub?module=<module_key>`
 
@@ -220,15 +225,10 @@ Banner wording:
 - `Bootstrap issue` means evidence generation encountered a contract/probe failure.
 - `Live probe issue` means bounded live probe execution failed for the module in the selected profile.
 
-Each readiness banner includes:
-- Stable issue metadata (`issue_code`, `severity`, `issue_scope`).
-- `Fix now` remediation text and fix options.
-- `What is missing?` evidence gaps or expected evidence root path.
-- `Run setup check` button to refresh module setup diagnostics.
-
 Advanced remediation actions are available in **Research Hub**:
 - `Generate setup artifacts` for bounded bootstrap artifacts.
 - `Run system health check` for bounded live command probes.
+- `Run setup check` for bounded contract checks.
 
 ## Architecture
 

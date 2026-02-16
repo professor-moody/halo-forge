@@ -88,8 +88,10 @@ def test_training_page_launch_validation_is_input_driven():
     assert "def _validate_sft_inputs(" in source
     assert "def _validate_raft_inputs(" in source
     assert "def _validate_modality_inputs(" in source
-    assert "Advanced setup diagnostics (optional)" in source
-    assert "Run Setup Check (Advanced)" in source
+    assert 'self.ui_mode: str = "quickstart"' in source
+    assert "def _render_ui_mode_buttons(" in source
+    assert "def _render_sft_quickstart_form(" in source
+    assert "Setup advisory (non-blocking)" in source
 
 
 def test_diagnostic_panel_uses_setup_check_language():

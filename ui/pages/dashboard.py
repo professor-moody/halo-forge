@@ -68,13 +68,14 @@ class Dashboard:
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
                 with ui.row().classes('gap-3 flex-wrap'):
-                    self._render_action_button('Start SFT', 'school', '/training?mode=sft')
-                    self._render_action_button('Start RAFT', 'autorenew', '/training?mode=raft')
-                    self._render_action_button('VLM Training', 'image', '/training?mode=vlm')
-                    self._render_action_button('Audio Training', 'graphic_eq', '/training?mode=audio')
-                    self._render_action_button('Reasoning Training', 'calculate', '/training?mode=reasoning')
-                    self._render_action_button('Agentic Training', 'extension', '/training?mode=agentic')
-                    self._render_action_button('Run Benchmark', 'speed', '/benchmark')
+                    self._render_action_button('Start SFT', 'school', '/training?mode=sft&ui_mode=quickstart&preset=sft_fast_local')
+                    self._render_action_button('Start RAFT', 'autorenew', '/training?mode=raft&ui_mode=quickstart&preset=raft_safe_default')
+                    self._render_action_button('VLM Training', 'image', '/training?mode=vlm&ui_mode=quickstart&preset=vlm_tiny')
+                    self._render_action_button('Audio Training', 'graphic_eq', '/training?mode=audio&ui_mode=quickstart&preset=audio_whisper_tiny')
+                    self._render_action_button('Reasoning Training', 'calculate', '/training?mode=reasoning&ui_mode=quickstart&preset=reasoning_small')
+                    self._render_action_button('Agentic Training', 'extension', '/training?mode=agentic&ui_mode=quickstart&preset=agentic_small')
+                    self._render_action_button('Run Benchmark', 'speed', '/benchmark?view=code&ui_mode=quickstart&preset=code_smoke')
+                    self._render_action_button('Inference Quickstart', 'bolt', '/inference?mode=optimize&ui_mode=quickstart&preset=optimize_int4_smoke')
                     self._render_action_button('Open Monitor', 'computer', '/monitor')
                     self._render_action_button('View Results', 'analytics', '/results')
             

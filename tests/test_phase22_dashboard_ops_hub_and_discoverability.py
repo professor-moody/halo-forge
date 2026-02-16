@@ -98,10 +98,10 @@ def test_dashboard_hub_service_builds_all_module_cards(monkeypatch):
 def test_dashboard_hub_routes_include_query_driven_deep_links():
     """Module route mapping should expose deterministic query-based deep links."""
     routes = dashboard_hub_module.MODULE_SURFACE_ROUTES
-    assert routes["sft"] == "/training?mode=sft"
-    assert routes["benchmark_code"] == "/benchmark?view=code"
-    assert routes["benchmark_non_code"] == "/benchmark?view=non_code"
-    assert routes["inference"] == "/inference?mode=optimize"
+    assert routes["sft"] == "/training?mode=sft&ui_mode=quickstart&preset=sft_fast_local"
+    assert routes["benchmark_code"] == "/benchmark?view=code&ui_mode=quickstart&preset=code_smoke"
+    assert routes["benchmark_non_code"] == "/benchmark?view=non_code&ui_mode=quickstart&preset=non_code_smoke"
+    assert routes["inference"] == "/inference?mode=optimize&ui_mode=quickstart&preset=optimize_int4_smoke"
     assert routes["data"] == "/ops-console?module=data&execution_mode=contract"
 
 

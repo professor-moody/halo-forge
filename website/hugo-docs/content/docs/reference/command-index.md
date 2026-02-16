@@ -390,8 +390,9 @@ halo-forge ui --host 0.0.0.0 --port 8080
 Common deep-link routes for operator workflows:
 
 ```bash
-http://127.0.0.1:8080/training?mode=audio
-http://127.0.0.1:8080/benchmark?view=non_code
+http://127.0.0.1:8080/training?mode=audio&ui_mode=quickstart&preset=audio_whisper_tiny
+http://127.0.0.1:8080/benchmark?view=non_code&ui_mode=quickstart&preset=non_code_smoke
+http://127.0.0.1:8080/inference?mode=optimize&ui_mode=quickstart&preset=optimize_int4_smoke
 http://127.0.0.1:8080/ops-console?module=data&execution_mode=live
 ```
 

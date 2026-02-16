@@ -182,10 +182,15 @@ def test_ui_pages_support_query_param_preselection_contracts():
     assert "get_query_param" in training_source
     assert "_consume_query_params" in training_source
     assert "ignored invalid training mode query param" in training_source
+    assert "ignored invalid training ui_mode query param" in training_source
+    assert "ignored invalid training preset query param" in training_source
+    assert "self.ui_mode: str = \"quickstart\"" in training_source
 
     benchmark_source = Path("ui/pages/benchmark.py").read_text(encoding="utf-8")
     assert "get_query_param" in benchmark_source
     assert "ignored invalid benchmark view query param" in benchmark_source
+    assert "ignored invalid benchmark ui_mode query param" in benchmark_source
+    assert "ignored invalid benchmark preset query param" in benchmark_source
     assert "_apply_type_defaults" in benchmark_source
 
     bench_adv_source = Path("ui/pages/benchmark_advanced.py").read_text(encoding="utf-8")
@@ -194,6 +199,8 @@ def test_ui_pages_support_query_param_preselection_contracts():
 
     inference_source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
     assert "ignored invalid inference mode query param" in inference_source
+    assert "ignored invalid inference ui_mode query param" in inference_source
+    assert "ignored invalid inference preset query param" in inference_source
 
     ops_source = Path("ui/pages/ops_console.py").read_text(encoding="utf-8")
     assert "ignored invalid ops module query param" in ops_source

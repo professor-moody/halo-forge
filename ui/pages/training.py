@@ -15,12 +15,17 @@ from ui.services import (
     TrainingService,
     get_ops_readiness_service,
 )
+from ui.services.quickstart_presets import (
+    apply_preset_values,
+    default_preset_key,
+    get_quickstart_preset,
+    list_quickstart_presets,
+)
 from ui.services.launch_contracts import (
     UI_SUPPORTED_TRAINING_MODES,
     UI_DEFERRED_TRAINING_MODES,
 )
 from ui.components.notifications import notify_job_started, notify_job_failed
-from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 from ui.query_params import get_query_param
 from halo_forge.capabilities import check_modality_train_capability
 
@@ -316,6 +321,7 @@ class Training:
     }
     
     def __init__(self):
+        self.ui_mode: str = "quickstart"
         self.mode: str = "sft"
         self.sft_data = SFTFormData()
         self.raft_data = RAFTFormData()
@@ -356,6 +362,11 @@ class Training:
         }
         self.selected_sft_preset = "standard"
         self.selected_raft_preset = "conservative"
+        self.selected_quickstart_preset: dict[str, str] = {
+            mode: default_preset_key("training", mode) or ""
+            for mode in ["sft", "raft", "vlm", "audio", "reasoning", "agentic"]
+        }
+        self._apply_quickstart_defaults()
         self.is_running = False
         self.training_service = TrainingService(state)
         self.ops_readiness_service = get_ops_readiness_service()
@@ -364,8 +375,15 @@ class Training:
         self._consume_query_params()
         
         # Container references for dynamic updates
+        self._ui_mode_container = None
         self._toggle_container = None
         self.form_container = None
+
+    def _apply_quickstart_defaults(self) -> None:
+        """Apply default quickstart presets once on page init."""
+        for mode, preset_key in self.selected_quickstart_preset.items():
+            if preset_key:
+                self._apply_quickstart_preset(mode, preset_key, notify=False)
 
     def _consume_clone_payload(self):
         """Load optional clone/relaunch payload persisted in user storage."""
@@ -441,13 +459,29 @@ class Training:
     def _consume_query_params(self) -> None:
         """Apply explicit query-param preselection (overrides clone payload)."""
         mode = get_query_param("mode", "").lower()
-        if not mode:
-            return
+        ui_mode = get_query_param("ui_mode", "").lower()
+        preset = get_query_param("preset", "").lower()
+
         allowed_modes = set(UI_SUPPORTED_TRAINING_MODES) | set(UI_DEFERRED_TRAINING_MODES)
-        if mode in allowed_modes:
-            self.mode = mode
-            return
-        self._query_warnings.append(f"ignored invalid training mode query param: {mode}")
+        if mode:
+            if mode in allowed_modes:
+                self.mode = mode
+            else:
+                self._query_warnings.append(f"ignored invalid training mode query param: {mode}")
+
+        if ui_mode:
+            if ui_mode in {"quickstart", "advanced"}:
+                self.ui_mode = ui_mode
+            else:
+                self._query_warnings.append(
+                    f"ignored invalid training ui_mode query param: {ui_mode}"
+                )
+
+        if preset:
+            if not self._apply_quickstart_preset(self.mode, preset, notify=False):
+                self._query_warnings.append(
+                    f"ignored invalid training preset query param for mode {self.mode}: {preset}"
+                )
     
     def render(self):
         """Render the training page."""
@@ -469,6 +503,13 @@ class Training:
             with self._toggle_container:
                 self._render_mode_buttons()
 
+            self._ui_mode_container = ui.row().classes(
+                f'w-full gap-2 p-2 rounded-xl bg-[{COLORS["bg_card"]}] '
+                f'border border-[#2d343c] animate-in stagger-1'
+            )
+            with self._ui_mode_container:
+                self._render_ui_mode_buttons()
+
             with ui.row().classes(
                 f'w-full items-start gap-2 p-3 rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
             ):
@@ -485,7 +526,8 @@ class Training:
                     message = (
                         "UI launch supports "
                         + ", ".join(mode.upper() for mode in UI_SUPPORTED_TRAINING_MODES)
-                        + ". Capability-gated modes still require explicit override while in prototype."
+                        + ". Capability-gated modes still require explicit override while in prototype. "
+                        + "Setup advisories are non-blocking; only invalid inputs block launch."
                     )
                 ui.label(message).classes(f'text-xs text-[{COLORS["text_secondary"]}] flex-1')
                 ui.button(
@@ -498,6 +540,35 @@ class Training:
             self.form_container = ui.column().classes('w-full gap-6')
             with self.form_container:
                 self._render_form()
+
+    def _render_ui_mode_buttons(self) -> None:
+        """Render quickstart vs advanced UI mode toggle."""
+        self._ui_mode_button("Quickstart", "quickstart", "bolt")
+        self._ui_mode_button("Advanced", "advanced", "tune")
+
+    def _ui_mode_button(self, label: str, ui_mode: str, icon: str) -> None:
+        is_active = self.ui_mode == ui_mode
+        with ui.element('div').classes(
+            f'flex-1 flex items-center justify-center gap-3 py-3 rounded-lg cursor-pointer transition-all '
+            + (f'bg-[{COLORS["primary"]}]/20 border border-[{COLORS["primary"]}]' if is_active
+               else f'bg-transparent border border-transparent hover:bg-[{COLORS["bg_hover"]}]')
+        ).on('click', lambda m=ui_mode: self._set_ui_mode(m)):
+            ui.icon(icon, size='20px').classes(
+                f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]'
+            )
+            ui.label(label).classes(
+                f'text-sm font-medium '
+                + (f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]')
+            )
+
+    def _set_ui_mode(self, ui_mode: str) -> None:
+        self.ui_mode = ui_mode
+        self._ui_mode_container.clear()
+        with self._ui_mode_container:
+            self._render_ui_mode_buttons()
+        self.form_container.clear()
+        with self.form_container:
+            self._render_form()
     
     def _render_mode_buttons(self):
         """Render the SFT/RAFT mode toggle buttons."""
@@ -541,15 +612,157 @@ class Training:
         self.form_container.clear()
         with self.form_container:
             self._render_form()
-    
+
     def _render_form(self):
         """Render the current form based on mode."""
+        if self.ui_mode == "quickstart":
+            if self.mode == "sft":
+                self._render_sft_quickstart_form()
+            elif self.mode == "raft":
+                self._render_raft_quickstart_form()
+            elif self.mode in self.modality_data:
+                self._render_modality_quickstart_form(self.mode)
+            return
         if self.mode == "sft":
             self._render_sft_form()
         elif self.mode == "raft":
             self._render_raft_form()
         elif self.mode in self.modality_data:
             self._render_modality_form(self.mode)
+
+    def _get_quickstart_target_obj(self, mode_key: str):
+        if mode_key == "sft":
+            return self.sft_data
+        if mode_key == "raft":
+            return self.raft_data
+        if mode_key in self.modality_data:
+            return self.modality_data[mode_key]
+        return None
+
+    def _apply_quickstart_preset(self, mode_key: str, preset_key: str, *, notify: bool) -> bool:
+        target_obj = self._get_quickstart_target_obj(mode_key)
+        if target_obj is None:
+            return False
+        preset = get_quickstart_preset("training", preset_key, target=mode_key)
+        if preset is None:
+            return False
+        apply_preset_values(target_obj, preset.values)
+        self.selected_quickstart_preset[mode_key] = preset.key
+        if notify:
+            ui.notify(f'Applied quickstart preset: {preset.label}', type='positive', timeout=1200)
+        return True
+
+    def _render_quickstart_preset_selector(self, mode_key: str) -> None:
+        presets = list_quickstart_presets("training", target=mode_key)
+        if not presets:
+            return
+        selected = self.selected_quickstart_preset.get(mode_key) or presets[0].key
+        selected_preset = next((preset for preset in presets if preset.key == selected), presets[0])
+        options = {preset.key: preset.label for preset in presets}
+
+        def _on_change(e):
+            if not self._apply_quickstart_preset(mode_key, str(e.value), notify=True):
+                return
+            self.form_container.clear()
+            with self.form_container:
+                self._render_form()
+
+        with ui.column().classes('w-full gap-2'):
+            ui.label('Quickstart Preset').classes(
+                f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+            )
+            ui.select(
+                options=options,
+                value=selected_preset.key,
+                on_change=_on_change,
+            ).classes('w-full').props('outlined dense dark color=grey-7')
+            ui.label(
+                f'{selected_preset.description} • Use when: {selected_preset.recommendation.when_to_use}'
+            ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+
+    def _render_sft_quickstart_form(self) -> None:
+        with ui.column().classes(
+            f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-2'
+        ):
+            self._section_header("SFT Quickstart", "bolt")
+            self._render_quickstart_preset_selector("sft")
+            self._render_model_selector("Base Model", self.sft_data, model_type="code")
+            self._render_dataset_selector()
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
+                    ui.label('Output Directory').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=self.sft_data.output_dir).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(self.sft_data, 'output_dir')
+                self._number_input("Epochs", self.sft_data.epochs, lambda v: setattr(self.sft_data, 'epochs', int(v)), min_val=1, max_val=20)
+                self._number_input("Batch Size", self.sft_data.batch_size, lambda v: setattr(self.sft_data, 'batch_size', int(v)), min_val=1, max_val=64)
+
+        self._render_launch_button("Start SFT Training", self._launch_sft, "sft")
+        self._render_setup_advisory("sft")
+
+    def _render_raft_quickstart_form(self) -> None:
+        with ui.column().classes(
+            f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-2'
+        ):
+            self._section_header("RAFT Quickstart", "bolt")
+            self._render_quickstart_preset_selector("raft")
+            self._render_model_selector("Base Model", self.raft_data, model_type="code")
+            self._render_prompts_selector()
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
+                    ui.label('Output Directory').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=self.raft_data.output_dir).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(self.raft_data, 'output_dir')
+                self._number_input("Cycles", self.raft_data.cycles, lambda v: setattr(self.raft_data, 'cycles', int(v)), min_val=1, max_val=20)
+                self._number_input("Samples/Prompt", self.raft_data.samples_per_prompt, lambda v: setattr(self.raft_data, 'samples_per_prompt', int(v)), min_val=1, max_val=64)
+
+        self._render_launch_button("Start RAFT Training", self._launch_raft, "raft")
+        self._render_setup_advisory("raft")
+
+    def _render_modality_quickstart_form(self, modality: str) -> None:
+        data = self.modality_data[modality]
+        with ui.column().classes(
+            f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-2'
+        ):
+            self._section_header(f"{modality.upper()} Quickstart", "bolt")
+            self._render_quickstart_preset_selector(modality)
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                with ui.column().classes('flex-1 min-w-[240px] gap-2'):
+                    ui.label('Model').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=data.model).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'model')
+                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
+                    ui.label('Dataset').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=data.dataset).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'dataset')
+            with ui.row().classes('w-full gap-4 flex-wrap'):
+                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
+                    ui.label('Output Directory').classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.input(value=data.output_dir).classes('w-full').props(
+                        'outlined dense dark color=grey-7'
+                    ).bind_value(data, 'output_dir')
+                self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32)
+                self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}")
+
+        self._render_launch_button(
+            f"Start {modality.upper()} Training",
+            lambda m=modality: self._launch_modality_train(m),
+            modality,
+        )
+        self._render_setup_advisory(modality)
     
     def _render_sft_form(self):
         """Render the SFT training form with presets and organized sections."""
@@ -1157,8 +1370,8 @@ class Training:
         )
         self._render_advanced_diagnostics_for_mode(modality)
 
-    def _render_all_module_readiness_banner(self, module_key: str):
-        """Render all-module readiness status for the selected training surface."""
+    def _render_setup_advisory(self, module_key: str) -> None:
+        """Render concise non-blocking setup advisory for the current module."""
         try:
             report = self.ops_readiness_service.get_effective_all_module_readiness()
             output_map = self.ops_readiness_service.resolve_effective_output_map(
@@ -1173,38 +1386,41 @@ class Training:
         readiness = report.modules.get(module_key)
         if readiness is None:
             return
-        render_readiness_diagnostic_panel(
-            module=module_key,
-            entry=readiness,
-            source=report.source,
-            stale=bool(report.stale),
-            expected_path=str(output_map.get(module_key) or readiness.last_output_dir or ""),
-            on_probe=lambda key=module_key: self._run_contract_probe(key),
-            probe_label="Run Setup Check (Advanced)",
-        )
+        warnings = list(getattr(readiness, "warnings", []) or [])
+        errors = list(getattr(readiness, "errors", []) or [])
+        launch_blocked = bool(getattr(readiness, "launch_blocked", False))
+        expected_path = str(output_map.get(module_key) or readiness.last_output_dir or "")
+        severity_color = COLORS["warning"] if warnings or errors else COLORS["info"]
+        if launch_blocked:
+            message = errors[0] if errors else "Fix required input."
+            title = "Fix required input"
+        elif warnings:
+            message = warnings[0]
+            title = "Setup advisory (non-blocking)"
+        elif errors:
+            message = errors[0]
+            title = "Setup advisory (non-blocking)"
+        else:
+            message = "No setup warnings detected."
+            title = "Setup advisory (non-blocking)"
+        with ui.row().classes(
+            f'w-full items-start gap-2 p-3 rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+        ):
+            ui.icon("info", size="16px").classes(f'text-[{severity_color}] mt-0.5')
+            with ui.column().classes("flex-1 gap-1"):
+                ui.label(title).classes(f'text-xs font-semibold text-[{severity_color}]')
+                ui.label(message).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                if expected_path:
+                    ui.label(f"Checked path: {expected_path}").classes(
+                        f'text-[11px] font-mono text-[{COLORS["text_muted"]}] break-all'
+                    )
+                ui.link("Advanced setup checks are available in Research Hub.", "/research-hub").classes(
+                    f'text-xs text-[{COLORS["accent"]}] hover:underline'
+                )
 
     def _render_advanced_diagnostics_for_mode(self, module_key: str) -> None:
-        """Render optional diagnostics panel below primary launch controls."""
-        with ui.expansion(
-            text="Advanced setup diagnostics (optional)",
-            icon="science",
-            value=False,
-        ).classes(
-            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in'
-        ).props('dense dark'):
-            with ui.column().classes("w-full gap-3 p-4"):
-                ui.label(
-                    "Use these checks when troubleshooting setup issues. Normal training can start without prior artifacts."
-                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
-                self._render_all_module_readiness_banner(module_key)
-
-    def _run_contract_probe(self, module_key: str) -> None:
-        ok, message = self.ops_readiness_service.run_contract_probe(
-            module=module_key,
-            include_all_modules=True,
-        )
-        ui.notify(message, type='positive' if ok else 'warning', timeout=1800)
-        self._refresh_readiness()
+        """Render advisory-only setup status for advanced mode."""
+        self._render_setup_advisory(module_key)
 
     def _refresh_readiness(self):
         """Force-refresh readiness cache and re-render current form."""

@@ -24,9 +24,14 @@ from ui.services.benchmark_service import (
     get_benchmark_service,
 )
 from ui.services.ops_readiness_service import get_ops_readiness_service
+from ui.services.quickstart_presets import (
+    apply_preset_values,
+    default_preset_key,
+    get_quickstart_preset,
+    list_quickstart_presets,
+)
 from ui.components.notifications import notify_job_started, notify_job_failed
 from ui.components.file_picker import FilePicker
-from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 from ui.query_params import get_query_param
 
 
@@ -89,12 +94,19 @@ class Benchmark:
     ]
     
     def __init__(self):
+        self.ui_mode: str = "quickstart"
         self.data = BenchmarkFormData()
         self.data.preset = CODE_PRESETS[0] if CODE_PRESETS else None
+        self.selected_quickstart_preset: dict[str, str] = {
+            "code": default_preset_key("benchmark", "code") or "code_smoke",
+            "non_code": default_preset_key("benchmark", "non_code") or "non_code_smoke",
+        }
+        self._apply_quickstart_default_for_current_type()
         self.is_running = False
         self.benchmark_service = get_benchmark_service(state)
         self.ops_readiness_service = get_ops_readiness_service()
         self._tabs_container = None
+        self._ui_mode_container = None
         self._config_container = None
         # Cache for discovered local models
         self._local_models_cache: list[tuple[str, str]] = []
@@ -158,15 +170,26 @@ class Benchmark:
     def _consume_query_params(self) -> None:
         """Apply explicit query-param preselection (overrides clone payload)."""
         view = get_query_param("view", "").lower()
-        if not view:
-            return
-        if view == "code":
-            self._apply_type_defaults(BenchmarkType.CODE)
-            return
-        if view == "non_code":
-            self._apply_type_defaults(BenchmarkType.VLM)
-            return
-        self._query_warnings.append(f"ignored invalid benchmark view query param: {view}")
+        ui_mode = get_query_param("ui_mode", "").lower()
+        preset = get_query_param("preset", "").lower()
+        if view:
+            if view == "code":
+                self._apply_type_defaults(BenchmarkType.CODE)
+            elif view == "non_code":
+                self._apply_type_defaults(BenchmarkType.VLM)
+            else:
+                self._query_warnings.append(f"ignored invalid benchmark view query param: {view}")
+
+        if ui_mode:
+            if ui_mode in {"quickstart", "advanced"}:
+                self.ui_mode = ui_mode
+            else:
+                self._query_warnings.append(f"ignored invalid benchmark ui_mode query param: {ui_mode}")
+
+        if preset and not self._apply_quickstart_preset_for_current_type(preset):
+            self._query_warnings.append(
+                f"ignored invalid benchmark preset query param for current view: {preset}"
+            )
     
     def _refresh_local_models(self):
         """Refresh the cache of locally trained models."""
@@ -245,10 +268,45 @@ class Benchmark:
                 f'border border-[#2d343c] animate-in stagger-1'
             ) as self._tabs_container:
                 self._render_type_tabs()
+
+            self._ui_mode_container = ui.row().classes(
+                f'w-full gap-2 p-2 rounded-xl bg-[{COLORS["bg_card"]}] '
+                f'border border-[#2d343c] animate-in stagger-1'
+            )
+            with self._ui_mode_container:
+                self._render_ui_mode_tabs()
             
             # Main form
             with ui.column().classes('w-full gap-6') as self._config_container:
                 self._render_form()
+
+    def _render_ui_mode_tabs(self) -> None:
+        self._ui_mode_tab("Quickstart", "quickstart", "bolt")
+        self._ui_mode_tab("Advanced", "advanced", "tune")
+
+    def _ui_mode_tab(self, label: str, value: str, icon: str) -> None:
+        is_active = self.ui_mode == value
+        with ui.element('div').classes(
+            f'flex-1 flex items-center justify-center gap-3 py-3 rounded-lg cursor-pointer transition-all '
+            + (f'bg-[{COLORS["primary"]}]/20 border border-[{COLORS["primary"]}]' if is_active
+               else f'bg-transparent border border-transparent hover:bg-[{COLORS["bg_hover"]}]')
+        ).on('click', lambda v=value: self._set_ui_mode(v)):
+            ui.icon(icon, size='20px').classes(
+                f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]'
+            )
+            ui.label(label).classes(
+                f'text-sm font-medium '
+                + (f'text-[{COLORS["primary"]}]' if is_active else f'text-[{COLORS["text_secondary"]}]')
+            )
+
+    def _set_ui_mode(self, value: str) -> None:
+        self.ui_mode = value
+        self._ui_mode_container.clear()
+        with self._ui_mode_container:
+            self._render_ui_mode_tabs()
+        self._config_container.clear()
+        with self._config_container:
+            self._render_form()
     
     def _render_type_tabs(self):
         """Render the benchmark type tab buttons."""
@@ -278,6 +336,7 @@ class Benchmark:
     def _set_type(self, btype: BenchmarkType):
         """Switch benchmark type."""
         self._apply_type_defaults(btype)
+        self._apply_quickstart_default_for_current_type()
         
         # Refresh BOTH tabs and form
         self._tabs_container.clear()
@@ -299,8 +358,76 @@ class Benchmark:
         if models:
             self.data.model = models[0]
 
-    def _render_all_module_readiness_banner(self):
-        """Render all-module readiness status for benchmark surfaces."""
+    def _is_code_type(self) -> bool:
+        return self.data.benchmark_type == BenchmarkType.CODE
+
+    def _benchmark_target_key(self) -> str:
+        return "code" if self._is_code_type() else "non_code"
+
+    def _current_module_key(self) -> str:
+        return "benchmark_code" if self._is_code_type() else "benchmark_non_code"
+
+    def _apply_quickstart_default_for_current_type(self) -> None:
+        target = self._benchmark_target_key()
+        default_key = self.selected_quickstart_preset.get(target) or default_preset_key("benchmark", target)
+        if default_key:
+            self._apply_quickstart_preset_for_current_type(default_key)
+
+    def _apply_quickstart_preset_for_current_type(self, preset_key: str) -> bool:
+        target = self._benchmark_target_key()
+        preset = get_quickstart_preset("benchmark", preset_key, target=target)
+        if preset is None:
+            return False
+        apply_preset_values(
+            self.data,
+            preset.values,
+            allowed_fields=(
+                "model",
+                "limit",
+                "output_dir",
+                "samples_per_prompt",
+                "verifier",
+                "run_after_compile",
+            ),
+        )
+        dataset_name = str(preset.values.get("benchmark_dataset") or "").strip()
+        if dataset_name:
+            options = get_presets_for_type(self.data.benchmark_type)
+            matched = next((item for item in options if item.dataset == dataset_name), None)
+            if matched is not None:
+                self.data.preset = matched
+        self.selected_quickstart_preset[target] = preset.key
+        return True
+
+    def _render_quickstart_preset_selector(self) -> None:
+        target = self._benchmark_target_key()
+        presets = list_quickstart_presets("benchmark", target=target)
+        if not presets:
+            return
+        current = self.selected_quickstart_preset.get(target) or presets[0].key
+        selected = next((preset for preset in presets if preset.key == current), presets[0])
+        options = {preset.key: preset.label for preset in presets}
+
+        def _on_change(e):
+            key = str(e.value)
+            if not self._apply_quickstart_preset_for_current_type(key):
+                return
+            ui.notify(f'Applied quickstart preset: {options.get(key, key)}', type='positive', timeout=1200)
+            self._config_container.clear()
+            with self._config_container:
+                self._render_form()
+
+        with ui.column().classes('w-full gap-2'):
+            ui.label('Quickstart Preset').classes(f'text-xs text-[{COLORS["text_muted"]}]')
+            ui.select(options=options, value=selected.key, on_change=_on_change).classes('w-full').props(
+                'outlined dense dark color=grey-7'
+            )
+            ui.label(
+                f'{selected.description} • Use when: {selected.recommendation.when_to_use}'
+            ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+
+    def _render_setup_advisory(self):
+        """Render non-blocking setup advisory copy for benchmark flows."""
         module_key = (
             "benchmark_code"
             if self.data.benchmark_type == BenchmarkType.CODE
@@ -320,24 +447,26 @@ class Benchmark:
         entry = report.modules.get(module_key)
         if entry is None:
             return
-        render_readiness_diagnostic_panel(
-            module=module_key,
-            entry=entry,
-            source=report.source,
-            stale=bool(report.stale),
-            expected_path=str(output_map.get(module_key) or entry.last_output_dir or ""),
-            on_probe=lambda key=module_key: self._run_contract_probe(key),
-        )
-
-    def _run_contract_probe(self, module_key: str) -> None:
-        ok, message = self.ops_readiness_service.run_contract_probe(
-            module=module_key,
-            include_all_modules=True,
-        )
-        ui.notify(message, type='positive' if ok else 'warning', timeout=1800)
-        self._config_container.clear()
-        with self._config_container:
-            self._render_form()
+        warnings = list(getattr(entry, "warnings", []) or [])
+        errors = list(getattr(entry, "errors", []) or [])
+        expected_path = str(output_map.get(module_key) or entry.last_output_dir or "")
+        message = warnings[0] if warnings else (errors[0] if errors else "No setup warnings detected.")
+        with ui.row().classes(
+            f'w-full items-start gap-2 p-3 rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+        ):
+            ui.icon("info", size="16px").classes(f'text-[{COLORS["warning"]}] mt-0.5')
+            with ui.column().classes("flex-1 gap-1"):
+                ui.label("Setup advisory (non-blocking)").classes(
+                    f'text-xs font-semibold text-[{COLORS["warning"]}]'
+                )
+                ui.label(message).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                if expected_path:
+                    ui.label(f"Checked path: {expected_path}").classes(
+                        f'text-[11px] font-mono text-[{COLORS["text_muted"]}] break-all'
+                    )
+                ui.link("Advanced setup checks are available in Research Hub.", "/research-hub").classes(
+                    f'text-xs text-[{COLORS["accent"]}] hover:underline'
+                )
     
     def _get_models_for_type(self, btype: BenchmarkType) -> list[str]:
         """Get suggested models for benchmark type."""
@@ -355,7 +484,45 @@ class Benchmark:
     
     def _render_form(self):
         """Render the benchmark configuration form."""
-        self._render_all_module_readiness_banner()
+        self._render_setup_advisory()
+        if self.ui_mode == "quickstart":
+            self._render_quickstart_form()
+            return
+        self._render_advanced_form()
+
+    def _render_quickstart_form(self):
+        """Render minimal benchmark quickstart fields."""
+        with ui.row().classes('w-full gap-6'):
+            with ui.column().classes('flex-1 gap-6'):
+                with ui.column().classes(
+                    f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-2'
+                ):
+                    with ui.row().classes('w-full items-center gap-2'):
+                        ui.icon('bolt', size='20px').classes(f'text-[{COLORS["primary"]}]')
+                        ui.label('Benchmark Quickstart').classes(f'text-base font-semibold text-[{COLORS["text_primary"]}]')
+                    self._render_quickstart_preset_selector()
+                    ui.input(
+                        value=self.data.model,
+                        placeholder='Model ID or local path',
+                        on_change=lambda e: setattr(self.data, "model", str(e.value).strip()),
+                    ).classes('w-full').props('outlined dense')
+                    ui.number(
+                        value=self.data.limit,
+                        min=1,
+                        step=1,
+                        label='Sample Limit',
+                        on_change=lambda e: setattr(self.data, "limit", int(e.value or 1)),
+                    ).classes('w-full').props('outlined dense')
+                    ui.input(
+                        value=self.data.output_dir,
+                        placeholder='results/benchmarks',
+                        on_change=lambda e: setattr(self.data, "output_dir", str(e.value).strip()),
+                    ).classes('w-full').props('outlined dense')
+            with ui.column().classes('flex-1 gap-6'):
+                self._render_launch_section()
+
+    def _render_advanced_form(self):
+        """Render full benchmark form (advanced mode)."""
         # Two-column layout
         with ui.row().classes('w-full gap-6'):
             # Left column - Model & Benchmark Selection
@@ -671,6 +838,7 @@ class Benchmark:
     
     def _render_launch_section(self):
         """Render the launch section."""
+        is_valid, validation_message = self._validate_launch_inputs()
         with ui.column().classes(
             f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-5'
@@ -713,32 +881,49 @@ class Benchmark:
             
             # Launch button
             with ui.row().classes('w-full gap-3'):
-                ui.button(
+                launch_button = ui.button(
                     'Launch Benchmark',
                     icon='play_arrow',
                     on_click=self._launch_benchmark
                 ).props('unelevated color=positive').classes('flex-1')
+                if not is_valid or self.is_running:
+                    launch_button.disable()
                 
                 ui.button(
                     icon='open_in_new',
                     on_click=lambda: ui.navigate.to('/results')
                 ).props('outline').classes(f'text-[{COLORS["text_secondary"]}]').tooltip('View Results')
+            if validation_message:
+                ui.label(validation_message).classes(
+                    f'text-xs text-[{COLORS["warning"]}]'
+                )
+
+    def _validate_launch_inputs(self) -> tuple[bool, str]:
+        model = str(self.data.custom_model_path if self.data.model_source == "custom" else self.data.model).strip()
+        output_dir = str(self.data.output_dir or "").strip()
+        if not model:
+            return False, "Model is required."
+        if not self.data.preset:
+            return False, "Benchmark preset is required."
+        if int(self.data.limit) < 1:
+            return False, "Sample limit must be >= 1."
+        if not output_dir:
+            return False, "Output directory is required."
+        if self.data.benchmark_type == BenchmarkType.CODE and int(self.data.samples_per_prompt) < 1:
+            return False, "Samples per prompt must be >= 1."
+        return True, ""
     
     async def _launch_benchmark(self):
         """Launch the benchmark."""
+        valid, reason = self._validate_launch_inputs()
+        if not valid:
+            notify_job_failed("Benchmark", reason)
+            return
         # Get the effective model path
         if self.data.model_source == "custom":
             model = self.data.custom_model_path or self.data.model
         else:
             model = self.data.model
-        
-        if not model:
-            notify_job_failed("Benchmark", "Please select a model")
-            return
-        
-        if not self.data.preset:
-            notify_job_failed("Benchmark", "Please select a benchmark")
-            return
         
         self.is_running = True
         

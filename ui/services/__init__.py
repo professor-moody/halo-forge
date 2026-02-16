@@ -206,6 +206,15 @@ from .ops_readiness_service import (
     OpsReadinessService,
     get_ops_readiness_service,
 )
+from .quickstart_presets import (
+    QuickstartFieldSet,
+    QuickstartPreset,
+    QuickstartRecommendation,
+    list_quickstart_presets,
+    get_quickstart_preset,
+    default_preset_key,
+    apply_preset_values,
+)
 
 
 # Convenience functions for common operations
