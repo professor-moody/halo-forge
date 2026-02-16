@@ -70,6 +70,18 @@ class Dashboard:
                 ui.label('Start training runs quickly. Advanced setup checks are available in Advanced Diagnostics Tools.').classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
+                with ui.row().classes(
+                    f'w-full gap-2 flex-wrap p-2 rounded bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ):
+                    ui.label('Step 1: Choose training type').classes(
+                        f'text-xs text-[{COLORS["text_secondary"]}]'
+                    )
+                    ui.label('Step 2: Open guided form').classes(
+                        f'text-xs text-[{COLORS["text_secondary"]}]'
+                    )
+                    ui.label('Step 3: Monitor run').classes(
+                        f'text-xs text-[{COLORS["text_secondary"]}]'
+                    )
                 with ui.row().classes('gap-3 flex-wrap'):
                     self._render_action_button('Start SFT', 'school', '/training?mode=sft&ui_mode=quickstart&preset=sft_fast_local')
                     self._render_action_button('Start RAFT', 'autorenew', '/training?mode=raft&ui_mode=quickstart&preset=raft_safe_default')

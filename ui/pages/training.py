@@ -13,6 +13,7 @@ from ui.theme import COLORS
 from ui.state import state
 from ui.services import (
     TrainingService,
+    TrainingLaunchPreflight,
     get_ops_readiness_service,
 )
 from ui.services.quickstart_presets import (
@@ -617,6 +618,8 @@ class Training:
     def _render_form(self):
         """Render the current form based on mode."""
         if self.ui_mode == "quickstart":
+            self._render_guided_onboarding_panel()
+        if self.ui_mode == "quickstart":
             if self.mode == "sft":
                 self._render_sft_quickstart_form()
             elif self.mode == "raft":
@@ -680,6 +683,62 @@ class Training:
             ui.label(
                 f'{selected_preset.description} • Use when: {selected_preset.recommendation.when_to_use}'
             ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+
+    def _render_guided_onboarding_panel(self) -> None:
+        """Render a concise onboarding panel for first-run training success."""
+        mode_key = self.mode
+        preset_key = self.selected_quickstart_preset.get(mode_key) or ""
+        preset = get_quickstart_preset("training", preset_key, target=mode_key)
+        defaults = self._current_required_defaults(mode_key)
+
+        with ui.column().classes(
+            f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-2'
+        ):
+            ui.label("Start Here").classes(
+                f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+            )
+            ui.label(
+                "1) Choose training type • 2) Confirm required fields • 3) Start training and monitor progress."
+            ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+            if preset:
+                ui.label(
+                    f"Preset: {preset.label} ({preset.recommendation.expected_runtime}) • {preset.recommendation.when_to_use}"
+                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+
+            with ui.row().classes("w-full gap-3 flex-wrap"):
+                for label, value in defaults:
+                    with ui.column().classes(
+                        f'flex-1 min-w-[220px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                    ):
+                        ui.label(label).classes(
+                            f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.label(value).classes(
+                            f'text-xs text-[{COLORS["text_primary"]}] break-all'
+                        )
+
+    def _current_required_defaults(self, mode_key: str) -> list[tuple[str, str]]:
+        key = str(mode_key or "").strip().lower()
+        if key == "sft":
+            return [
+                ("Model", self._get_effective_model(self.sft_data)),
+                ("Dataset", self._get_effective_dataset()),
+                ("Output", self.sft_data.output_dir),
+            ]
+        if key == "raft":
+            return [
+                ("Model", self._get_effective_model(self.raft_data)),
+                ("Prompts", self._get_effective_prompts()),
+                ("Output", self.raft_data.output_dir),
+            ]
+        data = self.modality_data.get(key)
+        if data:
+            return [
+                ("Model", data.model),
+                ("Dataset", data.dataset),
+                ("Output", data.output_dir),
+            ]
+        return []
 
     def _render_sft_quickstart_form(self) -> None:
         with ui.column().classes(
@@ -1792,14 +1851,153 @@ class Training:
             return False, "Samples per prompt must be >= 1."
         return True, ""
 
+    def _resolve_mode_output_dir(self, mode_key: str) -> str:
+        key = str(mode_key or "").strip().lower()
+        if key == "sft":
+            return str(self.sft_data.output_dir or "").strip()
+        if key == "raft":
+            return str(self.raft_data.output_dir or "").strip()
+        if key in self.modality_data:
+            return str(self.modality_data[key].output_dir or "").strip()
+        return ""
+
+    def _run_launch_preflight(self, mode_key: str) -> TrainingLaunchPreflight:
+        """Run structured launch preflight for current mode payload."""
+        key = str(mode_key or "").strip().lower()
+        try:
+            if key == "sft":
+                return self.training_service.preflight_sft_launch(
+                    model=self._get_effective_model(self.sft_data),
+                    dataset=self._get_effective_dataset(),
+                    output_dir=self.sft_data.output_dir,
+                    epochs=self.sft_data.epochs,
+                    batch_size=self.sft_data.batch_size,
+                    gradient_accumulation_steps=self.sft_data.gradient_accumulation_steps,
+                    max_samples=self.sft_data.max_samples,
+                )
+            if key == "raft":
+                return self.training_service.preflight_raft_launch(
+                    model=self._get_effective_model(self.raft_data),
+                    prompts=self._get_effective_prompts(),
+                    output_dir=self.raft_data.output_dir,
+                    cycles=self.raft_data.cycles,
+                    samples_per_prompt=self.raft_data.samples_per_prompt,
+                    keep_percent=self.raft_data.keep_percent,
+                    reward_threshold=self.raft_data.reward_threshold,
+                    min_samples=self.raft_data.min_samples,
+                    max_new_tokens=self.raft_data.max_new_tokens,
+                    checkpoint=self.raft_data.checkpoint if self.raft_data.use_checkpoint else None,
+                )
+            if key in self.modality_data:
+                data = self.modality_data[key]
+                return self.training_service.preflight_modality_train_launch(
+                    modality=key,
+                    model=data.model,
+                    dataset=data.dataset,
+                    output_dir=data.output_dir,
+                    cycles=data.cycles,
+                    resume_from_cycle=data.resume_from_cycle,
+                    seed=data.seed,
+                    allow_prototype_train=data.allow_prototype_train,
+                    limit=data.limit if key in {"reasoning", "agentic"} else None,
+                    task=data.task if key == "audio" else None,
+                    samples_per_prompt=data.samples_per_prompt if key in {"vlm", "audio"} else None,
+                )
+        except Exception as e:
+            return TrainingLaunchPreflight(
+                ok=False,
+                errors=[str(e)],
+                warnings=[],
+                resolved_paths={},
+                suggested_fixes=["Fix required inputs before launch."],
+            )
+        return TrainingLaunchPreflight(
+            ok=False,
+            errors=["Unknown training mode."],
+            warnings=[],
+            resolved_paths={},
+            suggested_fixes=["Choose a supported training mode."],
+        )
+
+    def _render_output_scaffold_controls(
+        self,
+        mode_key: str,
+        preflight: TrainingLaunchPreflight,
+    ) -> None:
+        """Render output path readiness and one-click scaffold action."""
+        output_dir = self._resolve_mode_output_dir(mode_key)
+        if not output_dir:
+            return
+        resolved_output = preflight.resolved_paths.get("output_dir", output_dir)
+        output_path = Path(resolved_output).expanduser()
+        expected = self.training_service.expected_output_artifacts(mode_key)
+
+        with ui.column().classes(
+            f'w-full gap-2 p-3 rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+        ):
+            ui.label(f"Resolved output path: {resolved_output}").classes(
+                f'text-xs font-mono text-[{COLORS["text_secondary"]}] break-all'
+            )
+            with ui.row().classes("w-full items-center justify-between gap-2"):
+                if output_path.exists():
+                    ui.label("Output directory is ready.").classes(
+                        f'text-xs text-[{COLORS["success"]}]'
+                    )
+                else:
+                    ui.label("Output directory not found yet.").classes(
+                        f'text-xs text-[{COLORS["warning"]}]'
+                    )
+                    ui.button(
+                        "Create output scaffold",
+                        icon="create_new_folder",
+                        on_click=lambda m=mode_key: self._create_output_scaffold(m),
+                    ).props("flat dense").classes(
+                        f'text-[{COLORS["text_secondary"]}]'
+                    )
+
+            with ui.expansion(
+                text="Expected run artifacts",
+                icon="inventory_2",
+                value=False,
+            ).classes(
+                f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+            ).props('dense dark'):
+                with ui.column().classes("w-full gap-1 p-2"):
+                    for item in expected:
+                        ui.label(f"- {item}").classes(
+                            f'text-xs font-mono text-[{COLORS["text_muted"]}]'
+                        )
+
+    def _create_output_scaffold(self, mode_key: str) -> None:
+        """Create output directory scaffold for current mode."""
+        output_dir = self._resolve_mode_output_dir(mode_key)
+        if not output_dir:
+            ui.notify("Output directory is required.", type="warning", timeout=1500)
+            return
+        try:
+            created = self.training_service.scaffold_output_dir(output_dir, mode_key=mode_key)
+            ui.notify(f"Output scaffold ready: {created}", type="positive", timeout=1800)
+            self.form_container.clear()
+            with self.form_container:
+                self._render_form()
+        except Exception as e:
+            ui.notify(f"Failed to create scaffold: {e}", type="negative", timeout=2500)
+
     def _render_launch_button(self, label: str, on_click, mode_key: str):
         """Render the launch training button."""
         is_valid, validation_message = self._validate_launch_inputs(mode_key)
+        preflight = self._run_launch_preflight(mode_key) if is_valid else TrainingLaunchPreflight(
+            ok=False,
+            errors=[],
+            warnings=[],
+            resolved_paths={},
+            suggested_fixes=[],
+        )
         with ui.row().classes('w-full justify-end pt-4'):
             launch_button = ui.button(on_click=on_click).props('unelevated').classes(
                 f'btn-hover px-8 py-3 bg-[{COLORS["primary"]}] text-white rounded-lg'
             )
-            if not is_valid or self.is_running:
+            if not is_valid or not preflight.ok or self.is_running:
                 launch_button.disable()
             with launch_button:
                 if self.is_running:
@@ -1811,6 +2009,15 @@ class Training:
             ui.label(validation_message).classes(
                 f'text-xs text-[{COLORS["warning"]}] text-right w-full'
             )
+        if preflight.errors:
+            ui.label(preflight.errors[0]).classes(
+                f'text-xs text-[{COLORS["error"]}] text-right w-full'
+            )
+        if preflight.warnings:
+            ui.label(preflight.warnings[0]).classes(
+                f'text-xs text-[{COLORS["warning"]}] text-right w-full'
+            )
+        self._render_output_scaffold_controls(mode_key, preflight)
     
     def _apply_preset(self, preset_name: str):
         """Apply a RAFT preset configuration."""
@@ -1855,12 +2062,17 @@ class Training:
         if not valid:
             notify_job_failed("SFT Training", reason)
             return
+        preflight = self._run_launch_preflight("sft")
+        if not preflight.ok:
+            notify_job_failed("SFT Training", preflight.errors[0] if preflight.errors else "Preflight failed")
+            return
         
         self.is_running = True
         
         try:
             model = self._get_effective_model(self.sft_data)
             dataset = self._get_effective_dataset()
+            self.training_service.scaffold_output_dir(self.sft_data.output_dir, mode_key="sft")
             
             # Launch actual training subprocess via TrainingService
             job_id = await self.training_service.launch_sft(
@@ -1911,12 +2123,17 @@ class Training:
         if not valid:
             notify_job_failed("RAFT Training", reason)
             return
+        preflight = self._run_launch_preflight("raft")
+        if not preflight.ok:
+            notify_job_failed("RAFT Training", preflight.errors[0] if preflight.errors else "Preflight failed")
+            return
         
         self.is_running = True
         
         try:
             model = self._get_effective_model(self.raft_data)
             prompts = self._get_effective_prompts()
+            self.training_service.scaffold_output_dir(self.raft_data.output_dir, mode_key="raft")
             
             # Get checkpoint if enabled
             checkpoint = None
@@ -1973,10 +2190,18 @@ class Training:
         if not valid:
             notify_job_failed(f"{modality.upper()} Training", reason)
             return
+        preflight = self._run_launch_preflight(modality)
+        if not preflight.ok:
+            notify_job_failed(
+                f"{modality.upper()} Training",
+                preflight.errors[0] if preflight.errors else "Preflight failed",
+            )
+            return
         self.is_running = True
         data = self.modality_data[modality]
 
         try:
+            self.training_service.scaffold_output_dir(data.output_dir, mode_key=modality)
             job_id = await self.training_service.launch_modality_train(
                 modality=modality,
                 model=data.model,

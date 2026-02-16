@@ -64,6 +64,7 @@ from .hardware import (
 from .training_service import (
     TrainingService,
     TrainingMetrics,
+    TrainingLaunchPreflight,
 )
 
 # Metrics parser
@@ -241,6 +242,7 @@ __all__ = [
     # Training
     'TrainingService',
     'TrainingMetrics',
+    'TrainingLaunchPreflight',
     'launch_sft_training',
     'launch_raft_training',
     'stop_training',

@@ -39,6 +39,15 @@ QUALIFICATION_JOB_TYPES = {"qualification"}
 BOOTSTRAP_JOB_TYPES = {"bootstrap"}
 LIVE_PROBE_JOB_TYPES = {"live_probe"}
 
+TRAINING_FIX_ROUTES = {
+    "sft": "/training?mode=sft&ui_mode=quickstart&preset=sft_fast_local",
+    "raft": "/training?mode=raft&ui_mode=quickstart&preset=raft_safe_default",
+    "vlm": "/training?mode=vlm&ui_mode=quickstart&preset=vlm_tiny",
+    "audio": "/training?mode=audio&ui_mode=quickstart&preset=audio_whisper_tiny",
+    "reasoning": "/training?mode=reasoning&ui_mode=quickstart&preset=reasoning_small",
+    "agentic": "/training?mode=agentic&ui_mode=quickstart&preset=agentic_small",
+}
+
 
 class Monitor:
     """Real-time job monitoring page component."""
@@ -219,6 +228,9 @@ class Monitor:
                         ).props('flat round').classes(
                             f'text-[{COLORS["text_secondary"]}]'
                         ).tooltip(str(self.job.output_dir))
+
+            if self.job.status in {"failed", "stopped"}:
+                self._render_failure_recovery_panel()
             
             # Progress section
             with ui.column().classes(
@@ -297,6 +309,83 @@ class Monitor:
             ui.label(status.capitalize()).classes(
                 f'text-xs font-medium text-[{color}]'
             )
+
+    def _recovery_route(self) -> str:
+        """Return best-effort route to fix current job launch inputs."""
+        if not self.job:
+            return "/training"
+        job_type = str(self.job.type or "").strip().lower()
+        if job_type in TRAINING_FIX_ROUTES:
+            return TRAINING_FIX_ROUTES[job_type]
+        if job_type == "benchmark":
+            return "/benchmark?ui_mode=quickstart"
+        if job_type == "inference":
+            return "/inference?mode=optimize&ui_mode=quickstart&preset=optimize_int4_smoke"
+        if job_type in UTILITY_JOB_TYPES:
+            return f"/ops-console?module={job_type}&execution_mode=contract"
+        return "/training"
+
+    def _failure_recovery_message(self) -> str:
+        """Derive concise recovery summary for failed/stopped jobs."""
+        if not self.job:
+            return "Run did not complete. Review inputs and retry."
+        if self.job.error_message:
+            return self.job.error_message
+        if self.job.status == "stopped":
+            return "Run was stopped before completion."
+        summary = self._derive_training_outcome()
+        failure_reason = summary.get("failure_reason")
+        if failure_reason and failure_reason != "--":
+            return failure_reason
+        return "Run did not complete. Review inputs and retry."
+
+    def _render_failure_recovery_panel(self) -> None:
+        """Render concise, actionable recovery controls for failed starts."""
+        context_exists = self._get_launch_context_path() is not None
+        fix_route = self._recovery_route()
+        message = self._failure_recovery_message()
+
+        with ui.column().classes(
+            f'w-full gap-3 p-4 rounded-xl bg-[{COLORS["error"]}]/10 border border-[{COLORS["error"]}]/30'
+        ):
+            ui.label("Recovery Actions").classes(
+                f'text-sm font-semibold text-[{COLORS["error"]}]'
+            )
+            ui.label(message).classes(
+                f'text-xs text-[{COLORS["text_secondary"]}]'
+            )
+            with ui.row().classes("w-full gap-2 flex-wrap"):
+                ui.button(
+                    "Fix input",
+                    icon="edit",
+                    on_click=lambda: ui.navigate.to(fix_route),
+                ).props("dense unelevated").classes(
+                    f'bg-[{COLORS["primary"]}] text-white'
+                )
+                reopen_btn = ui.button(
+                    "Re-open launch form",
+                    icon="open_in_new",
+                    on_click=self._clone_to_form,
+                ).props("dense flat").classes(f'text-[{COLORS["text_secondary"]}]')
+                retry_btn = ui.button(
+                    "Retry with same config",
+                    icon="replay",
+                    on_click=lambda: asyncio.create_task(self._rerun_job()),
+                ).props("dense flat").classes(f'text-[{COLORS["text_secondary"]}]')
+                if not context_exists:
+                    reopen_btn.disable()
+                    retry_btn.disable()
+
+            with ui.expansion(
+                text="Technical details",
+                icon="terminal",
+                value=False,
+            ).classes(
+                f'w-full rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+            ).props('dense dark'):
+                ui.label(self._failure_recovery_message()).classes(
+                    f'text-xs font-mono text-[{COLORS["text_muted"]}] p-2 break-all'
+                )
     
     def _render_progress(self):
         """Render the progress section."""

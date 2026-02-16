@@ -47,6 +47,9 @@ The main landing page showing:
 Configure and launch training jobs:
 - **Quickstart mode (default)**: minimal required inputs for first successful run
 - **Advanced mode**: full tuning controls when needed
+- **Guided onboarding panel**: `Start Here` summary of required fields and first-run defaults
+- **Preflight launch checks**: structured input/path checks before spawn (`errors`, `warnings`, `resolved paths`, suggested fixes)
+- **Output scaffold**: one-click `Create output scaffold` for missing output directories
 - **Setup advisory (non-blocking)**: diagnostics status is informational; invalid form inputs are the only launch blockers
 - **Diagnostics actions**: available in **Advanced Diagnostics Tools** only
 
@@ -96,6 +99,7 @@ Real-time job monitoring with:
 - **Metrics Panel**: Loss, learning rate, gradient norm, verification rate
 - **Log Viewer**: Streaming logs with syntax highlighting
 - **Stop Button**: Graceful job termination with confirmation
+- **Failure recovery panel**: concise actions for failed/stopped runs (`Fix input`, `Re-open launch form`, `Retry with same config`)
 
 ### Config (`/config`)
 

@@ -58,6 +58,17 @@ class TrainingMetrics:
     grad_norm: Optional[float] = None
 
 
+@dataclass
+class TrainingLaunchPreflight:
+    """Structured preflight result for training launch preparation."""
+
+    ok: bool
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    resolved_paths: dict[str, str] = field(default_factory=dict)
+    suggested_fixes: list[str] = field(default_factory=list)
+
+
 class TrainingService:
     """
     Service for launching and managing training processes.
@@ -245,6 +256,290 @@ class TrainingService:
         if resume_strategy:
             metadata["resume_strategy"] = resume_strategy
         return metadata
+
+    def _preflight_output_dir(
+        self,
+        output_dir: str,
+        *,
+        resolved_paths: dict[str, str],
+        warnings: list[str],
+        errors: list[str],
+        suggested_fixes: list[str],
+    ) -> None:
+        """Validate output directory shape and writability for launch preflight."""
+        raw = str(output_dir or "").strip()
+        if not raw:
+            errors.append("output_dir is required")
+            suggested_fixes.append("Set an output directory before launch.")
+            return
+
+        output_path = Path(raw).expanduser()
+        resolved_paths["output_dir"] = str(output_path)
+
+        if output_path.exists():
+            if not output_path.is_dir():
+                errors.append(f"output_dir exists but is not a directory: {output_path}")
+                suggested_fixes.append("Choose a directory path for output_dir.")
+                return
+            if not os.access(output_path, os.W_OK):
+                errors.append(f"output_dir is not writable: {output_path}")
+                suggested_fixes.append("Grant write permissions on output_dir or choose a writable location.")
+            return
+
+        parent = output_path.parent if str(output_path.parent) else Path(".")
+        if parent.exists():
+            if not parent.is_dir():
+                errors.append(f"output_dir parent is not a directory: {parent}")
+                suggested_fixes.append("Choose an output_dir with a valid parent directory.")
+                return
+            if not os.access(parent, os.W_OK):
+                errors.append(f"output_dir parent is not writable: {parent}")
+                suggested_fixes.append("Grant write permissions on the output parent directory.")
+                return
+            warnings.append(f"output_dir does not exist yet: {output_path}")
+            suggested_fixes.append("Use 'Create output scaffold' or launch to create output_dir.")
+            return
+
+        ancestor = parent
+        while not ancestor.exists() and ancestor.parent != ancestor:
+            ancestor = ancestor.parent
+        if not ancestor.exists() or not os.access(ancestor, os.W_OK):
+            errors.append(f"output_dir cannot be created from current permissions: {output_path}")
+            suggested_fixes.append("Choose an output_dir under a writable path.")
+            return
+
+        warnings.append(f"output_dir parent does not exist yet and will be created: {parent}")
+        suggested_fixes.append("Use 'Create output scaffold' to pre-create output directories.")
+
+    def expected_output_artifacts(self, mode_key: str) -> list[str]:
+        """Return canonical artifact expectations for a training mode."""
+        key = str(mode_key or "").strip().lower()
+        if key == "sft":
+            return [
+                "training_summary.json",
+                "final_model/",
+                "launch_context.json",
+                "<job_id>_training.log",
+            ]
+        return [
+            "training_summary.json",
+            "latest_checkpoint.json",
+            "cycle_<n>/model/",
+            "final_model/",
+            "launch_context.json",
+            "<job_id>_training.log",
+        ]
+
+    def scaffold_output_dir(self, output_dir: str, *, mode_key: str) -> Path:
+        """Create a minimal output scaffold for first-run launch success."""
+        output_path = Path(str(output_dir or "").strip()).expanduser()
+        if not str(output_path):
+            raise ValueError("output_dir is required")
+
+        output_path.mkdir(parents=True, exist_ok=True)
+        marker_path = output_path / ".halo_forge_output_scaffold.json"
+        if not marker_path.exists():
+            import json
+
+            marker = {
+                "created_at": datetime.now().isoformat(),
+                "mode": str(mode_key or "").strip().lower(),
+                "expected_artifacts": self.expected_output_artifacts(mode_key),
+            }
+            marker_path.write_text(json.dumps(marker, indent=2), encoding="utf-8")
+        return output_path
+
+    def preflight_sft_launch(
+        self,
+        *,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        epochs: int,
+        batch_size: int,
+        gradient_accumulation_steps: int,
+        max_samples: Optional[int] = None,
+    ) -> TrainingLaunchPreflight:
+        """Run structured preflight checks for SFT launch."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        resolved_paths: dict[str, str] = {}
+        suggested_fixes: list[str] = []
+
+        try:
+            model, dataset, output_dir = self._validate_sft_launch_payload(
+                model=model,
+                dataset=dataset,
+                output_dir=output_dir,
+                epochs=epochs,
+                batch_size=batch_size,
+                gradient_accumulation_steps=gradient_accumulation_steps,
+                max_samples=max_samples,
+            )
+        except ValueError as e:
+            errors.append(str(e))
+            return TrainingLaunchPreflight(
+                ok=False,
+                errors=errors,
+                warnings=warnings,
+                resolved_paths=resolved_paths,
+                suggested_fixes=["Fix required inputs before launch."],
+            )
+
+        resolved_paths["model"] = model
+        resolved_paths["dataset"] = dataset
+        if Path(dataset).expanduser().exists():
+            resolved_paths["dataset"] = str(Path(dataset).expanduser())
+        self._preflight_output_dir(
+            output_dir,
+            resolved_paths=resolved_paths,
+            warnings=warnings,
+            errors=errors,
+            suggested_fixes=suggested_fixes,
+        )
+        return TrainingLaunchPreflight(
+            ok=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            resolved_paths=resolved_paths,
+            suggested_fixes=suggested_fixes,
+        )
+
+    def preflight_raft_launch(
+        self,
+        *,
+        model: str,
+        prompts: str,
+        output_dir: str,
+        cycles: int,
+        samples_per_prompt: int,
+        keep_percent: float,
+        reward_threshold: float,
+        min_samples: int,
+        max_new_tokens: int,
+        checkpoint: Optional[str] = None,
+    ) -> TrainingLaunchPreflight:
+        """Run structured preflight checks for RAFT launch."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        resolved_paths: dict[str, str] = {}
+        suggested_fixes: list[str] = []
+
+        try:
+            model, prompts, output_dir = self._validate_raft_launch_payload(
+                model=model,
+                prompts=prompts,
+                output_dir=output_dir,
+                cycles=cycles,
+                samples_per_prompt=samples_per_prompt,
+                keep_percent=keep_percent,
+                reward_threshold=reward_threshold,
+                min_samples=min_samples,
+                max_new_tokens=max_new_tokens,
+                checkpoint=checkpoint,
+            )
+        except ValueError as e:
+            errors.append(str(e))
+            return TrainingLaunchPreflight(
+                ok=False,
+                errors=errors,
+                warnings=warnings,
+                resolved_paths=resolved_paths,
+                suggested_fixes=["Fix required inputs before launch."],
+            )
+
+        resolved_paths["model"] = model
+        resolved_paths["prompts"] = str(Path(prompts).expanduser())
+        if checkpoint:
+            resolved_paths["checkpoint"] = str(Path(checkpoint).expanduser())
+        self._preflight_output_dir(
+            output_dir,
+            resolved_paths=resolved_paths,
+            warnings=warnings,
+            errors=errors,
+            suggested_fixes=suggested_fixes,
+        )
+        return TrainingLaunchPreflight(
+            ok=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            resolved_paths=resolved_paths,
+            suggested_fixes=suggested_fixes,
+        )
+
+    def preflight_modality_train_launch(
+        self,
+        *,
+        modality: str,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        cycles: int,
+        resume_from_cycle: int = 0,
+        seed: int = 42,
+        allow_prototype_train: bool = False,
+        limit: Optional[int] = None,
+        task: Optional[str] = None,
+        samples_per_prompt: Optional[int] = None,
+    ) -> TrainingLaunchPreflight:
+        """Run structured preflight checks for modality training launch."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        resolved_paths: dict[str, str] = {}
+        suggested_fixes: list[str] = []
+
+        try:
+            model, dataset, output_dir, seed = self._validate_modality_launch_payload(
+                modality=modality,
+                model=model,
+                dataset=dataset,
+                output_dir=output_dir,
+                cycles=cycles,
+                resume_from_cycle=resume_from_cycle,
+                seed=seed,
+                limit=limit,
+                task=task,
+                samples_per_prompt=samples_per_prompt,
+            )
+        except ValueError as e:
+            errors.append(str(e))
+            return TrainingLaunchPreflight(
+                ok=False,
+                errors=errors,
+                warnings=warnings,
+                resolved_paths=resolved_paths,
+                suggested_fixes=["Fix required inputs before launch."],
+            )
+
+        capability = check_modality_train_capability(
+            modality=modality,
+            model_name=model,
+            allow_prototype_train=allow_prototype_train,
+            dry_run=False,
+        )
+        if not capability.allowed:
+            errors.append(capability.message.splitlines()[-1])
+            suggested_fixes.append(
+                "Use a supported model family or enable prototype override if the capability is still gated."
+            )
+
+        resolved_paths["model"] = model
+        resolved_paths["dataset"] = dataset
+        resolved_paths["seed"] = str(seed)
+        self._preflight_output_dir(
+            output_dir,
+            resolved_paths=resolved_paths,
+            warnings=warnings,
+            errors=errors,
+            suggested_fixes=suggested_fixes,
+        )
+        return TrainingLaunchPreflight(
+            ok=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            resolved_paths=resolved_paths,
+            suggested_fixes=suggested_fixes,
+        )
 
     def _event_extra_fields(self, job) -> dict[str, Any]:
         if not job or not job.lifecycle_metadata:

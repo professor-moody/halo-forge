@@ -144,4 +144,5 @@ jobs:
             tests/test_phase23_training_first_ux_reset.py \
             tests/test_phase24k_first_run_reliability_closure.py \
             tests/test_phase25_quickstart_user_flow_and_launch_hub.py \
-            tests/test_phase26_diagnostics_isolation_and_training_clarity.py
+            tests/test_phase26_diagnostics_isolation_and_training_clarity.py \
+            tests/test_phase27_training_onboarding_first_run_success.py
