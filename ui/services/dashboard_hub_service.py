@@ -242,30 +242,8 @@ class DashboardHubService:
         primary_action_key: DashboardActionKey,
         surface_route: str,
     ) -> List[DashboardAction]:
-        ordered = [
-            DashboardAction(
-                key="open_surface",
-                label="Open Surface",
-                icon="open_in_new",
-                route=surface_route,
-            ),
-            DashboardAction(
-                key="contract_probe",
-                label="Run Setup Check (Advanced)",
-                icon="play_arrow",
-            ),
-            DashboardAction(
-                key="bootstrap_probe",
-                label="Generate Setup Artifacts (Advanced)",
-                icon="build",
-            ),
-            DashboardAction(
-                key="live_probe",
-                label="Run System Health Check (Advanced)",
-                icon="play_circle",
-            ),
-        ]
-        return [action for action in ordered if action.key != primary_action_key]
+        _ = (primary_action_key, surface_route)
+        return []
 
 
 _dashboard_hub_service: DashboardHubService | None = None

@@ -39,7 +39,8 @@ def test_dashboard_uses_training_first_copy_and_advanced_diagnostics_labels():
     assert "Advanced Diagnostics (Optional)" in source
     assert "Run Contract Probe" not in source
     assert "Run Live Probe (All)" not in source
-    assert "Run System Health Check (All • Advanced)" in source
+    assert "Run System Health Check (All • Advanced)" not in source
+    assert "Open Research Hub" in source
 
 
 def test_dashboard_primary_actions_always_open_surface(monkeypatch):
@@ -77,8 +78,7 @@ def test_dashboard_primary_actions_always_open_surface(monkeypatch):
 
     assert by_module["sft"].primary_action.key == "open_surface"
     assert by_module["audio"].primary_action.key == "open_surface"
-    assert by_module["audio"].secondary_actions
-    assert "Advanced" in by_module["audio"].secondary_actions[0].label
+    assert by_module["audio"].secondary_actions == []
 
 
 def test_training_page_launch_validation_is_input_driven():

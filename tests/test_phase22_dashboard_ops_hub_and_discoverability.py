@@ -91,7 +91,7 @@ def test_dashboard_hub_service_builds_all_module_cards(monkeypatch):
     assert by_module["config"].primary_action.key == "open_surface"
     assert by_module["data"].primary_action.key == "open_surface"
     assert by_module["audio"].primary_action.key == "open_surface"
-    assert "Advanced" in by_module["audio"].secondary_actions[0].label
+    assert by_module["audio"].secondary_actions == []
     assert by_module["audio"].launch_blocked is True
 
 
@@ -111,12 +111,14 @@ def test_dashboard_and_sidebar_expose_ops_hub_navigation_contract():
     assert "get_dashboard_hub_service" in dashboard_source
     assert "Training Launcher" in dashboard_source
     assert "Advanced Diagnostics (Optional)" in dashboard_source
-    assert "Generate Setup Artifacts (All • Advanced)" in dashboard_source
-    assert "Run System Health Check (All • Advanced)" in dashboard_source
+    assert "Open Research Hub" in dashboard_source
+    assert "Generate Setup Artifacts (All • Advanced)" not in dashboard_source
+    assert "Run System Health Check (All • Advanced)" not in dashboard_source
     assert "_render_module_group(" in dashboard_source
     assert "asyncio.create_task(self._run_card_action" not in dashboard_source
     assert "asyncio.create_task(self._run_bootstrap_all" not in dashboard_source
     assert "asyncio.create_task(self._run_live_all" not in dashboard_source
+    assert "def _run_card_action(" not in dashboard_source
     assert "/training?mode=sft" in dashboard_source
     assert "/training?mode=raft" in dashboard_source
 

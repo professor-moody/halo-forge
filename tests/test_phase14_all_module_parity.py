@@ -112,8 +112,8 @@ def test_ui_surfaces_include_all_module_readiness_hooks():
     assert "load_all_module_readiness_report" in service_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "All-Module Readiness" in dashboard_source
-    assert "get_effective_all_module_readiness" in dashboard_source
+    assert "get_dashboard_hub_service" in dashboard_source
+    assert "_render_modality_readiness_summary" in dashboard_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "ALL_MODULES" in research_hub_source

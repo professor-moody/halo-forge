@@ -23,6 +23,10 @@ DEFAULT_ALL_MODULE_LIVE_REPORT_FILE = Path("results/readiness/all_module_live_ex
 DEFAULT_ALL_MODULE_LIVE_OUTPUT_ROOT = Path("results/live_probes")
 
 _MISSING_MODULE_PATTERN = re.compile(r"No module named ['\"]([^'\"]+)['\"]")
+_IMPORT_ERROR_LINE_PATTERN = re.compile(
+    r"^(ImportError|ModuleNotFoundError):\s*(.+)$",
+    re.MULTILINE,
+)
 
 
 @dataclass
@@ -679,6 +683,16 @@ def _probe_ui_ops_contracts() -> tuple[List[str], List[str]]:
 def _classify_probe_failure(*, module: str, profile: str, output: str) -> Dict[str, str]:
     missing_modules = sorted(set(_MISSING_MODULE_PATTERN.findall(output or "")))
     if not missing_modules:
+        import_error_match = _IMPORT_ERROR_LINE_PATTERN.search(output or "")
+        if import_error_match:
+            error_text = import_error_match.group(2).strip()
+            return {
+                "dependency_status": "ok",
+                "message": (
+                    f"import boundary failure for module={module}: {error_text}. "
+                    "This usually indicates an eager optional dependency import on a command path."
+                ),
+            }
         return {
             "dependency_status": "ok",
             "message": f"command failed for module={module}; inspect probe log",

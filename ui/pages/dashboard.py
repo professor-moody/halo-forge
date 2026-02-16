@@ -4,7 +4,6 @@ Dashboard Page
 Main overview page with system status, active jobs, and recent runs.
 """
 
-import asyncio
 from pathlib import Path
 from typing import Callable, List
 from nicegui import ui
@@ -433,16 +432,6 @@ class Dashboard:
 
         with ui.row().classes("w-full gap-2 flex-wrap"):
             ui.button(
-                "Generate Setup Artifacts (All • Advanced)",
-                icon="build",
-                on_click=self._run_bootstrap_all,
-            ).props("flat dense").classes(f'text-[{COLORS["accent"]}]')
-            ui.button(
-                "Run System Health Check (All • Advanced)",
-                icon="play_circle",
-                on_click=self._run_live_all,
-            ).props("flat dense").classes(f'text-[{COLORS["accent"]}]')
-            ui.button(
                 "Open Research Hub",
                 icon="science",
                 on_click=lambda: ui.navigate.to("/research-hub"),
@@ -479,27 +468,22 @@ class Dashboard:
                         f'text-xs text-[{COLORS["text_muted"]}]'
                     )
                     with ui.row().classes("w-full gap-2 flex-wrap"):
-                        self._render_card_action(card.module, card.primary_action, primary=True)
-                    if card.secondary_actions or card.evidence_root:
+                        self._render_card_action(card.primary_action, primary=True)
+                    if card.evidence_root:
                         with ui.expansion(
-                            text="Advanced diagnostics",
-                            icon="tune",
+                            text="Evidence path",
+                            icon="folder",
                             value=False,
                         ).classes(
                             f'w-full rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
                         ).props('dense dark'):
-                            with ui.column().classes("w-full gap-2 p-2"):
-                                if card.evidence_root:
-                                    ui.label(
-                                        f"Evidence root: {card.evidence_root}"
-                                    ).classes(
-                                        f'text-xs font-mono text-[{COLORS["text_muted"]}] break-all'
-                                    )
-                                with ui.row().classes("w-full gap-2 flex-wrap"):
-                                    for action in card.secondary_actions:
-                                        self._render_card_action(card.module, action, primary=False)
+                            ui.label(
+                                f"{card.evidence_root}"
+                            ).classes(
+                                f'text-xs font-mono text-[{COLORS["text_muted"]}] break-all p-2'
+                            )
 
-    def _render_card_action(self, module: str, action, *, primary: bool) -> None:
+    def _render_card_action(self, action, *, primary: bool) -> None:
         classes = (
             f'bg-[{COLORS["primary"]}] text-white'
             if primary
@@ -508,76 +492,8 @@ class Dashboard:
         ui.button(
             action.label,
             icon=action.icon,
-            on_click=self._make_card_action_handler(module, action),
+            on_click=lambda route=action.route: ui.navigate.to(route or "/research-hub"),
         ).props("dense " + ("unelevated" if primary else "flat")).classes(classes)
-
-    def _make_card_action_handler(self, module: str, action):
-        """Create an async button handler bound to module/action."""
-
-        async def _handler() -> None:
-            await self._run_card_action(module, action)
-
-        return _handler
-
-    async def _run_card_action(self, module: str, action) -> None:
-        try:
-            if action.key == "open_surface":
-                ui.navigate.to(action.route or "/research-hub")
-                return
-            if action.key == "contract_probe":
-                ok, message = self.readiness_service.run_contract_probe(
-                    module=module,
-                    include_all_modules=True,
-                )
-                ui.notify(message, type="positive" if ok else "warning", timeout=1800)
-                return
-            if action.key == "bootstrap_probe":
-                ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
-                    modules=[module],
-                    bootstrap_profile="contract-v1",
-                    strict=False,
-                    source_ui_page="/",
-                )
-                ui.notify(message, type="positive" if ok else "warning", timeout=2200)
-                if ok and job_id:
-                    ui.navigate.to(f"/monitor/{job_id}")
-                return
-            if action.key == "live_probe":
-                ok, message, job_id = await self.readiness_service.run_live_probe(
-                    modules=[module],
-                    live_profile="live-smoke-v1",
-                    strict=False,
-                    source_ui_page="/",
-                )
-                ui.notify(message, type="positive" if ok else "warning", timeout=2200)
-                if ok and job_id:
-                    ui.navigate.to(f"/monitor/{job_id}")
-                return
-            ui.notify(f"Unsupported action: {action.key}", type="warning", timeout=1800)
-        except Exception as exc:
-            ui.notify(f"Action failed: {exc}", type="negative", timeout=2500)
-
-    async def _run_bootstrap_all(self) -> None:
-        ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
-            bootstrap_profile="contract-v1",
-            strict=False,
-            modules=[],
-            source_ui_page="/",
-        )
-        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
-        if ok and job_id:
-            ui.navigate.to(f"/monitor/{job_id}")
-
-    async def _run_live_all(self) -> None:
-        ok, message, job_id = await self.readiness_service.run_live_probe(
-            live_profile="live-smoke-v1",
-            strict=False,
-            modules=[],
-            source_ui_page="/",
-        )
-        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
-        if ok and job_id:
-            ui.navigate.to(f"/monitor/{job_id}")
 
     def _render_provenance_chip(self, label: str, status: str | None) -> None:
         status_text = str(status or "unavailable")

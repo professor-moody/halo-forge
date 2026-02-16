@@ -125,11 +125,11 @@ def test_ui_service_prefers_persisted_report_and_falls_back_on_corruption(tmp_pa
 def test_dashboard_and_training_surfaces_include_readiness_hooks():
     """Dashboard/training should include readiness UI wiring while keeping launches enabled."""
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "get_modality_readiness_service" in dashboard_source
-    assert "Non-Code Modality Readiness" in dashboard_source
-    assert "Refresh readiness" in dashboard_source
+    assert "get_dashboard_hub_service" in dashboard_source
+    assert "_render_modality_readiness_summary" in dashboard_source
+    assert "Refresh checks" in dashboard_source
 
     training_source = Path("ui/pages/training.py").read_text(encoding="utf-8")
-    assert "get_modality_readiness_service" in training_source
-    assert "_render_modality_readiness_banner" in training_source
+    assert "get_ops_readiness_service" in training_source
+    assert "_render_all_module_readiness_banner" in training_source
     assert "_render_launch_button(" in training_source

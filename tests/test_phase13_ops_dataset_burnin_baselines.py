@@ -137,8 +137,8 @@ def test_ui_ops_readiness_service_and_pages_include_burnin_provenance_hooks():
     assert "burnin status=" in research_hub_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "burnin report unavailable" in dashboard_source
-    assert "burnin status=" in dashboard_source
+    assert "_render_provenance_chip(\"burnin\"" in dashboard_source
+    assert "dashboard_hub_service" in dashboard_source
 
 
 def test_tracked_baseline_and_public_summary_exist():

@@ -122,7 +122,8 @@ def test_default_on_ops_routes_and_quick_actions_are_declared():
     assert "/research-hub" in dashboard_source
     assert "Training Launcher" in dashboard_source
     assert "Advanced Diagnostics (Optional)" in dashboard_source
-    assert "Run System Health Check (All • Advanced)" in dashboard_source
+    assert "Run System Health Check (All • Advanced)" not in dashboard_source
+    assert "Open Research Hub" in dashboard_source
 
 
 def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():

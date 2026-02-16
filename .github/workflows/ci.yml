@@ -141,4 +141,5 @@ jobs:
             tests/test_phase20_all_module_bootstrap_enablement.py \
             tests/test_phase21_all_module_live_execution_closure.py \
             tests/test_phase22_dashboard_ops_hub_and_discoverability.py \
-            tests/test_phase23_training_first_ux_reset.py
+            tests/test_phase23_training_first_ux_reset.py \
+            tests/test_phase24k_first_run_reliability_closure.py

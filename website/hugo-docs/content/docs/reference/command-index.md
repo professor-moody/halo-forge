@@ -152,6 +152,9 @@ halo-forge data generate --topic windows_api --backend deepseek --output data/wi
 
 Validate dataset format.
 
+This command is dependency-light by design: it validates local JSONL structure
+without requiring public dataset download dependencies.
+
 | Flag | Short | Type | Required | Default | Description |
 |------|-------|------|----------|---------|-------------|
 | `file` | - | path | Yes | - | Path to JSONL file |

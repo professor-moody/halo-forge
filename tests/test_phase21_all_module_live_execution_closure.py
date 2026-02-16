@@ -210,7 +210,8 @@ def test_cli_ui_monitor_results_surfaces_include_live_contracts():
     assert "Run System Health Check (Advanced)" in research_hub_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "Run System Health Check (All • Advanced)" in dashboard_source
+    assert "Open Research Hub" in dashboard_source
+    assert "Run System Health Check (All • Advanced)" not in dashboard_source
     assert "_render_provenance_chip" in dashboard_source
     assert "dashboard_hub_service" in dashboard_source
 

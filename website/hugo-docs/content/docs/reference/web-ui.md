@@ -40,8 +40,7 @@ The main landing page showing:
 - **Training History Chart**: Loss curves from recent runs
 - **Benchmark Scores Chart**: Pass@1 comparisons across models
 - **Recent Runs**: Quick access to completed jobs
-- **Advanced Diagnostics (Optional)**: grouped coding/non-coding/ops setup and system checks
-- **Advanced Actions**: `Run Setup Check`, `Generate Setup Artifacts`, and `Run System Health Check`
+- **Advanced Diagnostics (Optional)**: status summary with direct link to Research Hub
 
 ### Training (`/training`)
 
@@ -226,8 +225,10 @@ Each readiness banner includes:
 - `Fix now` remediation text and fix options.
 - `What is missing?` evidence gaps or expected evidence root path.
 - `Run setup check` button to refresh module setup diagnostics.
-- `Generate setup artifacts` button to create bounded bootstrap artifacts for the selected module.
-- `Run system health check` button to execute bounded live command probes for the selected module.
+
+Advanced remediation actions are available in **Research Hub**:
+- `Generate setup artifacts` for bounded bootstrap artifacts.
+- `Run system health check` for bounded live command probes.
 
 ## Architecture
 
