@@ -481,12 +481,18 @@ class OpsReadinessService:
                 seed=seed,
                 require_artifacts=False,
             )
-            existing: Dict[str, AllModuleReadiness] = {}
+            existing: Dict[str, AllModuleReadiness]
             try:
                 report = self.load_all_module_readiness_report(force_refresh=True)
                 existing = dict(report.modules)
             except Exception:
-                existing = {}
+                # Seed with a full live compute to avoid introducing synthetic
+                # "no readiness entry available" blockers for untouched modules.
+                live_report = self.compute_live_all_module_readiness(
+                    seed=seed,
+                    force_refresh=True,
+                )
+                existing = dict(live_report.modules)
             existing[module_key] = entry
             updated = build_all_module_readiness_report(
                 module_entries=existing,
@@ -513,12 +519,16 @@ class OpsReadinessService:
             seed=seed,
             require_artifacts=False,
         )
-        existing_ops: Dict[str, OpsModuleReadiness] = {}
+        existing_ops: Dict[str, OpsModuleReadiness]
         try:
             report = self.load_readiness_report(force_refresh=True)
             existing_ops = dict(report.modules)
         except Exception:
-            existing_ops = {}
+            live_report = self.compute_live_readiness(
+                seed=seed,
+                force_refresh=True,
+            )
+            existing_ops = dict(live_report.modules)
         existing_ops[module_key] = entry
         updated = build_ops_readiness_report(
             module_entries=existing_ops,
@@ -543,6 +553,26 @@ class OpsReadinessService:
     def _normalize_all_module_report(self, report: AllModuleReadinessReport) -> None:
         """Backfill additive diagnostic fields for older report payloads."""
         for module, entry in report.modules.items():
+            if any(
+                "no readiness entry available for module:" in str(err).lower()
+                for err in list(getattr(entry, "errors", []) or [])
+            ):
+                # Treat legacy synthetic missing-entry placeholders as non-blocking
+                # evidence gaps so they never block normal launches.
+                entry.errors = []
+                gap_warning = (
+                    f"readiness entry missing for module {module}; recompute readiness to refresh diagnostics"
+                )
+                if gap_warning not in entry.warnings:
+                    entry.warnings.append(gap_warning)
+                entry.status = "warn"
+                entry.launch_blocked = False
+                entry.issue_class = "evidence_gap"
+                if not str(getattr(entry, "action_hint", "") or "").strip():
+                    entry.action_hint = (
+                        f"Run a setup check for {module} or launch once to generate fresh evidence."
+                    )
+
             metadata = derive_issue_metadata(
                 module=module,
                 issue_class=str(getattr(entry, "issue_class", "none") or "none"),

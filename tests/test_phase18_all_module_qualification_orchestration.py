@@ -189,9 +189,9 @@ def test_cli_ui_and_monitor_surfaces_include_qualification_contracts():
     assert "_render_provenance_chip(\"qualification\"" in dashboard_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
-    assert "Run qualification probe" in research_hub_source
+    assert "Run setup check" in research_hub_source
     assert "Qualification issue" in research_hub_source
-    assert "Run live probe" in research_hub_source
+    assert "Run system health check" in research_hub_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "QUALIFICATION_JOB_TYPES" in monitor_source

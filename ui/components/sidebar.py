@@ -86,15 +86,15 @@ class Sidebar:
                 ui.label(item['label']).classes(f'text-sm font-medium text-[{text_color}]')
 
     def _nav_groups(self) -> list[tuple[str, list[dict]]]:
-        overview = [
-            {"icon": "dashboard", "label": "Dashboard", "path": "/"},
-            {"icon": "computer", "label": "Monitor", "path": "/monitor"},
-            {"icon": "analytics", "label": "Results", "path": "/results"},
-        ]
         core_workflows = [
             {"icon": "model_training", "label": "Training", "path": "/training"},
             {"icon": "speed", "label": "Benchmark", "path": "/benchmark"},
             {"icon": "terminal", "label": "Ops Console", "path": "/ops-console"},
+        ]
+        operations = [
+            {"icon": "dashboard", "label": "Dashboard", "path": "/"},
+            {"icon": "computer", "label": "Monitor", "path": "/monitor"},
+            {"icon": "analytics", "label": "Results", "path": "/results"},
         ]
         validation = [
             {"icon": "settings", "label": "Config", "path": "/config"},
@@ -113,7 +113,7 @@ class Sidebar:
             validation.insert(0, {"icon": "science", "label": "Research Hub", "path": "/research-hub"})
 
         return [
-            ("Overview", overview),
             ("Core Workflows", core_workflows),
+            ("Operations", operations),
             ("Validation", validation),
         ]

@@ -5,7 +5,6 @@ Main overview page with system status, active jobs, and recent runs.
 """
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Callable, List
 from nicegui import ui
@@ -57,6 +56,28 @@ class Dashboard:
                 ).classes(
                     f'btn-hover bg-[{COLORS["primary"]}] text-white'
                 )
+
+            # Training launcher (primary above-the-fold workflow)
+            with ui.column().classes(
+                f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
+                f'border border-[#2d343c] animate-in stagger-1'
+            ):
+                ui.label('Training Launcher').classes(
+                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                )
+                ui.label('Start training runs quickly. Advanced setup checks are available in Research Hub.').classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+                with ui.row().classes('gap-3 flex-wrap'):
+                    self._render_action_button('Start SFT', 'school', '/training?mode=sft')
+                    self._render_action_button('Start RAFT', 'autorenew', '/training?mode=raft')
+                    self._render_action_button('VLM Training', 'image', '/training?mode=vlm')
+                    self._render_action_button('Audio Training', 'graphic_eq', '/training?mode=audio')
+                    self._render_action_button('Reasoning Training', 'calculate', '/training?mode=reasoning')
+                    self._render_action_button('Agentic Training', 'extension', '/training?mode=agentic')
+                    self._render_action_button('Run Benchmark', 'speed', '/benchmark')
+                    self._render_action_button('Open Monitor', 'computer', '/monitor')
+                    self._render_action_button('View Results', 'analytics', '/results')
             
             # Stats cards grid
             gpu = get_gpu_summary()
@@ -102,23 +123,27 @@ class Dashboard:
             # Register cleanup on client disconnect
             ui.context.client.on_disconnect(self._cleanup)
 
-            # All-module readiness summary
-            with ui.column().classes(
-                f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
-                f'border border-[#2d343c] animate-in stagger-2'
-            ):
-                with ui.row().classes('w-full items-center justify-between'):
-                    ui.label('Operations Hub').classes(
-                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
-                    )
-                    ui.button(
-                        'Refresh readiness',
-                        icon='refresh',
-                        on_click=self._refresh_readiness,
-                    ).props('flat dense').classes(
-                        f'text-[{COLORS["text_secondary"]}]'
-                    )
-                self._render_modality_readiness_summary()
+            # Advanced diagnostics (secondary surface)
+            with ui.expansion(
+                text='Advanced Diagnostics (Optional)',
+                icon='science',
+                value=False,
+            ).classes(
+                f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-2'
+            ).props('dense dark'):
+                with ui.column().classes('w-full gap-4 p-4'):
+                    with ui.row().classes('w-full items-center justify-between'):
+                        ui.label('Setup and System Checks').classes(
+                            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                        )
+                        ui.button(
+                            'Refresh checks',
+                            icon='refresh',
+                            on_click=self._refresh_readiness,
+                        ).props('flat dense').classes(
+                            f'text-[{COLORS["text_secondary"]}]'
+                        )
+                    self._render_modality_readiness_summary()
             
             # Visualization charts grid
             with ui.element('div').classes('grid-panels w-full'):
@@ -182,19 +207,15 @@ class Dashboard:
                     
                     self._render_recent_runs()
             
-            # Quick Actions
+            # Secondary navigation shortcuts
             with ui.column().classes(
                 f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] '
                 f'border border-[#2d343c] animate-in stagger-6'
             ):
-                ui.label('Quick Actions').classes(
+                ui.label('More Tools').classes(
                     f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                 )
-                
                 with ui.row().classes('gap-3 flex-wrap'):
-                    self._render_action_button('SFT Training', 'school', '/training?type=sft')
-                    self._render_action_button('RAFT Training', 'autorenew', '/training?type=raft')
-                    self._render_action_button('Run Benchmark', 'speed', '/benchmark')
                     self._render_action_button('Ops Console', 'terminal', '/ops-console')
                     flags = get_ui_feature_flags()
                     if flags.enable_inference_page:
@@ -203,8 +224,9 @@ class Dashboard:
                         self._render_action_button('Benchmark+', 'view_array', '/benchmark-advanced')
                     if flags.enable_research_hub_page:
                         self._render_action_button('Research Hub', 'science', '/research-hub')
-                    self._render_action_button('View Configs', 'settings', '/config')
-                    self._render_action_button('Test Verifier', 'verified', '/verifiers')
+                    self._render_action_button('Config', 'settings', '/config')
+                    self._render_action_button('Datasets', 'storage', '/datasets')
+                    self._render_action_button('Verifiers', 'verified', '/verifiers')
     
     def _render_stat_card(
         self,
@@ -397,10 +419,10 @@ class Dashboard:
                 ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
             with ui.column().classes('items-end gap-0'):
                 ui.label(
-                    "warn-and-launch enabled for evidence gaps"
+                    "Training launch stays enabled for setup gaps"
                 ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
                 ui.label(
-                    "Run probes from card actions for deterministic checks"
+                    "Use advanced checks only when troubleshooting"
                 ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
 
         with ui.row().classes("w-full gap-2 flex-wrap"):
@@ -411,14 +433,14 @@ class Dashboard:
 
         with ui.row().classes("w-full gap-2 flex-wrap"):
             ui.button(
-                "Run Bootstrap (All)",
+                "Generate Setup Artifacts (All • Advanced)",
                 icon="build",
-                on_click=lambda: asyncio.create_task(self._run_bootstrap_all()),
+                on_click=self._run_bootstrap_all,
             ).props("flat dense").classes(f'text-[{COLORS["accent"]}]')
             ui.button(
-                "Run Live Probe (All)",
+                "Run System Health Check (All • Advanced)",
                 icon="play_circle",
-                on_click=lambda: asyncio.create_task(self._run_live_all()),
+                on_click=self._run_live_all,
             ).props("flat dense").classes(f'text-[{COLORS["accent"]}]')
             ui.button(
                 "Open Research Hub",
@@ -456,14 +478,26 @@ class Dashboard:
                     ui.label(f"Next action: {card.next_action}").classes(
                         f'text-xs text-[{COLORS["text_muted"]}]'
                     )
-                    if card.evidence_root:
-                        ui.label(card.evidence_root).classes(
-                            f'text-xs font-mono text-[{COLORS["text_muted"]}] break-all'
-                        )
                     with ui.row().classes("w-full gap-2 flex-wrap"):
                         self._render_card_action(card.module, card.primary_action, primary=True)
-                        for action in card.secondary_actions:
-                            self._render_card_action(card.module, action, primary=False)
+                    if card.secondary_actions or card.evidence_root:
+                        with ui.expansion(
+                            text="Advanced diagnostics",
+                            icon="tune",
+                            value=False,
+                        ).classes(
+                            f'w-full rounded-lg bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+                        ).props('dense dark'):
+                            with ui.column().classes("w-full gap-2 p-2"):
+                                if card.evidence_root:
+                                    ui.label(
+                                        f"Evidence root: {card.evidence_root}"
+                                    ).classes(
+                                        f'text-xs font-mono text-[{COLORS["text_muted"]}] break-all'
+                                    )
+                                with ui.row().classes("w-full gap-2 flex-wrap"):
+                                    for action in card.secondary_actions:
+                                        self._render_card_action(card.module, action, primary=False)
 
     def _render_card_action(self, module: str, action, *, primary: bool) -> None:
         classes = (
@@ -474,41 +508,54 @@ class Dashboard:
         ui.button(
             action.label,
             icon=action.icon,
-            on_click=lambda m=module, a=action: asyncio.create_task(self._run_card_action(m, a)),
+            on_click=self._make_card_action_handler(module, action),
         ).props("dense " + ("unelevated" if primary else "flat")).classes(classes)
 
+    def _make_card_action_handler(self, module: str, action):
+        """Create an async button handler bound to module/action."""
+
+        async def _handler() -> None:
+            await self._run_card_action(module, action)
+
+        return _handler
+
     async def _run_card_action(self, module: str, action) -> None:
-        if action.key == "open_surface":
-            ui.navigate.to(action.route or "/research-hub")
-            return
-        if action.key == "contract_probe":
-            ok, message = self.readiness_service.run_contract_probe(
-                module=module,
-                include_all_modules=True,
-            )
-            ui.notify(message, type="positive" if ok else "warning", timeout=1800)
-            return
-        if action.key == "bootstrap_probe":
-            ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
-                modules=[module],
-                bootstrap_profile="contract-v1",
-                strict=False,
-                source_ui_page="/",
-            )
-            ui.notify(message, type="positive" if ok else "warning", timeout=2200)
-            if ok and job_id:
-                ui.navigate.to(f"/monitor/{job_id}")
-            return
-        if action.key == "live_probe":
-            ok, message, job_id = await self.readiness_service.run_live_probe(
-                modules=[module],
-                live_profile="live-smoke-v1",
-                strict=False,
-                source_ui_page="/",
-            )
-            ui.notify(message, type="positive" if ok else "warning", timeout=2200)
-            if ok and job_id:
-                ui.navigate.to(f"/monitor/{job_id}")
+        try:
+            if action.key == "open_surface":
+                ui.navigate.to(action.route or "/research-hub")
+                return
+            if action.key == "contract_probe":
+                ok, message = self.readiness_service.run_contract_probe(
+                    module=module,
+                    include_all_modules=True,
+                )
+                ui.notify(message, type="positive" if ok else "warning", timeout=1800)
+                return
+            if action.key == "bootstrap_probe":
+                ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
+                    modules=[module],
+                    bootstrap_profile="contract-v1",
+                    strict=False,
+                    source_ui_page="/",
+                )
+                ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+                if ok and job_id:
+                    ui.navigate.to(f"/monitor/{job_id}")
+                return
+            if action.key == "live_probe":
+                ok, message, job_id = await self.readiness_service.run_live_probe(
+                    modules=[module],
+                    live_profile="live-smoke-v1",
+                    strict=False,
+                    source_ui_page="/",
+                )
+                ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+                if ok and job_id:
+                    ui.navigate.to(f"/monitor/{job_id}")
+                return
+            ui.notify(f"Unsupported action: {action.key}", type="warning", timeout=1800)
+        except Exception as exc:
+            ui.notify(f"Action failed: {exc}", type="negative", timeout=2500)
 
     async def _run_bootstrap_all(self) -> None:
         ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
@@ -723,7 +770,6 @@ class Dashboard:
         self._unsubscribe_callbacks.append(unsub_stopped)
         
         # Also start hardware monitor if not running
-        import asyncio
         if not self.hardware_monitor.is_running:
             asyncio.create_task(self.hardware_monitor.start())
     

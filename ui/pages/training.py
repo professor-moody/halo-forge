@@ -718,8 +718,8 @@ class Training:
                     ).bind_value(self.sft_data, 'gradient_checkpointing')
         
         # Launch button
-        self._render_all_module_readiness_banner("sft")
-        self._render_launch_button("Start SFT Training", self._launch_sft)
+        self._render_launch_button("Start SFT Training", self._launch_sft, "sft")
+        self._render_advanced_diagnostics_for_mode("sft")
     
     def _apply_sft_preset(self, preset_name: str):
         """Apply an SFT preset configuration."""
@@ -1022,8 +1022,8 @@ class Training:
                 )
         
         # Launch button
-        self._render_all_module_readiness_banner("raft")
-        self._render_launch_button("Start RAFT Training", self._launch_raft)
+        self._render_launch_button("Start RAFT Training", self._launch_raft, "raft")
+        self._render_advanced_diagnostics_for_mode("raft")
     
     def _browse_checkpoint(self):
         """Open file picker for checkpoint directory."""
@@ -1150,12 +1150,12 @@ class Training:
                     f"supported families: {', '.join(capability.capability.supported_model_families)}"
                 ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
 
-            self._render_all_module_readiness_banner(modality)
-
         self._render_launch_button(
             f"Start {modality.upper()} Training",
             lambda m=modality: self._launch_modality_train(m),
+            modality,
         )
+        self._render_advanced_diagnostics_for_mode(modality)
 
     def _render_all_module_readiness_banner(self, module_key: str):
         """Render all-module readiness status for the selected training surface."""
@@ -1180,7 +1180,23 @@ class Training:
             stale=bool(report.stale),
             expected_path=str(output_map.get(module_key) or readiness.last_output_dir or ""),
             on_probe=lambda key=module_key: self._run_contract_probe(key),
+            probe_label="Run Setup Check (Advanced)",
         )
+
+    def _render_advanced_diagnostics_for_mode(self, module_key: str) -> None:
+        """Render optional diagnostics panel below primary launch controls."""
+        with ui.expansion(
+            text="Advanced setup diagnostics (optional)",
+            icon="science",
+            value=False,
+        ).classes(
+            f'w-full rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in'
+        ).props('dense dark'):
+            with ui.column().classes("w-full gap-3 p-4"):
+                ui.label(
+                    "Use these checks when troubleshooting setup issues. Normal training can start without prior artifacts."
+                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                self._render_all_module_readiness_banner(module_key)
 
     def _run_contract_probe(self, module_key: str) -> None:
         ok, message = self.ops_readiness_service.run_contract_probe(
@@ -1482,18 +1498,98 @@ class Training:
                 'outlined dense dark color=grey-7'
             )
             inp.on('update:model-value', lambda e: on_change(e.args))
-    
-    def _render_launch_button(self, label: str, on_click):
+
+    def _validate_launch_inputs(self, mode_key: str) -> tuple[bool, str]:
+        """Validate required user inputs for launch button enablement."""
+        key = str(mode_key or "").strip().lower()
+        if key == "sft":
+            return self._validate_sft_inputs()
+        if key == "raft":
+            return self._validate_raft_inputs()
+        if key in self.modality_data:
+            return self._validate_modality_inputs(key)
+        return False, "Unknown training mode."
+
+    def _validate_sft_inputs(self) -> tuple[bool, str]:
+        model = str(self._get_effective_model(self.sft_data) or "").strip()
+        dataset = str(self._get_effective_dataset() or "").strip()
+        output_dir = str(self.sft_data.output_dir or "").strip()
+        if not model:
+            return False, "Model is required."
+        if not dataset:
+            return False, "Dataset is required."
+        if not output_dir:
+            return False, "Output directory is required."
+        if self.sft_data.epochs < 1:
+            return False, "Epochs must be >= 1."
+        if self.sft_data.batch_size < 1:
+            return False, "Batch size must be >= 1."
+        if self.sft_data.gradient_accumulation_steps < 1:
+            return False, "Gradient accumulation must be >= 1."
+        if float(self.sft_data.learning_rate) <= 0:
+            return False, "Learning rate must be > 0."
+        return True, ""
+
+    def _validate_raft_inputs(self) -> tuple[bool, str]:
+        model = str(self._get_effective_model(self.raft_data) or "").strip()
+        prompts = str(self._get_effective_prompts() or "").strip()
+        output_dir = str(self.raft_data.output_dir or "").strip()
+        if not model:
+            return False, "Model is required."
+        if not prompts:
+            return False, "Prompts file is required."
+        if not output_dir:
+            return False, "Output directory is required."
+        if self.raft_data.cycles < 1:
+            return False, "Cycles must be >= 1."
+        if self.raft_data.samples_per_prompt < 1:
+            return False, "Samples per prompt must be >= 1."
+        if not (0.0 <= float(self.raft_data.temperature) <= 2.0):
+            return False, "Temperature must be between 0.0 and 2.0."
+        if not (0.0 < float(self.raft_data.keep_percent) <= 1.0):
+            return False, "Keep percent must be in (0.0, 1.0]."
+        return True, ""
+
+    def _validate_modality_inputs(self, modality: str) -> tuple[bool, str]:
+        data = self.modality_data[modality]
+        model = str(data.model or "").strip()
+        dataset = str(data.dataset or "").strip()
+        output_dir = str(data.output_dir or "").strip()
+        if not model:
+            return False, "Model is required."
+        if not dataset:
+            return False, "Dataset is required."
+        if not output_dir:
+            return False, "Output directory is required."
+        if int(data.cycles) < 1:
+            return False, "Cycles must be >= 1."
+        if float(data.learning_rate) <= 0:
+            return False, "Learning rate must be > 0."
+        if not (0.0 < float(data.lr_decay) <= 1.0):
+            return False, "LR decay must be in (0.0, 1.0]."
+        if modality in {"vlm", "audio"} and int(data.samples_per_prompt) < 1:
+            return False, "Samples per prompt must be >= 1."
+        return True, ""
+
+    def _render_launch_button(self, label: str, on_click, mode_key: str):
         """Render the launch training button."""
+        is_valid, validation_message = self._validate_launch_inputs(mode_key)
         with ui.row().classes('w-full justify-end pt-4'):
-            with ui.button(on_click=on_click).props('unelevated').classes(
+            launch_button = ui.button(on_click=on_click).props('unelevated').classes(
                 f'btn-hover px-8 py-3 bg-[{COLORS["primary"]}] text-white rounded-lg'
-            ):
+            )
+            if not is_valid or self.is_running:
+                launch_button.disable()
+            with launch_button:
                 if self.is_running:
                     ui.spinner('dots', size='20px').classes('mr-2')
                 else:
                     ui.icon('play_arrow', size='20px').classes('mr-2')
                 ui.label(label).classes('text-sm font-medium')
+        if validation_message:
+            ui.label(validation_message).classes(
+                f'text-xs text-[{COLORS["warning"]}] text-right w-full'
+            )
     
     def _apply_preset(self, preset_name: str):
         """Apply a RAFT preset configuration."""
@@ -1533,6 +1629,10 @@ class Training:
     async def _launch_sft(self):
         """Launch SFT training."""
         if self.is_running:
+            return
+        valid, reason = self._validate_sft_inputs()
+        if not valid:
+            notify_job_failed("SFT Training", reason)
             return
         
         self.is_running = True
@@ -1585,6 +1685,10 @@ class Training:
     async def _launch_raft(self):
         """Launch RAFT training."""
         if self.is_running:
+            return
+        valid, reason = self._validate_raft_inputs()
+        if not valid:
+            notify_job_failed("RAFT Training", reason)
             return
         
         self.is_running = True
@@ -1643,6 +1747,10 @@ class Training:
     async def _launch_modality_train(self, modality: str):
         """Launch modality-specific training through TrainingService."""
         if self.is_running:
+            return
+        valid, reason = self._validate_modality_inputs(modality)
+        if not valid:
+            notify_job_failed(f"{modality.upper()} Training", reason)
             return
         self.is_running = True
         data = self.modality_data[modality]

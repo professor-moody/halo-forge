@@ -5,8 +5,6 @@ Cross-module readiness and operational testing summary for all CLI modules.
 """
 
 from __future__ import annotations
-
-import asyncio
 from typing import Dict
 
 from nicegui import ui
@@ -64,19 +62,19 @@ class ResearchHub:
                 )
                 with ui.row().classes("items-center gap-2"):
                     ui.button(
-                        "Run live probe",
+                        "Run system health check",
                         icon="play_circle",
-                        on_click=lambda: asyncio.create_task(self._run_live_probe()),
+                        on_click=self._run_live_probe,
                     ).props("flat").classes(f"text-[{COLORS['accent']}]")
                     ui.button(
-                        "Run bootstrap probe",
+                        "Generate setup artifacts",
                         icon="build",
-                        on_click=lambda: asyncio.create_task(self._run_bootstrap_probe()),
+                        on_click=self._run_bootstrap_probe,
                     ).props("flat").classes(f"text-[{COLORS['accent']}]")
                     ui.button(
-                        "Run qualification probe",
+                        "Run setup check",
                         icon="play_arrow",
-                        on_click=lambda: asyncio.create_task(self._run_qualification_probe()),
+                        on_click=self._run_qualification_probe,
                     ).props("flat").classes(f"text-[{COLORS['accent']}]")
                     ui.button(
                         "Refresh readiness",
@@ -271,19 +269,19 @@ class ResearchHub:
                         on_click=lambda r=route: ui.navigate.to(r),
                     ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
                 ui.button(
-                    "Run contract probe",
+                    "Run Setup Check (Advanced)",
                     icon="play_arrow",
                     on_click=lambda m=module: self._run_contract_probe(m),
                 ).props("flat dense").classes(f"text-[{COLORS['text_secondary']}]")
                 ui.button(
-                    "Generate Evidence",
+                    "Generate Setup Artifacts (Advanced)",
                     icon="build",
-                    on_click=lambda m=module: asyncio.create_task(self._run_module_bootstrap(m)),
+                    on_click=self._make_module_bootstrap_handler(module),
                 ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
                 ui.button(
-                    "Run Live Probe",
+                    "Run System Health Check (Advanced)",
                     icon="play_circle",
-                    on_click=lambda m=module: asyncio.create_task(self._run_module_live_probe(m)),
+                    on_click=self._make_module_live_probe_handler(module),
                 ).props("flat dense").classes(f"text-[{COLORS['accent']}]")
 
             ui.label(f"errors={len(entry.errors)} warnings={len(entry.warnings)}").classes(
@@ -391,6 +389,18 @@ class ResearchHub:
         )
         ui.notify(message, type="positive" if ok else "warning", timeout=1800)
         self._refresh()
+
+    def _make_module_bootstrap_handler(self, module: str):
+        async def _handler() -> None:
+            await self._run_module_bootstrap(module)
+
+        return _handler
+
+    def _make_module_live_probe_handler(self, module: str):
+        async def _handler() -> None:
+            await self._run_module_live_probe(module)
+
+        return _handler
 
     async def _run_qualification_probe(self) -> None:
         ok, message, job_id = await self.readiness_service.run_qualification_probe(

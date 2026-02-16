@@ -155,8 +155,8 @@ def test_cli_ui_monitor_results_surfaces_include_bootstrap_contracts():
     assert "get_live_provenance" in service_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
-    assert "Run bootstrap probe" in research_hub_source
-    assert "Generate Evidence" in research_hub_source
+    assert "Generate setup artifacts" in research_hub_source
+    assert "Generate Setup Artifacts (Advanced)" in research_hub_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
     assert "_render_provenance_chip(\"bootstrap\"" in dashboard_source

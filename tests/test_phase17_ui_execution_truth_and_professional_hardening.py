@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 from halo_forge.all_module_readiness import (
+    ALL_MODULES,
+    AllModuleReadiness,
     build_all_module_readiness_report,
     validate_all_module,
     validate_all_module_readiness_payload,
@@ -151,4 +153,41 @@ def test_runtime_surface_includes_page_guard_and_non_blocking_copy():
 
     diag_source = Path("ui/components/diagnostic_panel.py").read_text(encoding="utf-8")
     assert "Evidence missing (non-blocking)" in diag_source
-    assert "Launch blocked:" in diag_source
+    assert "Setup check not satisfied (advanced diagnostics)." in diag_source
+
+
+def test_single_module_contract_probe_does_not_poison_other_modules(tmp_path):
+    """Single-module probe writes a full report without synthetic missing-entry blockers."""
+    service = OpsReadinessService(base_path=tmp_path)
+    ok, message = service.run_contract_probe(module="sft", include_all_modules=True)
+    assert ok, message
+
+    report_path = tmp_path / "results/readiness/all_modules_readiness.v1.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert set(payload["modules"].keys()) == set(ALL_MODULES)
+    for module in ALL_MODULES:
+        errors = [str(v) for v in payload["modules"][module].get("errors", [])]
+        assert all("no readiness entry available for module:" not in err.lower() for err in errors)
+
+
+def test_missing_entry_placeholders_are_normalized_to_non_blocking_warn():
+    """Legacy placeholder entries should never remain launch-blocking in UI-normalized reports."""
+    report = build_all_module_readiness_report(
+        module_entries={
+            "sft": AllModuleReadiness(
+                module="sft",
+                status="warn",
+                warnings=["training_summary.json not found"],
+                launch_blocked=False,
+                issue_class="evidence_gap",
+            )
+        },
+        seed=42,
+        source="script",
+    )
+    service = OpsReadinessService()
+    service._normalize_all_module_report(report)
+    raft_entry = report.modules["raft"]
+    assert raft_entry.status == "warn"
+    assert raft_entry.launch_blocked is False
+    assert raft_entry.issue_class == "evidence_gap"

@@ -89,8 +89,9 @@ def test_dashboard_hub_service_builds_all_module_cards(monkeypatch):
     by_module = {card.module: card for card in cards}
 
     assert by_module["config"].primary_action.key == "open_surface"
-    assert by_module["data"].primary_action.key == "bootstrap_probe"
-    assert by_module["audio"].primary_action.key == "contract_probe"
+    assert by_module["data"].primary_action.key == "open_surface"
+    assert by_module["audio"].primary_action.key == "open_surface"
+    assert "Advanced" in by_module["audio"].secondary_actions[0].label
     assert by_module["audio"].launch_blocked is True
 
 
@@ -108,13 +109,19 @@ def test_dashboard_and_sidebar_expose_ops_hub_navigation_contract():
     """Dashboard and sidebar should expose grouped operations-hub navigation."""
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
     assert "get_dashboard_hub_service" in dashboard_source
-    assert "Operations Hub" in dashboard_source
-    assert "Run Bootstrap (All)" in dashboard_source
-    assert "Run Live Probe (All)" in dashboard_source
+    assert "Training Launcher" in dashboard_source
+    assert "Advanced Diagnostics (Optional)" in dashboard_source
+    assert "Generate Setup Artifacts (All • Advanced)" in dashboard_source
+    assert "Run System Health Check (All • Advanced)" in dashboard_source
     assert "_render_module_group(" in dashboard_source
+    assert "asyncio.create_task(self._run_card_action" not in dashboard_source
+    assert "asyncio.create_task(self._run_bootstrap_all" not in dashboard_source
+    assert "asyncio.create_task(self._run_live_all" not in dashboard_source
+    assert "/training?mode=sft" in dashboard_source
+    assert "/training?mode=raft" in dashboard_source
 
     sidebar_source = Path("ui/components/sidebar.py").read_text(encoding="utf-8")
-    assert "Overview" in sidebar_source
+    assert "Operations" in sidebar_source
     assert "Core Workflows" in sidebar_source
     assert "Validation" in sidebar_source
     assert "_nav_groups" in sidebar_source
@@ -140,4 +147,3 @@ def test_cross_surface_pages_include_query_preselection_hooks():
 
     research_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "Module filter active" in research_source
-

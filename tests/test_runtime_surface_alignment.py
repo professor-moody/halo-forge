@@ -120,8 +120,9 @@ def test_default_on_ops_routes_and_quick_actions_are_declared():
     assert "/inference" in dashboard_source
     assert "/benchmark-advanced" in dashboard_source
     assert "/research-hub" in dashboard_source
-    assert "Operations Hub" in dashboard_source
-    assert "Run Live Probe (All)" in dashboard_source
+    assert "Training Launcher" in dashboard_source
+    assert "Advanced Diagnostics (Optional)" in dashboard_source
+    assert "Run System Health Check (All • Advanced)" in dashboard_source
 
 
 def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
@@ -158,15 +159,15 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     diag_source = Path("ui/components/diagnostic_panel.py").read_text(encoding="utf-8")
     assert "render_readiness_diagnostic_panel" in diag_source
     assert "Evidence missing (non-blocking)" in diag_source
-    assert "Launch blocked:" in diag_source
+    assert "Setup check not satisfied (advanced diagnostics)." in diag_source
 
     research_hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
     assert "get_walkthrough_provenance" in research_hub_source
     assert "walkthrough report unavailable" in research_hub_source
-    assert "Run qualification probe" in research_hub_source
-    assert "Run bootstrap probe" in research_hub_source
-    assert "Run live probe" in research_hub_source
-    assert "Run Live Probe" in research_hub_source
+    assert "Run setup check" in research_hub_source
+    assert "Generate setup artifacts" in research_hub_source
+    assert "Run system health check" in research_hub_source
+    assert "Run System Health Check (Advanced)" in research_hub_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "QUALIFICATION_JOB_TYPES" in monitor_source

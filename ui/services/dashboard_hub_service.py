@@ -141,6 +141,7 @@ class DashboardHubService:
             primary_message = self._primary_message(entry)
             next_action = self._next_action(entry)
             primary_action = self._select_primary_action(
+                module=module,
                 status=status,
                 launch_blocked=launch_blocked,
                 surface_route=surface_route,
@@ -192,14 +193,14 @@ class DashboardHubService:
         launch_blocked = bool(getattr(entry, "launch_blocked", False))
 
         if status == "pass":
-            return "Contracts healthy."
+            return "Ready to launch."
         if errors:
             if launch_blocked:
-                return f"Launch blocked: {errors[0]}"
-            return f"Evidence missing (non-blocking): {errors[0]}"
+                return "Setup check not satisfied (advanced diagnostics)."
+            return f"Needs setup artifacts (launch available): {errors[0]}"
         if warnings:
-            return f"Evidence missing (non-blocking): {warnings[0]}"
-        return "No diagnostics available."
+            return f"Needs setup artifacts (launch available): {warnings[0]}"
+        return "No setup diagnostics available."
 
     def _next_action(self, entry) -> str:
         status = str(getattr(entry, "status", "warn")).lower()
@@ -208,33 +209,29 @@ class DashboardHubService:
         action_hint = str(getattr(entry, "action_hint", "") or "").strip()
 
         if launch_blocked:
-            return fix_now or action_hint or "Run contract probe and resolve preflight issues."
+            return fix_now or action_hint or "Open surface and complete required inputs."
         if status == "warn":
-            return fix_now or action_hint or "Generate evidence and rerun live probe."
-        return "Open the module surface and run a live check."
+            return fix_now or action_hint or "Open surface and run a first launch to create setup artifacts."
+        return "Open the module surface and launch a run."
 
     def _select_primary_action(
         self,
         *,
+        module: str,
         status: str,
         launch_blocked: bool,
         surface_route: str,
     ) -> DashboardAction:
-        if launch_blocked:
-            return DashboardAction(
-                key="contract_probe",
-                label="Run Contract Probe",
-                icon="play_arrow",
-            )
-        if status == "warn":
-            return DashboardAction(
-                key="bootstrap_probe",
-                label="Generate Evidence",
-                icon="build",
-            )
+        label = "Open Surface"
+        if module in {"sft", "raft", "vlm", "audio", "reasoning", "agentic"}:
+            label = "Open Training"
+        elif module in {"benchmark_code", "benchmark_non_code"}:
+            label = "Open Benchmark"
+        elif module == "inference":
+            label = "Open Inference"
         return DashboardAction(
             key="open_surface",
-            label="Open Surface",
+            label=label,
             icon="open_in_new",
             route=surface_route,
         )
@@ -254,17 +251,17 @@ class DashboardHubService:
             ),
             DashboardAction(
                 key="contract_probe",
-                label="Run Contract Probe",
+                label="Run Setup Check (Advanced)",
                 icon="play_arrow",
             ),
             DashboardAction(
                 key="bootstrap_probe",
-                label="Generate Evidence",
+                label="Generate Setup Artifacts (Advanced)",
                 icon="build",
             ),
             DashboardAction(
                 key="live_probe",
-                label="Run Live Probe",
+                label="Run System Health Check (Advanced)",
                 icon="play_circle",
             ),
         ]
@@ -280,4 +277,3 @@ def get_dashboard_hub_service() -> DashboardHubService:
     if _dashboard_hub_service is None:
         _dashboard_hub_service = DashboardHubService()
     return _dashboard_hub_service
-

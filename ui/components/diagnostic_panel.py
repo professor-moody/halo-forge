@@ -35,7 +35,7 @@ def render_readiness_diagnostic_panel(
     stale: bool = False,
     expected_path: str = "",
     on_probe: Optional[Callable[[], None]] = None,
-    probe_label: str = "Run contract probe",
+    probe_label: str = "Run setup check (advanced)",
     compact: bool = False,
 ) -> None:
     """Render normalized readiness diagnostics with truthful launch semantics."""
@@ -117,10 +117,10 @@ def _primary_message(entry) -> str:
     warnings = list(getattr(entry, "warnings", []) or [])
     status = str(getattr(entry, "status", "warn")).lower()
     if status == "pass":
-        return "Contracts healthy."
+        return "Ready to launch."
     if errors:
         if bool(getattr(entry, "launch_blocked", False)):
-            return f"Launch blocked: {errors[0]}"
+            return "Setup check not satisfied (advanced diagnostics)."
         return f"Evidence missing (non-blocking): {errors[0]}"
     if warnings:
         return f"Evidence missing (non-blocking): {warnings[0]}"
@@ -130,9 +130,9 @@ def _primary_message(entry) -> str:
 def _status_summary(status: str, launch_blocked: bool) -> str:
     key = str(status or "").lower()
     if key == "pass":
-        return "Contracts healthy."
+        return "Ready to launch."
     if key == "warn":
         return "Evidence is missing or stale; launch remains enabled."
     if launch_blocked:
-        return "Preflight contract issue detected; launch is blocked until fixed."
-    return "Contract issues detected; launch may still proceed for debugging."
+        return "Setup checks are not satisfied; complete required setup before relying on diagnostics."
+    return "Setup diagnostics reported issues; launch may still proceed for debugging."

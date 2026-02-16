@@ -33,18 +33,21 @@ Startup logs print canonical route URLs (`/`, `/training`, `/benchmark`, `/infer
 ### Dashboard (`/`)
 
 The main landing page showing:
+- **Training Launcher**: Primary start controls for SFT/RAFT/modality training
 - **GPU Status**: Real-time GPU utilization
 - **Active Jobs**: Currently running training/benchmark jobs
 - **Completed/Failed Counts**: Job statistics
 - **Training History Chart**: Loss curves from recent runs
 - **Benchmark Scores Chart**: Pass@1 comparisons across models
 - **Recent Runs**: Quick access to completed jobs
-- **Operations Hub**: grouped coding/non-coding/ops module cards with actionable next steps
-- **Probe Actions**: module-level and global `Run Contract Probe`, `Generate Evidence`, and `Run Live Probe`
+- **Advanced Diagnostics (Optional)**: grouped coding/non-coding/ops setup and system checks
+- **Advanced Actions**: `Run Setup Check`, `Generate Setup Artifacts`, and `Run System Health Check`
 
 ### Training (`/training`)
 
 Configure and launch training jobs:
+- **Training-first flow**: model + dataset + output + start controls are primary
+- **Advanced setup diagnostics**: optional collapsed panel for troubleshooting checks
 
 **SFT (Supervised Fine-Tuning)**
 - Model selection (HuggingFace or local path)
@@ -184,11 +187,11 @@ Cross-module ops readiness visibility:
   - `live_generated_at`
   - `live_status`
   - `live_profile`
-- Supports `Run bootstrap probe` action (tracked, non-blocking job in Monitor)
-- Supports `Run live probe` action (tracked, non-blocking job in Monitor)
-- Supports module-level `Generate Evidence` actions to bootstrap evidence roots on demand
-- Supports module-level `Run Live Probe` actions for bounded per-module execution checks
-- Supports `Run qualification probe` action (tracked, non-blocking job in Monitor)
+- Supports `Generate setup artifacts` action (tracked, non-blocking job in Monitor)
+- Supports `Run system health check` action (tracked, non-blocking job in Monitor)
+- Supports module-level `Generate Setup Artifacts (Advanced)` actions to bootstrap evidence roots on demand
+- Supports module-level `Run System Health Check (Advanced)` actions for bounded per-module execution checks
+- Supports `Run setup check` action (tracked, non-blocking job in Monitor)
 
 ## Deep-Link Query Parameters
 
@@ -213,7 +216,7 @@ UI readiness is contract-based and **does not block launches** for missing histo
 
 Banner wording:
 - `Evidence missing (non-blocking)` means files like prior `training_summary.json` or benchmark outputs were not found yet.
-- `Launch blocked` means the current contract/preflight is invalid and should be fixed before launch.
+- `Setup check not satisfied (advanced diagnostics)` means setup checks found issues; users can still correct form inputs and run training.
 - `Qualification issue` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
 - `Bootstrap issue` means evidence generation encountered a contract/probe failure.
 - `Live probe issue` means bounded live probe execution failed for the module in the selected profile.
@@ -222,9 +225,9 @@ Each readiness banner includes:
 - Stable issue metadata (`issue_code`, `severity`, `issue_scope`).
 - `Fix now` remediation text and fix options.
 - `What is missing?` evidence gaps or expected evidence root path.
-- `Run contract probe` button to refresh module contract evidence.
-- `Generate Evidence` button to create bounded bootstrap artifacts for the selected module.
-- `Run Live Probe` button to execute bounded live command probes for the selected module.
+- `Run setup check` button to refresh module setup diagnostics.
+- `Generate setup artifacts` button to create bounded bootstrap artifacts for the selected module.
+- `Run system health check` button to execute bounded live command probes for the selected module.
 
 ## Architecture
 
