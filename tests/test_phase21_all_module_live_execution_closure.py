@@ -210,7 +210,9 @@ def test_cli_ui_monitor_results_surfaces_include_live_contracts():
     assert "Run Live Probe" in research_hub_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "live status=" in dashboard_source
+    assert "Run Live Probe (All)" in dashboard_source
+    assert "_render_provenance_chip" in dashboard_source
+    assert "dashboard_hub_service" in dashboard_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "LIVE_PROBE_JOB_TYPES" in monitor_source

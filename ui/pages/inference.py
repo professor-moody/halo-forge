@@ -18,6 +18,7 @@ from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 from ui.components.notifications import notify_job_failed, notify_job_started
 from ui.services import get_inference_service
 from ui.services.ops_readiness_service import get_ops_readiness_service
+from ui.query_params import get_query_param
 from ui.state import state
 from ui.theme import COLORS
 
@@ -51,7 +52,9 @@ class Inference:
         self.ops_readiness_service = get_ops_readiness_service()
         self._tabs_container = None
         self._form_container = None
+        self._query_warnings: list[str] = []
         self._consume_clone_payload()
+        self._consume_query_params()
 
     def _consume_clone_payload(self) -> None:
         payload = app.storage.user.pop("inference_clone_payload", None)
@@ -84,6 +87,20 @@ class Inference:
                 pass
         self.data.measure_memory = bool(args.get("measure_memory", self.data.measure_memory))
 
+    def _consume_query_params(self) -> None:
+        """Apply explicit query-param preselection (overrides clone payload)."""
+        mode = get_query_param("mode", "").lower()
+        if not mode:
+            return
+        if mode in {"optimize", "benchmark"}:
+            self.data.mode = mode  # type: ignore[assignment]
+            if mode == "benchmark" and self.data.output_dir == "models/optimized":
+                self.data.output_dir = "results/inference_benchmarks"
+            if mode == "optimize" and self.data.output_dir == "results/inference_benchmarks":
+                self.data.output_dir = "models/optimized"
+            return
+        self._query_warnings.append(f"ignored invalid inference mode query param: {mode}")
+
     def render(self) -> None:
         with ui.column().classes("page-content w-full gap-6 p-6"):
             with ui.row().classes("w-full items-center justify-between animate-in"):
@@ -93,6 +110,8 @@ class Inference:
                 ui.label("Optimize and benchmark inference runtime").classes(
                     f"text-sm text-[{COLORS['text_secondary']}]"
                 )
+            for warning in self._query_warnings:
+                ui.label(warning).classes(f"text-xs text-[{COLORS['warning']}]")
 
             self._render_all_module_readiness_banner()
 

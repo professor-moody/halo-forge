@@ -39,7 +39,8 @@ The main landing page showing:
 - **Training History Chart**: Loss curves from recent runs
 - **Benchmark Scores Chart**: Pass@1 comparisons across models
 - **Recent Runs**: Quick access to completed jobs
-- **All-Module Readiness**: coding + non-coding contract status snapshot
+- **Operations Hub**: grouped coding/non-coding/ops module cards with actionable next steps
+- **Probe Actions**: module-level and global `Run Contract Probe`, `Generate Evidence`, and `Run Live Probe`
 
 ### Training (`/training`)
 
@@ -189,6 +190,19 @@ Cross-module ops readiness visibility:
 - Supports module-level `Run Live Probe` actions for bounded per-module execution checks
 - Supports `Run qualification probe` action (tracked, non-blocking job in Monitor)
 
+## Deep-Link Query Parameters
+
+UI routes support deterministic preselection via query params:
+
+- `/training?mode=<sft|raft|vlm|audio|reasoning|agentic>`
+- `/benchmark?view=<code|non_code>`
+- `/benchmark-advanced?domains=<csv>` (example: `domains=vlm,audio`)
+- `/inference?mode=<optimize|benchmark>`
+- `/ops-console?module=<config|data|info|plot>&execution_mode=<contract|live>`
+- `/research-hub?module=<module_key>`
+
+Unknown values are ignored safely and pages fall back to default selections.
+
 ## Readiness Semantics (Warn-and-Launch)
 
 UI readiness is contract-based and **does not block launches** for missing historical evidence.
@@ -200,9 +214,9 @@ UI readiness is contract-based and **does not block launches** for missing histo
 Banner wording:
 - `Evidence missing (non-blocking)` means files like prior `training_summary.json` or benchmark outputs were not found yet.
 - `Launch blocked` means the current contract/preflight is invalid and should be fixed before launch.
-- `Qualification blocker` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
-- `Bootstrap blocker` means evidence generation encountered a hard contract write/validation failure.
-- `Live blocker` means bounded live probe execution failed for the module in the selected profile.
+- `Qualification issue` means an explicit lifecycle check failed in qualification mode (separate from normal launch readiness).
+- `Bootstrap issue` means evidence generation encountered a contract/probe failure.
+- `Live probe issue` means bounded live probe execution failed for the module in the selected profile.
 
 Each readiness banner includes:
 - Stable issue metadata (`issue_code`, `severity`, `issue_scope`).

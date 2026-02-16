@@ -27,6 +27,7 @@ from ui.services.ops_readiness_service import get_ops_readiness_service
 from ui.components.notifications import notify_job_started, notify_job_failed
 from ui.components.file_picker import FilePicker
 from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
+from ui.query_params import get_query_param
 
 
 ModelSource = Literal["preset", "local", "custom"]
@@ -97,8 +98,10 @@ class Benchmark:
         self._config_container = None
         # Cache for discovered local models
         self._local_models_cache: list[tuple[str, str]] = []
+        self._query_warnings: list[str] = []
         self._refresh_local_models()
         self._consume_clone_payload()
+        self._consume_query_params()
 
     def _consume_clone_payload(self):
         """Load optional clone/relaunch payload persisted in user storage."""
@@ -151,6 +154,19 @@ class Benchmark:
             self.data.output_dir = str(args["output_dir"])
         elif args.get("output_path"):
             self.data.output_dir = str(Path(str(args["output_path"])).parent)
+
+    def _consume_query_params(self) -> None:
+        """Apply explicit query-param preselection (overrides clone payload)."""
+        view = get_query_param("view", "").lower()
+        if not view:
+            return
+        if view == "code":
+            self._apply_type_defaults(BenchmarkType.CODE)
+            return
+        if view == "non_code":
+            self._apply_type_defaults(BenchmarkType.VLM)
+            return
+        self._query_warnings.append(f"ignored invalid benchmark view query param: {view}")
     
     def _refresh_local_models(self):
         """Refresh the cache of locally trained models."""
@@ -220,6 +236,8 @@ class Benchmark:
                     ui.label('Compare model to published benchmarks').classes(
                         f'text-sm text-[{COLORS["text_muted"]}]'
                     )
+            for warning in self._query_warnings:
+                ui.label(warning).classes(f'text-xs text-[{COLORS["warning"]}]')
 
             # Benchmark type tabs - in container for refresh
             with ui.row().classes(
@@ -259,18 +277,7 @@ class Benchmark:
     
     def _set_type(self, btype: BenchmarkType):
         """Switch benchmark type."""
-        self.data.benchmark_type = btype
-        
-        # Update preset to first of this type
-        presets = get_presets_for_type(btype)
-        self.data.preset = presets[0] if presets else None
-        
-        # Reset model source to preset and select first base model for this type
-        self.data.model_source = "preset"
-        self.data.custom_model_path = ""
-        models = self._get_models_for_type(btype)
-        if models:
-            self.data.model = models[0]
+        self._apply_type_defaults(btype)
         
         # Refresh BOTH tabs and form
         self._tabs_container.clear()
@@ -280,6 +287,17 @@ class Benchmark:
         self._config_container.clear()
         with self._config_container:
             self._render_form()
+
+    def _apply_type_defaults(self, btype: BenchmarkType) -> None:
+        """Set benchmark type and apply deterministic preset/model defaults."""
+        self.data.benchmark_type = btype
+        presets = get_presets_for_type(btype)
+        self.data.preset = presets[0] if presets else None
+        self.data.model_source = "preset"
+        self.data.custom_model_path = ""
+        models = self._get_models_for_type(btype)
+        if models:
+            self.data.model = models[0]
 
     def _render_all_module_readiness_banner(self):
         """Render all-module readiness status for benchmark surfaces."""

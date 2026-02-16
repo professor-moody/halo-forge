@@ -143,6 +143,11 @@ def test_runtime_surface_includes_page_guard_and_non_blocking_copy():
     assert "run_qualification_probe" in ops_service_source
     assert "get_bootstrap_provenance" in ops_service_source
     assert "run_bootstrap_probe" in ops_service_source
+    dashboard_hub_service_source = Path("ui/services/dashboard_hub_service.py").read_text(
+        encoding="utf-8"
+    )
+    assert "DashboardHubSummary" in dashboard_hub_service_source
+    assert "DashboardModuleCard" in dashboard_hub_service_source
 
     diag_source = Path("ui/components/diagnostic_panel.py").read_text(encoding="utf-8")
     assert "Evidence missing (non-blocking)" in diag_source

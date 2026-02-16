@@ -16,6 +16,7 @@ from ui.components.notifications import notify_job_failed, notify_job_started
 from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
 from ui.services import BenchmarkType, get_benchmark_service, get_presets_for_type
 from ui.services.ops_readiness_service import get_ops_readiness_service
+from ui.query_params import get_query_csv
 from ui.state import state
 from ui.theme import COLORS
 
@@ -43,7 +44,9 @@ class BenchmarkAdvanced:
         self.benchmark_service = get_benchmark_service(state)
         self.ops_readiness_service = get_ops_readiness_service()
         self.is_running = False
+        self._query_warnings: list[str] = []
         self._init_defaults()
+        self._consume_query_params()
 
     def _init_defaults(self) -> None:
         def _first_dataset(benchmark_type: BenchmarkType, fallback: str) -> str:
@@ -58,6 +61,32 @@ class BenchmarkAdvanced:
         )
         self.data.agentic_dataset = _first_dataset(BenchmarkType.AGENTIC, self.data.agentic_dataset)
 
+    def _consume_query_params(self) -> None:
+        """Apply explicit query-param preselection for domain selection."""
+        domains = get_query_csv("domains")
+        if not domains:
+            return
+        normalized = {value.lower().replace("-", "_") for value in domains}
+        valid_map = {
+            "vlm": "run_vlm",
+            "audio": "run_audio",
+            "reasoning": "run_reasoning",
+            "agentic": "run_agentic",
+        }
+        matched = [value for value in normalized if value in valid_map]
+        if not matched:
+            self._query_warnings.append(
+                f"ignored invalid benchmark-advanced domains query param: {','.join(domains)}"
+            )
+            return
+        # Explicit query selection overrides defaults.
+        self.data.run_vlm = False
+        self.data.run_audio = False
+        self.data.run_reasoning = False
+        self.data.run_agentic = False
+        for key in matched:
+            setattr(self.data, valid_map[key], True)
+
     def render(self) -> None:
         with ui.column().classes("page-content w-full gap-6 p-6"):
             with ui.row().classes("w-full items-center justify-between animate-in"):
@@ -67,6 +96,8 @@ class BenchmarkAdvanced:
                 ui.label("Batch non-code benchmark orchestration").classes(
                     f"text-sm text-[{COLORS['text_secondary']}]"
                 )
+            for warning in self._query_warnings:
+                ui.label(warning).classes(f"text-xs text-[{COLORS['warning']}]")
 
             self._render_all_module_readiness_banner()
 

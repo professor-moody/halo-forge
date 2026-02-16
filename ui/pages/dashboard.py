@@ -4,6 +4,7 @@ Dashboard Page
 Main overview page with system status, active jobs, and recent runs.
 """
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Callable, List
@@ -16,7 +17,7 @@ from ui.services import (
     get_results_service,
     get_hardware_monitor,
     get_event_bus,
-    get_modality_readiness_service,
+    get_dashboard_hub_service,
     get_ops_readiness_service,
     Event,
     EventType,
@@ -33,8 +34,8 @@ class Dashboard:
         self._active_jobs_count_label = None
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         self.results_service = get_results_service()
+        self.dashboard_hub_service = get_dashboard_hub_service()
         self.hardware_monitor = get_hardware_monitor()
-        self.modality_readiness_service = get_modality_readiness_service()
         self.readiness_service = get_ops_readiness_service()
     
     def render(self):
@@ -107,7 +108,7 @@ class Dashboard:
                 f'border border-[#2d343c] animate-in stagger-2'
             ):
                 with ui.row().classes('w-full items-center justify-between'):
-                    ui.label('All-Module Readiness').classes(
+                    ui.label('Operations Hub').classes(
                         f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                     )
                     ui.button(
@@ -368,164 +369,178 @@ class Dashboard:
                 ui.label(label).classes(f'text-sm text-[{COLORS["text_primary"]}]')
 
     def _render_modality_readiness_summary(self):
-        """Render all-module readiness rows."""
+        """Render dashboard operations hub cards for all modules."""
         try:
-            report = self.readiness_service.get_effective_all_module_readiness()
+            summary = self.dashboard_hub_service.build_summary()
         except Exception as e:
             ui.label(f"Readiness unavailable: {e}").classes(
                 f'text-sm text-[{COLORS["warning"]}]'
             )
             return
 
-        source_text = f"source={report.source}"
-        if report.generated_at:
-            source_text += f" • generated={report.generated_at}"
-        if report.stale:
+        source_text = f"source={summary.source}"
+        if summary.generated_at:
+            source_text += f" • generated={summary.generated_at}"
+        if summary.stale:
             source_text += " • stale=true"
-        ui.label(source_text).classes(
-            f'text-xs text-[{COLORS["text_muted"]}]'
-        )
-        ui.label("Non-Code Modality Readiness is included in this all-module summary.").classes(
-            f'text-xs text-[{COLORS["text_muted"]}]'
-        )
-        burnin_meta = self.readiness_service.get_burnin_provenance()
-        bootstrap_meta = self.readiness_service.get_bootstrap_provenance()
-        qualification_meta = self.readiness_service.get_qualification_provenance()
-        live_meta = self.readiness_service.get_live_provenance()
-        if burnin_meta.get("burnin_report_present"):
-            burnin_status = str(burnin_meta.get("burnin_status") or "warn")
-            burnin_color = self._status_color(burnin_status)
-            ui.label(
-                f"burnin status={burnin_status} "
-                f"generated={burnin_meta.get('burnin_generated_at')}"
-            ).classes(f'text-xs text-[{burnin_color}]')
-        else:
-            ui.label("burnin report unavailable (non-blocking)").classes(
-                f'text-xs text-[{COLORS["warning"]}]'
-            )
-        if bootstrap_meta.get("bootstrap_report_present"):
-            bootstrap_status = str(bootstrap_meta.get("bootstrap_status") or "warn")
-            bootstrap_color = self._status_color(bootstrap_status)
-            ui.label(
-                f"bootstrap status={bootstrap_status} "
-                f"profile={bootstrap_meta.get('bootstrap_profile')} "
-                f"generated={bootstrap_meta.get('bootstrap_generated_at')}"
-            ).classes(f'text-xs text-[{bootstrap_color}]')
-        else:
-            ui.label("bootstrap report unavailable (non-blocking)").classes(
-                f'text-xs text-[{COLORS["warning"]}]'
-            )
-        if qualification_meta.get("qualification_report_present"):
-            qualification_status = str(qualification_meta.get("qualification_status") or "warn")
-            qualification_color = self._status_color(qualification_status)
-            ui.label(
-                f"qualification status={qualification_status} "
-                f"profile={qualification_meta.get('qualification_profile')} "
-                f"generated={qualification_meta.get('qualification_generated_at')}"
-            ).classes(f'text-xs text-[{qualification_color}]')
-        else:
-            ui.label("qualification report unavailable (non-blocking)").classes(
-                f'text-xs text-[{COLORS["warning"]}]'
-            )
-        if live_meta.get("live_report_present"):
-            live_status = str(live_meta.get("live_status") or "warn")
-            live_color = self._status_color(live_status)
-            ui.label(
-                f"live status={live_status} "
-                f"profile={live_meta.get('live_profile')} "
-                f"generated={live_meta.get('live_generated_at')}"
-            ).classes(f'text-xs text-[{live_color}]')
-        else:
-            ui.label("live report unavailable (non-blocking)").classes(
-                f'text-xs text-[{COLORS["warning"]}]'
-            )
+        ui.label(source_text).classes(f'text-xs text-[{COLORS["text_muted"]}]')
 
-        status_counts = {"pass": 0, "warn": 0, "fail": 0}
-        for module in report.modules.values():
-            status = str(module.status).lower()
-            if status in status_counts:
-                status_counts[status] += 1
         with ui.row().classes(
             f'w-full items-center justify-between gap-4 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}]'
         ):
-            with ui.row().classes('items-center gap-4'):
+            with ui.column().classes('gap-0'):
                 ui.label(
-                    f"All Modules • pass={status_counts['pass']} warn={status_counts['warn']} fail={status_counts['fail']}"
+                    f"All Modules • pass={summary.pass_count} warn={summary.warn_count} fail={summary.fail_count}"
                 ).classes(f'text-xs font-semibold text-[{COLORS["text_primary"]}]')
-                ui.label("warn-and-launch enabled").classes(
-                    f'text-xs text-[{COLORS["text_muted"]}]'
-                )
-            with ui.row().classes('items-center gap-2'):
-                ui.link('Training', '/training').classes(f'text-xs text-[{COLORS["accent"]}]')
-                ui.link('Benchmark', '/benchmark').classes(f'text-xs text-[{COLORS["accent"]}]')
-                ui.link('Inference', '/inference').classes(f'text-xs text-[{COLORS["accent"]}]')
-                ui.link('Ops', '/ops-console').classes(f'text-xs text-[{COLORS["accent"]}]')
-                ui.link('Research', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
-                ui.link('Run Bootstrap', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
-                ui.link('Run Live Probe', '/research-hub').classes(f'text-xs text-[{COLORS["accent"]}]')
+                ui.label(
+                    f"Jobs active={summary.active_jobs_count} completed={summary.completed_jobs_count} failed={summary.failed_jobs_count}"
+                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+            with ui.column().classes('items-end gap-0'):
+                ui.label(
+                    "warn-and-launch enabled for evidence gaps"
+                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                ui.label(
+                    "Run probes from card actions for deterministic checks"
+                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
 
-        for module in (
-            "config",
-            "data",
-            "sft",
-            "raft",
-            "benchmark_code",
-            "benchmark_non_code",
-            "inference",
-            "vlm",
-            "audio",
-            "reasoning",
-            "agentic",
-            "ui_ops",
-        ):
-            entry = report.modules.get(module)
-            if not entry:
-                continue
-            badge_color = self._status_color(entry.status)
-            with ui.row().classes(
-                f'w-full items-start justify-between gap-4 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}]'
-            ):
-                with ui.column().classes('gap-1'):
-                    with ui.row().classes('items-center gap-2'):
-                        ui.label(module.upper()).classes(
+        with ui.row().classes("w-full gap-2 flex-wrap"):
+            self._render_provenance_chip("burnin", summary.burnin_status)
+            self._render_provenance_chip("bootstrap", summary.bootstrap_status)
+            self._render_provenance_chip("qualification", summary.qualification_status)
+            self._render_provenance_chip("live", summary.live_status)
+
+        with ui.row().classes("w-full gap-2 flex-wrap"):
+            ui.button(
+                "Run Bootstrap (All)",
+                icon="build",
+                on_click=lambda: asyncio.create_task(self._run_bootstrap_all()),
+            ).props("flat dense").classes(f'text-[{COLORS["accent"]}]')
+            ui.button(
+                "Run Live Probe (All)",
+                icon="play_circle",
+                on_click=lambda: asyncio.create_task(self._run_live_all()),
+            ).props("flat dense").classes(f'text-[{COLORS["accent"]}]')
+            ui.button(
+                "Open Research Hub",
+                icon="science",
+                on_click=lambda: ui.navigate.to("/research-hub"),
+            ).props("flat dense").classes(f'text-[{COLORS["text_secondary"]}]')
+
+        self._render_module_group("Coding Modules", summary.cards_by_group.get("coding", []))
+        self._render_module_group(
+            "Non-Coding Modules",
+            summary.cards_by_group.get("non_coding", []),
+        )
+        self._render_module_group("Ops / System", summary.cards_by_group.get("ops", []))
+
+    def _render_module_group(self, title: str, cards) -> None:
+        if not cards:
+            return
+        ui.label(title).classes(f'text-sm font-semibold text-[{COLORS["text_primary"]}]')
+        with ui.row().classes("w-full gap-3 flex-wrap"):
+            for card in cards:
+                badge_color = self._status_color(card.status)
+                with ui.column().classes(
+                    f"flex-1 min-w-[300px] gap-2 p-3 rounded-lg bg-[{COLORS['bg_secondary']}] border border-[#2d343c]"
+                ):
+                    with ui.row().classes("w-full items-center justify-between gap-2"):
+                        ui.label(card.module.upper()).classes(
                             f'text-sm font-medium text-[{COLORS["text_primary"]}]'
                         )
-                        ui.label(entry.status.upper()).classes(
+                        ui.label(card.status.upper()).classes(
                             f'text-xs px-2 py-0.5 rounded-full bg-[{badge_color}]/20 text-[{badge_color}]'
                         )
-                    ui.label(
-                        f"errors={len(entry.errors)} • warnings={len(entry.warnings)}"
-                    ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
-                    if getattr(entry, "issue_code", ""):
-                        ui.label(
-                            f"issue={entry.issue_code} • severity={getattr(entry, 'severity', 'info')}"
-                        ).classes(f'text-xs font-mono text-[{COLORS["text_muted"]}]')
-                    if entry.errors:
-                        if entry.launch_blocked:
-                            ui.label(f"Launch blocked: {entry.errors[0]}").classes(
-                                f'text-xs text-[{COLORS["error"]}]'
-                            )
-                        else:
-                            ui.label(f"Evidence missing (non-blocking): {entry.errors[0]}").classes(
-                                f'text-xs text-[{COLORS["warning"]}]'
-                            )
-                    elif entry.warnings:
-                        ui.label(f"Evidence missing (non-blocking): {entry.warnings[0]}").classes(
-                            f'text-xs text-[{COLORS["warning"]}]'
+                    ui.label(card.primary_message).classes(
+                        f'text-xs text-[{COLORS["text_secondary"]}]'
+                    )
+                    ui.label(f"Next action: {card.next_action}").classes(
+                        f'text-xs text-[{COLORS["text_muted"]}]'
+                    )
+                    if card.evidence_root:
+                        ui.label(card.evidence_root).classes(
+                            f'text-xs font-mono text-[{COLORS["text_muted"]}] break-all'
                         )
-                    fix_now = getattr(entry, "fix_now", "") or entry.action_hint
-                    if fix_now:
-                        ui.label(f"Fix now: {fix_now}").classes(
-                            f'text-xs text-[{COLORS["text_secondary"]}]'
-                        )
-                    missing = list(getattr(entry, "what_is_missing", []) or [])
-                    if missing:
-                        ui.label(f"What is missing? {missing[0]}").classes(
-                            f'text-xs font-mono text-[{COLORS["text_muted"]}]'
-                        )
-                ui.label(entry.last_output_dir or "--").classes(
-                    f'text-xs font-mono text-[{COLORS["text_muted"]}] max-w-[50%] truncate'
-                )
+                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                        self._render_card_action(card.module, card.primary_action, primary=True)
+                        for action in card.secondary_actions:
+                            self._render_card_action(card.module, action, primary=False)
+
+    def _render_card_action(self, module: str, action, *, primary: bool) -> None:
+        classes = (
+            f'bg-[{COLORS["primary"]}] text-white'
+            if primary
+            else f'text-[{COLORS["text_secondary"]}]'
+        )
+        ui.button(
+            action.label,
+            icon=action.icon,
+            on_click=lambda m=module, a=action: asyncio.create_task(self._run_card_action(m, a)),
+        ).props("dense " + ("unelevated" if primary else "flat")).classes(classes)
+
+    async def _run_card_action(self, module: str, action) -> None:
+        if action.key == "open_surface":
+            ui.navigate.to(action.route or "/research-hub")
+            return
+        if action.key == "contract_probe":
+            ok, message = self.readiness_service.run_contract_probe(
+                module=module,
+                include_all_modules=True,
+            )
+            ui.notify(message, type="positive" if ok else "warning", timeout=1800)
+            return
+        if action.key == "bootstrap_probe":
+            ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
+                modules=[module],
+                bootstrap_profile="contract-v1",
+                strict=False,
+                source_ui_page="/",
+            )
+            ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+            if ok and job_id:
+                ui.navigate.to(f"/monitor/{job_id}")
+            return
+        if action.key == "live_probe":
+            ok, message, job_id = await self.readiness_service.run_live_probe(
+                modules=[module],
+                live_profile="live-smoke-v1",
+                strict=False,
+                source_ui_page="/",
+            )
+            ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+            if ok and job_id:
+                ui.navigate.to(f"/monitor/{job_id}")
+
+    async def _run_bootstrap_all(self) -> None:
+        ok, message, job_id = await self.readiness_service.run_bootstrap_probe(
+            bootstrap_profile="contract-v1",
+            strict=False,
+            modules=[],
+            source_ui_page="/",
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")
+
+    async def _run_live_all(self) -> None:
+        ok, message, job_id = await self.readiness_service.run_live_probe(
+            live_profile="live-smoke-v1",
+            strict=False,
+            modules=[],
+            source_ui_page="/",
+        )
+        ui.notify(message, type="positive" if ok else "warning", timeout=2200)
+        if ok and job_id:
+            ui.navigate.to(f"/monitor/{job_id}")
+
+    def _render_provenance_chip(self, label: str, status: str | None) -> None:
+        status_text = str(status or "unavailable")
+        color = self._status_color(status_text) if status else COLORS["warning"]
+        with ui.element("div").classes(
+            f"px-2 py-1 rounded border border-[{color}]/30 bg-[{color}]/10"
+        ):
+            ui.label(f"{label}: {status_text}").classes(
+                f'text-xs font-mono text-[{color}]'
+            )
 
     def _status_color(self, status: str) -> str:
         if status == "pass":

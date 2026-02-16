@@ -21,6 +21,7 @@ from ui.services.launch_contracts import (
 )
 from ui.components.notifications import notify_job_started, notify_job_failed
 from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
+from ui.query_params import get_query_param
 from halo_forge.capabilities import check_modality_train_capability
 
 
@@ -358,7 +359,9 @@ class Training:
         self.is_running = False
         self.training_service = TrainingService(state)
         self.ops_readiness_service = get_ops_readiness_service()
+        self._query_warnings: list[str] = []
         self._consume_clone_payload()
+        self._consume_query_params()
         
         # Container references for dynamic updates
         self._toggle_container = None
@@ -434,6 +437,17 @@ class Training:
         for key, value in payload.items():
             if hasattr(target, key):
                 setattr(target, key, value)
+
+    def _consume_query_params(self) -> None:
+        """Apply explicit query-param preselection (overrides clone payload)."""
+        mode = get_query_param("mode", "").lower()
+        if not mode:
+            return
+        allowed_modes = set(UI_SUPPORTED_TRAINING_MODES) | set(UI_DEFERRED_TRAINING_MODES)
+        if mode in allowed_modes:
+            self.mode = mode
+            return
+        self._query_warnings.append(f"ignored invalid training mode query param: {mode}")
     
     def render(self):
         """Render the training page."""
@@ -443,6 +457,9 @@ class Training:
                 ui.label('Training').classes(
                     f'text-2xl font-bold text-[{COLORS["text_primary"]}]'
                 )
+
+            for warning in self._query_warnings:
+                ui.label(warning).classes(f'text-xs text-[{COLORS["warning"]}]')
             
             # Mode toggle - store reference for re-rendering
             self._toggle_container = ui.row().classes(

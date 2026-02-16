@@ -120,6 +120,8 @@ def test_default_on_ops_routes_and_quick_actions_are_declared():
     assert "/inference" in dashboard_source
     assert "/benchmark-advanced" in dashboard_source
     assert "/research-hub" in dashboard_source
+    assert "Operations Hub" in dashboard_source
+    assert "Run Live Probe (All)" in dashboard_source
 
 
 def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
@@ -170,6 +172,33 @@ def test_ui_cli_declares_headless_safe_browser_controls_and_route_logging():
     assert "QUALIFICATION_JOB_TYPES" in monitor_source
     assert "self.qualification_service.stop_job" in monitor_source
     assert "LIVE_PROBE_JOB_TYPES" in monitor_source
+
+
+def test_ui_pages_support_query_param_preselection_contracts():
+    """Route pages should support safe query-param preselection behavior."""
+    training_source = Path("ui/pages/training.py").read_text(encoding="utf-8")
+    assert "get_query_param" in training_source
+    assert "_consume_query_params" in training_source
+    assert "ignored invalid training mode query param" in training_source
+
+    benchmark_source = Path("ui/pages/benchmark.py").read_text(encoding="utf-8")
+    assert "get_query_param" in benchmark_source
+    assert "ignored invalid benchmark view query param" in benchmark_source
+    assert "_apply_type_defaults" in benchmark_source
+
+    bench_adv_source = Path("ui/pages/benchmark_advanced.py").read_text(encoding="utf-8")
+    assert "get_query_csv" in bench_adv_source
+    assert "ignored invalid benchmark-advanced domains query param" in bench_adv_source
+
+    inference_source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
+    assert "ignored invalid inference mode query param" in inference_source
+
+    ops_source = Path("ui/pages/ops_console.py").read_text(encoding="utf-8")
+    assert "ignored invalid ops module query param" in ops_source
+    assert "ignored invalid ops execution_mode query param" in ops_source
+
+    hub_source = Path("ui/pages/research_hub.py").read_text(encoding="utf-8")
+    assert "Module filter active" in hub_source
 
 
 def test_inference_readiness_banner_has_no_out_of_scope_filepicker_callback():

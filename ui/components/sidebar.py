@@ -36,8 +36,12 @@ class Sidebar:
             
             # Navigation items
             with ui.column().classes('w-full flex-1 py-4 gap-1'):
-                for item in self._nav_items():
-                    self._render_nav_item(item)
+                for group_label, items in self._nav_groups():
+                    ui.label(group_label).classes(
+                        f'text-[10px] uppercase tracking-wider px-4 pt-2 pb-1 text-[{COLORS["text_muted"]}]'
+                    )
+                    for item in items:
+                        self._render_nav_item(item)
             
             # Footer
             with ui.column().classes('w-full px-4 py-4 border-t border-[#2d343c] gap-2'):
@@ -81,27 +85,35 @@ class Sidebar:
                 ui.icon(item['icon'], size='20px').classes(f'text-[{icon_color}]')
                 ui.label(item['label']).classes(f'text-sm font-medium text-[{text_color}]')
 
-    def _nav_items(self) -> list[dict]:
-        items = [
+    def _nav_groups(self) -> list[tuple[str, list[dict]]]:
+        overview = [
             {"icon": "dashboard", "label": "Dashboard", "path": "/"},
+            {"icon": "computer", "label": "Monitor", "path": "/monitor"},
+            {"icon": "analytics", "label": "Results", "path": "/results"},
+        ]
+        core_workflows = [
             {"icon": "model_training", "label": "Training", "path": "/training"},
             {"icon": "speed", "label": "Benchmark", "path": "/benchmark"},
             {"icon": "terminal", "label": "Ops Console", "path": "/ops-console"},
-            {"icon": "computer", "label": "Monitor", "path": "/monitor"},
+        ]
+        validation = [
             {"icon": "settings", "label": "Config", "path": "/config"},
-            {"icon": "verified", "label": "Verifiers", "path": "/verifiers"},
             {"icon": "storage", "label": "Datasets", "path": "/datasets"},
-            {"icon": "analytics", "label": "Results", "path": "/results"},
+            {"icon": "verified", "label": "Verifiers", "path": "/verifiers"},
         ]
 
         flags = get_ui_feature_flags()
         if flags.enable_inference_page:
-            items.append({"icon": "bolt", "label": "Inference", "path": "/inference"})
+            core_workflows.append({"icon": "bolt", "label": "Inference", "path": "/inference"})
         if flags.enable_benchmark_advanced_page:
-            items.append(
+            core_workflows.append(
                 {"icon": "view_array", "label": "Benchmark+", "path": "/benchmark-advanced"}
             )
         if flags.enable_research_hub_page:
-            items.append({"icon": "science", "label": "Research Hub", "path": "/research-hub"})
+            validation.insert(0, {"icon": "science", "label": "Research Hub", "path": "/research-hub"})
 
-        return items
+        return [
+            ("Overview", overview),
+            ("Core Workflows", core_workflows),
+            ("Validation", validation),
+        ]

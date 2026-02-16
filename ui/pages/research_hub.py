@@ -13,24 +13,25 @@ from nicegui import ui
 
 from halo_forge.all_module_readiness import ALL_MODULES
 from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
+from ui.query_params import get_query_param
 from ui.services import get_ops_readiness_service
 from ui.theme import COLORS
 
 
 MODULE_ROUTE_MAP: Dict[str, str] = {
-    "config": "/ops-console",
-    "data": "/ops-console",
-    "info": "/ops-console",
-    "plot": "/ops-console",
-    "sft": "/training",
-    "raft": "/training",
-    "benchmark_code": "/benchmark",
-    "benchmark_non_code": "/benchmark-advanced",
-    "vlm": "/training",
-    "audio": "/training",
-    "reasoning": "/training",
-    "agentic": "/training",
-    "inference": "/inference",
+    "config": "/ops-console?module=config&execution_mode=contract",
+    "data": "/ops-console?module=data&execution_mode=contract",
+    "info": "/ops-console?module=info&execution_mode=contract",
+    "plot": "/ops-console?module=plot&execution_mode=contract",
+    "sft": "/training?mode=sft",
+    "raft": "/training?mode=raft",
+    "benchmark_code": "/benchmark?view=code",
+    "benchmark_non_code": "/benchmark?view=non_code",
+    "vlm": "/training?mode=vlm",
+    "audio": "/training?mode=audio",
+    "reasoning": "/training?mode=reasoning",
+    "agentic": "/training?mode=agentic",
+    "inference": "/inference?mode=optimize",
     "benchmark": "/benchmark-advanced",
     "ui_ops": "/monitor",
 }
@@ -42,6 +43,18 @@ class ResearchHub:
     def __init__(self):
         self.readiness_service = get_ops_readiness_service()
         self._content_container = None
+        self.selected_module: str | None = None
+        self._query_warnings: list[str] = []
+        self._consume_query_params()
+
+    def _consume_query_params(self) -> None:
+        module = get_query_param("module", "").lower()
+        if not module:
+            return
+        if module in ALL_MODULES:
+            self.selected_module = module
+            return
+        self._query_warnings.append(f"ignored invalid research module query param: {module}")
 
     def render(self) -> None:
         with ui.column().classes("page-content w-full gap-6 p-6"):
@@ -70,6 +83,12 @@ class ResearchHub:
                         icon="refresh",
                         on_click=self._refresh,
                     ).props("flat").classes(f"text-[{COLORS['text_secondary']}]")
+            for warning in self._query_warnings:
+                ui.label(warning).classes(f"text-xs text-[{COLORS['warning']}]")
+            if self.selected_module:
+                ui.label(
+                    f"Module filter active: {self.selected_module} (from query param)"
+                ).classes(f"text-xs text-[{COLORS['text_muted']}]")
 
             self._content_container = ui.column().classes("w-full gap-4")
             self._render_content(force_refresh=False)
@@ -191,7 +210,8 @@ class ResearchHub:
                 "Readiness is warn-but-allow: launches remain enabled for debugging and validation."
             ).classes(f"text-xs text-[{COLORS['text_secondary']}]")
 
-        for module in ALL_MODULES:
+        module_list = [self.selected_module] if self.selected_module else list(ALL_MODULES)
+        for module in module_list:
             burnin_entry = None
             bootstrap_entry = None
             qualification_entry = None

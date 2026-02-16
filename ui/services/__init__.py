@@ -161,6 +161,13 @@ from .live_probe_service import (
     LiveProbeService,
     get_live_probe_service,
 )
+from .dashboard_hub_service import (
+    DashboardAction,
+    DashboardModuleCard,
+    DashboardHubSummary,
+    DashboardHubService,
+    get_dashboard_hub_service,
+)
 
 # Launch contracts
 from .launch_contracts import (
@@ -303,6 +310,11 @@ __all__ = [
     'get_bootstrap_service',
     'LiveProbeService',
     'get_live_probe_service',
+    'DashboardAction',
+    'DashboardModuleCard',
+    'DashboardHubSummary',
+    'DashboardHubService',
+    'get_dashboard_hub_service',
 
     # Launch contracts
     'LaunchContract',

@@ -159,7 +159,7 @@ def test_cli_ui_monitor_results_surfaces_include_bootstrap_contracts():
     assert "Generate Evidence" in research_hub_source
 
     dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "bootstrap status=" in dashboard_source
+    assert "_render_provenance_chip(\"bootstrap\"" in dashboard_source
 
     monitor_source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
     assert "BOOTSTRAP_JOB_TYPES" in monitor_source

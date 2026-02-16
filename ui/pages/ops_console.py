@@ -13,6 +13,7 @@ from nicegui import app, ui
 
 from ui.components.notifications import notify_job_failed, notify_job_started
 from ui.components.diagnostic_panel import render_readiness_diagnostic_panel
+from ui.query_params import get_query_param
 from ui.services import get_module_ops_service
 from ui.services.ops_readiness_service import get_ops_readiness_service
 from ui.state import state
@@ -63,7 +64,9 @@ class OpsConsole:
         self._banner_container = None
         self._tabs_container = None
         self._form_container = None
+        self._query_warnings: list[str] = []
         self._consume_clone_payload()
+        self._consume_query_params()
 
     def _consume_clone_payload(self) -> None:
         payload = app.storage.user.pop("ops_clone_payload", None)
@@ -105,6 +108,24 @@ class OpsConsole:
             if key in args:
                 setattr(self.data, key, bool(args.get(key)))
 
+    def _consume_query_params(self) -> None:
+        """Apply explicit query-param preselection (overrides clone payload)."""
+        module = get_query_param("module", "").lower()
+        if module:
+            if module in {"config", "data", "info", "plot"}:
+                self.data.module = module
+            else:
+                self._query_warnings.append(f"ignored invalid ops module query param: {module}")
+
+        execution_mode = get_query_param("execution_mode", "").lower()
+        if execution_mode:
+            if execution_mode in {"contract", "live"}:
+                self.data.execution_mode = execution_mode
+            else:
+                self._query_warnings.append(
+                    f"ignored invalid ops execution_mode query param: {execution_mode}"
+                )
+
     def render(self) -> None:
         with ui.column().classes("page-content w-full gap-6 p-6"):
             with ui.row().classes("w-full items-center justify-between animate-in"):
@@ -114,6 +135,8 @@ class OpsConsole:
                 ui.label("Utility module execution (contract-first, live optional)").classes(
                     f"text-sm text-[{COLORS['text_secondary']}]"
                 )
+            for warning in self._query_warnings:
+                ui.label(warning).classes(f"text-xs text-[{COLORS['warning']}]")
 
             self._banner_container = ui.column().classes("w-full")
             with self._banner_container:

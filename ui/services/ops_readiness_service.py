@@ -817,6 +817,7 @@ class OpsReadinessService:
         strict: bool = False,
         modules: Optional[list[str]] = None,
         output_root: str = "results/readiness/bootstrap",
+        source_ui_page: str = "/research-hub",
     ) -> tuple[bool, str, Optional[str]]:
         """
         Launch a tracked bootstrap probe job from UI.
@@ -831,7 +832,7 @@ class OpsReadinessService:
                 strict=strict,
                 module_filters=modules or [],
                 output_root=output_root,
-                source_ui_page="/research-hub",
+                source_ui_page=source_ui_page,
             )
             self._bootstrap_cache = None
             self._bootstrap_cache_time = None
@@ -848,6 +849,7 @@ class OpsReadinessService:
         strict: bool = False,
         modules: Optional[list[str]] = None,
         output_root: str = "results/readiness/live",
+        source_ui_page: str = "/research-hub",
     ) -> tuple[bool, str, Optional[str]]:
         """
         Launch a tracked live probe job from UI.
@@ -862,7 +864,7 @@ class OpsReadinessService:
                 strict=strict,
                 module_filters=modules or [],
                 output_root=output_root,
-                source_ui_page="/research-hub",
+                source_ui_page=source_ui_page,
             )
             self._live_cache = None
             self._live_cache_time = None
