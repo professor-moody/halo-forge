@@ -42,6 +42,7 @@ def render_readiness_diagnostic_panel(
     status = str(getattr(entry, "status", "warn")).lower()
     color = status_color(status)
     icon = status_icon(status)
+    launch_blocked = bool(getattr(entry, "launch_blocked", False))
 
     source_text = source
     if stale:
@@ -73,9 +74,13 @@ def render_readiness_diagnostic_panel(
                 f"Issue: code={issue_code} • severity={severity or '--'} • scope={issue_scope or '--'}"
             ).classes(f"text-xs font-mono text-[{COLORS['text_muted']}]")
 
+        ui.label(_status_summary(status, launch_blocked)).classes(
+            f"text-xs text-[{COLORS['text_secondary']}]"
+        )
+
         primary = _primary_message(entry)
         if primary:
-            primary_color = COLORS["error"] if bool(getattr(entry, "launch_blocked", False)) else COLORS["warning"]
+            primary_color = COLORS["error"] if launch_blocked else COLORS["warning"]
             if status == "pass":
                 primary_color = COLORS["success"]
             ui.label(primary).classes(f"text-xs text-[{primary_color}]")
@@ -120,3 +125,14 @@ def _primary_message(entry) -> str:
     if warnings:
         return f"Evidence missing (non-blocking): {warnings[0]}"
     return ""
+
+
+def _status_summary(status: str, launch_blocked: bool) -> str:
+    key = str(status or "").lower()
+    if key == "pass":
+        return "Contracts healthy."
+    if key == "warn":
+        return "Evidence is missing or stale; launch remains enabled."
+    if launch_blocked:
+        return "Preflight contract issue detected; launch is blocked until fixed."
+    return "Contract issues detected; launch may still proceed for debugging."

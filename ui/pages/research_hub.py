@@ -291,12 +291,17 @@ class ResearchHub:
                     f"created={len(bootstrap_entry.artifacts_created)}"
                 ).classes(f"text-xs text-[{boot_color}] font-mono")
                 if bootstrap_entry.errors:
+                    error_color = (
+                        COLORS["error"]
+                        if str(bootstrap_entry.status).lower() == "fail"
+                        else COLORS["warning"]
+                    )
                     ui.label(
-                        f"Bootstrap blocker: {bootstrap_entry.errors[0]}"
-                    ).classes(f"text-xs text-[{COLORS['error']}]")
+                        f"Bootstrap issue: {bootstrap_entry.errors[0]}"
+                    ).classes(f"text-xs text-[{error_color}]")
                 elif bootstrap_entry.warnings:
                     ui.label(
-                        f"Bootstrap warning: {bootstrap_entry.warnings[0]}"
+                        f"Bootstrap evidence gap (non-blocking): {bootstrap_entry.warnings[0]}"
                     ).classes(f"text-xs text-[{COLORS['warning']}]")
             if live_entry is not None:
                 live_color = {
@@ -312,12 +317,17 @@ class ResearchHub:
                     f"deps={live_entry.dependency_status}"
                 ).classes(f"text-xs text-[{live_color}] font-mono")
                 if live_entry.errors:
+                    error_color = (
+                        COLORS["error"]
+                        if str(live_entry.status).lower() == "fail"
+                        else COLORS["warning"]
+                    )
                     ui.label(
-                        f"Live blocker: {live_entry.errors[0]}"
-                    ).classes(f"text-xs text-[{COLORS['error']}]")
+                        f"Live probe issue: {live_entry.errors[0]}"
+                    ).classes(f"text-xs text-[{error_color}]")
                 elif live_entry.warnings:
                     ui.label(
-                        f"Live warning: {live_entry.warnings[0]}"
+                        f"Live evidence gap (non-blocking): {live_entry.warnings[0]}"
                     ).classes(f"text-xs text-[{COLORS['warning']}]")
             if qualification_entry is not None:
                 qual_color = {
@@ -332,12 +342,17 @@ class ResearchHub:
                     f"results_ok={1 if qualification_entry.results_ingestion_ok else 0}"
                 ).classes(f"text-xs text-[{qual_color}] font-mono")
                 if qualification_entry.errors:
+                    error_color = (
+                        COLORS["error"]
+                        if str(qualification_entry.status).lower() == "fail"
+                        else COLORS["warning"]
+                    )
                     ui.label(
-                        f"Qualification blocker: {qualification_entry.errors[0]}"
-                    ).classes(f"text-xs text-[{COLORS['error']}]")
+                        f"Qualification issue: {qualification_entry.errors[0]}"
+                    ).classes(f"text-xs text-[{error_color}]")
                 elif qualification_entry.warnings:
                     ui.label(
-                        f"Qualification warning: {qualification_entry.warnings[0]}"
+                        f"Qualification evidence gap (non-blocking): {qualification_entry.warnings[0]}"
                     ).classes(f"text-xs text-[{COLORS['warning']}]")
             render_readiness_diagnostic_panel(
                 module=module,

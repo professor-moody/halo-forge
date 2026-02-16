@@ -13,7 +13,6 @@ from ui.theme import COLORS
 from ui.state import state
 from ui.services import (
     TrainingService,
-    get_modality_readiness_service,
     get_ops_readiness_service,
 )
 from ui.services.launch_contracts import (
@@ -358,7 +357,6 @@ class Training:
         self.selected_raft_preset = "conservative"
         self.is_running = False
         self.training_service = TrainingService(state)
-        self.readiness_service = get_modality_readiness_service()
         self.ops_readiness_service = get_ops_readiness_service()
         self._consume_clone_payload()
         
@@ -1142,56 +1140,6 @@ class Training:
             lambda m=modality: self._launch_modality_train(m),
         )
 
-    def _render_modality_readiness_banner(self, modality: str):
-        """Render warn-but-allow readiness status for modality launches."""
-        try:
-            report = self.readiness_service.get_effective_readiness()
-        except Exception as e:
-            ui.label(f"Readiness unavailable: {e}").classes(
-                f'text-xs text-[{COLORS["warning"]}]'
-            )
-            return
-
-        readiness = report.modalities.get(modality)
-        if readiness is None:
-            return
-
-        status = readiness.status.lower()
-        if status == "pass":
-            color = COLORS["success"]
-            icon = "check_circle"
-        elif status == "warn":
-            color = COLORS["warning"]
-            icon = "warning"
-        else:
-            color = COLORS["error"]
-            icon = "error"
-
-        with ui.column().classes(
-            f'w-full gap-2 p-3 rounded-lg border border-[{color}]/30 bg-[{color}]/10'
-        ):
-            with ui.row().classes('items-center gap-2'):
-                ui.icon(icon, size='16px').classes(f'text-[{color}]')
-                source = f"{report.source}"
-                if report.stale:
-                    source += " (stale)"
-                ui.label(
-                    f"Readiness {status.upper()} • source={source}"
-                ).classes(f'text-xs text-[{color}] font-medium')
-            if readiness.errors:
-                ui.label(f"Launch blocked: {readiness.errors[0]}").classes(
-                    f'text-xs text-[{COLORS["error"]}]'
-                )
-            elif readiness.warnings:
-                ui.label(f"Evidence missing (non-blocking): {readiness.warnings[0]}").classes(
-                    f'text-xs text-[{COLORS["warning"]}]'
-                )
-            output_hint = readiness.last_output_dir or readiness.evidence.get("training_summary")
-            if output_hint:
-                ui.label(f"What is missing? Expected evidence root: {output_hint}").classes(
-                    f'text-xs font-mono text-[{COLORS["text_muted"]}]'
-                )
-
     def _render_all_module_readiness_banner(self, module_key: str):
         """Render all-module readiness status for the selected training surface."""
         try:
@@ -1227,7 +1175,6 @@ class Training:
 
     def _refresh_readiness(self):
         """Force-refresh readiness cache and re-render current form."""
-        self.readiness_service.get_effective_readiness(force_refresh=True)
         self.ops_readiness_service.get_effective_all_module_readiness(force_refresh=True)
         ui.notify('Readiness refreshed', type='info', timeout=1200)
         self.form_container.clear()
