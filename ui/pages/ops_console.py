@@ -6,7 +6,6 @@ Contract-first utility module execution for config/data/info/plot.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 
 from nicegui import app, ui
@@ -239,7 +238,7 @@ class OpsConsole:
             ui.button(
                 f"Run {self.data.module.upper()} ({self.data.execution_mode})",
                 icon="play_arrow",
-                on_click=lambda: asyncio.create_task(self._launch()),
+                on_click=self._launch,
             ).props("unelevated").classes(
                 f"w-full bg-[{COLORS['primary']}] text-white"
             )

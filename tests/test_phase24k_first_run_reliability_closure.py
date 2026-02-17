@@ -81,3 +81,11 @@ def test_dashboard_is_navigation_first_and_probe_actions_demoted():
     assert "def _run_bootstrap_all(" not in source
     assert "def _run_live_all(" not in source
     assert "_make_card_action_handler" not in source
+
+
+def test_notifications_include_background_context_fallback():
+    """Notifications should include a safe fallback for detached/background tasks."""
+    source = Path("ui/components/notifications.py").read_text(encoding="utf-8")
+    assert "except RuntimeError as exc" in source
+    assert "slot stack for this task is empty" in source
+    assert "[UI_NOTIFY_FALLBACK]" in source

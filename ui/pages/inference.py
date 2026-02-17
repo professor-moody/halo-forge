@@ -6,7 +6,6 @@ Configure and launch inference optimize/benchmark jobs.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -434,7 +433,7 @@ class Inference:
             launch_button = ui.button(
                 f"Launch {self.data.mode.title()}",
                 icon="play_arrow",
-                on_click=lambda: asyncio.create_task(self._launch()),
+                on_click=self._launch,
             ).props("unelevated").classes(
                 f"w-full bg-[{COLORS['primary']}] text-white"
             )

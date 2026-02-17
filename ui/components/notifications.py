@@ -29,13 +29,21 @@ def notify(
         type: NotificationType enum value
         duration: How long to show notification in milliseconds
     """
-    ui.notify(
-        message,
-        type=type.value,
-        timeout=duration,
-        close_button=True,
-        position='top-right',
-    )
+    try:
+        ui.notify(
+            message,
+            type=type.value,
+            timeout=duration,
+            close_button=True,
+            position='top-right',
+        )
+    except RuntimeError as exc:
+        text = str(exc)
+        if "slot stack for this task is empty" in text:
+            # Background tasks may not have a bound UI slot/client context.
+            print(f"[UI_NOTIFY_FALLBACK] type={type.value} message={message}")
+            return
+        raise
 
 
 def notify_job_started(job_name: str):

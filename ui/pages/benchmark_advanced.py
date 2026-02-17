@@ -6,7 +6,6 @@ Batch orchestration across non-code benchmark domains.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,7 +120,7 @@ class BenchmarkAdvanced:
                 ui.button(
                     "Launch Benchmark Batch",
                     icon="playlist_play",
-                    on_click=lambda: asyncio.create_task(self._launch_batch()),
+                    on_click=self._launch_batch,
                 ).props("unelevated").classes(
                     f"w-full bg-[{COLORS['primary']}] text-white"
                 )

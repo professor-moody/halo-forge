@@ -209,6 +209,21 @@ def test_ui_pages_support_query_param_preselection_contracts():
     assert "Diagnostics focus" in hub_source
 
 
+def test_launch_pages_avoid_detached_create_task_wrappers_for_primary_launch():
+    """Primary launch buttons should bind async handlers directly to keep UI context."""
+    inference_source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
+    assert "on_click=self._launch" in inference_source
+    assert "create_task(self._launch())" not in inference_source
+
+    ops_source = Path("ui/pages/ops_console.py").read_text(encoding="utf-8")
+    assert "on_click=self._launch" in ops_source
+    assert "create_task(self._launch())" not in ops_source
+
+    bench_adv_source = Path("ui/pages/benchmark_advanced.py").read_text(encoding="utf-8")
+    assert "on_click=self._launch_batch" in bench_adv_source
+    assert "create_task(self._launch_batch())" not in bench_adv_source
+
+
 def test_inference_readiness_banner_has_no_out_of_scope_filepicker_callback():
     """Inference readiness banner must not reference _set_path callback from _browse_file scope."""
     source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
