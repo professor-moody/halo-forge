@@ -73,3 +73,10 @@ def test_launch_buttons_use_input_validation_contracts():
     inference_source = Path("ui/pages/inference.py").read_text(encoding="utf-8")
     assert "def _validate_launch_inputs(" in inference_source
     assert "if not is_valid or self.is_running:" in inference_source
+
+
+def test_benchmark_page_avoids_duplicate_verifier_kwargs():
+    """Benchmark launch should pass verifier once even when preset cli args include it."""
+    source = Path("ui/pages/benchmark.py").read_text(encoding="utf-8")
+    assert 'extra_args.pop("verifier", None)' in source
+    assert "verifier=selected_verifier" in source

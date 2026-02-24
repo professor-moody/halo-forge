@@ -933,8 +933,15 @@ class Benchmark:
             model_name = Path(model).name
             output_path = f"{self.data.output_dir}/{model_name}-{self.data.preset.dataset}/benchmark.json"
             
-            # Merge preset CLI args with form values
+            # Merge preset CLI args with form values, avoiding duplicate keyword args.
             extra_args = dict(self.data.preset.cli_args)
+            selected_verifier = None
+            if self.data.benchmark_type == BenchmarkType.CODE:
+                selected_verifier = str(self.data.verifier or "").strip() or None
+                # Keep verifier explicit to avoid duplicate kwargs with preset cli_args.
+                extra_args.pop("verifier", None)
+            else:
+                extra_args.pop("verifier", None)
             
             # Launch benchmark
             job_id = await self.benchmark_service.launch_benchmark(
@@ -945,7 +952,7 @@ class Benchmark:
                 output_path=output_path,
                 source_ui_page="/benchmark",
                 samples_per_prompt=self.data.samples_per_prompt,
-                verifier=self.data.verifier if self.data.benchmark_type == BenchmarkType.CODE else None,
+                verifier=selected_verifier,
                 run_after_compile=self.data.run_after_compile,
                 **extra_args,
             )
