@@ -73,6 +73,7 @@ class Monitor:
         
         # References to dynamic UI elements for live updates
         self._duration_label = None
+        self._status_label = None
         self._duration_timer = None
         self._progress_percent_label = None
         self._progress_bar = None
@@ -306,7 +307,7 @@ class Monitor:
                 ui.element('div').classes(
                     f'w-2 h-2 rounded-full bg-[{color}]'
                 )
-            ui.label(status.capitalize()).classes(
+            self._status_label = ui.label(status.capitalize()).classes(
                 f'text-xs font-medium text-[{color}]'
             )
 
@@ -408,6 +409,17 @@ class Monitor:
         
         # Progress details (store references)
         with ui.row().classes('w-full gap-6 mt-2'):
+            if self.job.type == "benchmark":
+                with ui.row().classes('items-center gap-2'):
+                    ui.label('Evaluated:').classes(
+                        f'text-xs text-[{COLORS["text_muted"]}]'
+                    )
+                    total = self.job.total_steps or "?"
+                    self._step_label = ui.label(f'{self.job.current_step}/{total}').classes(
+                        f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
+                    )
+                return
+
             # Epoch/Cycle
             with ui.row().classes('items-center gap-2'):
                 is_cycle_job = self.job.type in CYCLE_BASED_JOB_TYPES
@@ -509,6 +521,9 @@ class Monitor:
     
     def _render_metrics_panel(self):
         """Render the current metrics panel with stored references for live updates."""
+        if self.job and self.job.type == "benchmark":
+            self._render_benchmark_metrics_panel()
+            return
         if self.job and self.job.type in QUALIFICATION_JOB_TYPES:
             self._render_qualification_metrics_panel()
             return
@@ -618,6 +633,28 @@ class Monitor:
                     ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
                     ui.label(summary[key]).classes(
                         f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                    )
+
+    def _render_benchmark_metrics_panel(self) -> None:
+        """Render benchmark-specific metrics summary."""
+        ui.label('Benchmark Metrics').classes(
+            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        summary = self._derive_benchmark_outcome()
+        with ui.column().classes('w-full gap-3 mt-2'):
+            for label, key in (
+                ("Status", "status"),
+                ("Evaluated", "evaluated"),
+                ("Pass@1", "pass_at_1"),
+                ("Pass@5", "pass_at_5"),
+                ("Pass@10", "pass_at_10"),
+                ("Pass Rate", "pass_rate"),
+                ("Output", "output_file"),
+            ):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    ui.label(summary[key]).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}] break-all text-right'
                     )
 
     def _render_live_probe_metrics_panel(self) -> None:
@@ -821,6 +858,66 @@ class Monitor:
             return None
         return payload if isinstance(payload, dict) else None
 
+    def _read_benchmark_result_payload(self) -> Optional[Dict[str, Any]]:
+        """Load benchmark result payload if present in job output."""
+        if not self.job or not self.job.output_dir:
+            return None
+        candidate = Path(self.job.output_dir) / "benchmark.json"
+        if not candidate.exists():
+            return None
+        try:
+            with open(candidate, encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _derive_benchmark_outcome(self) -> Dict[str, str]:
+        """Compute display-safe benchmark summary fields."""
+        payload = self._read_benchmark_result_payload() or {}
+
+        pass_at_k = payload.get("pass_at_k")
+        if isinstance(pass_at_k, dict):
+            pass_1 = pass_at_k.get("1", pass_at_k.get(1))
+            pass_5 = pass_at_k.get("5", pass_at_k.get(5))
+            pass_10 = pass_at_k.get("10", pass_at_k.get(10))
+        else:
+            pass_1 = payload.get("pass_at_1")
+            pass_5 = payload.get("pass_at_5")
+            pass_10 = payload.get("pass_at_10")
+
+        pass_rate = payload.get("pass_rate")
+        if pass_rate is None and pass_1 is not None:
+            pass_rate = pass_1
+
+        total = self.job.total_steps or payload.get("total_prompts") or payload.get("samples") or 0
+        current = self.job.current_step or payload.get("samples_evaluated") or payload.get("passed") or 0
+        if total and current and current > total:
+            total = current
+
+        output_file = "--"
+        if self.job and self.job.output_dir:
+            output_file = str(Path(self.job.output_dir) / "benchmark.json")
+
+        def _fmt(value):
+            if value is None:
+                return "--"
+            try:
+                parsed = float(value)
+                return f"{parsed:.4f}"
+            except (TypeError, ValueError):
+                return str(value)
+
+        return {
+            "status": str(self.job.status if self.job else "--"),
+            "evaluated": f"{current}/{total or '?'}",
+            "pass_at_1": _fmt(pass_1),
+            "pass_at_5": _fmt(pass_5),
+            "pass_at_10": _fmt(pass_10),
+            "pass_rate": _fmt(pass_rate),
+            "output_file": output_file,
+        }
+
     def _derive_live_probe_outcome(self) -> Dict[str, str]:
         """Compute display-safe live probe summary fields from report payload."""
         payload = self._read_live_probe_report_payload()
@@ -986,6 +1083,7 @@ class Monitor:
             notify_job_completed(self.job.name if self.job else "Job")
         except Exception:
             pass  # Notification failed due to context
+        self._update_metrics_display()
         self._cleanup_subscriptions()
     
     def _on_job_failed(self, event: Event):
@@ -999,6 +1097,7 @@ class Monitor:
             notify_job_failed(self.job.name if self.job else "Job", error_msg)
         except Exception:
             pass  # Notification failed due to context
+        self._update_metrics_display()
         self._cleanup_subscriptions()
     
     def _on_job_stopped(self, event: Event):
@@ -1011,6 +1110,7 @@ class Monitor:
             notify_training_stopped(self.job.name if self.job else "Job")
         except Exception:
             pass  # Notification failed due to context
+        self._update_metrics_display()
         self._cleanup_subscriptions()
     
     def _on_checkpoint(self, event: Event):
@@ -1072,6 +1172,8 @@ class Monitor:
             # Duration
             if self._duration_label:
                 self._duration_label.set_text(f'Duration: {self.job.duration_str}')
+            if self._status_label:
+                self._status_label.set_text(self.job.status.capitalize())
             
             # Progress
             if self._progress_percent_label:

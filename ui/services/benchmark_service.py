@@ -17,6 +17,7 @@ import asyncio
 import os
 import signal
 import sys
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -454,6 +455,8 @@ class BenchmarkService:
             name=f"Benchmark: {benchmark_name} ({Path(model).name})",
             output_dir=output_file.parent,
         )
+        if limit is not None and int(limit) > 0:
+            job.total_steps = int(limit)
         
         # Build command based on benchmark type
         cmd = self._build_command(
@@ -754,6 +757,40 @@ class BenchmarkService:
                         callback(line)
                     except Exception:
                         pass
+
+                # Parse lightweight benchmark progress/metrics from log lines.
+                line_lower = line.lower()
+                metrics_updated = False
+                if "samples evaluated" in line_lower:
+                    match = re.search(r"samples evaluated:\s*(\d+)", line, re.IGNORECASE)
+                    if match:
+                        job.current_step = int(match.group(1))
+                        if job.total_steps == 0 and job.current_step > 0:
+                            job.total_steps = job.current_step
+                        metrics_updated = True
+                elif "total_prompts" in line_lower:
+                    match = re.search(r"total_prompts:\s*(\d+)", line, re.IGNORECASE)
+                    if match:
+                        parsed_total = int(match.group(1))
+                        if parsed_total > 0:
+                            job.total_steps = parsed_total
+                            metrics_updated = True
+                elif "pass_at_1" in line_lower:
+                    match = re.search(r"pass_at_1:\s*([0-9]*\.?[0-9]+)", line, re.IGNORECASE)
+                    if match:
+                        job.verification_rate = float(match.group(1))
+                        metrics_updated = True
+
+                if metrics_updated:
+                    await event_bus.emit(Event(
+                        type=EventType.METRICS_UPDATE,
+                        job_id=job_id,
+                        data={
+                            "step": job.current_step,
+                            "total_steps": job.total_steps,
+                            "compile_rate": job.verification_rate,
+                        },
+                    ))
         
         except Exception as e:
             job.error_message = str(e)

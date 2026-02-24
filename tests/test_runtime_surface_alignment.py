@@ -100,6 +100,17 @@ def test_monitor_page_reads_canonical_training_summary_fields():
     assert "total_train_steps_executed" in source
     assert "final_train_loss" in source
     assert "self.benchmark_service.stop_job" in source
+    assert "def _render_benchmark_metrics_panel" in source
+    assert "def _derive_benchmark_outcome" in source
+    assert "Evaluated" in source
+
+
+def test_benchmark_service_parses_log_progress_for_monitor_updates():
+    """Benchmark service should parse samples evaluated/pass@1 from logs for live monitor progress."""
+    source = Path("ui/services/benchmark_service.py").read_text(encoding="utf-8")
+    assert "samples evaluated" in source.lower()
+    assert "pass_at_1" in source.lower()
+    assert "EventType.METRICS_UPDATE" in source
 
 
 def test_default_on_ops_routes_and_quick_actions_are_declared():
