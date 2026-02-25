@@ -94,11 +94,16 @@ Features:
 
 Real-time job monitoring with:
 - **Live Duration Counter**: Updates every second
-- **Progress Bar**: Visual step/epoch progress
-- **Loss Chart**: ECharts line graph with real-time updates
-- **Metrics Panel**: Loss, learning rate, gradient norm, verification rate
-- **Log Viewer**: Streaming logs with syntax highlighting
-- **Stop Button**: Graceful job termination with confirmation
+- **Job-Type-Aware Progress**:
+  - Training: epoch/cycle + step progress
+  - Benchmark: `evaluated / total` progress
+  - Inference/utility/diagnostics: explicit indeterminate progress when no true denominator exists
+- **Job-Type Panels**:
+  - Training: loss/update metrics
+  - Benchmark: evaluation metrics (`pass@k`, `pass_rate`, output path)
+  - Inference/Utility/Diagnostics: run-specific status and artifact fields
+- **Durable Log Continuity**: streamed lines are persisted to `job.log_file_path`, so refresh/reopen keeps log history
+- **Stop Button**: idempotent stop with safe terminal-state handling
 - **Failure recovery panel**: concise actions for failed/stopped runs (`Fix input`, `Re-open launch form`, `Retry with same config`)
 
 ### Config (`/config`)
@@ -139,11 +144,12 @@ Browse available datasets:
 
 ### Results (`/results`)
 
-Benchmark results table:
-- Model, Benchmark, Pass@1, Pass@5, Duration
+Run results table:
+- Training, benchmark, inference, utility, and diagnostics outputs
 - Multi-select for comparison
 - Sort by any column
 - Export to JSON/CSV
+- Diagnostics runs are hidden by default behind the advanced toggle
 
 ### Inference (`/inference`)
 

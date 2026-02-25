@@ -971,11 +971,15 @@ class BenchmarkService:
             True if job was stopped, False if not found or not running
         """
         job = self.state.get_job(job_id)
-        if not job or not job.process:
+        if not job:
+            return False
+        if job.status in {"stopped", "completed", "failed"}:
+            return True
+        if not job.process:
             return False
         
         if job.status != "running":
-            return False
+            return job.status in {"stopped", "completed", "failed"}
 
         job.stop_requested = True
         

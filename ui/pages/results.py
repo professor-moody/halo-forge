@@ -67,9 +67,13 @@ class Results:
     def render(self):
         with ui.column().classes("page-content w-full gap-6 p-6"):
             with ui.row().classes("w-full items-center justify-between animate-in"):
-                ui.label("Benchmark Results").classes(
-                    f'text-2xl font-bold text-[{COLORS["text_primary"]}]'
-                )
+                with ui.column().classes("gap-1"):
+                    ui.label("Run Results").classes(
+                        f'text-2xl font-bold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label("Training, benchmark, utility, and diagnostics run outputs.").classes(
+                        f'text-sm text-[{COLORS["text_secondary"]}]'
+                    )
                 with ui.row().classes("items-center gap-2"):
                     ui.button("Refresh", icon="refresh", on_click=self._refresh).props("flat")
                     ui.button("Export", icon="download", on_click=self._export).props("flat")

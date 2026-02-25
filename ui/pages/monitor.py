@@ -34,10 +34,13 @@ from ui.components.notifications import (
 )
 
 CYCLE_BASED_JOB_TYPES = {"raft", "vlm", "audio", "reasoning", "agentic"}
+TRAINING_JOB_TYPES = {"sft"} | CYCLE_BASED_JOB_TYPES
 UTILITY_JOB_TYPES = {"config", "data", "info", "plot"}
 QUALIFICATION_JOB_TYPES = {"qualification"}
 BOOTSTRAP_JOB_TYPES = {"bootstrap"}
 LIVE_PROBE_JOB_TYPES = {"live_probe"}
+DIAGNOSTIC_JOB_TYPES = QUALIFICATION_JOB_TYPES | BOOTSTRAP_JOB_TYPES | LIVE_PROBE_JOB_TYPES
+INDETERMINATE_PROGRESS_JOB_TYPES = {"inference"} | UTILITY_JOB_TYPES | DIAGNOSTIC_JOB_TYPES
 
 TRAINING_FIX_ROUTES = {
     "sft": "/training?mode=sft&ui_mode=quickstart&preset=sft_fast_local",
@@ -92,6 +95,9 @@ class Monitor:
         self._resume_label = None
         self._failure_reason_label = None
         self._benchmark_metric_labels: Dict[str, Any] = {}
+        self._inference_metric_labels: Dict[str, Any] = {}
+        self._utility_metric_labels: Dict[str, Any] = {}
+        self._diagnostic_metric_labels: Dict[str, Any] = {}
         
         if job_id:
             self.job = state.get_job(job_id)
@@ -129,6 +135,8 @@ class Monitor:
                 output_dir / f"{self.job_id}_training.log",
                 output_dir / f"{self.job_id}_benchmark.log",
                 output_dir / f"{self.job_id}_inference.log",
+                output_dir / f"{self.job_id}_{self.job.type}.log",
+                output_dir / "stdout.log",
             ]
             for candidate in candidates:
                 if candidate.exists():
@@ -169,6 +177,23 @@ class Monitor:
         if total > 0 and current > total:
             total = current
         return current, total
+
+    def _resolve_progress_display(self) -> tuple[str, str]:
+        """Resolve progress percent and counter labels for the current job."""
+        if not self.job:
+            return "--", "--"
+        if self.job.type == "benchmark":
+            current, total = self._resolve_benchmark_progress_counts()
+            if total > 0:
+                return f"{(float(current) / float(total) * 100.0):.1f}%", f"{current}/{total}"
+            return "--", f"{current}/?"
+        if self.job.type in INDETERMINATE_PROGRESS_JOB_TYPES:
+            current = int(self.job.current_step or 0)
+            total = int(self.job.total_steps or 0)
+            if total > 0:
+                return f"{(float(current) / float(total) * 100.0):.1f}%", f"{current}/{total}"
+            return "—", "indeterminate"
+        return f"{self.job.progress_percent:.1f}%", f"{self.job.current_step}/{self.job.total_steps or '?'}"
 
     def _get_launch_context_path(self) -> Optional[Path]:
         """Resolve persisted launch context for the current job."""
@@ -428,12 +453,13 @@ class Monitor:
     
     def _render_progress(self):
         """Render the progress section."""
+        progress_text, counter_text = self._resolve_progress_display()
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('Progress').classes(
                 f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
             )
             # Store reference for live updates
-            self._progress_percent_label = ui.label(f'{self.job.progress_percent:.1f}%').classes(
+            self._progress_percent_label = ui.label(progress_text).classes(
                 f'text-sm font-mono text-[{COLORS["accent"]}]'
             )
         
@@ -441,19 +467,37 @@ class Monitor:
         with ui.element('div').classes(
             f'w-full h-2 rounded-full bg-[{COLORS["bg_secondary"]}] overflow-hidden'
         ):
+            initial_width = "0%"
+            if self.job and self.job.type not in INDETERMINATE_PROGRESS_JOB_TYPES:
+                initial_width = f"{self.job.progress_percent}%"
+            elif self.job and self.job.type == "benchmark" and "/" in counter_text:
+                try:
+                    current, total = counter_text.split("/", 1)
+                    if total not in {"?", "0"} and int(total) > 0:
+                        initial_width = f"{(int(current) / int(total)) * 100.0}%"
+                except Exception:
+                    initial_width = "0%"
             self._progress_bar = ui.element('div').classes(
                 f'h-full bg-[{COLORS["primary"]}] progress-fill rounded-full'
-            ).style(f'width: {self.job.progress_percent}%')
+            ).style(f'width: {initial_width}')
         
         # Progress details (store references)
         with ui.row().classes('w-full gap-6 mt-2'):
             if self.job.type == "benchmark":
-                current, total = self._resolve_benchmark_progress_counts()
                 with ui.row().classes('items-center gap-2'):
                     ui.label('Evaluated:').classes(
                         f'text-xs text-[{COLORS["text_muted"]}]'
                     )
-                    self._step_label = ui.label(f'{current}/{total or "?"}').classes(
+                    self._step_label = ui.label(counter_text).classes(
+                        f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
+                    )
+                return
+            if self.job.type in INDETERMINATE_PROGRESS_JOB_TYPES:
+                with ui.row().classes('items-center gap-2'):
+                    ui.label('Progress:').classes(
+                        f'text-xs text-[{COLORS["text_muted"]}]'
+                    )
+                    self._step_label = ui.label(counter_text).classes(
                         f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
                     )
                 return
@@ -490,6 +534,24 @@ class Monitor:
     
     def _render_chart_section(self):
         """Render the loss chart section."""
+        if self.job and self.job.type not in TRAINING_JOB_TYPES:
+            title = "Benchmark Timeline" if self.job.type == "benchmark" else "Run Timeline"
+            ui.label(title).classes(
+                f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+            )
+            with ui.column().classes(
+                f'w-full h-64 items-center justify-center gap-3 rounded-lg '
+                f'bg-[{COLORS["bg_primary"]}] border border-[#2d343c]'
+            ):
+                ui.icon("timeline", size="28px").classes(f'text-[{COLORS["text_muted"]}]')
+                ui.label("This run does not emit training-loss curves.").classes(
+                    f'text-sm text-[{COLORS["text_secondary"]}]'
+                )
+                ui.label("Use the metrics panel and logs for live execution status.").classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
+            return
+
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('Training Loss').classes(
                 f'text-base font-semibold text-[{COLORS["text_primary"]}]'
@@ -562,11 +624,14 @@ class Monitor:
         if self.job and self.job.type == "benchmark":
             self._render_benchmark_metrics_panel()
             return
-        if self.job and self.job.type in QUALIFICATION_JOB_TYPES:
-            self._render_qualification_metrics_panel()
+        if self.job and self.job.type == "inference":
+            self._render_inference_metrics_panel()
             return
-        if self.job and self.job.type in LIVE_PROBE_JOB_TYPES:
-            self._render_live_probe_metrics_panel()
+        if self.job and self.job.type in UTILITY_JOB_TYPES:
+            self._render_utility_metrics_panel()
+            return
+        if self.job and self.job.type in DIAGNOSTIC_JOB_TYPES:
+            self._render_diagnostics_metrics_panel()
             return
 
         ui.label('Current Metrics').classes(
@@ -651,6 +716,50 @@ class Monitor:
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
 
+    def _render_inference_metrics_panel(self) -> None:
+        """Render inference-specific metrics summary."""
+        ui.label('Inference Metrics').classes(
+            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        summary = self._derive_inference_outcome()
+        self._inference_metric_labels = {}
+        with ui.column().classes('w-full gap-3 mt-2'):
+            for label, key in (
+                ("Status", "status"),
+                ("Mode", "mode"),
+                ("Model", "model"),
+                ("Output", "output_dir"),
+                ("Target", "target"),
+            ):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    value_label = ui.label(summary[key]).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}] break-all text-right'
+                    )
+                    self._inference_metric_labels[key] = value_label
+
+    def _render_utility_metrics_panel(self) -> None:
+        """Render utility run metrics summary."""
+        ui.label('Utility Run Metrics').classes(
+            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        summary = self._derive_utility_outcome()
+        self._utility_metric_labels = {}
+        with ui.column().classes('w-full gap-3 mt-2'):
+            for label, key in (
+                ("Status", "status"),
+                ("Module", "module"),
+                ("Execution Mode", "execution_mode"),
+                ("Output", "output_dir"),
+                ("Command", "command"),
+            ):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    value_label = ui.label(summary[key]).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}] break-all text-right'
+                    )
+                    self._utility_metric_labels[key] = value_label
+
     def _render_qualification_metrics_panel(self) -> None:
         """Render qualification-specific metrics summary."""
         ui.label('Qualification Metrics').classes(
@@ -696,6 +805,55 @@ class Monitor:
                         f'text-sm font-mono text-[{COLORS["text_primary"]}] break-all text-right'
                     )
                     self._benchmark_metric_labels[key] = value_label
+
+    def _render_diagnostics_metrics_panel(self) -> None:
+        """Render diagnostics-specific metrics summary for qualification/bootstrap/live jobs."""
+        self._diagnostic_metric_labels = {}
+        if self.job and self.job.type in QUALIFICATION_JOB_TYPES:
+            title = "Setup Check Metrics"
+            summary = self._derive_qualification_outcome()
+            fields = (
+                ("Status", "status"),
+                ("Pass Count", "pass_count"),
+                ("Warn Count", "warn_count"),
+                ("Fail Count", "fail_count"),
+                ("Top Issue", "top_issue"),
+                ("Profile", "profile"),
+            )
+        elif self.job and self.job.type in BOOTSTRAP_JOB_TYPES:
+            title = "Setup Files Metrics"
+            summary = self._derive_bootstrap_outcome()
+            fields = (
+                ("Status", "status"),
+                ("Pass Count", "pass_count"),
+                ("Warn Count", "warn_count"),
+                ("Fail Count", "fail_count"),
+                ("Top Issue", "top_issue"),
+                ("Profile", "profile"),
+            )
+        else:
+            title = "System Health Metrics"
+            summary = self._derive_live_probe_outcome()
+            fields = (
+                ("Status", "status"),
+                ("Pass Count", "pass_count"),
+                ("Warn Count", "warn_count"),
+                ("Fail Count", "fail_count"),
+                ("Top Issue", "top_issue"),
+                ("Profile", "profile"),
+            )
+
+        ui.label(title).classes(
+            f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        )
+        with ui.column().classes('w-full gap-3 mt-2'):
+            for label, key in fields:
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                    value_label = ui.label(summary[key]).classes(
+                        f'text-sm font-mono text-[{COLORS["text_primary"]}] break-all text-right'
+                    )
+                    self._diagnostic_metric_labels[key] = value_label
 
     def _render_live_probe_metrics_panel(self) -> None:
         """Render live-probe-specific metrics summary."""
@@ -971,6 +1129,111 @@ class Monitor:
             "output_file": output_file,
         }
 
+    def _derive_inference_outcome(self) -> Dict[str, str]:
+        """Compute display-safe inference summary fields."""
+        mode = "--"
+        model = "--"
+        target = "--"
+        output_dir = str(self.job.output_dir) if self.job and self.job.output_dir else "--"
+        if self.job and isinstance(self.job.launch_args, dict):
+            mode = str(self.job.launch_args.get("mode") or "--")
+            model = str(self.job.launch_args.get("model") or "--")
+            if mode == "optimize":
+                precision = str(self.job.launch_args.get("target_precision") or "--")
+                latency = self.job.launch_args.get("target_latency")
+                target = f"{precision} @ {latency}ms" if latency is not None else precision
+            elif mode == "benchmark":
+                prompts = self.job.launch_args.get("num_prompts")
+                target = f"{prompts} prompts" if prompts is not None else "--"
+        return {
+            "status": str(self.job.status if self.job else "--"),
+            "mode": mode,
+            "model": Path(model).name if model not in {"", "--"} else "--",
+            "output_dir": output_dir,
+            "target": str(target),
+        }
+
+    def _derive_utility_outcome(self) -> Dict[str, str]:
+        """Compute display-safe utility run summary fields."""
+        execution_mode = "--"
+        command = "--"
+        if self.job and isinstance(self.job.launch_args, dict):
+            execution_mode = str(self.job.launch_args.get("execution_mode") or "--")
+        launch_context = self._get_launch_context()
+        if launch_context and launch_context.command:
+            command = " ".join(str(part) for part in launch_context.command[:4])
+            if len(launch_context.command) > 4:
+                command += " ..."
+        return {
+            "status": str(self.job.status if self.job else "--"),
+            "module": str(self.job.type if self.job else "--"),
+            "execution_mode": execution_mode,
+            "output_dir": str(self.job.output_dir) if self.job and self.job.output_dir else "--",
+            "command": command,
+        }
+
+    def _read_bootstrap_report_payload(self) -> Optional[Dict[str, Any]]:
+        """Load bootstrap report payload if present in job output."""
+        if not self.job or not self.job.output_dir:
+            return None
+        candidate = Path(self.job.output_dir) / "all_module_bootstrap.v1.json"
+        if not candidate.exists():
+            return None
+        try:
+            with open(candidate, encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _derive_bootstrap_outcome(self) -> Dict[str, str]:
+        """Compute display-safe bootstrap summary fields from report payload."""
+        payload = self._read_bootstrap_report_payload()
+        if not payload:
+            return {
+                "status": "--",
+                "pass_count": "--",
+                "warn_count": "--",
+                "fail_count": "--",
+                "top_issue": "--",
+                "profile": "--",
+            }
+
+        modules = payload.get("modules") if isinstance(payload.get("modules"), dict) else {}
+        pass_count = 0
+        warn_count = 0
+        fail_count = 0
+        top_issue = "--"
+        for _, entry in modules.items():
+            if not isinstance(entry, dict):
+                continue
+            status = str(entry.get("status") or "warn").strip().lower()
+            if status == "pass":
+                pass_count += 1
+            elif status == "fail":
+                fail_count += 1
+                if top_issue == "--" and entry.get("errors"):
+                    top_issue = str(entry.get("errors")[0])
+            else:
+                warn_count += 1
+                if top_issue == "--" and entry.get("warnings"):
+                    top_issue = str(entry.get("warnings")[0])
+
+        overall_status = "pass"
+        if fail_count > 0:
+            overall_status = "fail"
+        elif warn_count > 0:
+            overall_status = "warn"
+
+        return {
+            "status": overall_status,
+            "pass_count": str(pass_count),
+            "warn_count": str(warn_count),
+            "fail_count": str(fail_count),
+            "top_issue": top_issue,
+            "profile": str(payload.get("profile") or "--"),
+        }
+
     def _derive_live_probe_outcome(self) -> Dict[str, str]:
         """Compute display-safe live probe summary fields from report payload."""
         payload = self._read_live_probe_report_payload()
@@ -1021,8 +1284,18 @@ class Monitor:
     
     def _render_log_viewer(self):
         """Render the log viewer section."""
+        title = "Run Logs"
+        if self.job:
+            if self.job.type in TRAINING_JOB_TYPES:
+                title = "Training Logs"
+            elif self.job.type == "benchmark":
+                title = "Benchmark Logs"
+            elif self.job.type == "inference":
+                title = "Inference Logs"
+            elif self.job.type in DIAGNOSTIC_JOB_TYPES:
+                title = "Diagnostics Logs"
         with ui.row().classes('w-full items-center justify-between'):
-            ui.label('Training Logs').classes(
+            ui.label(title).classes(
                 f'text-base font-semibold text-[{COLORS["text_primary"]}]'
             )
             
@@ -1225,20 +1498,16 @@ class Monitor:
                 self._status_label.set_text(self.job.status.capitalize())
             
             # Progress
-            if self.job.type == "benchmark":
-                current, total = self._resolve_benchmark_progress_counts()
-                progress_percent = (float(current) / float(total) * 100.0) if total > 0 else 0.0
-                if self._progress_percent_label:
-                    self._progress_percent_label.set_text(f'{progress_percent:.1f}%')
-                if self._progress_bar:
-                    self._progress_bar.style(f'width: {progress_percent}%')
-                if self._step_label:
-                    self._step_label.set_text(f'{current}/{total or "?"}')
-            else:
-                if self._progress_percent_label:
-                    self._progress_percent_label.set_text(f'{self.job.progress_percent:.1f}%')
-                if self._progress_bar:
-                    self._progress_bar.style(f'width: {self.job.progress_percent}%')
+            progress_text, counter_text = self._resolve_progress_display()
+            if self._progress_percent_label:
+                self._progress_percent_label.set_text(progress_text)
+            if self._progress_bar:
+                if progress_text.endswith("%"):
+                    self._progress_bar.style(f'width: {progress_text.rstrip("%")}%')
+                else:
+                    self._progress_bar.style('width: 0%')
+            if self._step_label:
+                self._step_label.set_text(counter_text)
             
             # Epoch/Cycle
             if self._epoch_label:
@@ -1254,7 +1523,7 @@ class Monitor:
                     self._epoch_label.set_text(f'{epoch_str}/{self.job.total_epochs}')
             
             # Step
-            if self._step_label and self.job.type != "benchmark":
+            if self._step_label and self.job.type in TRAINING_JOB_TYPES:
                 self._step_label.set_text(f'{self.job.current_step}/{self.job.total_steps or "?"}')
             
             # Metrics
@@ -1296,12 +1565,34 @@ class Monitor:
                 for key, label_ref in self._benchmark_metric_labels.items():
                     if label_ref:
                         label_ref.set_text(benchmark_summary.get(key, "--"))
+            if self._inference_metric_labels:
+                inference_summary = self._derive_inference_outcome()
+                for key, label_ref in self._inference_metric_labels.items():
+                    if label_ref:
+                        label_ref.set_text(inference_summary.get(key, "--"))
+            if self._utility_metric_labels:
+                utility_summary = self._derive_utility_outcome()
+                for key, label_ref in self._utility_metric_labels.items():
+                    if label_ref:
+                        label_ref.set_text(utility_summary.get(key, "--"))
+            if self._diagnostic_metric_labels:
+                if self.job.type in QUALIFICATION_JOB_TYPES:
+                    diagnostics_summary = self._derive_qualification_outcome()
+                elif self.job.type in BOOTSTRAP_JOB_TYPES:
+                    diagnostics_summary = self._derive_bootstrap_outcome()
+                else:
+                    diagnostics_summary = self._derive_live_probe_outcome()
+                for key, label_ref in self._diagnostic_metric_labels.items():
+                    if label_ref:
+                        label_ref.set_text(diagnostics_summary.get(key, "--"))
         except Exception:
             pass  # UI context may be invalid
     
     def _update_chart(self):
         """Update the loss chart with new data."""
         try:
+            if not self.job or self.job.type not in TRAINING_JOB_TYPES:
+                return
             if hasattr(self, 'chart') and self.chart:
                 loss_data = self._get_loss_data()
                 self.chart.options['series'][0]['data'] = loss_data
@@ -1319,8 +1610,8 @@ class Monitor:
         new_lines = self._all_log_lines[self._displayed_log_count:]
         
         if not new_lines and self._displayed_log_count == 0:
-            # Fallback: Get logs from training service if no logs loaded
-            logs = self.training_service.get_logs(self.job_id, last_n=100)
+            # Fallback: Get logs from in-memory service buffer if no file logs loaded yet.
+            logs = self._service_logs_for_job()
             for entry in logs:
                 line = entry.get('line', '')
                 timestamp = entry.get('timestamp', '')
@@ -1374,7 +1665,7 @@ class Monitor:
                 ui.button('Cancel', on_click=dialog.close).props('flat').classes(
                     f'text-[{COLORS["text_secondary"]}]'
                 )
-                ui.button('Stop', on_click=lambda: asyncio.create_task(self._confirm_stop(dialog))).props(
+                ui.button('Stop', on_click=lambda: self._confirm_stop(dialog)).props(
                     'unelevated'
                 ).classes(f'bg-[{COLORS["error"]}] text-white')
         
@@ -1385,26 +1676,40 @@ class Monitor:
         dialog.close()
         
         if self.job:
+            success = False
             # Route stop calls by job type.
-            if self.job.type == "benchmark":
-                success = await self.benchmark_service.stop_job(self.job.id)
-            elif self.job.type == "inference":
-                success = await self.inference_service.stop_job(self.job.id)
-            elif self.job.type in UTILITY_JOB_TYPES:
-                success = await self.module_ops_service.stop_job(self.job.id)
-            elif self.job.type in QUALIFICATION_JOB_TYPES:
-                success = await self.qualification_service.stop_job(self.job.id)
-            elif self.job.type in BOOTSTRAP_JOB_TYPES:
-                success = await self.bootstrap_service.stop_job(self.job.id)
-            elif self.job.type in LIVE_PROBE_JOB_TYPES:
-                success = await self.live_probe_service.stop_job(self.job.id)
-            else:
-                success = await self.training_service.stop_job(self.job.id)
+            try:
+                if self.job.type == "benchmark":
+                    success = await self.benchmark_service.stop_job(self.job.id)
+                elif self.job.type == "inference":
+                    success = await self.inference_service.stop_job(self.job.id)
+                elif self.job.type in UTILITY_JOB_TYPES:
+                    success = await self.module_ops_service.stop_job(self.job.id)
+                elif self.job.type in QUALIFICATION_JOB_TYPES:
+                    success = await self.qualification_service.stop_job(self.job.id)
+                elif self.job.type in BOOTSTRAP_JOB_TYPES:
+                    success = await self.bootstrap_service.stop_job(self.job.id)
+                elif self.job.type in LIVE_PROBE_JOB_TYPES:
+                    success = await self.live_probe_service.stop_job(self.job.id)
+                else:
+                    success = await self.training_service.stop_job(self.job.id)
+            except Exception as e:
+                try:
+                    notify_job_failed(self.job.name, f"Stop failed: {e}")
+                except Exception:
+                    pass
+                return
+
+            refreshed_job = state.get_job(self.job_id)
+            if refreshed_job and refreshed_job.status in {"stopped", "completed", "failed"}:
+                success = True
             
             try:
                 if success:
                     notify_training_stopped(self.job.name)
-                    self.job = state.get_job(self.job_id)  # Refresh job state
+                    self.job = refreshed_job or state.get_job(self.job_id)
+                    # Re-render route so header controls match terminal status.
+                    ui.navigate.to(f"/monitor/{self.job_id}")
                 else:
                     notify_job_failed(self.job.name, "Failed to stop job")
             except Exception:
@@ -1650,7 +1955,7 @@ class MonitorList:
         )
 
     def _is_advanced_diagnostics_job(self, job: JobState) -> bool:
-        return job.type in (QUALIFICATION_JOB_TYPES | BOOTSTRAP_JOB_TYPES | LIVE_PROBE_JOB_TYPES)
+        return job.type in DIAGNOSTIC_JOB_TYPES
 
     def _on_toggle_advanced(self, value: bool) -> None:
         self.show_advanced_diagnostics = bool(value)
@@ -1757,9 +2062,14 @@ class MonitorList:
             
             # Progress or status
             if job.status == 'running':
-                ui.label(f'{job.progress_percent:.0f}%').classes(
-                    f'text-sm font-mono text-[{COLORS["primary"]}]'
-                )
+                if job.type in INDETERMINATE_PROGRESS_JOB_TYPES and job.total_steps == 0:
+                    ui.label('—').classes(
+                        f'text-sm font-mono text-[{COLORS["text_muted"]}]'
+                    )
+                else:
+                    ui.label(f'{job.progress_percent:.0f}%').classes(
+                        f'text-sm font-mono text-[{COLORS["primary"]}]'
+                    )
             else:
                 ui.label(job.status.capitalize()).classes(
                     f'text-xs text-[{status_color}]'

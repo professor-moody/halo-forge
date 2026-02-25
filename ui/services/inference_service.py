@@ -503,6 +503,14 @@ class InferenceService:
                 )
             )
 
+        if job.output_dir:
+            try:
+                log_path = Path(job.output_dir) / f"{job_id}_inference.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                job.log_file_path = log_path
+            except Exception:
+                pass
+
         asyncio.create_task(self._stream_logs(job_id))
 
     async def _stream_logs(self, job_id: str) -> None:
@@ -513,6 +521,12 @@ class InferenceService:
         log_buffer = self._log_buffers.get(job_id, deque(maxlen=1000))
         callbacks = self._callbacks.get(job_id, [])
         event_bus = get_event_bus()
+        log_file = None
+        if job.log_file_path:
+            try:
+                log_file = open(job.log_file_path, "a", encoding="utf-8")
+            except Exception:
+                log_file = None
 
         try:
             async for line_bytes in job.process.stdout:
@@ -522,6 +536,12 @@ class InferenceService:
 
                 timestamp = datetime.now().isoformat()
                 log_buffer.append({"timestamp": timestamp, "line": line})
+                if log_file:
+                    try:
+                        log_file.write(f"[{timestamp}] {line}\n")
+                        log_file.flush()
+                    except Exception:
+                        pass
                 await event_bus.emit(
                     Event(
                         type=EventType.LOG_LINE,
@@ -536,6 +556,12 @@ class InferenceService:
                         pass
         except Exception as e:
             job.error_message = str(e)
+        finally:
+            if log_file:
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
 
         return_code = await job.process.wait()
         if job.stop_requested:
@@ -636,10 +662,14 @@ class InferenceService:
     async def stop_job(self, job_id: str, timeout: float = 30.0) -> bool:
         """Stop a running inference job."""
         job = self.state.get_job(job_id)
-        if not job or not job.process:
+        if not job:
+            return False
+        if job.status in {"stopped", "completed", "failed"}:
+            return True
+        if not job.process:
             return False
         if job.status != "running":
-            return False
+            return job.status in {"stopped", "completed", "failed"}
 
         job.stop_requested = True
         try:

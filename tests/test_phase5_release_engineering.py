@@ -44,6 +44,7 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert "tests/test_phase25_quickstart_user_flow_and_launch_hub.py" in content
     assert "tests/test_phase26_diagnostics_isolation_and_training_clarity.py" in content
     assert "tests/test_phase27_training_onboarding_first_run_success.py" in content
+    assert "tests/test_phase28_monitor_truth_and_visual_finish.py" in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "scripts/run_ops_module_matrix.py" in content
     assert "scripts/run_ops_e2e_reliability.py" in content

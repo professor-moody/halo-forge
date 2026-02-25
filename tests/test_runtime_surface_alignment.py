@@ -107,7 +107,10 @@ def test_monitor_page_reads_canonical_training_summary_fields():
     assert "benchmark_pass_at_5" in source
     assert "benchmark_pass_at_10" in source
     assert "def _resolve_benchmark_progress_counts" in source
+    assert "def _resolve_progress_display" in source
     assert "_benchmark.log" in source
+    assert "stdout.log" in source
+    assert "indeterminate" in source
 
 
 def test_benchmark_service_parses_log_progress_for_monitor_updates():
@@ -120,6 +123,25 @@ def test_benchmark_service_parses_log_progress_for_monitor_updates():
     assert "benchmark_pass_rate" in source
     assert "EventType.METRICS_UPDATE" in source
     assert "_benchmark.log" in source
+
+
+def test_non_training_services_persist_log_file_paths_for_monitor_reload():
+    """Inference/module ops/diagnostics services should populate job.log_file_path."""
+    inference_source = Path("ui/services/inference_service.py").read_text(encoding="utf-8")
+    assert "job.log_file_path" in inference_source
+    assert "_inference.log" in inference_source
+
+    module_ops_source = Path("ui/services/module_ops_service.py").read_text(encoding="utf-8")
+    assert "job.log_file_path = stdout_log_path" in module_ops_source
+
+    qualification_source = Path("ui/services/qualification_service.py").read_text(encoding="utf-8")
+    assert "job.log_file_path = stdout_log_path" in qualification_source
+
+    bootstrap_source = Path("ui/services/bootstrap_service.py").read_text(encoding="utf-8")
+    assert "job.log_file_path = stdout_log_path" in bootstrap_source
+
+    live_probe_source = Path("ui/services/live_probe_service.py").read_text(encoding="utf-8")
+    assert "job.log_file_path = stdout_log" in live_probe_source
 
 
 def test_default_on_ops_routes_and_quick_actions_are_declared():
@@ -242,6 +264,14 @@ def test_launch_pages_avoid_detached_create_task_wrappers_for_primary_launch():
     bench_adv_source = Path("ui/pages/benchmark_advanced.py").read_text(encoding="utf-8")
     assert "on_click=self._launch_batch" in bench_adv_source
     assert "create_task(self._launch_batch())" not in bench_adv_source
+
+
+def test_monitor_stop_confirmation_avoids_detached_task_and_rerenders():
+    """Monitor stop confirmation should execute in UI context and rerender monitor route."""
+    source = Path("ui/pages/monitor.py").read_text(encoding="utf-8")
+    assert "create_task(self._confirm_stop(dialog))" not in source
+    assert "on_click=lambda: self._confirm_stop(dialog)" in source
+    assert 'ui.navigate.to(f"/monitor/{self.job_id}")' in source
 
 
 def test_inference_readiness_banner_has_no_out_of_scope_filepicker_callback():

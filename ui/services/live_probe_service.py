@@ -346,6 +346,7 @@ class LiveProbeService:
         stdout_file = None
         if stdout_log:
             stdout_log.parent.mkdir(parents=True, exist_ok=True)
+            job.log_file_path = stdout_log
             stdout_file = stdout_log.open("a", encoding="utf-8")
 
         event_bus = get_event_bus()
@@ -490,10 +491,14 @@ class LiveProbeService:
     async def stop_job(self, job_id: str, timeout: float = 30.0) -> bool:
         """Stop a running live probe job."""
         job = self.state.get_job(job_id)
-        if not job or not job.process:
+        if not job:
+            return False
+        if job.status in {"stopped", "completed", "failed"}:
+            return True
+        if not job.process:
             return False
         if job.status != "running":
-            return False
+            return job.status in {"stopped", "completed", "failed"}
 
         job.stop_requested = True
         try:
