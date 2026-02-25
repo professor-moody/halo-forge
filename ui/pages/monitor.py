@@ -91,6 +91,7 @@ class Monitor:
         self._seed_label = None
         self._resume_label = None
         self._failure_reason_label = None
+        self._benchmark_metric_labels: Dict[str, Any] = {}
         
         if job_id:
             self.job = state.get_job(job_id)
@@ -103,13 +104,8 @@ class Monitor:
             return
         
         # Try job's log_file_path first
-        log_file_path = self.job.log_file_path
-        
-        # Fallback: construct path from output_dir
-        if not log_file_path and self.job.output_dir:
-            log_file_path = Path(self.job.output_dir) / f"{self.job_id}_training.log"
-        
-        if log_file_path and Path(log_file_path).exists():
+        log_file_path = self._get_log_file_path()
+        if log_file_path and log_file_path.exists():
             try:
                 with open(log_file_path, 'r', encoding='utf-8') as f:
                     for line in f:
@@ -128,9 +124,51 @@ class Monitor:
             return Path(self.job.log_file_path)
         
         if self.job.output_dir:
-            return Path(self.job.output_dir) / f"{self.job_id}_training.log"
+            output_dir = Path(self.job.output_dir)
+            candidates = [
+                output_dir / f"{self.job_id}_training.log",
+                output_dir / f"{self.job_id}_benchmark.log",
+                output_dir / f"{self.job_id}_inference.log",
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    return candidate
+            return candidates[0]
         
         return None
+
+    def _resolve_benchmark_progress_counts(self) -> tuple[int, int]:
+        """Resolve benchmark evaluated/total counts from state, result payload, and lifecycle metadata."""
+        payload = self._read_benchmark_result_payload() or {}
+        lifecycle = (
+            self.job.lifecycle_metadata
+            if self.job and isinstance(self.job.lifecycle_metadata, dict)
+            else {}
+        )
+
+        def _to_int(value: Any) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
+        total = (
+            _to_int(self.job.total_steps if self.job else 0)
+            or _to_int(payload.get("total_prompts"))
+            or _to_int(payload.get("samples"))
+            or _to_int(lifecycle.get("benchmark_total_prompts"))
+        )
+        current = (
+            _to_int(self.job.current_step if self.job else 0)
+            or _to_int(payload.get("samples_evaluated"))
+            or _to_int(payload.get("passed"))
+            or _to_int(lifecycle.get("benchmark_samples_evaluated"))
+            or _to_int(lifecycle.get("benchmark_passed"))
+        )
+
+        if total > 0 and current > total:
+            total = current
+        return current, total
 
     def _get_launch_context_path(self) -> Optional[Path]:
         """Resolve persisted launch context for the current job."""
@@ -410,12 +448,12 @@ class Monitor:
         # Progress details (store references)
         with ui.row().classes('w-full gap-6 mt-2'):
             if self.job.type == "benchmark":
+                current, total = self._resolve_benchmark_progress_counts()
                 with ui.row().classes('items-center gap-2'):
                     ui.label('Evaluated:').classes(
                         f'text-xs text-[{COLORS["text_muted"]}]'
                     )
-                    total = self.job.total_steps or "?"
-                    self._step_label = ui.label(f'{self.job.current_step}/{total}').classes(
+                    self._step_label = ui.label(f'{current}/{total or "?"}').classes(
                         f'text-sm font-mono text-[{COLORS["text_secondary"]}]'
                     )
                 return
@@ -641,6 +679,7 @@ class Monitor:
             f'text-base font-semibold text-[{COLORS["text_primary"]}]'
         )
         summary = self._derive_benchmark_outcome()
+        self._benchmark_metric_labels = {}
         with ui.column().classes('w-full gap-3 mt-2'):
             for label, key in (
                 ("Status", "status"),
@@ -653,9 +692,10 @@ class Monitor:
             ):
                 with ui.row().classes('w-full items-center justify-between'):
                     ui.label(label).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                    ui.label(summary[key]).classes(
+                    value_label = ui.label(summary[key]).classes(
                         f'text-sm font-mono text-[{COLORS["text_primary"]}] break-all text-right'
                     )
+                    self._benchmark_metric_labels[key] = value_label
 
     def _render_live_probe_metrics_panel(self) -> None:
         """Render live-probe-specific metrics summary."""
@@ -875,6 +915,11 @@ class Monitor:
     def _derive_benchmark_outcome(self) -> Dict[str, str]:
         """Compute display-safe benchmark summary fields."""
         payload = self._read_benchmark_result_payload() or {}
+        lifecycle = (
+            self.job.lifecycle_metadata
+            if self.job and isinstance(self.job.lifecycle_metadata, dict)
+            else {}
+        )
 
         pass_at_k = payload.get("pass_at_k")
         if isinstance(pass_at_k, dict):
@@ -886,14 +931,22 @@ class Monitor:
             pass_5 = payload.get("pass_at_5")
             pass_10 = payload.get("pass_at_10")
 
+        if pass_1 is None:
+            pass_1 = lifecycle.get("benchmark_pass_at_1")
+        if pass_5 is None:
+            pass_5 = lifecycle.get("benchmark_pass_at_5")
+        if pass_10 is None:
+            pass_10 = lifecycle.get("benchmark_pass_at_10")
+        if pass_1 is None and self.job and self.job.verification_rate is not None:
+            pass_1 = self.job.verification_rate
+
         pass_rate = payload.get("pass_rate")
+        if pass_rate is None:
+            pass_rate = lifecycle.get("benchmark_pass_rate")
         if pass_rate is None and pass_1 is not None:
             pass_rate = pass_1
 
-        total = self.job.total_steps or payload.get("total_prompts") or payload.get("samples") or 0
-        current = self.job.current_step or payload.get("samples_evaluated") or payload.get("passed") or 0
-        if total and current and current > total:
-            total = current
+        current, total = self._resolve_benchmark_progress_counts()
 
         output_file = "--"
         if self.job and self.job.output_dir:
@@ -1142,12 +1195,8 @@ class Monitor:
         
         # Always fetch fresh job state to get accurate duration
         self.job = state.get_job(self.job_id)
-        
-        if self._duration_label and self.job:
-            try:
-                self._duration_label.set_text(f'Duration: {self.job.duration_str}')
-            except Exception:
-                pass  # UI element may have been destroyed
+        if self.job:
+            self._update_metrics_display()
         
         # Stop timer if job is no longer running
         if self.job and self.job.status not in ('running', 'pending'):
@@ -1176,10 +1225,20 @@ class Monitor:
                 self._status_label.set_text(self.job.status.capitalize())
             
             # Progress
-            if self._progress_percent_label:
-                self._progress_percent_label.set_text(f'{self.job.progress_percent:.1f}%')
-            if self._progress_bar:
-                self._progress_bar.style(f'width: {self.job.progress_percent}%')
+            if self.job.type == "benchmark":
+                current, total = self._resolve_benchmark_progress_counts()
+                progress_percent = (float(current) / float(total) * 100.0) if total > 0 else 0.0
+                if self._progress_percent_label:
+                    self._progress_percent_label.set_text(f'{progress_percent:.1f}%')
+                if self._progress_bar:
+                    self._progress_bar.style(f'width: {progress_percent}%')
+                if self._step_label:
+                    self._step_label.set_text(f'{current}/{total or "?"}')
+            else:
+                if self._progress_percent_label:
+                    self._progress_percent_label.set_text(f'{self.job.progress_percent:.1f}%')
+                if self._progress_bar:
+                    self._progress_bar.style(f'width: {self.job.progress_percent}%')
             
             # Epoch/Cycle
             if self._epoch_label:
@@ -1195,7 +1254,7 @@ class Monitor:
                     self._epoch_label.set_text(f'{epoch_str}/{self.job.total_epochs}')
             
             # Step
-            if self._step_label:
+            if self._step_label and self.job.type != "benchmark":
                 self._step_label.set_text(f'{self.job.current_step}/{self.job.total_steps or "?"}')
             
             # Metrics
@@ -1231,6 +1290,12 @@ class Monitor:
                 self._seed_label.set_text(summary["seed"])
             if self._resume_label:
                 self._resume_label.set_text(summary["resume"])
+
+            if self._benchmark_metric_labels:
+                benchmark_summary = self._derive_benchmark_outcome()
+                for key, label_ref in self._benchmark_metric_labels.items():
+                    if label_ref:
+                        label_ref.set_text(benchmark_summary.get(key, "--"))
         except Exception:
             pass  # UI context may be invalid
     

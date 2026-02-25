@@ -103,6 +103,11 @@ def test_monitor_page_reads_canonical_training_summary_fields():
     assert "def _render_benchmark_metrics_panel" in source
     assert "def _derive_benchmark_outcome" in source
     assert "Evaluated" in source
+    assert "_benchmark_metric_labels" in source
+    assert "benchmark_pass_at_5" in source
+    assert "benchmark_pass_at_10" in source
+    assert "def _resolve_benchmark_progress_counts" in source
+    assert "_benchmark.log" in source
 
 
 def test_benchmark_service_parses_log_progress_for_monitor_updates():
@@ -110,7 +115,11 @@ def test_benchmark_service_parses_log_progress_for_monitor_updates():
     source = Path("ui/services/benchmark_service.py").read_text(encoding="utf-8")
     assert "samples evaluated" in source.lower()
     assert "pass_at_1" in source.lower()
+    assert "pass_at_5" in source.lower()
+    assert "pass_at_10" in source.lower()
+    assert "benchmark_pass_rate" in source
     assert "EventType.METRICS_UPDATE" in source
+    assert "_benchmark.log" in source
 
 
 def test_default_on_ops_routes_and_quick_actions_are_declared():

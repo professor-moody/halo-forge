@@ -40,6 +40,8 @@ from .launch_context import (
     read_launch_context,
 )
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
 
 class BenchmarkType(Enum):
     """Available benchmark types."""
@@ -716,6 +718,15 @@ class BenchmarkService:
                     **self._event_extra_fields(job),
                 ),
             ))
+
+        # Set up persistent log file path for monitor reload continuity.
+        if job.output_dir:
+            try:
+                log_path = Path(job.output_dir) / f"{job_id}_benchmark.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                job.log_file_path = log_path
+            except Exception:
+                pass
         
         # Start log streaming task
         asyncio.create_task(self._stream_logs(job_id))
@@ -729,6 +740,12 @@ class BenchmarkService:
         log_buffer = self._log_buffers.get(job_id, deque(maxlen=1000))
         callbacks = self._callbacks.get(job_id, [])
         event_bus = get_event_bus()
+        log_file = None
+        if job.log_file_path:
+            try:
+                log_file = open(job.log_file_path, "a", encoding="utf-8")
+            except Exception:
+                log_file = None
         
         try:
             async for line_bytes in job.process.stdout:
@@ -743,6 +760,13 @@ class BenchmarkService:
                     'timestamp': timestamp,
                     'line': line,
                 })
+
+                if log_file:
+                    try:
+                        log_file.write(f"[{timestamp}] {line}\n")
+                        log_file.flush()
+                    except Exception:
+                        pass
                 
                 # Emit log line event
                 await event_bus.emit(Event(
@@ -759,26 +783,63 @@ class BenchmarkService:
                         pass
 
                 # Parse lightweight benchmark progress/metrics from log lines.
-                line_lower = line.lower()
+                normalized_line = ANSI_ESCAPE_RE.sub("", line)
+                line_lower = normalized_line.lower()
                 metrics_updated = False
                 if "samples evaluated" in line_lower:
-                    match = re.search(r"samples evaluated:\s*(\d+)", line, re.IGNORECASE)
+                    match = re.search(r"samples evaluated:\s*(\d+)", normalized_line, re.IGNORECASE)
                     if match:
                         job.current_step = int(match.group(1))
+                        job.lifecycle_metadata["benchmark_samples_evaluated"] = job.current_step
                         if job.total_steps == 0 and job.current_step > 0:
                             job.total_steps = job.current_step
                         metrics_updated = True
                 elif "total_prompts" in line_lower:
-                    match = re.search(r"total_prompts:\s*(\d+)", line, re.IGNORECASE)
+                    match = re.search(r"total_prompts:\s*(\d+)", normalized_line, re.IGNORECASE)
                     if match:
                         parsed_total = int(match.group(1))
                         if parsed_total > 0:
                             job.total_steps = parsed_total
+                            job.lifecycle_metadata["benchmark_total_prompts"] = parsed_total
                             metrics_updated = True
                 elif "pass_at_1" in line_lower:
-                    match = re.search(r"pass_at_1:\s*([0-9]*\.?[0-9]+)", line, re.IGNORECASE)
+                    match = re.search(r"pass_at_1:\s*([0-9]*\.?[0-9]+)", normalized_line, re.IGNORECASE)
                     if match:
                         job.verification_rate = float(match.group(1))
+                        job.lifecycle_metadata["benchmark_pass_at_1"] = job.verification_rate
+                        if "benchmark_pass_rate" not in job.lifecycle_metadata:
+                            job.lifecycle_metadata["benchmark_pass_rate"] = job.verification_rate
+                        metrics_updated = True
+                elif "pass@1" in line_lower:
+                    match = re.search(r"pass@1:\s*([0-9]*\.?[0-9]+)", normalized_line, re.IGNORECASE)
+                    if match:
+                        job.verification_rate = float(match.group(1))
+                        job.lifecycle_metadata["benchmark_pass_at_1"] = job.verification_rate
+                        if "benchmark_pass_rate" not in job.lifecycle_metadata:
+                            job.lifecycle_metadata["benchmark_pass_rate"] = job.verification_rate
+                        metrics_updated = True
+                elif "pass_at_5" in line_lower:
+                    match = re.search(r"pass_at_5:\s*([0-9]*\.?[0-9]+)", normalized_line, re.IGNORECASE)
+                    if match:
+                        job.lifecycle_metadata["benchmark_pass_at_5"] = float(match.group(1))
+                        metrics_updated = True
+                elif "pass_at_10" in line_lower:
+                    match = re.search(r"pass_at_10:\s*([0-9]*\.?[0-9]+)", normalized_line, re.IGNORECASE)
+                    if match:
+                        job.lifecycle_metadata["benchmark_pass_at_10"] = float(match.group(1))
+                        metrics_updated = True
+                elif "pass_rate" in line_lower:
+                    match = re.search(r"pass_rate:\s*([0-9]*\.?[0-9]+)", normalized_line, re.IGNORECASE)
+                    if match:
+                        job.lifecycle_metadata["benchmark_pass_rate"] = float(match.group(1))
+                        metrics_updated = True
+                elif "passed:" in line_lower:
+                    match = re.search(r"passed:\s*(\d+)", normalized_line, re.IGNORECASE)
+                    if match:
+                        parsed_passed = int(match.group(1))
+                        job.lifecycle_metadata["benchmark_passed"] = parsed_passed
+                        if job.current_step == 0:
+                            job.current_step = parsed_passed
                         metrics_updated = True
 
                 if metrics_updated:
@@ -794,6 +855,12 @@ class BenchmarkService:
         
         except Exception as e:
             job.error_message = str(e)
+        finally:
+            if log_file:
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
         
         # Process completed
         return_code = await job.process.wait()
