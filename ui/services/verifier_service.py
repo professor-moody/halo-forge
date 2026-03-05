@@ -66,7 +66,7 @@ class VerifierService:
     # Verifier configurations
     VERIFIERS: Dict[str, Dict[str, Any]] = {
         "HumanEval": {
-            "type": VerifierType.EXECUTION,
+            "type": VerifierType.HUMANEVAL,
             "language": "Python",
             "description": "Code execution with test cases (HumanEval format)",
             "example_prompt": '''def has_close_elements(numbers: List[float], threshold: float) -> bool:
@@ -83,9 +83,13 @@ class VerifierService:
                 if distance < threshold:
                     return True
     return False''',
+            "test_cases": [
+                "assert has_close_elements([1.0, 2.0, 3.0], 0.5) is False",
+                "assert has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3) is True",
+            ],
         },
         "MBPP": {
-            "type": VerifierType.EXECUTION,
+            "type": VerifierType.MBPP,
             "language": "Python",
             "description": "Mostly Basic Programming Problems",
             "example_prompt": '''"""
@@ -94,6 +98,11 @@ assert set(similar_elements((3, 4, 5, 6),(5, 7, 4, 10))) == set((4, 5))
 """''',
             "example_solution": '''def similar_elements(test_tup1, test_tup2):
     return tuple(set(test_tup1) & set(test_tup2))''',
+            "test_cases": [
+                "assert set(similar_elements((3, 4, 5, 6), (5, 7, 4, 10))) == {4, 5}",
+                "assert set(similar_elements((1, 2, 3), (4, 5, 6))) == set()",
+                "assert set(similar_elements((1, 2, 2), (2, 2, 3))) == {2}",
+            ],
         },
         "LiveCodeBench": {
             "type": VerifierType.EXECUTION,
@@ -259,7 +268,7 @@ fn main() {
         prompt: str,
         solution: str,
         ground_truth: Optional[str] = None,
-        test_cases: Optional[List[Dict]] = None,
+        test_cases: Optional[List[Dict[str, Any]]] = None,
     ) -> VerifyResult:
         """
         Run verification on code.
@@ -301,6 +310,18 @@ fn main() {
         try:
             if verifier_type == VerifierType.EXECUTION:
                 result = await self._verify_execution(prompt, solution, test_cases)
+            elif verifier_type == VerifierType.HUMANEVAL:
+                result = await self._verify_execution(
+                    prompt,
+                    solution,
+                    test_cases or config.get("test_cases"),
+                )
+            elif verifier_type == VerifierType.MBPP:
+                result = await self._verify_execution(
+                    prompt,
+                    solution,
+                    test_cases or config.get("test_cases"),
+                )
             elif verifier_type == VerifierType.MATH:
                 result = await self._verify_math(solution, ground_truth)
             elif verifier_type in (VerifierType.GCC, VerifierType.CLANG):
@@ -334,18 +355,92 @@ fn main() {
         self,
         prompt: str,
         solution: str,
-        test_cases: Optional[List[Dict]] = None,
+        test_cases: Optional[List[Any]] = None,
     ) -> VerifyResult:
         """Verify Python code by execution.
         
         For interactive UI testing, we run the combined prompt+solution code
         directly. This checks for syntax errors and runtime crashes.
         
-        Note: HumanEvalVerifier requires task_ids from a dataset, which the
-        interactive UI doesn't have. For full test-case verification during
-        training, use the RLVR verifiers directly.
+        If explicit test cases are provided, execution includes assertion harnesses.
+        Otherwise this falls back to syntax/runtime execution only.
         """
+        if test_cases:
+            return await self._execution_test_with_cases(prompt, solution, test_cases)
         return await self._simple_execution_test(prompt, solution)
+
+    async def _execution_test_with_cases(
+        self,
+        prompt: str,
+        solution: str,
+        test_cases: List[Any],
+    ) -> VerifyResult:
+        """Run Python execution with assertion-like test harness."""
+        prompt_stripped = prompt.strip()
+        is_code_prompt = (
+            prompt_stripped.startswith('def ') or
+            prompt_stripped.startswith('class ') or
+            prompt_stripped.startswith('import ') or
+            prompt_stripped.startswith('from ') or
+            prompt_stripped.startswith('#') or
+            prompt_stripped.startswith('"""') or
+            prompt_stripped.startswith("'''")
+        )
+        full_code = f"{prompt}\n{solution}" if is_code_prompt else solution
+
+        normalized_cases: List[str] = []
+        for case in test_cases:
+            if isinstance(case, str):
+                line = case.strip()
+                if line:
+                    normalized_cases.append(line)
+            elif isinstance(case, dict):
+                line = str(case.get("code") or "").strip()
+                if line:
+                    normalized_cases.append(line)
+
+        if not normalized_cases:
+            return VerifyResult(
+                passed=False,
+                reward=0.0,
+                message="No executable test cases provided",
+            )
+
+        script = f"{full_code}\n\n# Verification test cases\n" + "\n".join(normalized_cases) + "\n"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(script)
+            temp_path = f.name
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                'python3', temp_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
+
+            if proc.returncode == 0:
+                return VerifyResult(
+                    passed=True,
+                    reward=1.0,
+                    message=f"All tests passed ({len(normalized_cases)}/{len(normalized_cases)})",
+                    output=stdout.decode('utf-8', errors='replace'),
+                )
+            return VerifyResult(
+                passed=False,
+                reward=0.0,
+                message="Test cases failed",
+                error=stderr.decode('utf-8', errors='replace') or stdout.decode('utf-8', errors='replace'),
+            )
+        except asyncio.TimeoutError:
+            return VerifyResult(
+                passed=False,
+                reward=0.0,
+                message="Execution timeout",
+                error="Code took too long to execute (>10s)",
+            )
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
     
     async def _simple_execution_test(self, prompt: str, solution: str) -> VerifyResult:
         """Simple Python execution test (fallback).
