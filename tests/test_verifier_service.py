@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from ui.services.verifier_service import VerifierService
 
@@ -83,3 +84,10 @@ def test_mbpp_invalid_solution_fails_assertion_harness():
     assert result.passed is False
     assert result.reward == 0.0
     assert "failed" in result.message.lower()
+
+
+def test_verifiers_page_examples_match_backend_harness_expectations():
+    """UI examples for HumanEval/MBPP should stay aligned with service test harness."""
+    source = Path("ui/pages/verifiers.py").read_text(encoding="utf-8")
+    assert "has_close_elements" in source
+    assert "similar_elements" in source

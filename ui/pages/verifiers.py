@@ -38,8 +38,8 @@ class Verifiers:
             domain="Code",
             icon="code",
             languages=["Python"],
-            example_prompt='def add(a: int, b: int) -> int:\n    """Return the sum of a and b."""',
-            example_solution='    return a + b',
+            example_prompt='def has_close_elements(numbers: List[float], threshold: float) -> bool:\n    """Check if in given list of numbers, are any two numbers closer to each other than given threshold.\n    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)\n    False\n    >>> has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3)\n    True\n    """',
+            example_solution='    for idx, elem in enumerate(numbers):\n        for idx2, elem2 in enumerate(numbers):\n            if idx != idx2:\n                distance = abs(elem - elem2)\n                if distance < threshold:\n                    return True\n    return False',
         ),
         VerifierInfo(
             name="MBPP",
@@ -47,8 +47,8 @@ class Verifiers:
             domain="Code",
             icon="code",
             languages=["Python"],
-            example_prompt='Write a function to find the factorial of a number.',
-            example_solution='def factorial(n):\n    if n <= 1:\n        return 1\n    return n * factorial(n - 1)',
+            example_prompt='Write a function to find the shared elements from the given two lists.\nassert set(similar_elements((3, 4, 5, 6),(5, 7, 4, 10))) == set((4, 5))',
+            example_solution='def similar_elements(test_tup1, test_tup2):\n    return tuple(set(test_tup1) & set(test_tup2))',
         ),
         VerifierInfo(
             name="LiveCodeBench",
