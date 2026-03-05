@@ -202,6 +202,15 @@ fn main() {
     def __init__(self):
         """Initialize verifier service."""
         self._availability_cache: Dict[str, bool] = {}
+
+    @staticmethod
+    def _python_prelude() -> str:
+        """Shared Python prelude for interactive verifier snippets.
+
+        Includes typing aliases so prompts using `List`, `Dict`, etc. don't fail
+        before assertions run.
+        """
+        return "from typing import *\n"
     
     def get_verifiers(self) -> List[VerifierInfo]:
         """Get list of all verifiers with availability status."""
@@ -406,7 +415,12 @@ fn main() {
                 message="No executable test cases provided",
             )
 
-        script = f"{full_code}\n\n# Verification test cases\n" + "\n".join(normalized_cases) + "\n"
+        script = (
+            f"{self._python_prelude()}"
+            f"{full_code}\n\n# Verification test cases\n"
+            + "\n".join(normalized_cases)
+            + "\n"
+        )
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(script)
             temp_path = f.name
@@ -463,10 +477,10 @@ fn main() {
         
         if is_code_prompt:
             # HumanEval-style: prompt is a function signature, combine with solution
-            full_code = f"{prompt}\n{solution}"
+            full_code = f"{self._python_prelude()}{prompt}\n{solution}"
         else:
             # MBPP-style: prompt is natural language, only run solution
-            full_code = solution
+            full_code = f"{self._python_prelude()}{solution}"
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(full_code)

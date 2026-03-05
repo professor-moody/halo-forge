@@ -91,3 +91,21 @@ def test_verifiers_page_examples_match_backend_harness_expectations():
     source = Path("ui/pages/verifiers.py").read_text(encoding="utf-8")
     assert "has_close_elements" in source
     assert "similar_elements" in source
+
+
+def test_execution_harness_handles_typing_list_annotations_without_manual_import():
+    """Execution verifier should not fail solely due missing typing imports in prompt annotations."""
+    service = VerifierService()
+    prompt = "def always_true(values: List[float], threshold: float) -> bool:"
+    solution = "    return True"
+
+    result = asyncio.run(
+        service.verify(
+            verifier_name="HumanEval",
+            prompt=prompt,
+            solution=solution,
+            test_cases=["assert always_true([1.0, 2.0], 0.3) is True"],
+        )
+    )
+
+    assert result.passed is True
