@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -629,6 +629,11 @@ class ResultsService:
             self._first_non_empty(sources, "benchmark", "dataset", "task", "suite")
             or (path.parent.name if path.name == "benchmark.json" else path.stem)
         )
+        model, benchmark = self._infer_model_benchmark_from_path(
+            model=model,
+            benchmark=benchmark,
+            path=path,
+        )
         domain = self._detect_domain(path, data, benchmark)
 
         pass_at_1 = self._normalize_ratio(
@@ -729,6 +734,65 @@ class ResultsService:
             raw_data=data,
             normalized_metrics=normalized_metrics,
         )
+
+    def _infer_model_benchmark_from_path(
+        self,
+        *,
+        model: str,
+        benchmark: str,
+        path: Path,
+    ) -> tuple[str, str]:
+        """Infer missing model/benchmark from common output path patterns."""
+        if model != "unknown" and benchmark not in {"", "unknown"}:
+            return model, benchmark
+
+        parent = path.parent.name.strip()
+        if not parent:
+            return model, benchmark
+
+        benchmark_lower = benchmark.strip().lower()
+        parent_lower = parent.lower()
+        known_suffixes = (
+            "librispeech",
+            "common_voice",
+            "commonvoice",
+            "textvqa",
+            "docvqa",
+            "chartqa",
+            "gsm8k",
+            "math",
+            "xlam",
+            "humaneval",
+            "mbpp",
+            "livecodebench",
+            "cpp",
+            "rust",
+            "go",
+        )
+
+        inferred_benchmark = benchmark
+        inferred_model = model
+
+        if benchmark_lower in {"", "unknown", parent_lower}:
+            for suffix in known_suffixes:
+                token = f"-{suffix}"
+                if parent_lower.endswith(token):
+                    inferred_benchmark = suffix
+                    candidate_model = parent[: -len(token)]
+                    if candidate_model:
+                        inferred_model = candidate_model
+                    break
+        elif parent_lower.endswith(f"-{benchmark_lower}") and model == "unknown":
+            candidate_model = parent[: -(len(benchmark) + 1)]
+            if candidate_model:
+                inferred_model = candidate_model
+
+        if inferred_model == "unknown" and parent and inferred_benchmark != parent:
+            candidate = parent.replace(f"-{inferred_benchmark}", "")
+            if candidate and candidate != parent:
+                inferred_model = candidate
+
+        return inferred_model, inferred_benchmark
 
     def _parse_training_summary_file(self, path: Path) -> Optional[TrainingRunSummary]:
         with path.open(encoding="utf-8") as f:
@@ -1263,19 +1327,31 @@ class ResultsService:
             value = data.get(key)
             if isinstance(value, str):
                 try:
-                    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    return self._normalize_timestamp(
+                        datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    )
                 except Exception:
                     continue
             if isinstance(value, (int, float)):
                 try:
-                    return datetime.fromtimestamp(value)
+                    return self._normalize_timestamp(
+                        datetime.fromtimestamp(value, tz=timezone.utc)
+                    )
                 except Exception:
                     continue
 
         try:
-            return datetime.fromtimestamp(path.stat().st_mtime)
+            return self._normalize_timestamp(
+                datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+            )
         except Exception:
-            return datetime.now()
+            return self._normalize_timestamp(datetime.now(timezone.utc))
+
+    def _normalize_timestamp(self, value: datetime) -> datetime:
+        """Normalize parsed timestamps to UTC-aware datetimes for stable sorting."""
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     def _display_domain_name(self, domain: str) -> str:
         if domain == "vlm":

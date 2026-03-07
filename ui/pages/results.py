@@ -45,114 +45,138 @@ class Results:
         self.qualification_service = get_qualification_service(state)
         self.bootstrap_service = get_bootstrap_service(state)
         self.live_probe_service = get_live_probe_service(state)
-        self.results: list[BenchmarkResult] = self.results_service.list_results(force_refresh=True)
-        self.training_runs: list[TrainingRunSummary] = self.results_service.list_training_runs(force_refresh=False)
-        self.utility_runs: list[UtilityRunSummary] = self.results_service.list_utility_runs(force_refresh=False)
-        self.qualification_reports: list[QualificationReportSummary] = (
-            self.results_service.list_qualification_reports(force_refresh=False)
-        )
-        self.bootstrap_reports: list[BootstrapReportSummary] = (
-            self.results_service.list_bootstrap_reports(force_refresh=False)
-        )
-        self.live_probe_reports: list[LiveProbeReportSummary] = (
-            self.results_service.list_live_probe_reports(force_refresh=False)
-        )
-        self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
+        self.results: list[BenchmarkResult] = []
+        self.training_runs: list[TrainingRunSummary] = []
+        self.utility_runs: list[UtilityRunSummary] = []
+        self.qualification_reports: list[QualificationReportSummary] = []
+        self.bootstrap_reports: list[BootstrapReportSummary] = []
+        self.live_probe_reports: list[LiveProbeReportSummary] = []
+        self.grouped_results: dict[str, list[BenchmarkResult]] = {}
+        self._page_container = None
         self.sort_by: str = app.storage.user.get("results_sort_by", "timestamp")
         self.sort_desc: bool = app.storage.user.get("results_sort_desc", True)
         self.show_advanced_diagnostics: bool = bool(
             app.storage.user.get("results_show_advanced_diagnostics", False)
         )
+        self._reload_data(force_refresh=True)
 
     def render(self):
-        with ui.column().classes("page-content w-full gap-6 p-6"):
-            with ui.row().classes("w-full items-center justify-between animate-in"):
-                with ui.column().classes("gap-1"):
-                    ui.label("Run Results").classes(
-                        f'text-2xl font-bold text-[{COLORS["text_primary"]}]'
-                    )
-                    ui.label("Training, benchmark, utility, and diagnostics run outputs.").classes(
-                        f'text-sm text-[{COLORS["text_secondary"]}]'
-                    )
-                with ui.row().classes("items-center gap-2"):
-                    ui.button("Refresh", icon="refresh", on_click=self._refresh).props("flat")
-                    ui.button("Export", icon="download", on_click=self._export).props("flat")
-            with ui.row().classes("w-full items-center justify-between"):
-                ui.checkbox(
-                    "Show advanced diagnostics runs",
-                    value=self.show_advanced_diagnostics,
-                    on_change=lambda e: self._toggle_advanced_diagnostics(bool(e.value)),
-                ).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                hidden_count = (
-                    len(self.qualification_reports)
-                    + len(self.bootstrap_reports)
-                    + len(self.live_probe_reports)
+        self._page_container = ui.column().classes("page-content w-full gap-6 p-6")
+        with self._page_container:
+            self._render_content()
+
+    def _render_content(self) -> None:
+        with ui.row().classes("w-full items-center justify-between animate-in"):
+            with ui.column().classes("gap-1"):
+                ui.label("Run Results").classes(
+                    f'text-2xl font-bold text-[{COLORS["text_primary"]}]'
                 )
-                if not self.show_advanced_diagnostics and hidden_count:
-                    ui.label(
-                        f"{hidden_count} advanced diagnostics report(s) hidden."
-                    ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
-
-            if (
-                not self.results
-                and not self.training_runs
-                and not self.utility_runs
-                and (
-                    self.show_advanced_diagnostics
-                    or (
-                        not self.qualification_reports
-                        and not self.bootstrap_reports
-                        and not self.live_probe_reports
-                    )
+                ui.label("Training, benchmark, utility, and diagnostics run outputs.").classes(
+                    f'text-sm text-[{COLORS["text_secondary"]}]'
                 )
-            ):
-                self._render_empty_state()
-                return
+            with ui.row().classes("items-center gap-2"):
+                ui.button("Refresh", icon="refresh", on_click=self._refresh).props("flat")
+                ui.button("Export", icon="download", on_click=self._export).props("flat")
+        with ui.row().classes("w-full items-center justify-between"):
+            ui.checkbox(
+                "Show advanced diagnostics runs",
+                value=self.show_advanced_diagnostics,
+                on_change=lambda e: self._toggle_advanced_diagnostics(bool(e.value)),
+            ).classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+            hidden_count = (
+                len(self.qualification_reports)
+                + len(self.bootstrap_reports)
+                + len(self.live_probe_reports)
+            )
+            if not self.show_advanced_diagnostics and hidden_count:
+                ui.label(
+                    f"{hidden_count} advanced diagnostics report(s) hidden."
+                ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
 
-            self._render_summary()
-
-            with ui.row().classes("w-full items-center justify-between"):
-                ui.label("Domain Views").classes(
-                    f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+        if (
+            not self.results
+            and not self.training_runs
+            and not self.utility_runs
+            and (
+                self.show_advanced_diagnostics
+                or (
+                    not self.qualification_reports
+                    and not self.bootstrap_reports
+                    and not self.live_probe_reports
                 )
-                with ui.row().classes("items-center gap-2"):
-                    ui.label("Sort:").classes(f'text-xs text-[{COLORS["text_muted"]}]')
-                    ui.select(
-                        options=["timestamp", "primary", "model"],
-                        value=self.sort_by,
-                        on_change=lambda e: self._sort_results(e.value),
-                    ).props("outlined dense dark").classes("w-32")
+            )
+        ):
+            self._render_empty_state()
+            return
 
-            displayed_any = False
-            for domain in self.DOMAIN_ORDER:
-                domain_results = self.grouped_results.get(domain, [])
-                if not domain_results:
-                    continue
-                displayed_any = True
-                self._render_domain_table(domain, self._sorted(domain_results))
+        self._render_summary()
 
-            if self.training_runs:
-                displayed_any = True
-                self._render_training_runs_table(self.training_runs)
+        with ui.row().classes("w-full items-center justify-between"):
+            ui.label("Domain Views").classes(
+                f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+            )
+            with ui.row().classes("items-center gap-2"):
+                ui.label("Sort:").classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                ui.select(
+                    options=["timestamp", "primary", "model"],
+                    value=self.sort_by,
+                    on_change=lambda e: self._sort_results(e.value),
+                ).props("outlined dense dark").classes("w-32")
 
-            if self.utility_runs:
-                displayed_any = True
-                self._render_utility_runs_table(self.utility_runs)
+        displayed_any = False
+        for domain in self.DOMAIN_ORDER:
+            domain_results = self.grouped_results.get(domain, [])
+            if not domain_results:
+                continue
+            displayed_any = True
+            self._render_domain_table(domain, self._sorted(domain_results))
 
-            if self.show_advanced_diagnostics and self.qualification_reports:
-                displayed_any = True
-                self._render_qualification_reports_table(self.qualification_reports)
+        if self.training_runs:
+            displayed_any = True
+            self._render_training_runs_table(self.training_runs)
 
-            if self.show_advanced_diagnostics and self.bootstrap_reports:
-                displayed_any = True
-                self._render_bootstrap_reports_table(self.bootstrap_reports)
+        if self.utility_runs:
+            displayed_any = True
+            self._render_utility_runs_table(self.utility_runs)
 
-            if self.show_advanced_diagnostics and self.live_probe_reports:
-                displayed_any = True
-                self._render_live_probe_reports_table(self.live_probe_reports)
+        if self.show_advanced_diagnostics and self.qualification_reports:
+            displayed_any = True
+            self._render_qualification_reports_table(self.qualification_reports)
 
-            if not displayed_any:
-                self._render_empty_state()
+        if self.show_advanced_diagnostics and self.bootstrap_reports:
+            displayed_any = True
+            self._render_bootstrap_reports_table(self.bootstrap_reports)
+
+        if self.show_advanced_diagnostics and self.live_probe_reports:
+            displayed_any = True
+            self._render_live_probe_reports_table(self.live_probe_reports)
+
+        if not displayed_any:
+            self._render_empty_state()
+
+    def _reload_data(self, *, force_refresh: bool) -> None:
+        self.results = self.results_service.list_results(force_refresh=force_refresh)
+        self.training_runs = self.results_service.list_training_runs(force_refresh=force_refresh)
+        self.utility_runs = self.results_service.list_utility_runs(force_refresh=force_refresh)
+        self.qualification_reports = self.results_service.list_qualification_reports(
+            force_refresh=force_refresh
+        )
+        self.bootstrap_reports = self.results_service.list_bootstrap_reports(
+            force_refresh=force_refresh
+        )
+        self.live_probe_reports = self.results_service.list_live_probe_reports(
+            force_refresh=force_refresh
+        )
+        self.grouped_results = self.results_service.get_results_grouped_by_domain(
+            force_refresh=force_refresh
+        )
+
+    def _rerender(self) -> None:
+        if self._page_container is None:
+            return
+        self._page_container.clear()
+        with self._page_container:
+            self._render_content()
 
     def _render_summary(self):
         by_domain = self.results_service.get_summary().get("by_domain", {})
@@ -186,7 +210,7 @@ class Results:
     def _toggle_advanced_diagnostics(self, value: bool) -> None:
         self.show_advanced_diagnostics = bool(value)
         app.storage.user["results_show_advanced_diagnostics"] = self.show_advanced_diagnostics
-        ui.navigate.to("/results")
+        self._rerender()
 
     def _stat_card(self, label: str, value: str, icon: str):
         with ui.column().classes(
@@ -252,9 +276,6 @@ class Results:
                 )
                 ui.label("Time").classes(
                     f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Actions").classes(
-                    f'w-44 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
                 )
                 ui.label("Actions").classes(
                     f'w-36 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
@@ -342,10 +363,13 @@ class Results:
                     f'flex-1 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                 )
                 ui.label("Run").classes(
-                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
                 )
                 ui.label("Time").classes(
-                    f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Actions").classes(
+                    f'w-36 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
                 )
 
             for run in rows[:20]:
@@ -378,12 +402,12 @@ class Results:
                         f'flex-1 text-sm text-[{COLORS["text_muted"]}] truncate'
                     )
                     ui.label(run.run_id or "--").classes(
-                        f'w-20 text-xs font-mono text-[{COLORS["text_muted"]}] text-right'
+                        f'w-24 text-xs font-mono text-[{COLORS["text_muted"]}] text-right truncate'
                     )
                     ui.label(run.timestamp.strftime("%m-%d %H:%M")).classes(
-                        f'w-28 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
+                        f'w-24 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
                     )
-                    with ui.row().classes("w-44 justify-end gap-1"):
+                    with ui.row().classes("w-36 justify-end gap-1"):
                         if run.has_relaunch_context and run.launch_context_path:
                             ui.button(
                                 icon="replay",
@@ -408,7 +432,7 @@ class Results:
                             ).tooltip("Clone to Training form")
                         else:
                             ui.label("--").classes(
-                                f'w-full text-xs text-[{COLORS["text_muted"]}] text-right'
+                                f'w-36 text-xs text-[{COLORS["text_muted"]}] text-right'
                             )
 
     def _render_utility_runs_table(self, rows: list[UtilityRunSummary]):
@@ -857,23 +881,11 @@ class Results:
             self.sort_desc = True
         app.storage.user["results_sort_by"] = self.sort_by
         app.storage.user["results_sort_desc"] = self.sort_desc
-        ui.navigate.to("/results")
+        self._rerender()
 
     def _refresh(self):
-        self.results = self.results_service.list_results(force_refresh=True)
-        self.training_runs = self.results_service.list_training_runs(force_refresh=True)
-        self.utility_runs = self.results_service.list_utility_runs(force_refresh=True)
-        self.qualification_reports = self.results_service.list_qualification_reports(
-            force_refresh=True
-        )
-        self.bootstrap_reports = self.results_service.list_bootstrap_reports(
-            force_refresh=True
-        )
-        self.live_probe_reports = self.results_service.list_live_probe_reports(
-            force_refresh=True
-        )
-        self.grouped_results = self.results_service.get_results_grouped_by_domain(force_refresh=False)
-        ui.navigate.to("/results")
+        self._reload_data(force_refresh=True)
+        self._rerender()
 
     def _export(self):
         payload = [result.to_dict() for result in self.results]

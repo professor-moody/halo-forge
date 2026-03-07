@@ -4,7 +4,6 @@ Dashboard Page
 Main overview page with system status, active jobs, and recent runs.
 """
 
-import asyncio
 from pathlib import Path
 from typing import Callable, List
 from nicegui import ui
@@ -14,7 +13,6 @@ from ui.services.hardware import get_gpu_summary
 from ui.feature_flags import get_ui_feature_flags
 from ui.services import (
     get_results_service,
-    get_hardware_monitor,
     get_event_bus,
     get_dashboard_hub_service,
     get_ops_readiness_service,
@@ -36,7 +34,6 @@ class Dashboard:
         self._unsubscribe_callbacks: List[Callable[[], None]] = []
         self.results_service = get_results_service()
         self.dashboard_hub_service = get_dashboard_hub_service()
-        self.hardware_monitor = get_hardware_monitor()
         self.readiness_service = get_ops_readiness_service()
     
     def render(self):
@@ -691,6 +688,9 @@ class Dashboard:
         # Subscribe to job state changes
         unsub_created = bus.subscribe(EventType.JOB_CREATED, self._on_job_change)
         self._unsubscribe_callbacks.append(unsub_created)
+
+        unsub_started = bus.subscribe(EventType.JOB_STARTED, self._on_job_change)
+        self._unsubscribe_callbacks.append(unsub_started)
         
         unsub_completed = bus.subscribe(EventType.JOB_COMPLETED, self._on_job_change)
         self._unsubscribe_callbacks.append(unsub_completed)
@@ -700,11 +700,6 @@ class Dashboard:
         
         unsub_stopped = bus.subscribe(EventType.JOB_STOPPED, self._on_job_change)
         self._unsubscribe_callbacks.append(unsub_stopped)
-        
-        # Also start hardware monitor if not running
-        if not self.hardware_monitor.is_running:
-            asyncio.create_task(self.hardware_monitor.start())
-    
     def _on_gpu_update(self, event: Event):
         """Handle GPU update event."""
         stats = event.data.get('stats')

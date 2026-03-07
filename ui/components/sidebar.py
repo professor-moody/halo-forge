@@ -8,6 +8,29 @@ from nicegui import ui
 from ui.theme import COLORS
 from ui import __version__
 from ui.feature_flags import get_ui_feature_flags
+from ui.services.dashboard_hub_service import get_dashboard_hub_service
+
+
+def _is_active_route(item_path: str, current_path: str) -> bool:
+    """Match exact routes and nested segments without false prefix collisions."""
+    item = str(item_path or "").strip() or "/"
+    current = str(current_path or "").strip() or "/"
+    if item == "/":
+        return current == "/"
+    return current == item or current.startswith(f"{item}/")
+
+
+def _readiness_status() -> tuple[str, str]:
+    """Return a non-blocking readiness label and color for the sidebar footer."""
+    try:
+        summary = get_dashboard_hub_service().build_summary()
+    except Exception:
+        return "Status unavailable", COLORS["text_muted"]
+    if summary.fail_count > 0:
+        return "Needs attention", COLORS["error"]
+    if summary.warn_count > 0:
+        return "Setup pending", COLORS["warning"]
+    return "Ready", COLORS["success"]
 
 
 class Sidebar:
@@ -51,12 +74,13 @@ class Sidebar:
                 )
                 
                 # Quick status
+                status_text, status_color = _readiness_status()
                 with ui.row().classes('items-center gap-2'):
                     ui.element('div').classes(
-                        f'w-2 h-2 rounded-full bg-[{COLORS["success"]}]'
+                        f'w-2 h-2 rounded-full bg-[{status_color}]'
                     )
-                    ui.label('System Ready').classes(
-                        f'text-xs text-[{COLORS["text_secondary"]}]'
+                    ui.label(status_text).classes(
+                        f'text-xs text-[{status_color}]'
                     )
     
     def _render_nav_item(self, item: dict):
@@ -68,10 +92,7 @@ class Sidebar:
             current_path = "/"
         
         # Check if this nav item is active
-        if item['path'] == '/':
-            is_active = current_path == '/'
-        else:
-            is_active = current_path.startswith(item['path'])
+        is_active = _is_active_route(item['path'], current_path)
         
         # Active styling - CSS handles box-shadow via .nav-item.active
         icon_color = COLORS["primary"] if is_active else COLORS["text_secondary"]

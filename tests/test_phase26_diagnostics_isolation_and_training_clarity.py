@@ -4,11 +4,14 @@
 from pathlib import Path
 
 
-def test_dashboard_gpu_polling_path_imports_asyncio():
-    """Dashboard should import asyncio before scheduling GPU polling tasks."""
-    source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
-    assert "import asyncio" in source
-    assert "asyncio.create_task(self.hardware_monitor.start())" in source
+def test_shared_ui_layout_bootstraps_hardware_monitor_once():
+    """Shared UI layout should own hardware monitor startup instead of dashboard-only wiring."""
+    app_source = Path("ui/app.py").read_text(encoding="utf-8")
+    assert "def _ensure_hardware_monitor_started()" in app_source
+    assert "_ensure_hardware_monitor_started()" in app_source
+
+    dashboard_source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")
+    assert "asyncio.create_task(self.hardware_monitor.start())" not in dashboard_source
 
 
 def test_primary_workflow_pages_keep_diagnostics_actions_out_of_main_flow():

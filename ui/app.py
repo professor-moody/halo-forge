@@ -4,6 +4,9 @@ halo-forge Web UI Application
 NiceGUI-based web interface with routing and layout.
 """
 
+import asyncio
+import ipaddress
+import os
 from nicegui import ui, app
 from pathlib import Path
 
@@ -12,6 +15,7 @@ from ui.components.sidebar import Sidebar
 from ui.components.header import Header
 from ui.components.page_guard import render_guarded_page
 from ui.feature_flags import get_ui_feature_flags
+from ui.services.hardware_monitor import get_hardware_monitor
 
 
 # Serve static files from ui/static/ at /static URL path
@@ -19,10 +23,61 @@ _static_dir = Path(__file__).parent / "static"
 if _static_dir.exists():
     app.add_static_files('/static', _static_dir)
 
+_DEV_STORAGE_SECRET = "halo-forge-dev-storage-secret"
+_storage_secret_warning_emitted = False
+_hardware_monitor_start_requested = False
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Return True when the configured bind host is loopback-only."""
+    normalized = str(host or "").strip().lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _resolve_storage_secret(host: str) -> str:
+    """Resolve the storage secret with an explicit non-loopback safety gate."""
+    global _storage_secret_warning_emitted
+
+    configured = os.getenv("HALO_UI_STORAGE_SECRET", "").strip()
+    if configured:
+        return configured
+    if _is_loopback_host(host):
+        if not _storage_secret_warning_emitted:
+            print(
+                "UI_WARN HALO_UI_STORAGE_SECRET is not set; using a development fallback "
+                "because the UI is bound to a loopback host."
+            )
+            _storage_secret_warning_emitted = True
+        return _DEV_STORAGE_SECRET
+    raise RuntimeError(
+        "HALO_UI_STORAGE_SECRET must be set when binding the UI to a non-loopback host."
+    )
+
+
+def _ensure_hardware_monitor_started() -> None:
+    """Start the singleton hardware monitor once for the UI process lifetime."""
+    global _hardware_monitor_start_requested
+
+    monitor = get_hardware_monitor()
+    if monitor.is_running or _hardware_monitor_start_requested:
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    asyncio.create_task(monitor.start())
+    _hardware_monitor_start_requested = True
+
 
 def create_layout(page_title: str = "Dashboard"):
     """Create the base page layout with sidebar and header."""
     apply_theme()
+    _ensure_hardware_monitor_started()
     
     # Header
     with ui.header().classes(
@@ -226,6 +281,7 @@ def run(
 ):
     """Run the halo-forge web UI."""
     static_dir = Path(__file__).parent / "static"
+    storage_secret = _resolve_storage_secret(host)
     
     # Prefer SVG favicon, fall back to PNG, then emoji
     favicon_svg = static_dir / "favicon.svg"
@@ -254,5 +310,5 @@ def run(
         favicon=favicon,
         dark=True,
         binding_refresh_interval=0.1,
-        storage_secret='halo-forge-storage-secret',  # Required for app.storage.user
+        storage_secret=storage_secret,
     )
