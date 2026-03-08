@@ -237,6 +237,7 @@ class LaunchContextV1:
     command: list[str]
     args: Dict[str, Any]
     relaunch_capabilities: Dict[str, bool]
+    metadata: Dict[str, Any]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -248,6 +249,7 @@ class LaunchContextV1:
             "command": list(self.command),
             "args": dict(self.args),
             "relaunch_capabilities": dict(self.relaunch_capabilities),
+            "metadata": dict(self.metadata),
         }
 
     @staticmethod
@@ -276,6 +278,11 @@ class LaunchContextV1:
         relaunch_capabilities = data.get("relaunch_capabilities")
         if not isinstance(relaunch_capabilities, dict):
             raise ValueError("launch_context relaunch_capabilities must be an object")
+        metadata = data.get("metadata")
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            raise ValueError("launch_context metadata must be an object")
 
         return LaunchContextV1(
             contract_version=LAUNCH_CONTEXT_CONTRACT_VERSION,
@@ -292,6 +299,7 @@ class LaunchContextV1:
                     relaunch_capabilities.get("can_resume_latest", False)
                 ),
             },
+            metadata=dict(metadata),
         )
 
 
@@ -331,6 +339,7 @@ def persist_launch_context(
     command: list[str],
     args: Mapping[str, Any],
     relaunch_capabilities: Mapping[str, bool],
+    metadata: Optional[Mapping[str, Any]] = None,
 ) -> Optional[Path]:
     """Persist launch context atomically; returns path when successful."""
     context_path = launch_context_path_for_output_dir(output_dir)
@@ -353,6 +362,7 @@ def persist_launch_context(
                 relaunch_capabilities.get("can_resume_latest", False)
             ),
         },
+        metadata=dict(metadata or {}),
     ).to_dict()
 
     temp_path = context_path.with_suffix(".tmp")

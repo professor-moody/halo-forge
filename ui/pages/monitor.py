@@ -11,8 +11,14 @@ from pathlib import Path
 import asyncio
 import json
 
+from halo_forge.training_recovery import build_recovery_guidance
 from ui.theme import COLORS
 from ui.state import state, JobState
+from ui.services.training_presentation import (
+    TrainingAction,
+    TrainingPresentation,
+    build_training_run_presentation,
+)
 from ui.services import (
     TrainingService,
     get_benchmark_service,
@@ -98,6 +104,9 @@ class Monitor:
         self._quality_keep_rate_label = None
         self._quality_drop_reason_label = None
         self._quality_action_label = None
+        self._recovery_action_label = None
+        self._quality_headline_label = None
+        self._quality_summary_note_label = None
         self._benchmark_metric_labels: Dict[str, Any] = {}
         self._inference_metric_labels: Dict[str, Any] = {}
         self._utility_metric_labels: Dict[str, Any] = {}
@@ -220,6 +229,66 @@ class Monitor:
             return read_launch_context(path)
         except Exception:
             return None
+
+    def _tone_color(self, tone: str) -> str:
+        return {
+            "success": COLORS["success"],
+            "warning": COLORS["warning"],
+            "danger": COLORS["error"],
+            "neutral": COLORS["text_secondary"],
+        }.get(str(tone or "").strip().lower(), COLORS["text_secondary"])
+
+    def _current_training_presentation(self) -> TrainingPresentation:
+        summary = self._derive_training_outcome()
+        context = self._get_launch_context()
+        recovery = self._current_recovery_guidance()
+        return build_training_run_presentation(
+            job_status=self.job.status if self.job else "",
+            quality_status=summary.get("quality_status"),
+            quality_summary=summary.get("quality_summary"),
+            recovery_status=str(recovery.get("status") or ""),
+            recovery_action=summary.get("recovery_action"),
+            recovery_summary=str(recovery.get("evidence_summary") or summary.get("quality_summary") or ""),
+            failure_reason=summary.get("failure_reason"),
+            final_reason=summary.get("final_reason"),
+            has_launch_context=context is not None,
+            can_resume_latest=bool(
+                self.job
+                and self.job.type in CYCLE_BASED_JOB_TYPES
+                and context
+                and context.relaunch_capabilities.get("can_resume_latest", False)
+            ),
+            weights_updated=(summary.get("weights_updated") == "yes"),
+        )
+
+    def _render_secondary_monitor_actions(self, actions: list[TrainingAction]) -> None:
+        if not actions:
+            return
+        with ui.row().classes(
+            f'items-center gap-1 px-2 py-1 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+        ):
+            for action in actions:
+                ui.button(
+                    icon=action.icon,
+                    on_click=lambda a=action: self._trigger_monitor_action(a),
+                ).props("flat round dense").classes(
+                    f'text-[{self._tone_color(action.tone)}]'
+                ).tooltip(action.label)
+
+    def _trigger_monitor_action(self, action: TrainingAction) -> None:
+        if action.id == "guided_fix":
+            self._open_recovery_review_dialog()
+        elif action.id == "review_details":
+            self._open_quality_review_dialog()
+        elif action.id == "run_again":
+            asyncio.create_task(self._rerun_job())
+        elif action.id == "resume_latest":
+            asyncio.create_task(self._resume_latest_job())
+        elif action.id == "edit_config":
+            if self._get_launch_context_path():
+                self._clone_to_form()
+            else:
+                ui.navigate.to(self._recovery_route())
     
     def render(self):
         """Render the monitor page."""
@@ -262,25 +331,16 @@ class Monitor:
                         context = self._get_launch_context()
                         context_path = self._get_launch_context_path()
                         if context:
-                            if context.relaunch_capabilities.get("can_relaunch", False):
-                                ui.button('Rerun', icon='replay', on_click=lambda: asyncio.create_task(self._rerun_job())).props(
-                                    'flat'
-                                ).classes(f'text-[{COLORS["accent"]}]')
-                            if (
-                                self.job.type in CYCLE_BASED_JOB_TYPES
-                                and context.relaunch_capabilities.get("can_resume_latest", False)
-                            ):
+                            presentation = self._current_training_presentation()
+                            if presentation.primary_action:
                                 ui.button(
-                                    'Resume Latest',
-                                    icon='history',
-                                    on_click=lambda: asyncio.create_task(self._resume_latest_job()),
-                                ).props('flat').classes(f'text-[{COLORS["info"]}]')
-                            if context.relaunch_capabilities.get("can_clone", False):
-                                ui.button(
-                                    'Clone to Form',
-                                    icon='content_copy',
-                                    on_click=self._clone_to_form,
-                                ).props('flat').classes(f'text-[{COLORS["text_secondary"]}]')
+                                    presentation.primary_action.label,
+                                    icon=presentation.primary_action.icon,
+                                    on_click=lambda a=presentation.primary_action: self._trigger_monitor_action(a),
+                                ).props("unelevated").classes(
+                                    f'bg-[{self._tone_color(presentation.primary_action.tone)}] text-white'
+                                )
+                            self._render_secondary_monitor_actions(presentation.secondary_actions)
                         elif context_path:
                             ui.label("launch context unavailable (invalid JSON)").classes(
                                 f'text-xs text-[{COLORS["warning"]}]'
@@ -297,8 +357,8 @@ class Monitor:
                             f'text-[{COLORS["text_secondary"]}]'
                         ).tooltip(str(self.job.output_dir))
 
-            if self.job.status in {"failed", "stopped"}:
-                self._render_failure_recovery_panel()
+            if self.job.type in TRAINING_JOB_TYPES:
+                self._render_training_decision_card()
             
             # Progress section
             with ui.column().classes(
@@ -407,6 +467,51 @@ class Monitor:
             return failure_reason
         return "Run did not complete. Review inputs and retry."
 
+    def _render_training_decision_card(self) -> None:
+        """Render a layered summary card with the recommended next step."""
+        if not self.job:
+            return
+        summary = self._derive_training_outcome()
+        presentation = self._current_training_presentation()
+        tone_color = self._tone_color(presentation.confidence_tone)
+        with ui.column().classes(
+            f'w-full gap-3 p-4 rounded-xl bg-[{COLORS["bg_card"]}] border border-[{tone_color}]/35 animate-in'
+        ):
+            with ui.row().classes("w-full items-start justify-between gap-4 flex-wrap"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Training Decision").classes(
+                        f'text-sm font-semibold text-[{tone_color}]'
+                    )
+                    ui.label(presentation.headline_status).classes(
+                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label(presentation.supporting_summary).classes(
+                        f'text-sm text-[{COLORS["text_secondary"]}]'
+                    )
+                if self.job.status == "running":
+                    ui.label(summary.get("quality_action", "--")).classes(
+                        f'px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{tone_color}]'
+                    )
+            with ui.row().classes("w-full gap-3 flex-wrap"):
+                for label, value in (
+                    ("Quality", summary.get("quality_status", "--")),
+                    ("Keep Rate", summary.get("quality_keep_rate", "--")),
+                    ("Top Issue", summary.get("quality_drop_reason", "--")),
+                    (
+                        "Recommended Next Step",
+                        presentation.primary_action.label if presentation.primary_action else summary.get("quality_action", "--"),
+                    ),
+                ):
+                    with ui.column().classes(
+                        f'flex-1 min-w-[160px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                    ):
+                        ui.label(label).classes(
+                            f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.label(str(value or "--")).classes(
+                            f'text-xs text-[{COLORS["text_primary"]}]'
+                        )
+
     def _render_failure_recovery_panel(self) -> None:
         """Render concise, actionable recovery controls for failed starts."""
         context_exists = self._get_launch_context_path() is not None
@@ -423,6 +528,15 @@ class Monitor:
                 f'text-xs text-[{COLORS["text_secondary"]}]'
             )
             with ui.row().classes("w-full gap-2 flex-wrap"):
+                recovery = self._current_recovery_guidance()
+                if recovery.get("status") == "ready":
+                    ui.button(
+                        "Apply Suggested Fix",
+                        icon="auto_fix_high",
+                        on_click=lambda: self._open_recovery_review_dialog(),
+                    ).props("dense unelevated").classes(
+                        f'bg-[{COLORS["success"]}] text-white'
+                    )
                 ui.button(
                     "Fix input",
                     icon="edit",
@@ -638,10 +752,48 @@ class Monitor:
             self._render_diagnostics_metrics_panel()
             return
 
-        ui.label('Current Metrics').classes(
+        ui.label('Training Metrics').classes(
             f'text-base font-semibold text-[{COLORS["text_primary"]}]'
         )
-        
+        summary = self._derive_training_outcome()
+        presentation = self._current_training_presentation()
+        tone_color = self._tone_color(presentation.confidence_tone)
+        with ui.column().classes(
+            f'w-full gap-2 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[{tone_color}]/35'
+        ):
+            with ui.row().classes("w-full items-center justify-between gap-3"):
+                self._quality_headline_label = ui.label(presentation.headline_status).classes(
+                    f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
+                )
+                self._quality_status_label = ui.label(summary["quality_status"]).classes(
+                    f'px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_card"]}] text-[{tone_color}]'
+                )
+            self._quality_summary_note_label = ui.label(presentation.supporting_summary).classes(
+                f'text-xs text-[{COLORS["text_secondary"]}]'
+            )
+            with ui.row().classes("w-full gap-3 flex-wrap"):
+                for label, value, attr, color in (
+                    ("Keep Rate", summary["quality_keep_rate"], "_quality_keep_rate_label", COLORS["text_primary"]),
+                    ("Top Issue", summary["quality_drop_reason"], "_quality_drop_reason_label", COLORS["text_primary"]),
+                    ("Recommended Next Step", summary["quality_action"], "_quality_action_label", COLORS["accent"]),
+                    ("Recovery", summary["recovery_action"], "_recovery_action_label", COLORS["success"]),
+                ):
+                    with ui.column().classes("flex-1 min-w-[120px] gap-1"):
+                        ui.label(label).classes(
+                            f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        setattr(
+                            self,
+                            attr,
+                            ui.label(value).classes(
+                                f'text-sm font-mono text-[{color}]'
+                            ),
+                        )
+
+        ui.label('Detailed Metrics').classes(
+            f'text-sm font-semibold text-[{COLORS["text_secondary"]}] mt-1'
+        )
+
         with ui.column().classes('w-full gap-3 mt-2'):
             # Loss
             with ui.row().classes('w-full items-center justify-between'):
@@ -678,7 +830,6 @@ class Monitor:
                     )
 
             ui.separator().classes('my-2')
-            summary = self._derive_training_outcome()
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label('Weights Updated').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
                 self._weights_updated_label = ui.label(summary["weights_updated"]).classes(
@@ -718,27 +869,6 @@ class Monitor:
                 ui.label('Resume').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
                 self._resume_label = ui.label(summary["resume"]).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
-                )
-            ui.separator().classes('my-2')
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Training Quality').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                self._quality_status_label = ui.label(summary["quality_status"]).classes(
-                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
-                )
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Keep Rate').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                self._quality_keep_rate_label = ui.label(summary["quality_keep_rate"]).classes(
-                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
-                )
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Top Drop Reason').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                self._quality_drop_reason_label = ui.label(summary["quality_drop_reason"]).classes(
-                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
-                )
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Action Hint').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
-                self._quality_action_label = ui.label(summary["quality_action"]).classes(
-                    f'text-sm font-mono text-[{COLORS["accent"]}]'
                 )
             if summary["quality_summary"] != "--":
                 ui.label(summary["quality_summary"]).classes(
@@ -932,6 +1062,7 @@ class Monitor:
             else None
         )
         if not payload:
+            recovery = self._current_recovery_guidance(yield_diagnostics=live_yield or {})
             return {
                 "weights_updated": "--",
                 "update_steps": "--",
@@ -954,6 +1085,7 @@ class Monitor:
                 "quality_summary": str(
                     ((live_yield or {}).get("summary") or {}).get("text") or "--"
                 ),
+                "recovery_action": str(recovery.get("recommended_action") or "--"),
             }
 
         total_steps = int(payload.get("total_train_steps_executed", 0) or 0)
@@ -980,6 +1112,7 @@ class Monitor:
             if isinstance(yield_diagnostics.get("rates"), dict)
             else {}
         )
+        recovery = self._current_recovery_guidance(payload=payload, yield_diagnostics=yield_diagnostics)
 
         cycle_entries = payload.get("cycles") or payload.get("cycle_results") or []
         if isinstance(cycle_entries, list):
@@ -1044,6 +1177,7 @@ class Monitor:
             ).replace("_", " "),
             "quality_action": self._yield_action_hint(yield_diagnostics),
             "quality_summary": str(yield_summary.get("text") or "--"),
+            "recovery_action": str(recovery.get("recommended_action") or "--"),
         }
 
     def _format_percent(self, value: Any) -> str:
@@ -1069,6 +1203,151 @@ class Monitor:
         if status in {"low_yield", "no_signal"}:
             return "Increase sample budget"
         return "Settings look balanced"
+
+    def _current_recovery_guidance(
+        self,
+        *,
+        payload: Optional[Dict[str, Any]] = None,
+        yield_diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        summary_payload = payload or self._read_training_summary_payload() or {}
+        if isinstance(summary_payload.get("recovery_guidance"), dict):
+            return dict(summary_payload.get("recovery_guidance") or {})
+        launch_args = {}
+        context = self._get_launch_context()
+        if context:
+            launch_args = dict(context.args)
+        elif self.job and isinstance(self.job.launch_args, dict):
+            launch_args = dict(self.job.launch_args)
+        return build_recovery_guidance(
+            modality=str((summary_payload.get("modality") if isinstance(summary_payload, dict) else None) or (self.job.type if self.job else "")).strip().lower(),
+            yield_diagnostics=yield_diagnostics or (
+                summary_payload.get("yield_diagnostics")
+                if isinstance(summary_payload.get("yield_diagnostics"), dict)
+                else {}
+            ),
+            effectiveness=(
+                summary_payload.get("effectiveness")
+                if isinstance(summary_payload.get("effectiveness"), dict)
+                else {}
+            ),
+            launch_args=launch_args,
+            representative_examples=[],
+        )
+
+    def _preferred_recovery_resume_latest(self) -> bool:
+        context = self._get_launch_context()
+        return bool(
+            self.job
+            and self.job.type in CYCLE_BASED_JOB_TYPES
+            and context
+            and context.relaunch_capabilities.get("can_resume_latest", False)
+        )
+
+    def _open_quality_review_dialog(self) -> None:
+        summary = self._derive_training_outcome()
+        presentation = self._current_training_presentation()
+        dialog = ui.dialog()
+        with dialog, ui.card().classes(
+            f'w-[720px] max-w-[95vw] gap-4 bg-[{COLORS["bg_card"]}] text-[{COLORS["text_primary"]}]'
+        ):
+            ui.label("Training Quality Review").classes("text-lg font-semibold")
+            ui.label(presentation.supporting_summary).classes(
+                f'text-sm text-[{COLORS["text_secondary"]}]'
+            )
+            with ui.row().classes("w-full gap-3 flex-wrap"):
+                for label, value in (
+                    ("Status", presentation.headline_status),
+                    ("Quality", summary.get("quality_status", "--")),
+                    ("Keep Rate", summary.get("quality_keep_rate", "--")),
+                    ("Top Issue", summary.get("quality_drop_reason", "--")),
+                    ("Next Step", presentation.primary_action.label if presentation.primary_action else summary.get("quality_action", "--")),
+                ):
+                    with ui.column().classes(
+                        f'flex-1 min-w-[140px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                    ):
+                        ui.label(label).classes(
+                            f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.label(str(value or "--")).classes(
+                            f'text-sm text-[{COLORS["text_primary"]}]'
+                        )
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Close", on_click=dialog.close).props("flat")
+        dialog.open()
+
+    def _open_recovery_review_dialog(self) -> None:
+        recovery = self._current_recovery_guidance()
+        if recovery.get("status") != "ready":
+            return
+        dialog = ui.dialog()
+        launch_mode = "resume latest" if self._preferred_recovery_resume_latest() else "relaunch"
+        with dialog, ui.card().classes(
+            f'w-[720px] max-w-[95vw] gap-4 bg-[{COLORS["bg_card"]}] text-[{COLORS["text_primary"]}]'
+        ):
+            ui.label("Review Suggested Fix").classes("text-lg font-semibold")
+            ui.label(str(recovery.get("evidence_summary") or "--")).classes(
+                f'text-sm text-[{COLORS["text_secondary"]}]'
+            )
+            with ui.column().classes(
+                f'w-full gap-2 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+            ):
+                ui.label(f"Launch mode: {launch_mode}").classes(f'text-sm text-[{COLORS["text_primary"]}]')
+                ui.label(f"Why this fix: {recovery.get('recommended_action') or '--'}").classes(
+                    f'text-xs text-[{COLORS["success"]}]'
+                )
+                for key, value in dict(recovery.get("suggested_overrides") or {}).items():
+                    ui.label(f"{key}: {value}").classes(f'text-xs font-mono text-[{COLORS["accent"]}]')
+            examples = [dict(example) for example in recovery.get("representative_examples", []) if isinstance(example, dict)]
+            if examples:
+                with ui.expansion(text="Representative evidence", icon="fact_check", value=False).classes(
+                    f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ).props('dense dark'):
+                    with ui.column().classes("w-full gap-2 p-3"):
+                        for example in examples:
+                            ui.label(f"{example.get('label') or example.get('reason')}: {example.get('preview') or '--'}").classes(
+                                f'text-xs text-[{COLORS["text_secondary"]}]'
+                            )
+                            if example.get("context"):
+                                ui.label(str(example.get("context"))).classes(
+                                    f'text-[11px] text-[{COLORS["text_muted"]}]'
+                                )
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button(
+                    "Launch with suggested fix",
+                    icon="play_arrow",
+                    on_click=lambda: asyncio.create_task(
+                        self._apply_recovery_guidance(dialog, recovery)
+                    ),
+                ).props("unelevated").classes(
+                    f'bg-[{COLORS["primary"]}] text-white'
+                )
+        dialog.open()
+
+    async def _apply_recovery_guidance(self, dialog, recovery: Dict[str, Any]) -> None:
+        if not self.job:
+            dialog.close()
+            return
+        context_path = self._get_launch_context_path()
+        if not context_path:
+            notify_job_failed(self.job.name, "No launch context found for guided recovery")
+            dialog.close()
+            return
+        try:
+            new_job_id = await self.training_service.relaunch_from_context(
+                context_path,
+                origin_job_id=self.job.id,
+                resume_latest=self._preferred_recovery_resume_latest(),
+                override_args=dict(recovery.get("suggested_overrides") or {}),
+                guided_recovery=recovery,
+                source_ui_page="/monitor",
+            )
+            dialog.close()
+            notify_job_started(f"Guided recovery: {self.job.type.upper()}")
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            notify_job_failed(self.job.name, f"Guided recovery failed: {e}")
 
     def _derive_qualification_outcome(self) -> Dict[str, str]:
         """Compute display-safe qualification summary fields from report payload."""
@@ -1654,12 +1933,20 @@ class Monitor:
                 self._resume_label.set_text(summary["resume"])
             if self._quality_status_label:
                 self._quality_status_label.set_text(summary["quality_status"])
+            if self._quality_headline_label or self._quality_summary_note_label:
+                presentation = self._current_training_presentation()
+                if self._quality_headline_label:
+                    self._quality_headline_label.set_text(presentation.headline_status)
+                if self._quality_summary_note_label:
+                    self._quality_summary_note_label.set_text(presentation.supporting_summary)
             if self._quality_keep_rate_label:
                 self._quality_keep_rate_label.set_text(summary["quality_keep_rate"])
             if self._quality_drop_reason_label:
                 self._quality_drop_reason_label.set_text(summary["quality_drop_reason"])
             if self._quality_action_label:
                 self._quality_action_label.set_text(summary["quality_action"])
+            if self._recovery_action_label:
+                self._recovery_action_label.set_text(summary["recovery_action"])
 
             if self._benchmark_metric_labels:
                 benchmark_summary = self._derive_benchmark_outcome()
@@ -1913,6 +2200,11 @@ class Monitor:
                 "job_type": context.job_type,
                 "args": context.args,
             }
+            recovery = self._current_recovery_guidance()
+            if recovery.get("status") in {"ready", "advisory_only"}:
+                payload["suggested_overrides"] = dict(recovery.get("suggested_overrides") or {})
+                payload["recovery_reason_code"] = recovery.get("reason_code")
+                payload["recovery_summary"] = recovery.get("evidence_summary")
             if self.job.type == "benchmark":
                 app.storage.user["benchmark_clone_payload"] = payload
                 ui.navigate.to("/benchmark")

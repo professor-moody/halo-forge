@@ -35,6 +35,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
@@ -137,6 +138,7 @@ class VLMRAFTTrainer:
         self.base_model_name = config.model_name
         self.run_id: str = ""
         self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
+        self.representative_examples: List[Dict[str, Any]] = []
         
         # Create output directory
         self.output_dir = Path(config.output_dir)
@@ -534,6 +536,30 @@ class VLMRAFTTrainer:
         )
         
         self._log(f"Filtered to {len(filtered)} samples", "ok")
+        if not self.representative_examples:
+            failed = [
+                {
+                    "reason": "verification_failed",
+                    "label": "Verifier failure",
+                    "preview": s.completion,
+                    "context": s.prompt,
+                    "reward": s.reward,
+                }
+                for s in samples
+                if not s.success
+            ][:3]
+            dropped = [
+                {
+                    "reason": "below_reward_threshold",
+                    "label": "Below threshold",
+                    "preview": s.completion,
+                    "context": s.prompt,
+                    "reward": s.reward,
+                }
+                for s in samples
+                if s.success and float(s.reward) < effective_threshold
+            ][:3]
+            self.representative_examples = failed or dropped
         
         # 3. Train
         train_metrics = self.train_on_samples(filtered, cycle)
@@ -769,6 +795,23 @@ class VLMRAFTTrainer:
             checkpoint_written=bool(self.training_history),
             final_model_path=final_state["final_model_dir"],
             training_summary_path=self.output_dir / "training_summary.json",
+        )
+        attach_recovery_guidance(
+            summary,
+            modality="vlm",
+            launch_args={
+                "model": self.base_model_name,
+                "dataset": "",
+                "output_dir": str(self.output_dir),
+                "cycles": self.config.num_cycles,
+                "learning_rate": self.config.learning_rate,
+                "lr_decay": self.config.lr_decay_per_cycle,
+                "samples_per_prompt": self.config.samples_per_prompt,
+                "temperature": self.config.temperature,
+                "keep_percent": self.config.keep_top_percent,
+                "reward_threshold": self.config.reward_threshold,
+            },
+            representative_examples=self.representative_examples,
         )
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         return summary

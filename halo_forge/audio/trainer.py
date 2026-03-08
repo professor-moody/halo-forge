@@ -32,6 +32,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
@@ -144,6 +145,7 @@ class AudioRAFTTrainer:
         self.base_model_name = config.model_name
         self.run_id: str = ""
         self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
+        self.representative_examples: List[Dict[str, Any]] = []
     
     def _init_adapter(self) -> None:
         """Initialize model adapter."""
@@ -333,6 +335,23 @@ class AudioRAFTTrainer:
             final_model_path=final_state["final_model_dir"],
             training_summary_path=self.output_dir / "training_summary.json",
         )
+        attach_recovery_guidance(
+            summary,
+            modality="audio",
+            launch_args={
+                "model": self.base_model_name,
+                "dataset": "",
+                "output_dir": str(self.output_dir),
+                "cycles": self.config.num_cycles,
+                "learning_rate": self.config.learning_rate,
+                "lr_decay": self.config.lr_decay_per_cycle,
+                "samples_per_prompt": self.config.samples_per_prompt,
+                "keep_percent": self.config.keep_top_percent,
+                "reward_threshold": self.config.reward_threshold,
+                "task": self.config.task,
+            },
+            representative_examples=self.representative_examples,
+        )
         self.training_summary = summary
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         
@@ -375,6 +394,30 @@ class AudioRAFTTrainer:
         above_threshold = sum(
             1 for v in verified if float(v.get("reward", 0.0)) >= self.config.reward_threshold
         )
+        if not self.representative_examples:
+            failed = [
+                {
+                    "reason": "verification_failed",
+                    "label": "Verifier mismatch",
+                    "preview": v.get("prediction", ""),
+                    "context": v.get("ground_truth", ""),
+                    "reward": v.get("reward"),
+                }
+                for v in verified
+                if not v.get("success")
+            ][:3]
+            dropped = [
+                {
+                    "reason": "below_reward_threshold",
+                    "label": "Below threshold",
+                    "preview": v.get("prediction", ""),
+                    "context": v.get("ground_truth", ""),
+                    "reward": v.get("reward"),
+                }
+                for v in verified
+                if v.get("success") and float(v.get("reward", 0.0)) < self.config.reward_threshold
+            ][:3]
+            self.representative_examples = failed or dropped
         avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
         train_metrics: Dict[str, Any]
 

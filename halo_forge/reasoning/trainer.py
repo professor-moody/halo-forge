@@ -25,6 +25,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
@@ -130,6 +131,7 @@ class ReasoningRAFTTrainer:
         self.base_model_name = config.model_name
         self.run_id: str = ""
         self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
+        self.representative_examples: list[Dict[str, Any]] = []
     
     def load_model(self) -> None:
         """Load model and tokenizer."""
@@ -347,6 +349,30 @@ class ReasoningRAFTTrainer:
                 )
             },
         }
+        if not self.representative_examples:
+            failed = [
+                {
+                    "reason": "verification_failed",
+                    "label": "Reasoning verifier failure",
+                    "preview": c.completion,
+                    "context": c.sample.question,
+                    "reward": c.reward,
+                }
+                for c in completions
+                if not c.verified
+            ][:3]
+            dropped = [
+                {
+                    "reason": "dropped_by_keep_percent",
+                    "label": "Dropped completion",
+                    "preview": c.completion,
+                    "context": c.sample.question,
+                    "reward": c.reward,
+                }
+                for c in completions
+                if c.reward > 0 and c not in filtered
+            ][:3]
+            self.representative_examples = failed or dropped
         train_metrics = normalize_update_metrics(
             self._train_on_filtered(filtered, cycle),
             default_reason="no_filtered_samples",
@@ -511,6 +537,21 @@ class ReasoningRAFTTrainer:
             checkpoint_written=bool(self._all_cycle_metrics),
             final_model_path=final_state["final_model_dir"],
             training_summary_path=self.output_dir / "training_summary.json",
+        )
+        attach_recovery_guidance(
+            summary,
+            modality="reasoning",
+            launch_args={
+                "model": self.base_model_name,
+                "dataset": "",
+                "output_dir": str(self.output_dir),
+                "cycles": self.config.num_cycles,
+                "learning_rate": self.config.learning_rate,
+                "lr_decay": self.config.lr_decay_per_cycle,
+                "limit": len(samples),
+                "keep_percent": self.config.keep_top_percent,
+            },
+            representative_examples=self.representative_examples,
         )
         self.training_summary = summary
 

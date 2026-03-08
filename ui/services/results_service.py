@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from halo_forge.training_recovery import build_recovery_guidance
+from .launch_context import read_launch_context
+
 
 @dataclass
 class BenchmarkResult:
@@ -114,6 +117,12 @@ class TrainingRunSummary:
     keep_rate: Optional[float] = None
     dominant_rejection_reason: Optional[str] = None
     yield_diagnostics: Dict[str, Any] = field(default_factory=dict)
+    recovery_status: Optional[str] = None
+    recovery_recommended_action: Optional[str] = None
+    recovery_reason_code: Optional[str] = None
+    recovery_summary: Optional[str] = None
+    recovery_suggested_overrides: Dict[str, Any] = field(default_factory=dict)
+    representative_examples: List[Dict[str, Any]] = field(default_factory=list)
     final_model_path: Optional[str] = None
     launch_context_path: Optional[Path] = None
     has_relaunch_context: bool = False
@@ -837,6 +846,27 @@ class ResultsService:
         yield_diagnostics = (
             data.get("yield_diagnostics") if isinstance(data.get("yield_diagnostics"), dict) else {}
         )
+        launch_context_path = path.parent / "launch_context.json"
+        launch_args: Dict[str, Any] = {}
+        if launch_context_path.exists():
+            try:
+                launch_args = dict(read_launch_context(launch_context_path).args)
+            except Exception:
+                launch_args = {}
+        recovery_guidance = (
+            data.get("recovery_guidance")
+            if isinstance(data.get("recovery_guidance"), dict)
+            else build_recovery_guidance(
+                modality=modality or "unknown",
+                yield_diagnostics=yield_diagnostics,
+                effectiveness=effectiveness,
+                launch_args=launch_args,
+                representative_examples=(
+                    ((data.get("recovery_guidance") or {}) if isinstance(data.get("recovery_guidance"), dict) else {}).get("representative_examples")
+                    or []
+                ),
+            )
+        )
         yield_summary = (
             yield_diagnostics.get("summary")
             if isinstance(yield_diagnostics.get("summary"), dict)
@@ -858,8 +888,6 @@ class ResultsService:
             relative_id = path.resolve().relative_to(self.base_path.resolve()).as_posix()
         except Exception:
             relative_id = path.as_posix()
-        launch_context_path = path.parent / "launch_context.json"
-
         return TrainingRunSummary(
             id=relative_id.replace("/", "_"),
             modality=modality or "unknown",
@@ -921,6 +949,36 @@ class ResultsService:
                 else None
             ),
             yield_diagnostics=yield_diagnostics,
+            recovery_status=(
+                str(recovery_guidance.get("status"))
+                if recovery_guidance.get("status") not in (None, "")
+                else None
+            ),
+            recovery_recommended_action=(
+                str(recovery_guidance.get("recommended_action"))
+                if recovery_guidance.get("recommended_action") not in (None, "")
+                else None
+            ),
+            recovery_reason_code=(
+                str(recovery_guidance.get("reason_code"))
+                if recovery_guidance.get("reason_code") not in (None, "")
+                else None
+            ),
+            recovery_summary=(
+                str(recovery_guidance.get("evidence_summary"))
+                if recovery_guidance.get("evidence_summary") not in (None, "")
+                else None
+            ),
+            recovery_suggested_overrides=(
+                dict(recovery_guidance.get("suggested_overrides"))
+                if isinstance(recovery_guidance.get("suggested_overrides"), dict)
+                else {}
+            ),
+            representative_examples=[
+                dict(example)
+                for example in recovery_guidance.get("representative_examples", [])
+                if isinstance(example, dict)
+            ],
             final_model_path=str(final_model_path) if final_model_path else None,
             launch_context_path=launch_context_path if launch_context_path.exists() else None,
             has_relaunch_context=launch_context_path.exists(),

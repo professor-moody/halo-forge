@@ -29,6 +29,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
     persist_final_artifacts,
@@ -168,6 +169,7 @@ class AgenticRAFTTrainer:
         self.base_model_name = config.model_name
         self.run_id: str = ""
         self.resume_checkpoint_meta: Optional[Dict[str, Any]] = None
+        self.representative_examples: List[Dict[str, Any]] = []
         
         # Initialize MetricsTracker for TensorBoard and JSON logging
         self.metrics_tracker = MetricsTracker(
@@ -357,6 +359,22 @@ class AgenticRAFTTrainer:
             final_model_path=final_state["final_model_dir"],
             training_summary_path=self.output_dir / "training_summary.json",
         )
+        attach_recovery_guidance(
+            final_metrics,
+            modality="agentic",
+            launch_args={
+                "model": self.base_model_name,
+                "dataset": "",
+                "output_dir": str(self.output_dir),
+                "cycles": self.config.num_cycles,
+                "learning_rate": self.config.learning_rate,
+                "lr_decay": self.config.lr_decay_per_cycle,
+                "limit": len(samples),
+                "samples_per_prompt": self.config.samples_per_prompt,
+                "keep_percent": self.config.keep_top_percent,
+            },
+            representative_examples=self.representative_examples,
+        )
         self.training_summary = final_metrics
         
         # Save metrics summary
@@ -422,6 +440,9 @@ class AgenticRAFTTrainer:
         above_threshold_count = sum(
             1 for c in all_completions if float(c.reward) >= self.config.reward_threshold
         )
+        above_threshold_count = sum(
+            1 for c in all_completions if float(c.reward) >= self.config.reward_threshold
+        )
         
         # Log sample-level rewards to MetricsTracker
         rewards = [c.reward for c in all_completions]
@@ -442,6 +463,41 @@ class AgenticRAFTTrainer:
                 "weights_updated": False,
                 "update_reason": "no_filtered_samples",
             }
+        if not self.representative_examples:
+            failed = [
+                {
+                    "reason": "verification_failed",
+                    "label": "Tool-call verification failure",
+                    "preview": c.output,
+                    "context": c.prompt,
+                    "reward": c.reward,
+                }
+                for c in all_completions
+                if not (c.result and c.result.success)
+            ][:3]
+            dropped = [
+                {
+                    "reason": "below_reward_threshold",
+                    "label": "Below threshold",
+                    "preview": c.output,
+                    "context": c.prompt,
+                    "reward": c.reward,
+                }
+                for c in all_completions
+                if c.result and c.result.success and float(c.reward) < self.config.reward_threshold
+            ][:3]
+            keep_drop = [
+                {
+                    "reason": "dropped_by_keep_percent",
+                    "label": "Dropped by keep percent",
+                    "preview": c.output,
+                    "context": c.prompt,
+                    "reward": c.reward,
+                }
+                for c in all_completions
+                if c.result and c.result.success and float(c.reward) >= self.config.reward_threshold and c not in filtered
+            ][:3]
+            self.representative_examples = failed or dropped or keep_drop
         
         canonical_metrics = build_cycle_summary(
             cycle=cycle,

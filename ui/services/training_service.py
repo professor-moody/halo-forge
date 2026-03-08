@@ -246,6 +246,7 @@ class TrainingService:
         relaunch: bool,
         launch_context_file: Optional[Path],
         resume_strategy: Optional[str],
+        guided_recovery: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
         if origin_job_id:
@@ -256,7 +257,21 @@ class TrainingService:
             metadata["launch_context_file"] = str(launch_context_file)
         if resume_strategy:
             metadata["resume_strategy"] = resume_strategy
+        if guided_recovery:
+            metadata["guided_recovery"] = dict(guided_recovery)
         return metadata
+
+    def _apply_launch_overrides(
+        self,
+        args: dict[str, Any],
+        override_args: Optional[dict[str, Any]],
+    ) -> dict[str, Any]:
+        resolved = dict(args)
+        for key, value in (override_args or {}).items():
+            if value is None:
+                continue
+            resolved[key] = value
+        return resolved
 
     def _preflight_output_dir(
         self,
@@ -846,6 +861,7 @@ class TrainingService:
         origin_job_id: Optional[str] = None,
         relaunch: bool = False,
         resume_strategy: Optional[str] = None,
+        guided_recovery: Optional[dict[str, Any]] = None,
         **kwargs
     ) -> str:
         """
@@ -986,6 +1002,7 @@ class TrainingService:
                     "can_clone": True,
                     "can_resume_latest": False,
                 },
+                metadata={"guided_recovery": dict(guided_recovery or {})},
             )
         except Exception as e:
             print(f"[TrainingService] Failed to persist launch context: {e}")
@@ -994,6 +1011,7 @@ class TrainingService:
             relaunch=relaunch,
             launch_context_file=launch_context_file,
             resume_strategy=resume_strategy,
+            guided_recovery=guided_recovery,
         )
         job.launch_context_file = launch_context_file
         job.launch_args = launch_args
@@ -1056,6 +1074,7 @@ class TrainingService:
         origin_job_id: Optional[str] = None,
         relaunch: bool = False,
         resume_strategy: Optional[str] = None,
+        guided_recovery: Optional[dict[str, Any]] = None,
         **kwargs
     ) -> str:
         """
@@ -1190,6 +1209,7 @@ class TrainingService:
                     "can_clone": True,
                     "can_resume_latest": True,
                 },
+                metadata={"guided_recovery": dict(guided_recovery or {})},
             )
         except Exception as e:
             print(f"[TrainingService] Failed to persist launch context: {e}")
@@ -1198,6 +1218,7 @@ class TrainingService:
             relaunch=relaunch,
             launch_context_file=launch_context_file,
             resume_strategy=resume_strategy,
+            guided_recovery=guided_recovery,
         )
         job.launch_context_file = launch_context_file
         job.launch_args = launch_args
@@ -1256,6 +1277,7 @@ class TrainingService:
         origin_job_id: Optional[str] = None,
         relaunch: bool = False,
         resume_strategy: Optional[str] = None,
+        guided_recovery: Optional[dict[str, Any]] = None,
     ) -> str:
         """Launch modality-specific train command (vlm/audio/reasoning/agentic)."""
         if modality not in MODALITY_TRAIN_LAUNCH_CONTRACTS:
@@ -1352,6 +1374,7 @@ class TrainingService:
                     "can_clone": True,
                     "can_resume_latest": modality in CYCLE_BASED_TRAINING_JOB_TYPES,
                 },
+                metadata={"guided_recovery": dict(guided_recovery or {})},
             )
         except Exception as e:
             print(f"[TrainingService] Failed to persist launch context: {e}")
@@ -1360,6 +1383,7 @@ class TrainingService:
             relaunch=relaunch,
             launch_context_file=launch_context_file,
             resume_strategy=resume_strategy,
+            guided_recovery=guided_recovery,
         )
         job.launch_context_file = launch_context_file
         job.launch_args = launch_args
@@ -1397,6 +1421,8 @@ class TrainingService:
         *,
         origin_job_id: Optional[str] = None,
         resume_latest: bool = False,
+        override_args: Optional[dict[str, Any]] = None,
+        guided_recovery: Optional[dict[str, Any]] = None,
         source_ui_page: str = "/monitor",
         on_log: Optional[Callable[[str], None]] = None,
     ) -> str:
@@ -1405,9 +1431,16 @@ class TrainingService:
         if context.service != "training":
             raise ValueError("launch context does not belong to training service")
 
-        args = dict(context.args)
+        args = self._apply_launch_overrides(dict(context.args), override_args)
         job_type = context.job_type
         resume_strategy = "resume_latest" if resume_latest else "relaunch"
+        recovery_payload = None
+        if guided_recovery or override_args:
+            recovery_payload = {
+                "applied_overrides": dict(override_args or {}),
+                "reason_code": str((guided_recovery or {}).get("reason_code") or ""),
+                "summary": str((guided_recovery or {}).get("evidence_summary") or ""),
+            }
 
         if resume_latest:
             if job_type not in CYCLE_BASED_TRAINING_JOB_TYPES:
@@ -1437,6 +1470,7 @@ class TrainingService:
                 origin_job_id=origin_job_id,
                 relaunch=True,
                 resume_strategy=resume_strategy,
+                guided_recovery=recovery_payload,
                 **args,
             )
         if job_type == "raft":
@@ -1446,6 +1480,7 @@ class TrainingService:
                 origin_job_id=origin_job_id,
                 relaunch=True,
                 resume_strategy=resume_strategy,
+                guided_recovery=recovery_payload,
                 **args,
             )
         if job_type in {"vlm", "audio", "reasoning", "agentic"}:
@@ -1456,6 +1491,7 @@ class TrainingService:
                 origin_job_id=origin_job_id,
                 relaunch=True,
                 resume_strategy=resume_strategy,
+                guided_recovery=recovery_payload,
                 **args,
             )
 

@@ -14,6 +14,10 @@ from nicegui import ui, app
 
 from ui.theme import COLORS
 from ui.state import state
+from ui.services.training_presentation import (
+    TrainingAction,
+    build_training_run_presentation,
+)
 from ui.services import (
     BenchmarkResult,
     BootstrapReportSummary,
@@ -337,142 +341,98 @@ class Results:
                 ui.label(f"Training Runs ({len(rows)})").classes(
                     f'text-base font-semibold text-[{COLORS["text_primary"]}]'
                 )
-                ui.label("Status metadata from training_summary.json").classes(
+                ui.label("Outcome, cause, and next step from training_summary.json").classes(
                     f'text-xs text-[{COLORS["text_muted"]}]'
                 )
 
-            with ui.row().classes(
-                f'w-full items-center gap-3 px-3 py-2 rounded-lg bg-[{COLORS["bg_secondary"]}]'
-            ):
-                ui.label("Modality").classes(
-                    f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
-                )
-                ui.label("Model").classes(
-                    f'flex-[2] text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
-                )
-                ui.label("Quality").classes(
-                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
-                )
-                ui.label("Keep").classes(
-                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Top Drop").classes(
-                    f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
-                )
-                ui.label("Updated").classes(
-                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Steps").classes(
-                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Final Loss").classes(
-                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Reason").classes(
-                    f'flex-1 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
-                )
-                ui.label("Run").classes(
-                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Time").classes(
-                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-                ui.label("Actions").classes(
-                    f'w-36 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
-                )
-
             for run in rows[:20]:
-                with ui.row().classes(
-                    f'w-full items-center gap-3 px-3 py-2 border-b border-[#2d343c] '
-                    f'hover:bg-[{COLORS["bg_hover"]}]'
+                presentation = self._training_presentation(run)
+                tone_color = self._tone_color(presentation.confidence_tone)
+                with ui.column().classes(
+                    f'w-full gap-3 px-4 py-4 rounded-xl border border-[#2d343c] hover:bg-[{COLORS["bg_hover"]}]'
                 ):
-                    ui.label(run.modality.upper()).classes(
-                        f'w-28 text-sm text-[{COLORS["text_secondary"]}]'
-                    )
-                    with ui.column().classes("flex-[2] gap-0"):
-                        ui.label(Path(str(run.model_name)).name).classes(
-                            f'text-sm text-[{COLORS["text_primary"]}]'
-                        )
-                        ui.label(str(run.output_dir)).classes(
-                            f'text-xs text-[{COLORS["text_muted"]}] truncate'
-                        )
-                    with ui.column().classes("w-24 gap-1"):
-                        verdict = run.effectiveness_verdict or run.quality_status or "--"
-                        verdict_color = self._training_quality_color(run)
-                        ui.label(verdict.replace("_", " ")).classes(
-                            f'inline-flex px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{verdict_color}]'
-                        )
-                    ui.label(
-                        f"{run.keep_rate:.0%}" if isinstance(run.keep_rate, (int, float)) else "--"
-                    ).classes(
-                        f'w-20 text-sm font-mono text-[{COLORS["text_secondary"]}] text-right'
-                    )
-                    ui.label(
-                        (run.dominant_rejection_reason or "--").replace("_", " ")
-                    ).classes(
-                        f'w-28 text-xs text-[{COLORS["text_muted"]}] truncate'
-                    )
-                    ui.label("yes" if run.weights_updated else "no").classes(
-                        f'w-20 text-sm font-mono text-[{COLORS["primary"]}] text-right'
-                    )
-                    ui.label(str(run.total_train_steps_executed)).classes(
-                        f'w-20 text-sm font-mono text-[{COLORS["text_secondary"]}] text-right'
-                    )
-                    ui.label(
-                        f"{run.final_train_loss:.4f}" if isinstance(run.final_train_loss, (int, float)) else "--"
-                    ).classes(
-                        f'w-24 text-sm font-mono text-[{COLORS["text_secondary"]}] text-right'
-                    )
-                    ui.label(run.failure_reason or run.final_update_reason or "--").classes(
-                        f'flex-1 text-sm text-[{COLORS["text_muted"]}] truncate'
-                    )
-                    ui.label(run.run_id or "--").classes(
-                        f'w-24 text-xs font-mono text-[{COLORS["text_muted"]}] text-right truncate'
-                    )
-                    ui.label(run.timestamp.strftime("%m-%d %H:%M")).classes(
-                        f'w-24 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
-                    )
-                    with ui.row().classes("w-36 justify-end gap-1"):
-                        ui.button(
-                            icon="insights",
-                            on_click=lambda r=run: self._show_training_run_details(r),
-                        ).props("flat round dense").classes(
-                            f'text-[{COLORS["text_secondary"]}]'
-                        ).tooltip("Quality details")
-                        if run.has_relaunch_context and run.launch_context_path:
-                            ui.button(
-                                icon="replay",
-                                on_click=lambda r=run: asyncio.create_task(self._relaunch_training_run(r)),
-                            ).props("flat round dense").classes(
-                                f'text-[{COLORS["accent"]}]'
-                            ).tooltip("Rerun")
-                            if run.modality in {"raft", "vlm", "audio", "reasoning", "agentic"}:
-                                ui.button(
-                                    icon="history",
-                                    on_click=lambda r=run: asyncio.create_task(
-                                        self._relaunch_training_run(r, resume_latest=True)
-                                    ),
-                                ).props("flat round dense").classes(
-                                    f'text-[{COLORS["info"]}]'
-                                ).tooltip("Resume Latest")
-                            ui.button(
-                                icon="content_copy",
-                                on_click=lambda r=run: self._clone_training_to_form(r),
-                            ).props("flat round dense").classes(
-                                f'text-[{COLORS["text_secondary"]}]'
-                            ).tooltip("Clone to Training form")
-                        else:
-                            ui.label("--").classes(
-                                f'text-xs text-[{COLORS["text_muted"]}] text-right'
+                    with ui.row().classes("w-full items-start justify-between gap-4 flex-wrap"):
+                        with ui.column().classes("flex-1 gap-1"):
+                            with ui.row().classes("items-center gap-2 flex-wrap"):
+                                ui.label(run.modality.upper()).classes(
+                                    f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                                )
+                                verdict = run.effectiveness_verdict or run.quality_status or "--"
+                                ui.label(verdict.replace("_", " ")).classes(
+                                    f'inline-flex px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{tone_color}]'
+                                )
+                            ui.label(Path(str(run.model_name)).name).classes(
+                                f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
                             )
+                            ui.label(presentation.supporting_summary).classes(
+                                f'text-sm text-[{COLORS["text_secondary"]}]'
+                            )
+                            ui.label(run.output_dir.name).classes(
+                                f'text-xs text-[{COLORS["text_muted"]}]'
+                            )
+                        with ui.column().classes("items-end gap-2 min-w-[220px]"):
+                            if presentation.primary_action:
+                                primary_button = ui.button(
+                                    presentation.primary_action.label,
+                                    icon=presentation.primary_action.icon,
+                                    on_click=lambda r=run, a=presentation.primary_action: self._trigger_training_action(r, a),
+                                ).props("unelevated dense").classes(
+                                    f'bg-[{self._tone_color(presentation.primary_action.tone)}] text-white'
+                                )
+                                if presentation.primary_action.id == "guided_fix":
+                                    primary_button.tooltip("Apply suggested fix")
+                            self._render_results_secondary_actions(run, presentation.secondary_actions)
+                            ui.label(run.timestamp.strftime("%m-%d %H:%M")).classes(
+                                f'text-xs font-mono text-[{COLORS["text_muted"]}]'
+                            )
+                    with ui.row().classes("w-full gap-3 flex-wrap"):
+                        for label, value in (
+                            ("Keep Rate", f"{run.keep_rate:.0%}" if isinstance(run.keep_rate, (int, float)) else "--"),
+                            ("Top Issue", (run.dominant_rejection_reason or "--").replace("_", " ")),
+                            ("Updated", "yes" if run.weights_updated else "no"),
+                            ("Steps", str(run.total_train_steps_executed)),
+                            ("Final Loss", f"{run.final_train_loss:.4f}" if isinstance(run.final_train_loss, (int, float)) else "--"),
+                            ("Run ID", run.run_id or "--"),
+                        ):
+                            with ui.column().classes(
+                                f'flex-1 min-w-[110px] gap-1 p-2 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                            ):
+                                ui.label(label).classes(
+                                    f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                                )
+                                ui.label(str(value)).classes(
+                                    f'text-xs text-[{COLORS["text_primary"]}]'
+                                )
 
-    def _training_quality_color(self, run: TrainingRunSummary) -> str:
-        verdict = str(run.effectiveness_verdict or run.quality_status or "").strip().lower()
-        if verdict in {"pass", "healthy"}:
-            return COLORS["success"]
-        if verdict in {"fail", "low_yield", "no_signal", "error"}:
-            return COLORS["error"]
-        return COLORS["warning"]
+    def _tone_color(self, tone: str) -> str:
+        return {
+            "success": COLORS["success"],
+            "warning": COLORS["warning"],
+            "danger": COLORS["error"],
+            "neutral": COLORS["text_secondary"],
+        }.get(str(tone or "").strip().lower(), COLORS["text_secondary"])
+
+    def _training_presentation(self, run: TrainingRunSummary):
+        can_resume = False
+        if run.modality in {"raft", "vlm", "audio", "reasoning", "agentic"} and run.launch_context_path:
+            try:
+                context = read_launch_context(run.launch_context_path)
+            except Exception:
+                context = None
+            can_resume = bool(context and context.relaunch_capabilities.get("can_resume_latest", False))
+        return build_training_run_presentation(
+            job_status="completed" if not run.failure_reason else "failed",
+            quality_status=run.quality_status,
+            quality_summary=run.quality_summary,
+            recovery_status=run.recovery_status,
+            recovery_action=run.recovery_recommended_action,
+            recovery_summary=run.recovery_summary,
+            failure_reason=run.failure_reason,
+            final_reason=run.final_update_reason,
+            has_launch_context=bool(run.has_relaunch_context and run.launch_context_path),
+            can_resume_latest=can_resume,
+            weights_updated=run.weights_updated,
+        )
 
     def _recommended_training_adjustment(self, run: TrainingRunSummary) -> str:
         reason = str(run.dominant_rejection_reason or "").strip().lower()
@@ -488,31 +448,76 @@ class Results:
             return "Increase sample budget and review training inputs before rerunning."
         return "Use clone or relaunch if you want to iterate on this run."
 
+    def _render_results_secondary_actions(self, run: TrainingRunSummary, actions: list[TrainingAction]) -> None:
+        if not actions:
+            return
+        with ui.row().classes(
+            f'items-center gap-1 px-2 py-1 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+        ):
+            for action in actions:
+                ui.button(
+                    icon=action.icon,
+                    on_click=lambda a=action, r=run: self._trigger_training_action(r, a),
+                ).props("flat round dense").classes(
+                    f'text-[{self._tone_color(action.tone)}]'
+                ).tooltip(action.label)
+
+    def _trigger_training_action(self, run: TrainingRunSummary, action: TrainingAction) -> None:
+        if action.id == "guided_fix":
+            self._show_recovery_review_dialog(run)
+        elif action.id == "review_details":
+            self._show_training_run_details(run)
+        elif action.id == "run_again":
+            asyncio.create_task(self._relaunch_training_run(run))
+        elif action.id == "resume_latest":
+            asyncio.create_task(self._relaunch_training_run(run, resume_latest=True))
+        elif action.id == "edit_config":
+            if run.launch_context_path:
+                self._clone_training_to_form(run)
+            else:
+                ui.navigate.to(f"/training?mode={run.modality}&ui_mode=quickstart")
+
     def _show_training_run_details(self, run: TrainingRunSummary) -> None:
+        presentation = self._training_presentation(run)
         dialog = ui.dialog()
         with dialog, ui.card().classes(
             f'w-[720px] max-w-[95vw] gap-4 bg-[{COLORS["bg_card"]}] text-[{COLORS["text_primary"]}]'
         ):
             ui.label("Training Quality Details").classes("text-lg font-semibold")
-            if run.quality_summary:
-                ui.label(run.quality_summary).classes(
-                    f'text-sm text-[{COLORS["text_secondary"]}]'
-                )
+            ui.label(presentation.supporting_summary).classes(
+                f'text-sm text-[{COLORS["text_secondary"]}]'
+            )
             with ui.row().classes("w-full gap-3 flex-wrap"):
                 for label, value in (
+                    ("Status", presentation.headline_status),
                     ("Verdict", run.effectiveness_verdict or "--"),
                     ("Yield", run.quality_status or "--"),
                     ("Keep rate", f"{run.keep_rate:.0%}" if isinstance(run.keep_rate, (int, float)) else "--"),
-                    ("Top drop", (run.dominant_rejection_reason or "--").replace("_", " ")),
+                    ("Top issue", (run.dominant_rejection_reason or "--").replace("_", " ")),
+                    ("Recommended next step", presentation.primary_action.label if presentation.primary_action else self._recommended_training_adjustment(run)),
                 ):
                     with ui.column().classes(
-                        f'flex-1 min-w-[140px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                        f'flex-1 min-w-[160px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
                     ):
                         ui.label(label).classes(
                             f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                         )
                         ui.label(str(value)).classes(
                             f'text-sm text-[{COLORS["text_primary"]}]'
+                        )
+            if run.recovery_recommended_action or run.recovery_summary:
+                with ui.column().classes(
+                    f'w-full gap-2 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ):
+                    ui.label("Recovery").classes(
+                        f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                    )
+                    ui.label(run.recovery_recommended_action or "--").classes(
+                        f'text-sm text-[{COLORS["success"]}]'
+                    )
+                    if run.recovery_summary:
+                        ui.label(run.recovery_summary).classes(
+                            f'text-xs text-[{COLORS["text_secondary"]}]'
                         )
             diagnostics = run.yield_diagnostics if isinstance(run.yield_diagnostics, dict) else {}
             if diagnostics:
@@ -532,6 +537,19 @@ class Results:
                             f"effective={thresholds.get('effective_reward_threshold', '--')} "
                             f"keep={thresholds.get('keep_percent', '--')}"
                         ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+            if run.representative_examples:
+                with ui.expansion(text="Representative evidence", icon="fact_check", value=False).classes(
+                    f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ).props('dense dark'):
+                    with ui.column().classes("w-full gap-2 p-3"):
+                        for example in run.representative_examples:
+                            ui.label(
+                                f"{example.get('label') or example.get('reason')}: {example.get('preview') or '--'}"
+                            ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                            if example.get("context"):
+                                ui.label(str(example.get("context"))).classes(
+                                    f'text-[11px] text-[{COLORS["text_muted"]}]'
+                                )
             ui.separator()
             ui.label(self._recommended_training_adjustment(run)).classes(
                 f'text-sm text-[{COLORS["accent"]}]'
@@ -539,6 +557,85 @@ class Results:
             with ui.row().classes("w-full justify-end"):
                 ui.button("Close", on_click=dialog.close).props("flat")
         dialog.open()
+
+    def _preferred_recovery_resume_latest(self, run: TrainingRunSummary) -> bool:
+        if run.modality not in {"raft", "vlm", "audio", "reasoning", "agentic"}:
+            return False
+        if not run.launch_context_path:
+            return False
+        try:
+            context = read_launch_context(run.launch_context_path)
+        except Exception:
+            return False
+        return bool(context.relaunch_capabilities.get("can_resume_latest", False))
+
+    def _show_recovery_review_dialog(self, run: TrainingRunSummary) -> None:
+        if run.recovery_status != "ready":
+            return
+        dialog = ui.dialog()
+        launch_mode = "resume latest" if self._preferred_recovery_resume_latest(run) else "relaunch"
+        with dialog, ui.card().classes(
+            f'w-[720px] max-w-[95vw] gap-4 bg-[{COLORS["bg_card"]}] text-[{COLORS["text_primary"]}]'
+        ):
+            ui.label("Review Suggested Fix").classes("text-lg font-semibold")
+            ui.label(run.recovery_summary or run.quality_summary or "--").classes(
+                f'text-sm text-[{COLORS["text_secondary"]}]'
+            )
+            with ui.column().classes(
+                f'w-full gap-2 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+            ):
+                ui.label(f"Launch mode: {launch_mode}").classes(f'text-sm text-[{COLORS["text_primary"]}]')
+                ui.label(f"Why this fix: {run.recovery_recommended_action or '--'}").classes(
+                    f'text-xs text-[{COLORS["success"]}]'
+                )
+                for key, value in run.recovery_suggested_overrides.items():
+                    ui.label(f"{key}: {value}").classes(
+                        f'text-xs font-mono text-[{COLORS["accent"]}]'
+                    )
+            if run.representative_examples:
+                with ui.expansion(text="Representative evidence", icon="fact_check", value=False).classes(
+                    f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ).props('dense dark'):
+                    with ui.column().classes("w-full gap-2 p-3"):
+                        for example in run.representative_examples:
+                            ui.label(
+                                f"{example.get('label') or example.get('reason')}: {example.get('preview') or '--'}"
+                            ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                            if example.get("context"):
+                                ui.label(str(example.get("context"))).classes(
+                                    f'text-[11px] text-[{COLORS["text_muted"]}]'
+                                )
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button(
+                    "Launch with suggested fix",
+                    icon="play_arrow",
+                    on_click=lambda r=run: asyncio.create_task(self._apply_recovery_guidance(r, dialog)),
+                ).props("unelevated").classes(
+                    f'bg-[{COLORS["primary"]}] text-white'
+                )
+        dialog.open()
+
+    async def _apply_recovery_guidance(self, run: TrainingRunSummary, dialog) -> None:
+        if not run.launch_context_path:
+            ui.notify("No launch context found for guided recovery", type="warning")
+            dialog.close()
+            return
+        try:
+            new_job_id = await self.training_service.relaunch_from_context(
+                run.launch_context_path,
+                resume_latest=self._preferred_recovery_resume_latest(run),
+                override_args=run.recovery_suggested_overrides,
+                guided_recovery={
+                    "reason_code": run.recovery_reason_code,
+                    "evidence_summary": run.recovery_summary,
+                },
+                source_ui_page="/results",
+            )
+            dialog.close()
+            ui.navigate.to(f"/monitor/{new_job_id}")
+        except Exception as e:
+            ui.notify(f"Guided recovery failed: {e}", type="negative")
 
     def _render_utility_runs_table(self, rows: list[UtilityRunSummary]):
         with ui.column().classes(
@@ -1114,6 +1211,9 @@ class Results:
             "launch_context_file": str(run.launch_context_path),
             "job_type": context.job_type,
             "args": context.args,
+            "suggested_overrides": dict(run.recovery_suggested_overrides or {}),
+            "recovery_reason_code": run.recovery_reason_code,
+            "recovery_summary": run.recovery_summary,
         }
         ui.navigate.to("/training")
 

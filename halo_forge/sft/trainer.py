@@ -41,6 +41,7 @@ from halo_forge.training_contracts import (
     emit_yield_log_line,
     write_json_atomic,
 )
+from halo_forge.training_recovery import attach_recovery_guidance
 
 
 @dataclass
@@ -162,6 +163,7 @@ class SFTTrainer:
         self.training_summary: Dict[str, Union[str, int, float, dict, list, None]] = {}
         self.run_id: str = ""
         self.dataset_yield_diagnostics: Dict[str, Any] = {}
+        self.dataset_representative_examples: list[dict[str, Any]] = []
     
     def check_environment(self):
         """Verify ROCm/PyTorch environment."""
@@ -270,13 +272,40 @@ class SFTTrainer:
                     raw_records += 1
                     if not isinstance(obj, dict):
                         format_invalid += 1
+                        if len(self.dataset_representative_examples) < 3:
+                            self.dataset_representative_examples.append(
+                                {
+                                    "reason": "format_invalid",
+                                    "label": "Malformed dataset row",
+                                    "preview": str(obj),
+                                    "context": str(file_path),
+                                }
+                            )
                         continue
                     text = obj.get("text")
                     if not isinstance(text, str):
                         missing_text += 1
+                        if len(self.dataset_representative_examples) < 3:
+                            self.dataset_representative_examples.append(
+                                {
+                                    "reason": "missing_text",
+                                    "label": "Missing text field",
+                                    "preview": str({k: v for k, v in obj.items() if k != "text"}),
+                                    "context": str(file_path),
+                                }
+                            )
                         continue
                     if not text.strip():
                         missing_text += 1
+                        if len(self.dataset_representative_examples) < 3:
+                            self.dataset_representative_examples.append(
+                                {
+                                    "reason": "missing_text",
+                                    "label": "Empty text field",
+                                    "preview": str({k: v for k, v in obj.items() if k != "text"}),
+                                    "context": str(file_path),
+                                }
+                            )
                         continue
                     examples.append({"text": text})
 
@@ -775,6 +804,20 @@ class SFTTrainer:
             checkpoint_written=any(Path(cfg.output_dir).glob("checkpoint-*")),
             final_model_path=str(final_output),
             training_summary_path=Path(cfg.output_dir) / "training_summary.json",
+        )
+        attach_recovery_guidance(
+            summary,
+            modality="sft",
+            launch_args={
+                "model": cfg.model_name,
+                "dataset": dataset or cfg.dataset or "",
+                "output_dir": cfg.output_dir,
+                "epochs": cfg.num_epochs,
+                "batch_size": cfg.batch_size,
+                "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
+                "max_samples": cfg.max_samples,
+            },
+            representative_examples=self.dataset_representative_examples,
         )
         write_json_atomic(Path(cfg.output_dir) / "training_summary.json", summary)
         self.training_summary = summary

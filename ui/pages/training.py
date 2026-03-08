@@ -16,6 +16,7 @@ from ui.services import (
     TrainingLaunchPreflight,
     get_ops_readiness_service,
 )
+from ui.services.training_presentation import build_launch_presentation
 from ui.services.quickstart_presets import (
     apply_preset_values,
     default_preset_key,
@@ -373,6 +374,11 @@ class Training:
         self.training_service = TrainingService(state)
         self.ops_readiness_service = get_ops_readiness_service()
         self._query_warnings: list[str] = []
+        self._recovery_overrides: dict[str, object] = {}
+        self._recovery_reason_code: str = ""
+        self._recovery_summary: str = ""
+        self._recovery_changes: list[tuple[str, object, object]] = []
+        self._recovery_change_map: dict[str, tuple[object, object]] = {}
         self._consume_clone_payload()
         self._consume_query_params()
         
@@ -396,11 +402,28 @@ class Training:
         args = payload.get("args")
         if not isinstance(args, dict):
             return
+        suggested_overrides = payload.get("suggested_overrides")
+        if not isinstance(suggested_overrides, dict):
+            suggested_overrides = {}
+        self._recovery_overrides = dict(suggested_overrides)
+        self._recovery_reason_code = str(payload.get("recovery_reason_code") or "")
+        self._recovery_summary = str(payload.get("recovery_summary") or "")
+        self._recovery_changes = [
+            (key, args.get(key), value)
+            for key, value in suggested_overrides.items()
+            if args.get(key) != value
+        ]
+        self._recovery_change_map = {
+            str(key): (old_value, new_value)
+            for key, old_value, new_value in self._recovery_changes
+        }
+        merged_args = dict(args)
+        merged_args.update(suggested_overrides)
 
         if job_type == "sft":
             self.mode = "sft"
-            self._apply_payload_to_dataclass(self.sft_data, args)
-            model = str(args.get("model") or self.sft_data.model)
+            self._apply_payload_to_dataclass(self.sft_data, merged_args)
+            model = str(merged_args.get("model") or self.sft_data.model)
             self.sft_data.model = model
             known_models = {name for name, _ in RECOMMENDED_MODELS["code"]}
             if model in known_models:
@@ -410,7 +433,7 @@ class Training:
                 self.sft_data.model_source = "custom"
                 self.sft_data.custom_model = model
 
-            dataset = str(args.get("dataset") or self.sft_data.dataset)
+            dataset = str(merged_args.get("dataset") or self.sft_data.dataset)
             canonical_dataset = _resolve_dataset_alias(dataset)
             known_datasets = {name for name, _ in SFT_DATASETS}
             if canonical_dataset in known_datasets:
@@ -425,8 +448,8 @@ class Training:
 
         if job_type == "raft":
             self.mode = "raft"
-            self._apply_payload_to_dataclass(self.raft_data, args)
-            model = str(args.get("model") or self.raft_data.model)
+            self._apply_payload_to_dataclass(self.raft_data, merged_args)
+            model = str(merged_args.get("model") or self.raft_data.model)
             self.raft_data.model = model
             known_models = {name for name, _ in RECOMMENDED_MODELS["code"]}
             if model in known_models:
@@ -436,7 +459,7 @@ class Training:
                 self.raft_data.model_source = "custom"
                 self.raft_data.custom_model = model
 
-            prompts = str(args.get("prompts") or self.raft_data.prompts)
+            prompts = str(merged_args.get("prompts") or self.raft_data.prompts)
             prompt_presets = {name for name, _ in RAFT_PROMPT_PRESETS}
             if prompts in prompt_presets:
                 self.raft_data.prompts_source = "preset"
@@ -450,7 +473,7 @@ class Training:
 
         if job_type in self.modality_data:
             self.mode = job_type
-            self._apply_payload_to_dataclass(self.modality_data[job_type], args)
+            self._apply_payload_to_dataclass(self.modality_data[job_type], merged_args)
 
     def _apply_payload_to_dataclass(self, target, payload: dict):
         """Assign matching payload fields into a dataclass-like object."""
@@ -617,6 +640,8 @@ class Training:
 
     def _render_form(self):
         """Render the current form based on mode."""
+        self._render_recovery_changes_card()
+        self._render_launch_summary_card()
         if self.ui_mode == "quickstart":
             self._render_guided_onboarding_panel()
         if self.ui_mode == "quickstart":
@@ -642,6 +667,125 @@ class Training:
         if mode_key in self.modality_data:
             return self.modality_data[mode_key]
         return None
+
+    def _tone_color(self, tone: str) -> str:
+        return {
+            "success": COLORS["success"],
+            "warning": COLORS["warning"],
+            "danger": COLORS["error"],
+            "neutral": COLORS["text_secondary"],
+        }.get(str(tone or "").strip().lower(), COLORS["text_secondary"])
+
+    def _field_container_classes(self, field_key: Optional[str] = None, base: str = "w-full gap-2") -> str:
+        if field_key and field_key in self._recovery_change_map:
+            return (
+                f"{base} rounded-lg border border-[{COLORS['success']}]/35 "
+                f"bg-[{COLORS['success']}]/6 p-2"
+            )
+        return base
+
+    def _field_label_text(self, label: str, field_key: Optional[str] = None) -> str:
+        if field_key and field_key in self._recovery_change_map:
+            return f"{label} (updated)"
+        return label
+
+    def _render_field_change_note(self, field_key: Optional[str]) -> None:
+        if not field_key or field_key not in self._recovery_change_map:
+            return
+        old_value, new_value = self._recovery_change_map[field_key]
+        ui.label(f"Changed from {old_value} to {new_value} based on the last run.").classes(
+            f'text-[11px] text-[{COLORS["success"]}]'
+        )
+
+    def _current_preset_summary(self, mode_key: str) -> tuple[str, str, str]:
+        preset_key = self.selected_quickstart_preset.get(mode_key) or ""
+        preset = get_quickstart_preset("training", preset_key, target=mode_key)
+        if preset is None:
+            return "--", "--", ""
+        return (
+            preset.label,
+            preset.recommendation.expected_runtime,
+            preset.recommendation.yield_safety,
+        )
+
+    def _render_launch_summary_card(self) -> None:
+        """Render a concise launch summary above the form."""
+        mode_key = str(self.mode or "").strip().lower()
+        preflight = self._run_launch_preflight(mode_key)
+        outlook = preflight.quality_outlook if isinstance(preflight.quality_outlook, dict) else {}
+        preset_label, expected_runtime, yield_safety = self._current_preset_summary(mode_key)
+        presentation = build_launch_presentation(
+            mode_label=mode_key.upper(),
+            quality_status=str(outlook.get("status") or "healthy"),
+            quality_summary=str(outlook.get("summary") or ""),
+            suggested_adjustments=[
+                str(item) for item in outlook.get("suggested_adjustments", []) if item
+            ],
+            yield_safety_note=str(outlook.get("yield_safety_note") or yield_safety or ""),
+        )
+        tone_color = self._tone_color(presentation.confidence_tone)
+
+        with ui.column().classes(
+            f'w-full gap-4 p-5 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in stagger-1'
+        ):
+            with ui.row().classes("w-full items-start justify-between gap-4 flex-wrap"):
+                with ui.column().classes("gap-1"):
+                    ui.label(presentation.headline_status).classes(
+                        f'text-base font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label(presentation.supporting_summary).classes(
+                        f'text-sm text-[{COLORS["text_secondary"]}]'
+                    )
+                ui.label(str(outlook.get("status") or "healthy").replace("_", " ")).classes(
+                    f'px-3 py-1 rounded-full text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{tone_color}]'
+                )
+
+            with ui.row().classes("w-full gap-3 flex-wrap"):
+                for label, value in (
+                    ("Training Type", mode_key.upper()),
+                    ("Preset Intent", preset_label),
+                    ("Expected Runtime", expected_runtime),
+                    ("Yield Safety", yield_safety or str(outlook.get("yield_safety_note") or "--")),
+                ):
+                    with ui.column().classes(
+                        f'flex-1 min-w-[180px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                    ):
+                        ui.label(label).classes(
+                            f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.label(value or "--").classes(
+                            f'text-xs text-[{COLORS["text_primary"]}]'
+                        )
+
+            ui.label(f"Recommended adjustment: {presentation.recommended_adjustment}").classes(
+                f'text-xs text-[{tone_color}]'
+            )
+
+    def _render_recovery_changes_card(self) -> None:
+        """Render suggested recovery changes when clone/recovery payloads are present."""
+        if not self._recovery_changes:
+            return
+        with ui.column().classes(
+            f'w-full gap-3 p-4 rounded-xl bg-[{COLORS["success"]}]/10 border border-[{COLORS["success"]}]/30 animate-in'
+        ):
+            with ui.row().classes("w-full items-start justify-between gap-3 flex-wrap"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Suggested Recovery Changes").classes(
+                        f'text-sm font-semibold text-[{COLORS["success"]}]'
+                    )
+                    ui.label(
+                        self._recovery_summary or "Recommended fixes from a prior low-yield run are already applied below."
+                    ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+                ui.label("Already applied").classes(
+                    f'px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["success"]}]/15 text-[{COLORS["success"]}]'
+                )
+            with ui.column().classes(
+                f'w-full gap-2 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+            ):
+                for key, old_value, new_value in self._recovery_changes:
+                    ui.label(f"{key}: {old_value} -> {new_value}").classes(
+                        f'text-xs font-mono text-[{COLORS["text_primary"]}]'
+                    )
 
     def _apply_quickstart_preset(self, mode_key: str, preset_key: str, *, notify: bool) -> bool:
         target_obj = self._get_quickstart_target_obj(mode_key)
@@ -702,7 +846,7 @@ class Training:
                 f'text-base font-semibold text-[{COLORS["text_primary"]}]'
             )
             ui.label(
-                "1) Choose training type • 2) Confirm required fields • 3) Start training and monitor progress."
+                "1) Confirm the required inputs • 2) Use the recommended preset • 3) Launch and follow the live training quality panel."
             ).classes(f'text-xs text-[{COLORS["text_secondary"]}]')
             if preset:
                 ui.label(
@@ -754,18 +898,19 @@ class Training:
         ):
             self._section_header("SFT Quickstart", "bolt")
             self._render_quickstart_preset_selector("sft")
-            self._render_model_selector("Base Model", self.sft_data, model_type="code")
-            self._render_dataset_selector()
+            self._render_model_selector("Base Model", self.sft_data, model_type="code", field_key="model")
+            self._render_dataset_selector(field_key="dataset")
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
-                    ui.label('Output Directory').classes(
+                with ui.column().classes(self._field_container_classes("output_dir", 'flex-1 min-w-[220px] gap-2')):
+                    ui.label(self._field_label_text('Output Directory', "output_dir")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("output_dir")
                     ui.input(value=self.sft_data.output_dir).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(self.sft_data, 'output_dir')
-                self._number_input("Epochs", self.sft_data.epochs, lambda v: setattr(self.sft_data, 'epochs', int(v)), min_val=1, max_val=20)
-                self._number_input("Batch Size", self.sft_data.batch_size, lambda v: setattr(self.sft_data, 'batch_size', int(v)), min_val=1, max_val=64)
+                self._number_input("Epochs", self.sft_data.epochs, lambda v: setattr(self.sft_data, 'epochs', int(v)), min_val=1, max_val=20, field_key="epochs")
+                self._number_input("Batch Size", self.sft_data.batch_size, lambda v: setattr(self.sft_data, 'batch_size', int(v)), min_val=1, max_val=64, field_key="batch_size")
 
         self._render_launch_button("Start SFT Training", self._launch_sft, "sft")
         self._render_setup_advisory("sft")
@@ -776,18 +921,19 @@ class Training:
         ):
             self._section_header("RAFT Quickstart", "bolt")
             self._render_quickstart_preset_selector("raft")
-            self._render_model_selector("Base Model", self.raft_data, model_type="code")
-            self._render_prompts_selector()
+            self._render_model_selector("Base Model", self.raft_data, model_type="code", field_key="model")
+            self._render_prompts_selector(field_key="prompts")
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
-                    ui.label('Output Directory').classes(
+                with ui.column().classes(self._field_container_classes("output_dir", 'flex-1 min-w-[220px] gap-2')):
+                    ui.label(self._field_label_text('Output Directory', "output_dir")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("output_dir")
                     ui.input(value=self.raft_data.output_dir).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(self.raft_data, 'output_dir')
-                self._number_input("Cycles", self.raft_data.cycles, lambda v: setattr(self.raft_data, 'cycles', int(v)), min_val=1, max_val=20)
-                self._number_input("Samples/Prompt", self.raft_data.samples_per_prompt, lambda v: setattr(self.raft_data, 'samples_per_prompt', int(v)), min_val=1, max_val=64)
+                self._number_input("Cycles", self.raft_data.cycles, lambda v: setattr(self.raft_data, 'cycles', int(v)), min_val=1, max_val=20, field_key="cycles")
+                self._number_input("Samples/Prompt", self.raft_data.samples_per_prompt, lambda v: setattr(self.raft_data, 'samples_per_prompt', int(v)), min_val=1, max_val=64, field_key="samples_per_prompt")
 
         self._render_launch_button("Start RAFT Training", self._launch_raft, "raft")
         self._render_setup_advisory("raft")
@@ -800,30 +946,33 @@ class Training:
             self._section_header(f"{modality.upper()} Quickstart", "bolt")
             self._render_quickstart_preset_selector(modality)
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                with ui.column().classes('flex-1 min-w-[240px] gap-2'):
-                    ui.label('Model').classes(
+                with ui.column().classes(self._field_container_classes("model", 'flex-1 min-w-[240px] gap-2')):
+                    ui.label(self._field_label_text('Model', "model")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("model")
                     ui.input(value=data.model).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'model')
-                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
-                    ui.label('Dataset').classes(
+                with ui.column().classes(self._field_container_classes("dataset", 'flex-1 min-w-[220px] gap-2')):
+                    ui.label(self._field_label_text('Dataset', "dataset")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("dataset")
                     ui.input(value=data.dataset).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'dataset')
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
-                    ui.label('Output Directory').classes(
+                with ui.column().classes(self._field_container_classes("output_dir", 'flex-1 min-w-[220px] gap-2')):
+                    ui.label(self._field_label_text('Output Directory', "output_dir")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("output_dir")
                     ui.input(value=data.output_dir).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'output_dir')
-                self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32)
-                self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}")
+                self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32, field_key="cycles")
+                self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}", field_key="learning_rate")
 
         self._render_launch_button(
             f"Start {modality.upper()} Training",
@@ -858,25 +1007,27 @@ class Training:
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-3'
         ):
-            self._section_header("Model & Dataset", "database")
+            self._section_header("Required Inputs", "database")
             
             # Model selection
             with ui.column().classes('w-full gap-4'):
                 self._render_model_selector(
                     "Base Model",
                     self.sft_data,
-                    model_type="code"
+                    model_type="code",
+                    field_key="model",
                 )
             
             # Dataset selection
             with ui.column().classes('w-full gap-4 mt-4'):
-                self._render_dataset_selector()
+                self._render_dataset_selector(field_key="dataset")
             
             # Output directory
-            with ui.column().classes('w-full gap-2 mt-4'):
-                ui.label('Output Directory').classes(
+            with ui.column().classes(self._field_container_classes("output_dir", 'w-full gap-2 mt-4')):
+                ui.label(self._field_label_text('Output Directory', "output_dir")).classes(
                     f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                 )
+                self._render_field_change_note("output_dir")
                 with ui.row().classes('w-full gap-2'):
                     ui.input(value=self.sft_data.output_dir).classes('flex-1').props(
                         'outlined dense dark color=grey-7'
@@ -890,16 +1041,16 @@ class Training:
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-4'
         ):
-            self._section_header("Training Parameters", "tune")
+            self._section_header("Quality-Sensitive Settings", "tune")
             
             with ui.row().classes('w-full gap-4 flex-wrap'):
                 self._number_input("Epochs", self.sft_data.epochs, 
                                    lambda v: setattr(self.sft_data, 'epochs', int(v)),
-                                   min_val=1, max_val=20)
+                                   min_val=1, max_val=20, field_key="epochs")
                 
                 self._number_input("Batch Size", self.sft_data.batch_size,
                                    lambda v: setattr(self.sft_data, 'batch_size', int(v)),
-                                   min_val=1, max_val=32)
+                                   min_val=1, max_val=32, field_key="batch_size")
                 
                 self._number_input("Grad Accum", self.sft_data.gradient_accumulation_steps,
                                    lambda v: setattr(self.sft_data, 'gradient_accumulation_steps', int(v)),
@@ -907,7 +1058,7 @@ class Training:
                 
                 self._number_input("Learning Rate", self.sft_data.learning_rate,
                                    lambda v: setattr(self.sft_data, 'learning_rate', float(v)),
-                                   format_val="2e-4")
+                                   format_val="2e-4", field_key="learning_rate")
             
             with ui.row().classes('w-full gap-4 flex-wrap mt-2'):
                 self._number_input("Warmup Ratio", self.sft_data.warmup_ratio,
@@ -976,7 +1127,7 @@ class Training:
                     
                     self._number_input("Max Samples", self.sft_data.max_samples or 0,
                                        lambda v: setattr(self.sft_data, 'max_samples', int(v) if int(v) > 0 else None),
-                                       min_val=0)
+                                       min_val=0, field_key="max_samples")
                 
                 with ui.row().classes('w-full gap-4 flex-wrap mt-2'):
                     self._number_input("Save Steps", self.sft_data.save_steps,
@@ -1046,14 +1197,15 @@ class Training:
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-3'
         ):
-            self._section_header("Model & Data", "database")
+            self._section_header("Required Inputs", "database")
             
             # Model selection
             with ui.column().classes('w-full gap-4'):
                 self._render_model_selector(
                     "Base Model",
                     self.raft_data,
-                    model_type="code"
+                    model_type="code",
+                    field_key="model",
                 )
             
             # Checkpoint resume (optional)
@@ -1094,13 +1246,14 @@ class Training:
             
             # Prompts file selection
             with ui.column().classes('w-full gap-4 mt-4'):
-                self._render_prompts_selector()
+                self._render_prompts_selector(field_key="prompts")
             
             # Output directory
-            with ui.column().classes('w-full gap-2 mt-4'):
-                ui.label('Output Directory').classes(
+            with ui.column().classes(self._field_container_classes("output_dir", 'w-full gap-2 mt-4')):
+                ui.label(self._field_label_text('Output Directory', "output_dir")).classes(
                     f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                 )
+                self._render_field_change_note("output_dir")
                 with ui.row().classes('w-full gap-2'):
                     ui.input(value=self.raft_data.output_dir).classes('flex-1').props(
                         'outlined dense dark color=grey-7'
@@ -1114,16 +1267,16 @@ class Training:
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-4'
         ):
-            self._section_header("RAFT Parameters", "settings")
+            self._section_header("Quality-Sensitive Settings", "settings")
             
             with ui.row().classes('w-full gap-4 flex-wrap'):
                 self._number_input("Cycles", self.raft_data.cycles,
                                    lambda v: setattr(self.raft_data, 'cycles', int(v)),
-                                   min_val=1, max_val=20)
+                                   min_val=1, max_val=20, field_key="cycles")
                 
                 self._number_input("Samples/Prompt", self.raft_data.samples_per_prompt,
                                    lambda v: setattr(self.raft_data, 'samples_per_prompt', int(v)),
-                                   min_val=1, max_val=32)
+                                   min_val=1, max_val=32, field_key="samples_per_prompt")
                 
                 self._number_input("Temperature", self.raft_data.temperature,
                                    lambda v: setattr(self.raft_data, 'temperature', float(v)),
@@ -1131,16 +1284,16 @@ class Training:
                 
                 self._number_input("Keep %", self.raft_data.keep_percent,
                                    lambda v: setattr(self.raft_data, 'keep_percent', float(v)),
-                                   min_val=0.1, max_val=1.0)
+                                   min_val=0.1, max_val=1.0, field_key="keep_percent")
             
             with ui.row().classes('w-full gap-4 flex-wrap'):
                 self._number_input("Reward Threshold", self.raft_data.reward_threshold,
                                    lambda v: setattr(self.raft_data, 'reward_threshold', float(v)),
-                                   min_val=0.0, max_val=1.0)
+                                   min_val=0.0, max_val=1.0, field_key="reward_threshold")
                 
                 self._number_input("Min Samples", self.raft_data.min_samples,
                                    lambda v: setattr(self.raft_data, 'min_samples', int(v)),
-                                   min_val=8, max_val=512)
+                                   min_val=8, max_val=512, field_key="min_samples")
                 
                 self._number_input("Max New Tokens", self.raft_data.max_new_tokens,
                                    lambda v: setattr(self.raft_data, 'max_new_tokens', int(v)),
@@ -1323,30 +1476,33 @@ class Training:
             f'w-full gap-5 p-6 rounded-xl bg-[{COLORS["bg_card"]}] '
             f'border border-[#2d343c] animate-in stagger-2'
         ):
-            self._section_header(f"{modality.upper()} Training", "tune")
+            self._section_header("Required Inputs", "tune")
 
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                with ui.column().classes('flex-1 min-w-[280px] gap-2'):
-                    ui.label('Model').classes(
+                with ui.column().classes(self._field_container_classes("model", 'flex-1 min-w-[280px] gap-2')):
+                    ui.label(self._field_label_text('Model', "model")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("model")
                     ui.input(value=data.model).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'model')
 
-                with ui.column().classes('flex-1 min-w-[220px] gap-2'):
-                    ui.label('Dataset').classes(
+                with ui.column().classes(self._field_container_classes("dataset", 'flex-1 min-w-[220px] gap-2')):
+                    ui.label(self._field_label_text('Dataset', "dataset")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("dataset")
                     ui.input(value=data.dataset).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'dataset')
 
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                with ui.column().classes('flex-1 min-w-[280px] gap-2'):
-                    ui.label('Output Directory').classes(
+                with ui.column().classes(self._field_container_classes("output_dir", 'flex-1 min-w-[280px] gap-2')):
+                    ui.label(self._field_label_text('Output Directory', "output_dir")).classes(
                         f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                     )
+                    self._render_field_change_note("output_dir")
                     ui.input(value=data.output_dir).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'output_dir')
@@ -1367,16 +1523,18 @@ class Training:
                         'outlined dense dark color=grey-7'
                     ).bind_value(data, 'seed')
 
+            ui.separator()
+            self._section_header("Quality-Sensitive Settings", "analytics")
             with ui.row().classes('w-full gap-4 flex-wrap'):
-                self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32)
-                self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}")
-                self._number_input("LR Decay", data.lr_decay, lambda v: setattr(data, 'lr_decay', float(v)), format_val=f"{data.lr_decay:.2f}")
+                self._number_input("Cycles", data.cycles, lambda v: setattr(data, 'cycles', int(v)), min_val=1, max_val=32, field_key="cycles")
+                self._number_input("Learning Rate", data.learning_rate, lambda v: setattr(data, 'learning_rate', float(v)), format_val=f"{data.learning_rate:.1e}", field_key="learning_rate")
+                self._number_input("LR Decay", data.lr_decay, lambda v: setattr(data, 'lr_decay', float(v)), format_val=f"{data.lr_decay:.2f}", field_key="lr_decay")
 
             if modality in {"vlm", "audio"}:
                 with ui.row().classes('w-full gap-4 flex-wrap'):
-                    self._number_input("Samples/Prompt", data.samples_per_prompt, lambda v: setattr(data, 'samples_per_prompt', int(v)), min_val=1, max_val=64)
-                    self._number_input("Temperature", data.temperature, lambda v: setattr(data, 'temperature', float(v)), format_val=f"{data.temperature:.2f}")
-                    self._number_input("Keep %", data.keep_percent, lambda v: setattr(data, 'keep_percent', float(v)), format_val=f"{data.keep_percent:.2f}")
+                    self._number_input("Samples/Prompt", data.samples_per_prompt, lambda v: setattr(data, 'samples_per_prompt', int(v)), min_val=1, max_val=64, field_key="samples_per_prompt")
+                    self._number_input("Temperature", data.temperature, lambda v: setattr(data, 'temperature', float(v)), format_val=f"{data.temperature:.2f}", field_key="temperature")
+                    self._number_input("Keep %", data.keep_percent, lambda v: setattr(data, 'keep_percent', float(v)), format_val=f"{data.keep_percent:.2f}", field_key="keep_percent")
 
             if modality == "audio":
                 with ui.column().classes('min-w-[220px] gap-2'):
@@ -1406,6 +1564,7 @@ class Training:
                     ui.number(value=data.limit or 0, min=0, step=1).classes('w-full').props(
                         'outlined dense dark color=grey-7'
                     ).on('update:model-value', _set_optional_limit)
+                    self._render_field_change_note("limit")
 
             capability = check_modality_train_capability(
                 modality=modality,
@@ -1519,11 +1678,12 @@ class Training:
             callback=on_select
         )
     
-    def _render_model_selector(self, label: str, data_obj, model_type: str = "code"):
+    def _render_model_selector(self, label: str, data_obj, model_type: str = "code", field_key: str = "model"):
         """Render model selection with dropdown + custom option."""
-        ui.label(label).classes(
+        ui.label(self._field_label_text(label, field_key)).classes(
             f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
         )
+        self._render_field_change_note(field_key)
         
         models = RECOMMENDED_MODELS.get(model_type, RECOMMENDED_MODELS["code"])
         
@@ -1571,11 +1731,12 @@ class Training:
                     value=data_obj.custom_model or data_obj.model
                 ).classes('flex-1').props('outlined dense dark color=grey-7').bind_value(data_obj, 'custom_model')
     
-    def _render_dataset_selector(self):
+    def _render_dataset_selector(self, field_key: str = "dataset"):
         """Render dataset selection with dropdown + custom option."""
-        ui.label('Dataset').classes(
+        ui.label(self._field_label_text('Dataset', field_key)).classes(
             f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
         )
+        self._render_field_change_note(field_key)
         
         dataset_options = {k: v for k, v in SFT_DATASETS}
         canonical_dataset = _resolve_dataset_alias(self.sft_data.dataset)
@@ -1623,11 +1784,12 @@ class Training:
                     value=self.sft_data.custom_dataset
                 ).classes('flex-1').props('outlined dense dark color=grey-7').bind_value(self.sft_data, 'custom_dataset')
     
-    def _render_prompts_selector(self):
+    def _render_prompts_selector(self, field_key: str = "prompts"):
         """Render prompts file selection with dropdown + custom option."""
-        ui.label('Prompts File').classes(
+        ui.label(self._field_label_text('Prompts File', field_key)).classes(
             f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
         )
+        self._render_field_change_note(field_key)
         
         prompts_options = {k: v for k, v in RAFT_PROMPT_PRESETS}
         
@@ -1775,12 +1937,13 @@ class Training:
                 f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
             )
     
-    def _number_input(self, label: str, value, on_change, min_val=None, max_val=None, format_val=None):
+    def _number_input(self, label: str, value, on_change, min_val=None, max_val=None, format_val=None, field_key: Optional[str] = None):
         """Render a number input field."""
-        with ui.column().classes('flex-1 min-w-[140px] gap-2'):
-            ui.label(label).classes(
+        with ui.column().classes(self._field_container_classes(field_key, 'flex-1 min-w-[140px] gap-2')):
+            ui.label(self._field_label_text(label, field_key)).classes(
                 f'text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
             )
+            self._render_field_change_note(field_key)
             display_value = format_val if format_val else str(value)
             inp = ui.input(value=display_value).classes('w-full').props(
                 'outlined dense dark color=grey-7'
@@ -2000,12 +2163,15 @@ class Training:
         outlook = preflight.quality_outlook if isinstance(preflight.quality_outlook, dict) else {}
         if not outlook:
             return
+        presentation = build_launch_presentation(
+            mode_label=str(self.mode or "").upper(),
+            quality_status=str(outlook.get("status") or "healthy"),
+            quality_summary=str(outlook.get("summary") or ""),
+            suggested_adjustments=[str(item) for item in outlook.get("suggested_adjustments", []) if item],
+            yield_safety_note=str(outlook.get("yield_safety_note") or ""),
+        )
         status = str(outlook.get("status") or "healthy").strip().lower()
-        status_color = {
-            "healthy": COLORS["success"],
-            "caution": COLORS["warning"],
-            "low_yield": COLORS["error"],
-        }.get(status, COLORS["text_secondary"])
+        status_color = self._tone_color(presentation.confidence_tone)
         warnings = [str(item) for item in outlook.get("warnings", []) if item]
         suggestions = [str(item) for item in outlook.get("suggested_adjustments", []) if item]
         artifact_notes = [str(item) for item in outlook.get("artifact_notes", []) if item]
@@ -2020,8 +2186,11 @@ class Training:
                 ui.label(status.replace("_", " ")).classes(
                     f'px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{status_color}]'
                 )
-            ui.label(str(outlook.get("summary") or "")).classes(
+            ui.label(presentation.supporting_summary).classes(
                 f'text-xs text-[{COLORS["text_secondary"]}]'
+            )
+            ui.label(f"Recommended next adjustment: {presentation.recommended_adjustment}").classes(
+                f'text-xs text-[{status_color}]'
             )
             if warnings:
                 with ui.column().classes("w-full gap-1"):
@@ -2063,18 +2232,37 @@ class Training:
             suggested_fixes=[],
             quality_outlook={},
         )
-        with ui.row().classes('w-full justify-end pt-4'):
-            launch_button = ui.button(on_click=on_click).props('unelevated').classes(
-                f'btn-hover px-8 py-3 bg-[{COLORS["primary"]}] text-white rounded-lg'
-            )
-            if not is_valid or not preflight.ok or self.is_running:
-                launch_button.disable()
-            with launch_button:
-                if self.is_running:
-                    ui.spinner('dots', size='20px').classes('mr-2')
-                else:
-                    ui.icon('play_arrow', size='20px').classes('mr-2')
-                ui.label(label).classes('text-sm font-medium')
+        outlook = preflight.quality_outlook if isinstance(preflight.quality_outlook, dict) else {}
+        presentation = build_launch_presentation(
+            mode_label=str(mode_key or "").upper(),
+            quality_status=str(outlook.get("status") or "healthy"),
+            quality_summary=str(outlook.get("summary") or ""),
+            suggested_adjustments=[str(item) for item in outlook.get("suggested_adjustments", []) if item],
+            yield_safety_note=str(outlook.get("yield_safety_note") or ""),
+        )
+        tone_color = self._tone_color(presentation.confidence_tone)
+        with ui.column().classes(
+            f'w-full gap-3 p-4 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c] animate-in'
+        ):
+            with ui.row().classes("w-full items-center justify-between gap-4 flex-wrap"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Ready to launch").classes(
+                        f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
+                    )
+                    ui.label(presentation.recommended_adjustment).classes(
+                        f'text-xs text-[{tone_color}]'
+                    )
+                launch_button = ui.button(on_click=on_click).props('unelevated').classes(
+                    f'btn-hover px-8 py-3 bg-[{COLORS["primary"]}] text-white rounded-lg'
+                )
+                if not is_valid or not preflight.ok or self.is_running:
+                    launch_button.disable()
+                with launch_button:
+                    if self.is_running:
+                        ui.spinner('dots', size='20px').classes('mr-2')
+                    else:
+                        ui.icon('play_arrow', size='20px').classes('mr-2')
+                    ui.label(label).classes('text-sm font-medium')
         if validation_message:
             ui.label(validation_message).classes(
                 f'text-xs text-[{COLORS["warning"]}] text-right w-full'

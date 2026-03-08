@@ -49,6 +49,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_recovery import attach_recovery_guidance
 
 # Rich UI (optional, falls back to plain print)
 try:
@@ -207,6 +208,7 @@ class RAFTTrainer:
         self.cycle_stats = []
         self.run_id: str = ""
         self.training_summary: Dict[str, Any] = {}
+        self.representative_examples: list[Dict[str, Any]] = []
     
     def _log(self, msg: str, level: str = "info"):
         """Log a message with simple text prefix (works through pipes)."""
@@ -617,6 +619,43 @@ class RAFTTrainer:
             'threshold_adjusted': threshold_adjusted,
             'effective_threshold': effective_threshold
         }
+
+        if not self.representative_examples:
+            failed_examples = [
+                {
+                    "reason": "verification_failed",
+                    "label": "Verifier failure",
+                    "preview": d.get("completion", ""),
+                    "context": d.get("prompt", ""),
+                    "reward": d.get("reward"),
+                }
+                for d in all_data
+                if not d.get("success")
+            ][:3]
+            threshold_examples = [
+                {
+                    "reason": "below_reward_threshold",
+                    "label": "Below threshold",
+                    "preview": d.get("completion", ""),
+                    "context": d.get("prompt", ""),
+                    "reward": d.get("reward"),
+                }
+                for d in all_data
+                if d.get("success") and d.get("reward", 0.0) < effective_threshold
+            ][:3]
+            keep_drop_examples = [
+                {
+                    "reason": "dropped_by_keep_percent",
+                    "label": "Dropped by keep percent",
+                    "preview": d.get("completion", ""),
+                    "context": d.get("prompt", ""),
+                    "reward": d.get("reward"),
+                }
+                for d in above_threshold[keep_count:]
+            ][:3]
+            self.representative_examples = (
+                failed_examples or threshold_examples or keep_drop_examples
+            )
         
         # Print filtering summary (plain text, works through pipes)
         print(f"\nFiltering results:")
@@ -1163,6 +1202,22 @@ class RAFTTrainer:
             checkpoint_written=bool(self.cycle_stats),
             final_model_path=str(final_path) if final_path.exists() else "",
             training_summary_path=self.output_dir / "training_summary.json",
+        )
+        attach_recovery_guidance(
+            summary,
+            modality="raft",
+            launch_args={
+                "model": self.config.base_model,
+                "prompts": "",
+                "output_dir": str(self.output_dir),
+                "cycles": num_cycles,
+                "samples_per_prompt": self.config.samples_per_prompt,
+                "keep_percent": self.config.keep_top_percent,
+                "reward_threshold": self.config.reward_threshold,
+                "min_samples": self.config.min_samples_per_cycle,
+                "max_new_tokens": self.config.max_new_tokens,
+            },
+            representative_examples=self.representative_examples,
         )
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         self.training_summary = summary
