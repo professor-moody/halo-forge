@@ -9,6 +9,7 @@ Full documentation is available at **[halo-forge.io/docs](https://halo-forge.io/
 | [Quick Start](https://halo-forge.io/docs/getting-started/quickstart/) | Get running in 30 minutes |
 | [How to Train](https://halo-forge.io/docs/training-pipeline/how-to-train/) | Complete step-by-step guide |
 | [Command Index](https://halo-forge.io/docs/reference/command-index/) | Every command and flag |
+| [Public Frontend](https://halo-forge.io/docs/reference/public-frontend/) | Public-facing training, monitor, results, and readiness surface |
 | [Verifiers](https://halo-forge.io/docs/verifiers/) | Verification options |
 | [Experimental](https://halo-forge.io/docs/experimental/) | VLM, Audio, Reasoning, Agentic readiness tiers and modality caveats |
 | [Contributing](https://halo-forge.io/docs/contributing/) | How to contribute |

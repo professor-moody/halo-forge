@@ -4,12 +4,14 @@ description: "Dashboard for training, benchmarking, and monitoring"
 weight: 5
 ---
 
-The halo-forge web interface provides a modern dashboard for training, benchmarking, and monitoring LLM fine-tuning jobs.
+The halo-forge web interface now serves as the **internal ops/research console** for training, benchmarking, and monitoring LLM fine-tuning jobs.
+
+For the public-facing product workflow, use the separate [Public Frontend](/docs/reference/public-frontend/).
 
 ## Quick Start
 
 ```bash
-# Launch the UI
+# Launch the internal console
 halo-forge ui
 
 # Custom host/port
@@ -25,8 +27,15 @@ halo-forge ui --no-browser
 halo-forge ui --open-browser
 ```
 
-The UI will be available at `http://127.0.0.1:8080` by default.
+The internal console will be available at `http://127.0.0.1:8080` by default.
 Startup logs print canonical route URLs (`/`, `/training`, `/benchmark`, `/inference`).
+
+## Internal vs Public
+
+- **Public frontend**: user-facing train, monitor, results, readiness, and docs flows
+- **NiceGUI console**: staff/internal workflows, advanced diagnostics, raw traces, and ops remediation
+
+The public frontend intentionally collapses research detail by default. This document focuses on the internal console.
 
 ## Pages Overview
 

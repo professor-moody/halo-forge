@@ -90,6 +90,11 @@ website/hugo-docs/resources/
 website/hugo-docs/.hugo_build.lock
 website/.backup/
 
+# Next.js public frontend
+public_app/.next/
+public_app/node_modules/
+public_app/out/
+
 # Experimental/internal docs
 .experimental/
 .internal_docs/
