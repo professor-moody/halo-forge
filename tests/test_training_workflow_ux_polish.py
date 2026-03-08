@@ -59,6 +59,26 @@ def test_completed_healthy_run_promotes_review_over_rerun():
     ]
 
 
+def test_completed_run_without_loaded_metrics_still_reads_as_completed():
+    presentation = build_training_run_presentation(
+        job_status="completed",
+        quality_status="",
+        quality_summary="",
+        recovery_status="unavailable",
+        recovery_action="",
+        recovery_summary="This run did not produce a recognized recovery pattern.",
+        failure_reason="",
+        final_reason="",
+        has_launch_context=True,
+        can_resume_latest=False,
+        weights_updated=False,
+    )
+
+    assert presentation.headline_status == "Run completed"
+    assert presentation.primary_action is not None
+    assert presentation.primary_action.id == "review_details"
+
+
 def test_failed_run_without_guidance_defaults_to_edit_config():
     presentation = build_training_run_presentation(
         job_status="failed",

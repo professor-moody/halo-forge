@@ -7,6 +7,7 @@ This is the bridge between the UI and actual training processes.
 
 import asyncio
 import os
+import re
 import signal
 import sys
 from dataclasses import dataclass, field
@@ -106,6 +107,43 @@ class TrainingService:
         self._parsers: dict[str, MetricsParser] = {}
         self._log_buffers: dict[str, deque] = {}
         self._callbacks: dict[str, list[Callable]] = {}
+        self._last_progress_line_by_job: dict[str, str] = {}
+
+    @staticmethod
+    def _normalize_stream_chunk(raw_text: str) -> list[str]:
+        """Collapse carriage-return progress redraws into stable logical lines."""
+        normalized_lines: list[str] = []
+        for newline_segment in raw_text.replace("\r\n", "\n").split("\n"):
+            if not newline_segment:
+                continue
+            line = newline_segment
+            if "\r" in line:
+                redraw_segments = [segment.strip() for segment in line.split("\r") if segment.strip()]
+                if not redraw_segments:
+                    continue
+                line = redraw_segments[-1]
+            line = line.strip()
+            if line:
+                normalized_lines.append(line)
+        return normalized_lines
+
+    @staticmethod
+    def _is_progress_only_line(line: str) -> bool:
+        """Return True for bare tqdm-style progress lines without extra signal."""
+        return bool(
+            MetricsParser.PATTERNS["tqdm_progress"].search(line)
+            and not re.search(r"\{.*\}|loss|lr|learning_rate|epoch|cycle|HALO_YIELD", line, re.IGNORECASE)
+        )
+
+    def _should_skip_stream_line(self, job_id: str, line: str) -> bool:
+        """Drop repeated progress redraws while preserving normal logs."""
+        if not self._is_progress_only_line(line):
+            self._last_progress_line_by_job.pop(job_id, None)
+            return False
+        if self._last_progress_line_by_job.get(job_id) == line:
+            return True
+        self._last_progress_line_by_job[job_id] = line
+        return False
     
     def _get_strix_halo_env(self) -> dict[str, str]:
         """Get environment variables optimized for AMD Strix Halo."""
@@ -1585,84 +1623,87 @@ class TrainingService:
         
         try:
             async for line_bytes in job.process.stdout:
-                line = line_bytes.decode('utf-8', errors='replace').strip()
-                if not line:
-                    continue
-                
-                timestamp = datetime.now().isoformat()
-                
-                # Store log line in memory buffer
-                log_buffer.append({
-                    'timestamp': timestamp,
-                    'line': line,
-                })
-                
-                # Write to persistent log file
-                if log_file:
-                    try:
-                        log_file.write(f"[{timestamp}] {line}\n")
-                        log_file.flush()
-                    except Exception:
-                        pass
-                
-                # Emit log line event
-                await event_bus.emit(Event(
-                    type=EventType.LOG_LINE,
-                    job_id=job_id,
-                    data={'line': line, 'timestamp': timestamp}
-                ))
-                
-                # Call legacy callbacks
-                for callback in callbacks:
-                    try:
-                        callback(line)
-                    except Exception:
-                        pass
-                
-                # Parse metrics
-                if parser:
-                    metrics = parser.parse_line(line)
-                    if metrics:
-                        self._update_job_metrics(job_id, metrics)
-                        
-                        # Emit metrics update event
-                        await event_bus.emit(Event(
-                            type=EventType.METRICS_UPDATE,
-                            job_id=job_id,
-                            data={
-                                'loss': metrics.loss,
-                                'learning_rate': metrics.learning_rate,
-                                'epoch': metrics.epoch,
-                                'step': metrics.step,
-                                'total_steps': metrics.total_steps,
-                                'cycle': metrics.cycle,
-                                'total_cycles': metrics.total_cycles,
-                                'compile_rate': metrics.compile_rate,
-                                'grad_norm': metrics.grad_norm,
-                                'yield_snapshot': metrics.yield_snapshot,
-                            }
-                        ))
-                
-                # Detect checkpoint saves and notify
-                line_lower = line.lower()
-                if ('checkpoint' in line_lower and 'saved' in line_lower) or \
-                   ('saving' in line_lower and 'checkpoint' in line_lower):
-                    checkpoint_path = str(job.output_dir) if job.output_dir else "checkpoint"
-                    
-                    # Emit checkpoint event
+                for line in self._normalize_stream_chunk(
+                    line_bytes.decode('utf-8', errors='replace')
+                ):
+                    if self._should_skip_stream_line(job_id, line):
+                        continue
+
+                    timestamp = datetime.now().isoformat()
+
+                    # Store log line in memory buffer
+                    log_buffer.append({
+                        'timestamp': timestamp,
+                        'line': line,
+                    })
+
+                    # Write to persistent log file
+                    if log_file:
+                        try:
+                            log_file.write(f"[{timestamp}] {line}\n")
+                            log_file.flush()
+                        except Exception:
+                            pass
+
+                    # Emit log line event
                     await event_bus.emit(Event(
-                        type=EventType.CHECKPOINT_SAVED,
+                        type=EventType.LOG_LINE,
                         job_id=job_id,
-                        data={'path': checkpoint_path}
+                        data={'line': line, 'timestamp': timestamp}
                     ))
-                    
-                    if HAS_UI_NOTIFICATIONS:
-                        notify_checkpoint_saved(checkpoint_path)
+
+                    # Call legacy callbacks
+                    for callback in callbacks:
+                        try:
+                            callback(line)
+                        except Exception:
+                            pass
+
+                    # Parse metrics
+                    if parser:
+                        metrics = parser.parse_line(line)
+                        if metrics:
+                            self._update_job_metrics(job_id, metrics)
+
+                            # Emit metrics update event
+                            await event_bus.emit(Event(
+                                type=EventType.METRICS_UPDATE,
+                                job_id=job_id,
+                                data={
+                                    'loss': metrics.loss,
+                                    'learning_rate': metrics.learning_rate,
+                                    'epoch': metrics.epoch,
+                                    'step': metrics.step,
+                                    'total_steps': metrics.total_steps,
+                                    'cycle': metrics.cycle,
+                                    'total_cycles': metrics.total_cycles,
+                                    'compile_rate': metrics.compile_rate,
+                                    'grad_norm': metrics.grad_norm,
+                                    'yield_snapshot': metrics.yield_snapshot,
+                                }
+                            ))
+
+                    # Detect checkpoint saves and notify
+                    line_lower = line.lower()
+                    if ('checkpoint' in line_lower and 'saved' in line_lower) or \
+                       ('saving' in line_lower and 'checkpoint' in line_lower):
+                        checkpoint_path = str(job.output_dir) if job.output_dir else "checkpoint"
+
+                        # Emit checkpoint event
+                        await event_bus.emit(Event(
+                            type=EventType.CHECKPOINT_SAVED,
+                            job_id=job_id,
+                            data={'path': checkpoint_path}
+                        ))
+
+                        if HAS_UI_NOTIFICATIONS:
+                            notify_checkpoint_saved(checkpoint_path)
         
         except Exception as e:
             job.error_message = str(e)
         finally:
             # Close persistent log file
+            self._last_progress_line_by_job.pop(job_id, None)
             if log_file:
                 try:
                     log_file.close()

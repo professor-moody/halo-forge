@@ -121,7 +121,7 @@ def build_training_run_presentation(
         headline = "Run needs attention"
         primary_action = edit_action
         secondary_actions.extend([action for action in (run_again_action, resume_action, review_action) if action])
-    elif status == "completed" and quality not in {"low_yield", "no_signal", "error"} and (weights_updated is not False):
+    elif status == "completed" and quality not in {"low_yield", "no_signal", "error"}:
         tone = "success"
         headline = "Run completed"
         primary_action = review_action

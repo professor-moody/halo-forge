@@ -134,6 +134,33 @@ def test_training_service_updates_live_job_yield_snapshot():
     assert len(updated.yield_history) == 1
 
 
+def test_training_service_normalizes_carriage_return_progress_chunks():
+    service = TrainingService(AppState())
+
+    normalized = service._normalize_stream_chunk(
+        "Map:   0%|          | 0/20022 [00:00<?, ? examples/s]\r"
+        "Map: 100%|##########| 20022/20022 [00:00<00:00, 28062.05 examples/s]\n"
+        "HALO_YIELD {\"summary\":{\"status\":\"healthy\"}}\n"
+    )
+
+    assert normalized == [
+        "Map: 100%|##########| 20022/20022 [00:00<00:00, 28062.05 examples/s]",
+        'HALO_YIELD {"summary":{"status":"healthy"}}',
+    ]
+
+
+def test_training_service_deduplicates_repeated_progress_redraw_lines():
+    service = TrainingService(AppState())
+
+    first = service._should_skip_stream_line("job-1", "Map: 100%|##########| 24/24 [00:22<00:00, 1.05it/s]")
+    second = service._should_skip_stream_line("job-1", "Map: 100%|##########| 24/24 [00:22<00:00, 1.05it/s]")
+    normal = service._should_skip_stream_line("job-1", "Loaded 200 examples")
+
+    assert first is False
+    assert second is True
+    assert normal is False
+
+
 def test_results_service_parses_training_quality_fields(tmp_path):
     output_dir = tmp_path / "models" / "reasoning_run"
     output_dir.mkdir(parents=True)
@@ -197,6 +224,8 @@ def test_sft_load_dataset_tracks_missing_text_and_format_errors(tmp_path):
     reasons = trainer.dataset_yield_diagnostics["rejection_reasons"]
     assert reasons["missing_text"] == 2
     assert reasons["format_invalid"] == 1
+    assert trainer.dataset_yield_diagnostics["rates"]["keep_rate"] == pytest.approx(0.25)
+    assert trainer.dataset_yield_diagnostics["stage_counts"]["dropped"] == 3
 
 
 def test_raft_verify_and_filter_reports_threshold_adjustment():

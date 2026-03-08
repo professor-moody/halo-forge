@@ -367,10 +367,13 @@ class SFTTrainer:
         stage_counts = dict(self.dataset_yield_diagnostics.get("stage_counts") or {})
         if stage_counts:
             stage_counts["kept"] = len(train_dataset)
-            stage_counts["dropped"] = max(0, stage_counts.get("generated", 0) - len(train_dataset))
+            # Validation holdout is not rejected data; keep rejection counts tied to filtering.
+            stage_counts["dropped"] = max(
+                0,
+                stage_counts.get("generated", 0) - stage_counts.get("filtered", 0),
+            )
             self.dataset_yield_diagnostics = build_yield_diagnostics(
                 stage_counts=stage_counts,
-                rates=self.dataset_yield_diagnostics.get("rates"),
                 minimums={"minimum_samples_target": 1},
                 rejection_reasons=self.dataset_yield_diagnostics.get("rejection_reasons"),
                 summary=self.dataset_yield_diagnostics.get("summary"),
@@ -424,7 +427,7 @@ class SFTTrainer:
         self.model = AutoModelForCausalLM.from_pretrained(
             cfg.model_name,
             quantization_config=bnb_config,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             device_map="auto",  # Unified memory on Strix Halo makes this optimal
             trust_remote_code=cfg.trust_remote_code,
             attn_implementation=cfg.attn_implementation
