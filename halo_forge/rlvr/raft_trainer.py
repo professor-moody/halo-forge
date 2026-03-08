@@ -19,7 +19,7 @@ import gc
 import signal
 import sys
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Type
+from typing import Any, List, Dict, Tuple, Optional, Type
 from dataclasses import dataclass, field
 
 from transformers import (
