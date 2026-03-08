@@ -1,1 +1,136 @@
-{"run_id":"sft-fixture-run","seed":42,"weights_updated":true,"total_train_steps_executed":2,"final_update_reason":"updated","failure_reason":null}
+{
+  "contract_version": 1,
+  "modality": "sft",
+  "model_name": "Qwen/Qwen2.5-Coder-3B",
+  "total_cycles_planned": 1,
+  "cycles_executed": 1,
+  "cycles": [
+    {
+      "cycle": 0,
+      "learning_rate": 0.0002,
+      "samples_seen": 4,
+      "samples_kept": 4,
+      "cycle_duration_seconds": 1.2,
+      "train_steps_executed": 2,
+      "train_loss": 0.55,
+      "initial_train_loss": 0.72,
+      "weights_updated": true,
+      "update_reason": "updated",
+      "optimizer_steps": 2,
+      "skipped_batches_non_finite": 0,
+      "yield_diagnostics": {
+        "stage_counts": {
+          "generated": 4,
+          "verified": 4,
+          "filtered": 4,
+          "kept": 4,
+          "dropped": 0
+        },
+        "rates": {
+          "verification_rate": 1.0,
+          "keep_rate": 1.0,
+          "success_rate": 1.0
+        },
+        "thresholds": {
+          "configured_reward_threshold": null,
+          "effective_reward_threshold": null,
+          "keep_percent": null,
+          "threshold_adjusted": false
+        },
+        "minimums": {
+          "minimum_samples_target": 3,
+          "minimum_samples_met": true,
+          "shortfall_count": 0
+        },
+        "rejection_reasons": {},
+        "reward_distribution": {},
+        "summary": {
+          "status": "healthy",
+          "text": "Most SFT records were usable and enough reached optimizer updates.",
+          "dominant_rejection_reason": null
+        }
+      }
+    }
+  ],
+  "total_train_steps_executed": 2,
+  "weights_updated": true,
+  "final_train_loss": 0.55,
+  "final_update_reason": "updated",
+  "run_id": "sft-fixture-run",
+  "seed": 42,
+  "resume_from_cycle": 0,
+  "resumed_from_checkpoint": null,
+  "base_model_name": "Qwen/Qwen2.5-Coder-3B",
+  "active_model_name": "Qwen/Qwen2.5-Coder-3B",
+  "failure_reason": null,
+  "yield_diagnostics": {
+    "stage_counts": {
+      "generated": 4,
+      "verified": 4,
+      "filtered": 4,
+      "kept": 4,
+      "dropped": 0
+    },
+    "rates": {
+      "verification_rate": 1.0,
+      "keep_rate": 1.0,
+      "success_rate": 1.0
+    },
+    "thresholds": {
+      "configured_reward_threshold": null,
+      "effective_reward_threshold": null,
+      "keep_percent": null,
+      "threshold_adjusted": false
+    },
+    "minimums": {
+      "minimum_samples_target": 3,
+      "minimum_samples_met": true,
+      "shortfall_count": 0
+    },
+    "rejection_reasons": {},
+    "reward_distribution": {},
+    "summary": {
+      "status": "healthy",
+      "text": "Most SFT records were usable and enough reached optimizer updates.",
+      "dominant_rejection_reason": null
+    }
+  },
+  "effectiveness": {
+    "data_yield": {
+      "samples_seen": 4,
+      "samples_kept": 4,
+      "keep_rate": 1.0,
+      "minimum_samples_kept": 3,
+      "min_samples_met": true
+    },
+    "update_quality": {
+      "train_steps_executed": 2,
+      "optimizer_steps": 2,
+      "weights_updated": true,
+      "initial_train_loss": 0.72,
+      "final_train_loss": 0.55,
+      "loss_delta": -0.17,
+      "skipped_batches_non_finite": 0,
+      "update_reason": "updated",
+      "minimum_optimizer_steps": 2
+    },
+    "checkpoint_quality": {
+      "checkpoint_written": true,
+      "final_model_written": true,
+      "training_summary_written": true,
+      "resume_contract_ok": true
+    },
+    "evaluation": {
+      "metric_name": "eval_loss",
+      "baseline_value": 0.6,
+      "final_value": 0.55,
+      "delta": -0.05,
+      "higher_is_better": false,
+      "tolerance": 0.0,
+      "status": "available",
+      "regressed": false
+    },
+    "verdict": "pass",
+    "reasons": []
+  }
+}

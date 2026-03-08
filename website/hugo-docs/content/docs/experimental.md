@@ -4,22 +4,27 @@ description: "Features under active development: VLM, Audio, Reasoning, Agentic,
 weight: 80
 ---
 
-This section contains features that are currently in development and testing. These modules extend halo-forge beyond code generation training into new domains.
+This section contains features that extend halo-forge beyond code generation training into new domains.
 
-**Status**: These features are functional but may change significantly as we iterate.
+**Status**: These modalities support real training runs, but readiness is tracked by internal qualification tiers rather than broad "stable" claims.
 
 ## Modality Training Capability Matrix
 
-| Modality | Runtime Status | Gate | Supported Model Families |
-|----------|----------------|------|--------------------------|
-| VLM | Real training | Optional compatibility flag if temporarily re-gated | `qwen2-vl`, `qwen-vl`, `llava` |
-| Audio | Real training | Optional compatibility flag if temporarily re-gated | `whisper` |
-| Reasoning | Real training | Optional compatibility flag if temporarily re-gated | `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral` |
-| Agentic | Real training | Optional compatibility flag if temporarily re-gated | `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral` |
+| Modality | Runtime Status | Qualification Tier | Gate | Supported Model Families |
+|----------|----------------|--------------------|------|--------------------------|
+| VLM | Real training path | `production_ready` only after deterministic train+eval qualification passes | Optional compatibility flag if temporarily re-gated | `qwen2-vl`, `qwen-vl`, `llava` |
+| Audio | Real training path | `production_ready` only after deterministic train+eval qualification passes | Optional compatibility flag if temporarily re-gated | `whisper` |
+| Reasoning | Real training path | `production_ready` only after deterministic train+eval qualification passes | Optional compatibility flag if temporarily re-gated | `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral` |
+| Agentic | Real training path | `production_ready` only after deterministic train+eval qualification passes | Optional compatibility flag if temporarily re-gated | `qwen2.5`, `qwen2`, `qwen`, `llama-3`, `llama3`, `mistral` |
 
 All modality train commands also support `--resume-from-cycle` and persist canonical artifacts:
 `cycle_<n>/model`, `cycle_<n>/checkpoint_state.json`, `latest_checkpoint.json`, `final_model`, and `training_summary.json`.
 If a modality is temporarily re-gated to prototype, add `--allow-prototype-train` as a compatibility override.
+
+Readiness tiers used internally and surfaced in the UI:
+- `experimental`: launch path exists, but qualification evidence is incomplete
+- `qualified`: contract and artifact checks pass, but the full train+eval gate is still pending
+- `production_ready`: deterministic train+eval qualification passed, including resume/relaunch and baseline checks
 
 ---
 
@@ -248,13 +253,13 @@ halo-forge inference benchmark --model models/optimized --num-prompts 20
 
 ---
 
-## Stability Levels
+## Readiness Levels
 
 | Level | Meaning |
 |-------|---------|
-| **Alpha** | Early development, API may change significantly |
-| **Beta** | Feature complete, API mostly stable |
-| **Stable** | Production ready, in main documentation |
+| **experimental** | Early or partial qualification evidence; useful for research iteration |
+| **qualified** | Contract and artifact checks pass, but the full train+eval gate is not yet complete |
+| **production_ready** | Deterministic train+eval qualification passed with baseline/tolerance checks |
 
 ---
 

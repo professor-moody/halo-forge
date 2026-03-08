@@ -54,7 +54,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
             optional_fields=("epochs", "max_samples"),
         ),
         recommendation=QuickstartRecommendation(
-            when_to_use="First local SFT run and smoke validation.",
+            when_to_use="First local SFT run and deterministic qualification smoke.",
             expected_runtime="quick",
             yield_safety="Enough samples for a smoke run without starving updates.",
         ),
@@ -80,7 +80,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
             optional_fields=("cycles", "samples_per_prompt", "verifier"),
         ),
         recommendation=QuickstartRecommendation(
-            when_to_use="Initial RAFT pipeline validation with low risk defaults.",
+            when_to_use="Initial RAFT qualification run with low-risk defaults.",
             expected_runtime="quick",
             yield_safety="Balanced threshold and keep-rate defaults for first useful signal.",
         ),
@@ -106,7 +106,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
             optional_fields=("cycles", "samples_per_prompt"),
         ),
         recommendation=QuickstartRecommendation(
-            when_to_use="Sanity-check VLM training loop quickly.",
+            when_to_use="Fast VLM qualification-friendly training check.",
             expected_runtime="quick",
             yield_safety="Small but viable sample count for first VLM updates.",
         ),
@@ -130,7 +130,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
             optional_fields=("cycles", "task"),
         ),
         recommendation=QuickstartRecommendation(
-            when_to_use="Validate audio training path in minimum time.",
+            when_to_use="Run a fast audio qualification check without starving verifier yield.",
             expected_runtime="quick",
             yield_safety="Conservative sample count to keep verifier yield usable.",
         ),
@@ -155,7 +155,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
             optional_fields=("cycles", "limit"),
         ),
         recommendation=QuickstartRecommendation(
-            when_to_use="Check reasoning training orchestration and artifacts.",
+            when_to_use="Check reasoning training, artifacts, and eval-backed qualification flow.",
             expected_runtime="quick",
             yield_safety="Limited fixture size while keeping enough reasoning samples to update.",
         ),
@@ -179,7 +179,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
             optional_fields=("cycles", "limit"),
         ),
         recommendation=QuickstartRecommendation(
-            when_to_use="Validate agentic loop, resume metadata, and summaries.",
+            when_to_use="Validate agentic loop, resume evidence, and eval-backed summaries.",
             expected_runtime="quick",
             yield_safety="Enough tool-call attempts to surface verifier and formatting issues.",
         ),

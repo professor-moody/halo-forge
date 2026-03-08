@@ -1,0 +1,19 @@
+{
+  "contract_version": 1,
+  "generator_version": "phase29a.v1",
+  "path_id": "sft_production_readiness",
+  "seed": 42,
+  "fixture_fingerprint": "3cf6cc29f2c275de06c6209720a221f118ef63a7759abb691572f94dc905a114",
+  "created_at": "2026-03-08T00:00:00Z",
+  "entries": {
+    "sft": {
+      "metric_name": "eval_loss",
+      "baseline_value": 0.6,
+      "higher_is_better": false,
+      "tolerance": 0.0,
+      "minimum_samples_kept": 3,
+      "minimum_optimizer_steps": 2,
+      "expected_verdict": "pass"
+    }
+  }
+}

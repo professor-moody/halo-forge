@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
@@ -22,22 +23,40 @@ from halo_forge.diagnostics import (
     validate_issue_metadata_payload,
 )
 from halo_forge.runtime_determinism import DEFAULT_TRAINING_SEED, normalize_seed
+from halo_forge.training_effectiveness_baseline import (
+    build_actual_entry_from_effectiveness,
+    validate_baseline_payload,
+)
 
 ALL_MODULE_QUALIFICATION_CONTRACT_VERSION = 1
 ALL_MODULE_QUALIFICATION_GENERATOR_VERSION = "phase7m.v1"
 ALL_MODULE_QUALIFICATION_STATUSES = ("pass", "warn", "fail")
 ALL_MODULE_QUALIFICATION_PROFILES = ("contract-v1", "fixture-v1", "live-local")
 ALL_MODULE_QUALIFICATION_SOURCES = ("script", "cli_test", "ui_live_compute")
+ALL_MODULE_QUALIFICATION_READINESS_TIERS = (
+    "",
+    "experimental",
+    "qualified",
+    "production_ready",
+)
 DEFAULT_ALL_MODULE_QUALIFICATION_REPORT_FILE = Path(
     "results/readiness/all_module_qualification.v1.json"
 )
 DEFAULT_ALL_MODULE_QUALIFICATION_BASELINE_FILE = Path(
     "tests/baselines/all_module_qualification_baseline.v1.json"
 )
+DEFAULT_TRAINING_PRODUCTION_READINESS_BASELINE_DIR = Path(
+    "tests/baselines/production_readiness"
+)
 CYCLE_BASED_MODULES = {"raft", "vlm", "audio", "reasoning", "agentic"}
 UTILITY_MODULES = {"config", "data", "info", "plot"}
 BENCHMARK_MODULES = {"benchmark_code", "benchmark_non_code"}
 TRAINING_MODULES = {"sft", "raft", "vlm", "audio", "reasoning", "agentic"}
+TRAINING_PRODUCTION_READINESS_BASELINES = {
+    module: DEFAULT_TRAINING_PRODUCTION_READINESS_BASELINE_DIR / f"{module}.v1.json"
+    for module in sorted(TRAINING_MODULES)
+}
+TRAINING_RESUME_REQUIRED = {module: module in CYCLE_BASED_MODULES for module in TRAINING_MODULES}
 
 
 @dataclass
@@ -64,6 +83,16 @@ class AllModuleQualificationResult:
     what_is_missing: List[str] = field(default_factory=list)
     fix_now: str = "No action needed."
     fix_options: List[str] = field(default_factory=list)
+    eval_available: bool = False
+    eval_metric_name: str = ""
+    baseline_value: Optional[float] = None
+    final_value: Optional[float] = None
+    delta: Optional[float] = None
+    weights_updated: bool = False
+    optimizer_steps: int = 0
+    samples_kept: int = 0
+    production_ready: bool = False
+    readiness_tier: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -86,6 +115,16 @@ class AllModuleQualificationResult:
             "what_is_missing": list(self.what_is_missing),
             "fix_now": self.fix_now,
             "fix_options": list(self.fix_options),
+            "eval_available": bool(self.eval_available),
+            "eval_metric_name": self.eval_metric_name,
+            "baseline_value": self.baseline_value,
+            "final_value": self.final_value,
+            "delta": self.delta,
+            "weights_updated": bool(self.weights_updated),
+            "optimizer_steps": int(self.optimizer_steps),
+            "samples_kept": int(self.samples_kept),
+            "production_ready": bool(self.production_ready),
+            "readiness_tier": self.readiness_tier,
         }
 
     @staticmethod
@@ -117,9 +156,50 @@ class AllModuleQualificationResult:
             ],
             fix_now=str(payload.get("fix_now") or "No action needed."),
             fix_options=[str(v) for v in payload.get("fix_options", []) if v is not None],
+            eval_available=bool(payload.get("eval_available", False)),
+            eval_metric_name=str(payload.get("eval_metric_name") or ""),
+            baseline_value=_coerce_float(payload.get("baseline_value")),
+            final_value=_coerce_float(payload.get("final_value")),
+            delta=_coerce_float(payload.get("delta")),
+            weights_updated=bool(payload.get("weights_updated", False)),
+            optimizer_steps=max(0, int(payload.get("optimizer_steps", 0) or 0)),
+            samples_kept=max(0, int(payload.get("samples_kept", 0) or 0)),
+            production_ready=bool(payload.get("production_ready", False)),
+            readiness_tier=str(payload.get("readiness_tier") or ""),
         )
         _apply_issue_metadata(result)
         return result
+
+
+@dataclass(frozen=True)
+class TrainingProductionReadinessContract:
+    module: str
+    baseline_path: Path
+    entry_id: str
+    metric_name: str
+    higher_is_better: bool
+    tolerance: float
+    minimum_samples_kept: int
+    minimum_optimizer_steps: int
+    expected_verdict: str
+    resume_required: bool
+
+
+@dataclass
+class _TrainingProductionReadinessOutcome:
+    eval_available: bool = False
+    eval_metric_name: str = ""
+    baseline_value: Optional[float] = None
+    final_value: Optional[float] = None
+    delta: Optional[float] = None
+    weights_updated: bool = False
+    optimizer_steps: int = 0
+    samples_kept: int = 0
+    production_ready: bool = False
+    readiness_tier: str = ""
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    evidence: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -261,6 +341,26 @@ def validate_all_module_qualification_payload(payload: Mapping[str, Any]) -> Lis
         evidence = entry.get("evidence")
         if evidence is not None and not isinstance(evidence, Mapping):
             errors.append(f"evidence must be object for {module}")
+        if not isinstance(entry.get("eval_available", False), bool):
+            errors.append(f"eval_available must be boolean for {module}")
+        eval_metric_name = entry.get("eval_metric_name", "")
+        if eval_metric_name is not None and not isinstance(eval_metric_name, str):
+            errors.append(f"eval_metric_name must be string for {module}")
+        for field_name in ("baseline_value", "final_value", "delta"):
+            value = entry.get(field_name)
+            if value is not None and not isinstance(value, (int, float)):
+                errors.append(f"{field_name} must be numeric or null for {module}")
+        if not isinstance(entry.get("weights_updated", False), bool):
+            errors.append(f"weights_updated must be boolean for {module}")
+        for field_name in ("optimizer_steps", "samples_kept"):
+            value = entry.get(field_name, 0)
+            if not isinstance(value, int):
+                errors.append(f"{field_name} must be integer for {module}")
+        if not isinstance(entry.get("production_ready", False), bool):
+            errors.append(f"production_ready must be boolean for {module}")
+        readiness_tier = str(entry.get("readiness_tier") or "")
+        if readiness_tier not in ALL_MODULE_QUALIFICATION_READINESS_TIERS:
+            errors.append(f"invalid readiness_tier for {module}: {readiness_tier}")
         errors.extend(validate_issue_metadata_payload(entry, module=module))
 
     return errors
@@ -308,6 +408,7 @@ def build_all_module_qualification_report(
             warnings=[f"module not evaluated in this qualification run: {module}"],
             evidence={"evaluated": False},
             rerun_commands=[" ".join(_module_command(module, normalized_seed))],
+            readiness_tier="experimental" if module in TRAINING_MODULES else "",
         )
         _apply_issue_metadata(modules[module])
 
@@ -395,6 +496,7 @@ def compute_all_module_qualification(
                 warnings=[f"module not evaluated (filtered): {module}"],
                 evidence={"evaluated": False},
                 rerun_commands=[" ".join(_module_command(module, normalize_seed(seed)))],
+                readiness_tier="experimental" if module in TRAINING_MODULES else "",
             )
             continue
 
@@ -506,6 +608,21 @@ def validate_all_module_qualification(
     if not launch_ok and readiness_entry.errors:
         evidence["launch_blocked_reason"] = readiness_entry.errors[0]
 
+    training_outcome = _training_production_readiness(
+        module=module_key,
+        output_dir=output_dir,
+        require_artifacts=require_artifacts,
+        launch_ok=launch_ok,
+        monitor_ok=monitor_ok,
+        relaunch_ok=relaunch_ok,
+        results_ingestion_ok=results_ingestion_ok,
+        resume_latest_ok=resume_latest_ok,
+        artifacts_ok=artifacts_ok,
+    )
+    errors.extend(training_outcome.errors)
+    warnings.extend(training_outcome.warnings)
+    evidence.update(training_outcome.evidence)
+
     status = _status(errors, warnings)
     result = AllModuleQualificationResult(
         module=module_key,
@@ -522,6 +639,16 @@ def validate_all_module_qualification(
         evidence=evidence,
         rerun_commands=[" ".join(_module_command(module_key, normalize_seed(seed)))],
         launch_blocked=readiness_entry.launch_blocked,
+        eval_available=training_outcome.eval_available,
+        eval_metric_name=training_outcome.eval_metric_name,
+        baseline_value=training_outcome.baseline_value,
+        final_value=training_outcome.final_value,
+        delta=training_outcome.delta,
+        weights_updated=training_outcome.weights_updated,
+        optimizer_steps=training_outcome.optimizer_steps,
+        samples_kept=training_outcome.samples_kept,
+        production_ready=training_outcome.production_ready,
+        readiness_tier=training_outcome.readiness_tier,
     )
     _apply_issue_metadata(result)
     return result
@@ -668,6 +795,16 @@ def compare_qualification_baselines(
         "stop_ok",
         "resume_latest_ok",
         "artifacts_ok",
+        "eval_available",
+        "eval_metric_name",
+        "baseline_value",
+        "final_value",
+        "delta",
+        "weights_updated",
+        "optimizer_steps",
+        "samples_kept",
+        "production_ready",
+        "readiness_tier",
     )
 
     for module in ALL_MODULES:
@@ -783,6 +920,337 @@ def format_qualification_issue_lines(
     return lines
 
 
+@lru_cache(maxsize=16)
+def _load_training_production_readiness_contract(
+    module: str,
+) -> Optional[TrainingProductionReadinessContract]:
+    baseline_path = TRAINING_PRODUCTION_READINESS_BASELINES.get(module)
+    if baseline_path is None or not baseline_path.exists():
+        return None
+
+    payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    schema_errors = validate_baseline_payload(payload)
+    if schema_errors:
+        raise ValueError(
+            f"Invalid production-readiness baseline for {module}: " + "; ".join(schema_errors)
+        )
+
+    entries = payload.get("entries")
+    if not isinstance(entries, Mapping) or len(entries) != 1:
+        raise ValueError(
+            f"Production-readiness baseline for {module} must contain exactly one entry"
+        )
+    entry_id, raw_entry = next(iter(entries.items()))
+    if not isinstance(raw_entry, Mapping):
+        raise ValueError(f"Invalid production-readiness entry for {module}")
+
+    metric_name = str(raw_entry.get("metric_name") or "")
+    return TrainingProductionReadinessContract(
+        module=module,
+        baseline_path=baseline_path,
+        entry_id=str(entry_id),
+        metric_name=metric_name,
+        higher_is_better=bool(raw_entry.get("higher_is_better", True)),
+        tolerance=float(raw_entry.get("tolerance", 0.0) or 0.0),
+        minimum_samples_kept=max(0, int(raw_entry.get("minimum_samples_kept", 0) or 0)),
+        minimum_optimizer_steps=max(
+            0, int(raw_entry.get("minimum_optimizer_steps", 0) or 0)
+        ),
+        expected_verdict=str(raw_entry.get("expected_verdict") or "pass"),
+        resume_required=TRAINING_RESUME_REQUIRED.get(module, False),
+    )
+
+
+def _training_production_readiness(
+    *,
+    module: str,
+    output_dir: Path,
+    require_artifacts: bool,
+    launch_ok: bool,
+    monitor_ok: bool,
+    relaunch_ok: bool,
+    results_ingestion_ok: bool,
+    resume_latest_ok: bool,
+    artifacts_ok: bool,
+) -> _TrainingProductionReadinessOutcome:
+    if module not in TRAINING_MODULES:
+        return _TrainingProductionReadinessOutcome(readiness_tier="")
+
+    outcome = _TrainingProductionReadinessOutcome(readiness_tier="experimental")
+    contract = _load_training_production_readiness_contract(module)
+    if contract is None:
+        message = f"production readiness contract missing for module={module}"
+        if require_artifacts:
+            outcome.errors.append(message)
+        else:
+            outcome.warnings.append(message)
+        return outcome
+
+    outcome.evidence["production_readiness_contract"] = {
+        "baseline_file": str(contract.baseline_path),
+        "entry_id": contract.entry_id,
+        "metric_name": contract.metric_name,
+        "minimum_samples_kept": contract.minimum_samples_kept,
+        "minimum_optimizer_steps": contract.minimum_optimizer_steps,
+        "expected_verdict": contract.expected_verdict,
+        "resume_required": contract.resume_required,
+    }
+
+    summary_path = output_dir / "training_summary.json"
+    if not summary_path.exists():
+        message = f"production readiness evidence missing training_summary.json for module={module}"
+        if require_artifacts:
+            outcome.errors.append(message)
+        else:
+            outcome.warnings.append(message)
+        outcome.readiness_tier = _derive_training_readiness_tier(
+            production_ready=False,
+            contract_ok=_base_training_contract_ok(
+                module=module,
+                launch_ok=launch_ok,
+                monitor_ok=monitor_ok,
+                relaunch_ok=relaunch_ok,
+                results_ingestion_ok=results_ingestion_ok,
+                resume_latest_ok=resume_latest_ok,
+                artifacts_ok=artifacts_ok,
+            ),
+        )
+        return outcome
+
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        message = f"production readiness could not parse training_summary.json for module={module}: {exc}"
+        if require_artifacts:
+            outcome.errors.append(message)
+        else:
+            outcome.warnings.append(message)
+        return outcome
+
+    if not isinstance(summary, Mapping):
+        message = f"production readiness training_summary must be an object for module={module}"
+        if require_artifacts:
+            outcome.errors.append(message)
+        else:
+            outcome.warnings.append(message)
+        return outcome
+
+    effectiveness = summary.get("effectiveness")
+    if not isinstance(effectiveness, Mapping):
+        message = f"production readiness effectiveness block missing for module={module}"
+        if require_artifacts:
+            outcome.errors.append(message)
+        else:
+            outcome.warnings.append(message)
+        outcome.weights_updated = bool(summary.get("weights_updated", False))
+        outcome.optimizer_steps = max(0, int(summary.get("total_train_steps_executed", 0) or 0))
+        outcome.readiness_tier = _derive_training_readiness_tier(
+            production_ready=False,
+            contract_ok=_base_training_contract_ok(
+                module=module,
+                launch_ok=launch_ok,
+                monitor_ok=monitor_ok,
+                relaunch_ok=relaunch_ok,
+                results_ingestion_ok=results_ingestion_ok,
+                resume_latest_ok=resume_latest_ok,
+                artifacts_ok=artifacts_ok,
+            ),
+        )
+        return outcome
+
+    evaluation = (
+        dict(effectiveness.get("evaluation") or {})
+        if isinstance(effectiveness.get("evaluation"), Mapping)
+        else {}
+    )
+    update_quality = (
+        dict(effectiveness.get("update_quality") or {})
+        if isinstance(effectiveness.get("update_quality"), Mapping)
+        else {}
+    )
+    data_yield = (
+        dict(effectiveness.get("data_yield") or {})
+        if isinstance(effectiveness.get("data_yield"), Mapping)
+        else {}
+    )
+    actual_entry = build_actual_entry_from_effectiveness(effectiveness)
+
+    outcome.eval_available = actual_entry.get("evaluation_status") == "available"
+    outcome.eval_metric_name = str(actual_entry.get("metric_name") or contract.metric_name)
+    outcome.baseline_value = _coerce_float(
+        evaluation.get("baseline_value", contract_metric_baseline(contract))
+    )
+    outcome.final_value = _coerce_float(evaluation.get("final_value"))
+    outcome.delta = _coerce_float(evaluation.get("delta"))
+    outcome.weights_updated = bool(update_quality.get("weights_updated", summary.get("weights_updated", False)))
+    outcome.optimizer_steps = max(
+        0,
+        int(
+            actual_entry.get("optimizer_steps", update_quality.get("optimizer_steps", 0)) or 0
+        ),
+    )
+    outcome.samples_kept = max(
+        0,
+        int(
+            actual_entry.get(
+                "samples_kept",
+                data_yield.get("samples_kept", _yield_stage_kept(summary)),
+            )
+            or 0
+        ),
+    )
+
+    readiness_failures = _compare_training_readiness_contract(
+        contract=contract,
+        actual_entry=actual_entry,
+        outcome=outcome,
+    )
+    base_contract_ok = _base_training_contract_ok(
+        module=module,
+        launch_ok=launch_ok,
+        monitor_ok=monitor_ok,
+        relaunch_ok=relaunch_ok,
+        results_ingestion_ok=results_ingestion_ok,
+        resume_latest_ok=resume_latest_ok,
+        artifacts_ok=artifacts_ok,
+    )
+    outcome.production_ready = base_contract_ok and not readiness_failures
+    outcome.readiness_tier = _derive_training_readiness_tier(
+        production_ready=outcome.production_ready,
+        contract_ok=base_contract_ok,
+    )
+    outcome.evidence["production_readiness_checks"] = {
+        "base_contract_ok": base_contract_ok,
+        "launch_ok": launch_ok,
+        "monitor_ok": monitor_ok,
+        "relaunch_ok": relaunch_ok,
+        "results_ingestion_ok": results_ingestion_ok,
+        "resume_latest_ok": resume_latest_ok,
+        "artifacts_ok": artifacts_ok,
+        "readiness_failures": list(readiness_failures),
+    }
+    if readiness_failures:
+        message = (
+            f"production readiness gate failed for module={module}: "
+            + "; ".join(readiness_failures[:4])
+        )
+        if require_artifacts:
+            outcome.errors.append(message)
+        else:
+            outcome.warnings.append(message)
+
+    return outcome
+
+
+def contract_metric_baseline(contract: TrainingProductionReadinessContract) -> Optional[float]:
+    payload = json.loads(contract.baseline_path.read_text(encoding="utf-8"))
+    entries = payload.get("entries") if isinstance(payload.get("entries"), Mapping) else {}
+    entry = entries.get(contract.entry_id)
+    if not isinstance(entry, Mapping):
+        return None
+    return _coerce_float(entry.get("baseline_value"))
+
+
+def _compare_training_readiness_contract(
+    *,
+    contract: TrainingProductionReadinessContract,
+    actual_entry: Mapping[str, Any],
+    outcome: _TrainingProductionReadinessOutcome,
+) -> List[str]:
+    failures: List[str] = []
+    if str(actual_entry.get("metric_name") or "") != contract.metric_name:
+        failures.append(
+            f"canonical metric mismatch (expected {contract.metric_name}, got {actual_entry.get('metric_name') or 'missing'})"
+        )
+    if str(actual_entry.get("evaluation_status") or "not_available") != "available":
+        failures.append("post-train evaluation missing")
+    if str(actual_entry.get("verdict") or "") != contract.expected_verdict:
+        failures.append(
+            f"effectiveness verdict expected {contract.expected_verdict}, got {actual_entry.get('verdict') or 'missing'}"
+        )
+    if outcome.samples_kept < contract.minimum_samples_kept:
+        failures.append(
+            f"samples_kept below minimum ({outcome.samples_kept} < {contract.minimum_samples_kept})"
+        )
+    if outcome.optimizer_steps < contract.minimum_optimizer_steps:
+        failures.append(
+            f"optimizer_steps below minimum ({outcome.optimizer_steps} < {contract.minimum_optimizer_steps})"
+        )
+    if not outcome.weights_updated:
+        failures.append("weights were not updated")
+
+    baseline_value = contract_metric_baseline(contract)
+    final_value = _coerce_float(actual_entry.get("final_value"))
+    if baseline_value is None or final_value is None:
+        failures.append("baseline or final evaluation metric missing")
+    elif _is_regressed(
+        baseline_value=baseline_value,
+        final_value=final_value,
+        higher_is_better=contract.higher_is_better,
+        tolerance=contract.tolerance,
+    ):
+        failures.append(
+            f"evaluation regressed beyond tolerance ({final_value} vs baseline {baseline_value})"
+        )
+    return failures
+
+
+def _base_training_contract_ok(
+    *,
+    module: str,
+    launch_ok: bool,
+    monitor_ok: bool,
+    relaunch_ok: bool,
+    results_ingestion_ok: bool,
+    resume_latest_ok: bool,
+    artifacts_ok: bool,
+) -> bool:
+    if not (launch_ok and monitor_ok and relaunch_ok and results_ingestion_ok and artifacts_ok):
+        return False
+    if TRAINING_RESUME_REQUIRED.get(module, False) and not resume_latest_ok:
+        return False
+    return True
+
+
+def _derive_training_readiness_tier(*, production_ready: bool, contract_ok: bool) -> str:
+    if production_ready:
+        return "production_ready"
+    if contract_ok:
+        return "qualified"
+    return "experimental"
+
+
+def _yield_stage_kept(summary: Mapping[str, Any]) -> int:
+    yield_diagnostics = summary.get("yield_diagnostics")
+    if not isinstance(yield_diagnostics, Mapping):
+        return 0
+    stage_counts = yield_diagnostics.get("stage_counts")
+    if not isinstance(stage_counts, Mapping):
+        return 0
+    return max(0, int(stage_counts.get("kept", 0) or 0))
+
+
+def _is_regressed(
+    *,
+    baseline_value: float,
+    final_value: float,
+    higher_is_better: bool,
+    tolerance: float,
+) -> bool:
+    if higher_is_better:
+        return final_value + tolerance < baseline_value
+    return final_value - tolerance > baseline_value
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _resolve_selected_modules(module_filters: Optional[Sequence[str]]) -> List[str]:
     selected: List[str] = []
     for module in module_filters or []:
@@ -843,7 +1311,13 @@ def _artifact_paths(module: str, output_dir: Path) -> Dict[str, Any]:
                 str(output_dir / "benchmark_comparison.png"),
             ]
         }
-    if module in {"sft", "inference"}:
+    if module == "sft":
+        return {
+            "training_summary": str(output_dir / "training_summary.json"),
+            "launch_context": str(output_dir / "launch_context.json"),
+            "final_model": str(output_dir / "final_model"),
+        }
+    if module == "inference":
         return {
             "launch_context": str(output_dir / "launch_context.json"),
         }
@@ -852,6 +1326,7 @@ def _artifact_paths(module: str, output_dir: Path) -> Dict[str, Any]:
             "training_summary": str(output_dir / "training_summary.json"),
             "launch_context": str(output_dir / "launch_context.json"),
             "latest_checkpoint": str(output_dir / "latest_checkpoint.json"),
+            "final_model": str(output_dir / "final_model"),
         }
     if module == "benchmark_code":
         return {"benchmark_json": [str(path) for path in output_dir.glob("**/benchmark.json")]}

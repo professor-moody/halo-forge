@@ -1,9 +1,197 @@
 {
+  "contract_version": 1,
   "modality": "vlm",
+  "model_name": "Qwen/Qwen2-VL-7B-Instruct",
+  "total_cycles_planned": 2,
+  "cycles_executed": 2,
+  "cycles": [
+    {
+      "cycle": 0,
+      "learning_rate": 5e-05,
+      "samples_seen": 2,
+      "samples_kept": 1,
+      "cycle_duration_seconds": 1.5,
+      "train_steps_executed": 1,
+      "train_loss": 0.42,
+      "initial_train_loss": 0.56,
+      "weights_updated": true,
+      "update_reason": "updated",
+      "optimizer_steps": 1,
+      "skipped_batches_non_finite": 0,
+      "yield_diagnostics": {
+        "stage_counts": {
+          "generated": 2,
+          "verified": 2,
+          "filtered": 1,
+          "kept": 1,
+          "dropped": 1
+        },
+        "rates": {
+          "verification_rate": 1.0,
+          "keep_rate": 0.5,
+          "success_rate": 1.0
+        },
+        "thresholds": {
+          "configured_reward_threshold": 0.5,
+          "effective_reward_threshold": 0.5,
+          "keep_percent": 0.5,
+          "threshold_adjusted": false
+        },
+        "minimums": {
+          "minimum_samples_target": 1,
+          "minimum_samples_met": true,
+          "shortfall_count": 0
+        },
+        "rejection_reasons": {
+          "dropped_by_keep_percent": 1
+        },
+        "reward_distribution": {
+          "0_8_plus": 2
+        },
+        "summary": {
+          "status": "healthy",
+          "text": "VLM verification kept enough samples for the cycle to update.",
+          "dominant_rejection_reason": "dropped_by_keep_percent"
+        }
+      }
+    },
+    {
+      "cycle": 1,
+      "learning_rate": 5e-05,
+      "samples_seen": 2,
+      "samples_kept": 1,
+      "cycle_duration_seconds": 1.4,
+      "train_steps_executed": 1,
+      "train_loss": 0.35,
+      "initial_train_loss": 0.42,
+      "weights_updated": true,
+      "update_reason": "updated",
+      "optimizer_steps": 1,
+      "skipped_batches_non_finite": 0,
+      "yield_diagnostics": {
+        "stage_counts": {
+          "generated": 2,
+          "verified": 2,
+          "filtered": 1,
+          "kept": 1,
+          "dropped": 1
+        },
+        "rates": {
+          "verification_rate": 1.0,
+          "keep_rate": 0.5,
+          "success_rate": 1.0
+        },
+        "thresholds": {
+          "configured_reward_threshold": 0.5,
+          "effective_reward_threshold": 0.5,
+          "keep_percent": 0.5,
+          "threshold_adjusted": false
+        },
+        "minimums": {
+          "minimum_samples_target": 1,
+          "minimum_samples_met": true,
+          "shortfall_count": 0
+        },
+        "rejection_reasons": {
+          "dropped_by_keep_percent": 1
+        },
+        "reward_distribution": {
+          "0_8_plus": 2
+        },
+        "summary": {
+          "status": "healthy",
+          "text": "VLM verification kept enough samples for the cycle to update.",
+          "dominant_rejection_reason": "dropped_by_keep_percent"
+        }
+      }
+    }
+  ],
+  "total_train_steps_executed": 2,
+  "weights_updated": true,
+  "final_train_loss": 0.35,
+  "final_update_reason": "updated",
   "run_id": "vlm-fixture-run",
   "seed": 42,
-  "weights_updated": true,
-  "total_train_steps_executed": 2,
-  "final_update_reason": "updated",
-  "failure_reason": null
+  "resume_from_cycle": 1,
+  "resumed_from_checkpoint": {
+    "cycle": 0,
+    "model_dir": "tests/fixtures/all_modules/v1/vlm/final_model"
+  },
+  "base_model_name": "Qwen/Qwen2-VL-7B-Instruct",
+  "active_model_name": "Qwen/Qwen2-VL-7B-Instruct",
+  "failure_reason": null,
+  "yield_diagnostics": {
+    "stage_counts": {
+      "generated": 4,
+      "verified": 4,
+      "filtered": 2,
+      "kept": 2,
+      "dropped": 2
+    },
+    "rates": {
+      "verification_rate": 1.0,
+      "keep_rate": 0.5,
+      "success_rate": 1.0
+    },
+    "thresholds": {
+      "configured_reward_threshold": 0.5,
+      "effective_reward_threshold": 0.5,
+      "keep_percent": 0.5,
+      "threshold_adjusted": false
+    },
+    "minimums": {
+      "minimum_samples_target": 1,
+      "minimum_samples_met": true,
+      "shortfall_count": 0
+    },
+    "rejection_reasons": {
+      "dropped_by_keep_percent": 2
+    },
+    "reward_distribution": {
+      "0_8_plus": 4
+    },
+    "summary": {
+      "status": "healthy",
+      "text": "VLM verification kept enough samples for stable updates.",
+      "dominant_rejection_reason": "dropped_by_keep_percent"
+    }
+  },
+  "effectiveness": {
+    "data_yield": {
+      "samples_seen": 4,
+      "samples_kept": 2,
+      "keep_rate": 0.5,
+      "minimum_samples_kept": 1,
+      "min_samples_met": true
+    },
+    "update_quality": {
+      "train_steps_executed": 2,
+      "optimizer_steps": 2,
+      "weights_updated": true,
+      "initial_train_loss": 0.56,
+      "final_train_loss": 0.35,
+      "loss_delta": -0.21,
+      "skipped_batches_non_finite": 0,
+      "update_reason": "updated",
+      "minimum_optimizer_steps": 1
+    },
+    "checkpoint_quality": {
+      "checkpoint_written": true,
+      "final_model_written": true,
+      "training_summary_written": true,
+      "resume_contract_ok": true
+    },
+    "evaluation": {
+      "metric_name": "avg_reward",
+      "baseline_value": 1.0,
+      "final_value": 1.0,
+      "delta": 0.0,
+      "higher_is_better": true,
+      "tolerance": 0.0,
+      "status": "available",
+      "regressed": false
+    },
+    "verdict": "pass",
+    "reasons": []
+  }
 }

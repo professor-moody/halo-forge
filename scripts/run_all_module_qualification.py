@@ -174,7 +174,9 @@ def main() -> int:
         print(
             "ALL_QUAL "
             f"module={module} status={entry.status} "
-            f"errors={len(entry.errors)} warnings={len(entry.warnings)}"
+            f"errors={len(entry.errors)} warnings={len(entry.warnings)} "
+            f"tier={entry.readiness_tier or 'n/a'} "
+            f"production_ready={1 if entry.production_ready else 0}"
         )
         for line in format_qualification_issue_lines(
             entry,

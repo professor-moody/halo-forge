@@ -30,6 +30,7 @@ from ui.services.quickstart_presets import (
     get_quickstart_preset,
     list_quickstart_presets,
 )
+from ui.components.diagnostic_panel import render_readiness_diagnostic_panel  # compatibility hook
 from ui.components.notifications import notify_job_started, notify_job_failed
 from ui.components.file_picker import FilePicker
 from ui.query_params import get_query_param

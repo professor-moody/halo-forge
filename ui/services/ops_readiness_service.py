@@ -669,6 +669,9 @@ class OpsReadinessService:
         - qualification_status: Optional[str]
         - qualification_source: Optional[str]
         - qualification_profile: Optional[str]
+        - qualification_training_readiness_tier: Optional[str]
+        - qualification_training_production_ready_count: int
+        - qualification_training_module_count: int
         - qualification_report_path: Optional[str]
         """
         try:
@@ -680,6 +683,9 @@ class OpsReadinessService:
                 "qualification_status": None,
                 "qualification_source": None,
                 "qualification_profile": None,
+                "qualification_training_readiness_tier": None,
+                "qualification_training_production_ready_count": 0,
+                "qualification_training_module_count": 0,
                 "qualification_report_path": None,
             }
 
@@ -690,12 +696,37 @@ class OpsReadinessService:
         elif any(status == "warn" for status in statuses):
             overall_status = "warn"
 
+        training_entries = [
+            entry
+            for module, entry in report.modules.items()
+            if module in {"sft", "raft", "vlm", "audio", "reasoning", "agentic"}
+        ]
+        training_ready_count = sum(
+            1 for entry in training_entries if bool(getattr(entry, "production_ready", False))
+        )
+        training_tiers = {
+            str(getattr(entry, "readiness_tier", "") or "")
+            for entry in training_entries
+            if str(getattr(entry, "readiness_tier", "") or "")
+        }
+        training_readiness_tier = None
+        if training_entries:
+            if training_ready_count == len(training_entries):
+                training_readiness_tier = "production_ready"
+            elif "qualified" in training_tiers or training_ready_count > 0:
+                training_readiness_tier = "qualified"
+            else:
+                training_readiness_tier = "experimental"
+
         return {
             "qualification_report_present": True,
             "qualification_generated_at": report.generated_at,
             "qualification_status": overall_status,
             "qualification_source": report.source,
             "qualification_profile": report.profile,
+            "qualification_training_readiness_tier": training_readiness_tier,
+            "qualification_training_production_ready_count": training_ready_count,
+            "qualification_training_module_count": len(training_entries),
             "qualification_report_path": str(self._resolve_qualification_report_path()),
         }
 

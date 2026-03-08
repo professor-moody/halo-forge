@@ -1,1 +1,206 @@
-{"run_id":"raft-fixture-run","seed":42,"weights_updated":true,"total_train_steps_executed":3,"final_update_reason":"updated","failure_reason":null}
+{
+  "contract_version": 1,
+  "modality": "raft",
+  "model_name": "Qwen/Qwen2.5-Coder-3B",
+  "total_cycles_planned": 2,
+  "cycles_executed": 2,
+  "cycles": [
+    {
+      "cycle": 0,
+      "learning_rate": 5e-05,
+      "samples_seen": 4,
+      "samples_kept": 1,
+      "cycle_duration_seconds": 2.1,
+      "train_steps_executed": 1,
+      "train_loss": 0.43,
+      "initial_train_loss": 0.58,
+      "weights_updated": true,
+      "update_reason": "updated",
+      "optimizer_steps": 1,
+      "skipped_batches_non_finite": 0,
+      "yield_diagnostics": {
+        "stage_counts": {
+          "generated": 4,
+          "verified": 3,
+          "filtered": 2,
+          "kept": 1,
+          "dropped": 3
+        },
+        "rates": {
+          "verification_rate": 0.75,
+          "keep_rate": 0.25,
+          "success_rate": 0.75
+        },
+        "thresholds": {
+          "configured_reward_threshold": 0.5,
+          "effective_reward_threshold": 0.45,
+          "keep_percent": 0.6,
+          "threshold_adjusted": true
+        },
+        "minimums": {
+          "minimum_samples_target": 1,
+          "minimum_samples_met": true,
+          "shortfall_count": 0
+        },
+        "rejection_reasons": {
+          "verification_failed": 1,
+          "below_reward_threshold": 1,
+          "dropped_by_keep_percent": 1
+        },
+        "reward_distribution": {
+          "0_5_to_0_8": 2,
+          "0_8_plus": 1
+        },
+        "summary": {
+          "status": "healthy",
+          "text": "Reward filtering kept enough samples for useful RAFT updates.",
+          "dominant_rejection_reason": "verification_failed"
+        }
+      }
+    },
+    {
+      "cycle": 1,
+      "learning_rate": 5e-05,
+      "samples_seen": 4,
+      "samples_kept": 1,
+      "cycle_duration_seconds": 2.0,
+      "train_steps_executed": 2,
+      "train_loss": 0.38,
+      "initial_train_loss": 0.43,
+      "weights_updated": true,
+      "update_reason": "updated",
+      "optimizer_steps": 2,
+      "skipped_batches_non_finite": 0,
+      "yield_diagnostics": {
+        "stage_counts": {
+          "generated": 4,
+          "verified": 3,
+          "filtered": 2,
+          "kept": 1,
+          "dropped": 3
+        },
+        "rates": {
+          "verification_rate": 0.75,
+          "keep_rate": 0.25,
+          "success_rate": 0.75
+        },
+        "thresholds": {
+          "configured_reward_threshold": 0.5,
+          "effective_reward_threshold": 0.45,
+          "keep_percent": 0.6,
+          "threshold_adjusted": true
+        },
+        "minimums": {
+          "minimum_samples_target": 1,
+          "minimum_samples_met": true,
+          "shortfall_count": 0
+        },
+        "rejection_reasons": {
+          "verification_failed": 1,
+          "below_reward_threshold": 1,
+          "dropped_by_keep_percent": 1
+        },
+        "reward_distribution": {
+          "0_5_to_0_8": 2,
+          "0_8_plus": 1
+        },
+        "summary": {
+          "status": "healthy",
+          "text": "Reward filtering kept enough samples for useful RAFT updates.",
+          "dominant_rejection_reason": "verification_failed"
+        }
+      }
+    }
+  ],
+  "total_train_steps_executed": 3,
+  "weights_updated": true,
+  "final_train_loss": 0.38,
+  "final_update_reason": "updated",
+  "run_id": "raft-fixture-run",
+  "seed": 42,
+  "resume_from_cycle": 1,
+  "resumed_from_checkpoint": {
+    "cycle": 0,
+    "model_dir": "tests/fixtures/all_modules/v1/raft/final_model"
+  },
+  "base_model_name": "Qwen/Qwen2.5-Coder-3B",
+  "active_model_name": "Qwen/Qwen2.5-Coder-3B",
+  "failure_reason": null,
+  "yield_diagnostics": {
+    "stage_counts": {
+      "generated": 8,
+      "verified": 6,
+      "filtered": 4,
+      "kept": 2,
+      "dropped": 6
+    },
+    "rates": {
+      "verification_rate": 0.75,
+      "keep_rate": 0.25,
+      "success_rate": 0.75
+    },
+    "thresholds": {
+      "configured_reward_threshold": 0.5,
+      "effective_reward_threshold": 0.45,
+      "keep_percent": 0.6,
+      "threshold_adjusted": true
+    },
+    "minimums": {
+      "minimum_samples_target": 1,
+      "minimum_samples_met": true,
+      "shortfall_count": 0
+    },
+    "rejection_reasons": {
+      "verification_failed": 2,
+      "below_reward_threshold": 2,
+      "dropped_by_keep_percent": 2
+    },
+    "reward_distribution": {
+      "0_5_to_0_8": 4,
+      "0_8_plus": 2
+    },
+    "summary": {
+      "status": "healthy",
+      "text": "Reward filtering kept enough samples for useful RAFT updates.",
+      "dominant_rejection_reason": "verification_failed"
+    }
+  },
+  "effectiveness": {
+    "data_yield": {
+      "samples_seen": 8,
+      "samples_kept": 2,
+      "keep_rate": 0.25,
+      "minimum_samples_kept": 1,
+      "min_samples_met": true
+    },
+    "update_quality": {
+      "train_steps_executed": 3,
+      "optimizer_steps": 3,
+      "weights_updated": true,
+      "initial_train_loss": 0.58,
+      "final_train_loss": 0.38,
+      "loss_delta": -0.2,
+      "skipped_batches_non_finite": 0,
+      "update_reason": "updated",
+      "minimum_optimizer_steps": 1
+    },
+    "checkpoint_quality": {
+      "checkpoint_written": true,
+      "final_model_written": true,
+      "training_summary_written": true,
+      "resume_contract_ok": true
+    },
+    "evaluation": {
+      "metric_name": "pass_at_1",
+      "baseline_value": 0.5,
+      "final_value": 0.55,
+      "delta": 0.05,
+      "higher_is_better": true,
+      "tolerance": 0.0,
+      "status": "available",
+      "regressed": false
+    },
+    "verdict": "pass",
+    "reasons": []
+  }
+}

@@ -4,7 +4,11 @@
   "modules": {
     "agentic": {
       "artifacts_ok": true,
+      "baseline_value": 1.0,
+      "delta": 0.0,
       "errors": [],
+      "eval_available": true,
+      "eval_metric_name": "success_rate",
       "evidence": {
         "checkpoint_cycle": 0,
         "failure_reason": null,
@@ -14,6 +18,25 @@
         "launch_context_contract_version": 1,
         "launch_context_job_type": "agentic",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/agentic",
+        "production_readiness_checks": {
+          "artifacts_ok": true,
+          "base_contract_ok": true,
+          "launch_ok": true,
+          "monitor_ok": true,
+          "readiness_failures": [],
+          "relaunch_ok": true,
+          "results_ingestion_ok": true,
+          "resume_latest_ok": true
+        },
+        "production_readiness_contract": {
+          "baseline_file": "tests/baselines/production_readiness/agentic.v1.json",
+          "entry_id": "agentic",
+          "expected_verdict": "pass",
+          "metric_name": "success_rate",
+          "minimum_optimizer_steps": 1,
+          "minimum_samples_kept": 1,
+          "resume_required": true
+        },
         "profile": "fixture-v1",
         "run_id": "agentic-fixture-run",
         "seed": 42,
@@ -21,23 +44,41 @@
         "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/agentic/training_summary.json",
         "weights_updated": true
       },
+      "final_value": 1.0,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module agentic",
+        "halo-forge test --level all-module-qualification --module agentic"
+      ],
+      "issue_code": "AGENTIC_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 2,
+      "production_ready": true,
+      "readiness_tier": "production_ready",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge agentic train --dry-run --dataset xlam --seed 42"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": true,
-      "status": "warn",
+      "samples_kept": 2,
+      "severity": "info",
+      "status": "pass",
       "stop_ok": true,
-      "warnings": [
-        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/agentic/final_model"
-      ]
+      "warnings": [],
+      "weights_updated": true,
+      "what_is_missing": []
     },
     "audio": {
       "artifacts_ok": true,
+      "baseline_value": 1.0,
+      "delta": 0.0,
       "errors": [],
+      "eval_available": true,
+      "eval_metric_name": "average_reward",
       "evidence": {
         "checkpoint_cycle": 0,
         "failure_reason": null,
@@ -47,6 +88,25 @@
         "launch_context_contract_version": 1,
         "launch_context_job_type": "audio",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/audio",
+        "production_readiness_checks": {
+          "artifacts_ok": true,
+          "base_contract_ok": true,
+          "launch_ok": true,
+          "monitor_ok": true,
+          "readiness_failures": [],
+          "relaunch_ok": true,
+          "results_ingestion_ok": true,
+          "resume_latest_ok": true
+        },
+        "production_readiness_contract": {
+          "baseline_file": "tests/baselines/production_readiness/audio.v1.json",
+          "entry_id": "audio",
+          "expected_verdict": "pass",
+          "metric_name": "average_reward",
+          "minimum_optimizer_steps": 1,
+          "minimum_samples_kept": 1,
+          "resume_required": true
+        },
         "profile": "fixture-v1",
         "run_id": "audio-fixture-run",
         "seed": 42,
@@ -54,23 +114,41 @@
         "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/audio/training_summary.json",
         "weights_updated": true
       },
+      "final_value": 1.0,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module audio",
+        "halo-forge test --level all-module-qualification --module audio"
+      ],
+      "issue_code": "AUDIO_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 2,
+      "production_ready": true,
+      "readiness_tier": "production_ready",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge audio train --dry-run --dataset librispeech --seed 42"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": true,
-      "status": "warn",
+      "samples_kept": 2,
+      "severity": "info",
+      "status": "pass",
       "stop_ok": true,
-      "warnings": [
-        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/audio/final_model"
-      ]
+      "warnings": [],
+      "weights_updated": true,
+      "what_is_missing": []
     },
     "benchmark_code": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "benchmark_file_count": 1,
         "benchmark_files": [
@@ -80,21 +158,41 @@
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/benchmark_code",
         "profile": "fixture-v1"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module benchmark_code",
+        "halo-forge test --level all-module-qualification --module benchmark_code"
+      ],
+      "issue_code": "BENCHMARK_CODE_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge benchmark eval --benchmark humaneval --limit 5"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "benchmark_non_code": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "benchmark_file_count": 1,
         "benchmark_files": [
@@ -107,21 +205,41 @@
         "parse_errors": 0,
         "profile": "fixture-v1"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module benchmark_non_code",
+        "halo-forge test --level all-module-qualification --module benchmark_non_code"
+      ],
+      "issue_code": "BENCHMARK_NON_CODE_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge reasoning benchmark --dataset gsm8k --limit 20"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "config": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "config_file_count": 1,
         "config_files": [
@@ -130,21 +248,41 @@
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/config",
         "profile": "fixture-v1"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module config",
+        "halo-forge test --level all-module-qualification --module config"
+      ],
+      "issue_code": "CONFIG_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge config validate configs/sft_example.yaml"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "data": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "jsonl_examples": [
           "<repo_root>/tests/fixtures/all_modules/v1/data/sample.jsonl"
@@ -153,21 +291,41 @@
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/data",
         "profile": "fixture-v1"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module data",
+        "halo-forge test --level all-module-qualification --module data"
+      ],
+      "issue_code": "DATA_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge data prepare --list"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "inference": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "has_optimized_artifact": false,
         "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/inference/launch_context.json",
@@ -178,43 +336,89 @@
         "profile": "fixture-v1",
         "quantized_dir": "<repo_root>/tests/fixtures/all_modules/v1/inference/quantized"
       },
+      "final_value": null,
+      "fix_now": "Generate fresh evidence artifacts via a probe or bounded run.",
+      "fix_options": [
+        "Run a contract probe for `inference` from the UI surface.",
+        "halo-forge test --level all-modules --module inference",
+        "halo-forge test --level all-module-qualification --module inference"
+      ],
+      "issue_code": "INFERENCE_EVIDENCE_GAP",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge inference optimize --dry-run --model Qwen/Qwen2.5-Coder-3B"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "warning",
       "status": "warn",
       "stop_ok": true,
       "warnings": [
         "no optimized inference artifacts detected (quantized/, model.gguf, model.onnx)"
+      ],
+      "weights_updated": false,
+      "what_is_missing": [
+        "no optimized inference artifacts detected (quantized/, model.gguf, model.onnx)",
+        "missing path: /Users/keys/projects/halo-forge/tests/fixtures/all_modules/v1/inference/quantized",
+        "missing path: /Users/keys/projects/halo-forge/tests/fixtures/all_modules/v1/inference/model.gguf",
+        "missing path: /Users/keys/projects/halo-forge/tests/fixtures/all_modules/v1/inference/model.onnx"
       ]
     },
     "info": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "hardware_snapshot": "<repo_root>/tests/fixtures/all_modules/v1/info/hardware_snapshot.json",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/info",
         "profile": "fixture-v1"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module info",
+        "halo-forge test --level all-module-qualification --module info"
+      ],
+      "issue_code": "INFO_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge info"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "plot": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "chart_file_count": 1,
         "chart_files": [
@@ -223,43 +427,102 @@
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/plot",
         "profile": "fixture-v1"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module plot",
+        "halo-forge test --level all-module-qualification --module plot"
+      ],
+      "issue_code": "PLOT_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge plot benchmarks results/benchmarks"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "raft": {
       "artifacts_ok": true,
+      "baseline_value": 0.5,
+      "delta": 0.05,
       "errors": [],
+      "eval_available": true,
+      "eval_metric_name": "pass_at_1",
       "evidence": {
         "latest_checkpoint": "<repo_root>/tests/fixtures/all_modules/v1/raft/latest_checkpoint.json",
         "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/raft/launch_context.json",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/raft",
+        "production_readiness_checks": {
+          "artifacts_ok": true,
+          "base_contract_ok": true,
+          "launch_ok": true,
+          "monitor_ok": true,
+          "readiness_failures": [],
+          "relaunch_ok": true,
+          "results_ingestion_ok": true,
+          "resume_latest_ok": true
+        },
+        "production_readiness_contract": {
+          "baseline_file": "tests/baselines/production_readiness/raft.v1.json",
+          "entry_id": "raft",
+          "expected_verdict": "pass",
+          "metric_name": "pass_at_1",
+          "minimum_optimizer_steps": 1,
+          "minimum_samples_kept": 1,
+          "resume_required": true
+        },
         "profile": "fixture-v1",
         "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/raft/training_summary.json"
       },
+      "final_value": 0.55,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module raft",
+        "halo-forge test --level all-module-qualification --module raft"
+      ],
+      "issue_code": "RAFT_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 3,
+      "production_ready": true,
+      "readiness_tier": "production_ready",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge raft train --dry-run --model Qwen/Qwen2.5-Coder-3B --prompts data/rlvr/humaneval_prompts.jsonl --seed 42"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": true,
+      "samples_kept": 2,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": true,
+      "what_is_missing": []
     },
     "reasoning": {
       "artifacts_ok": true,
+      "baseline_value": 1.0,
+      "delta": 0.0,
       "errors": [],
+      "eval_available": true,
+      "eval_metric_name": "accuracy",
       "evidence": {
         "checkpoint_cycle": 0,
         "failure_reason": null,
@@ -269,6 +532,25 @@
         "launch_context_contract_version": 1,
         "launch_context_job_type": "reasoning",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/reasoning",
+        "production_readiness_checks": {
+          "artifacts_ok": true,
+          "base_contract_ok": true,
+          "launch_ok": true,
+          "monitor_ok": true,
+          "readiness_failures": [],
+          "relaunch_ok": true,
+          "results_ingestion_ok": true,
+          "resume_latest_ok": true
+        },
+        "production_readiness_contract": {
+          "baseline_file": "tests/baselines/production_readiness/reasoning.v1.json",
+          "entry_id": "reasoning",
+          "expected_verdict": "pass",
+          "metric_name": "accuracy",
+          "minimum_optimizer_steps": 1,
+          "minimum_samples_kept": 1,
+          "resume_required": true
+        },
         "profile": "fixture-v1",
         "run_id": "reasoning-fixture-run",
         "seed": 42,
@@ -276,44 +558,101 @@
         "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/reasoning/training_summary.json",
         "weights_updated": true
       },
+      "final_value": 1.0,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module reasoning",
+        "halo-forge test --level all-module-qualification --module reasoning"
+      ],
+      "issue_code": "REASONING_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 2,
+      "production_ready": true,
+      "readiness_tier": "production_ready",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge reasoning train --dry-run --dataset gsm8k --seed 42"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": true,
-      "status": "warn",
+      "samples_kept": 2,
+      "severity": "info",
+      "status": "pass",
       "stop_ok": true,
-      "warnings": [
-        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/reasoning/final_model"
-      ]
+      "warnings": [],
+      "weights_updated": true,
+      "what_is_missing": []
     },
     "sft": {
       "artifacts_ok": true,
+      "baseline_value": 0.6,
+      "delta": -0.05,
       "errors": [],
+      "eval_available": true,
+      "eval_metric_name": "eval_loss",
       "evidence": {
         "launch_context": "<repo_root>/tests/fixtures/all_modules/v1/sft/launch_context.json",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/sft",
+        "production_readiness_checks": {
+          "artifacts_ok": true,
+          "base_contract_ok": true,
+          "launch_ok": true,
+          "monitor_ok": true,
+          "readiness_failures": [],
+          "relaunch_ok": true,
+          "results_ingestion_ok": true,
+          "resume_latest_ok": false
+        },
+        "production_readiness_contract": {
+          "baseline_file": "tests/baselines/production_readiness/sft.v1.json",
+          "entry_id": "sft",
+          "expected_verdict": "pass",
+          "metric_name": "eval_loss",
+          "minimum_optimizer_steps": 2,
+          "minimum_samples_kept": 3,
+          "resume_required": false
+        },
         "profile": "fixture-v1",
         "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/sft/training_summary.json"
       },
+      "final_value": 0.55,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module sft",
+        "halo-forge test --level all-module-qualification --module sft"
+      ],
+      "issue_code": "SFT_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 2,
+      "production_ready": true,
+      "readiness_tier": "production_ready",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge sft train --dry-run --model Qwen/Qwen2.5-Coder-3B --dataset codealpaca"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 4,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": true,
+      "what_is_missing": []
     },
     "ui_ops": {
       "artifacts_ok": true,
+      "baseline_value": null,
+      "delta": null,
       "errors": [],
+      "eval_available": false,
+      "eval_metric_name": "",
       "evidence": {
         "file_app": "<repo_root>/ui/app.py",
         "file_benchmark_service": "<repo_root>/ui/services/benchmark_service.py",
@@ -324,21 +663,41 @@
         "profile": "fixture-v1",
         "repo_root": "<repo_root>"
       },
+      "final_value": null,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module ui_ops",
+        "halo-forge test --level all-module-qualification --module ui_ops"
+      ],
+      "issue_code": "UI_OPS_READY_OK",
+      "issue_scope": "cross_module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 0,
+      "production_ready": false,
+      "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge ui --no-browser"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
+      "samples_kept": 0,
+      "severity": "info",
       "status": "pass",
       "stop_ok": true,
-      "warnings": []
+      "warnings": [],
+      "weights_updated": false,
+      "what_is_missing": []
     },
     "vlm": {
       "artifacts_ok": true,
+      "baseline_value": 1.0,
+      "delta": 0.0,
       "errors": [],
+      "eval_available": true,
+      "eval_metric_name": "avg_reward",
       "evidence": {
         "checkpoint_cycle": 0,
         "failure_reason": null,
@@ -348,6 +707,25 @@
         "launch_context_contract_version": 1,
         "launch_context_job_type": "vlm",
         "output_dir": "<repo_root>/tests/fixtures/all_modules/v1/vlm",
+        "production_readiness_checks": {
+          "artifacts_ok": true,
+          "base_contract_ok": true,
+          "launch_ok": true,
+          "monitor_ok": true,
+          "readiness_failures": [],
+          "relaunch_ok": true,
+          "results_ingestion_ok": true,
+          "resume_latest_ok": true
+        },
+        "production_readiness_contract": {
+          "baseline_file": "tests/baselines/production_readiness/vlm.v1.json",
+          "entry_id": "vlm",
+          "expected_verdict": "pass",
+          "metric_name": "avg_reward",
+          "minimum_optimizer_steps": 1,
+          "minimum_samples_kept": 1,
+          "resume_required": true
+        },
         "profile": "fixture-v1",
         "run_id": "vlm-fixture-run",
         "seed": 42,
@@ -355,19 +733,33 @@
         "training_summary": "<repo_root>/tests/fixtures/all_modules/v1/vlm/training_summary.json",
         "weights_updated": true
       },
+      "final_value": 1.0,
+      "fix_now": "No action needed.",
+      "fix_options": [
+        "halo-forge test --level all-modules --module vlm",
+        "halo-forge test --level all-module-qualification --module vlm"
+      ],
+      "issue_code": "VLM_READY_OK",
+      "issue_scope": "module",
+      "launch_blocked": false,
       "launch_ok": true,
       "monitor_ok": true,
+      "optimizer_steps": 2,
+      "production_ready": true,
+      "readiness_tier": "production_ready",
       "relaunch_ok": true,
       "rerun_commands": [
         "halo-forge vlm train --dry-run --dataset textvqa --seed 42"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": true,
-      "status": "warn",
+      "samples_kept": 2,
+      "severity": "info",
+      "status": "pass",
       "stop_ok": true,
-      "warnings": [
-        "final_model directory not found: <repo_root>/tests/fixtures/all_modules/v1/vlm/final_model"
-      ]
+      "warnings": [],
+      "weights_updated": true,
+      "what_is_missing": []
     }
   },
   "profile": "fixture-v1",

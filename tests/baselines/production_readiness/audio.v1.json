@@ -1,0 +1,19 @@
+{
+  "contract_version": 1,
+  "generator_version": "phase29a.v1",
+  "path_id": "audio_production_readiness",
+  "seed": 42,
+  "fixture_fingerprint": "da3525c26be9da28be05e0579c5550ecbe8f8d37ae49a9936b7a262cb0d2e80d",
+  "created_at": "2026-03-08T00:00:00Z",
+  "entries": {
+    "audio": {
+      "metric_name": "average_reward",
+      "baseline_value": 1.0,
+      "higher_is_better": true,
+      "tolerance": 0.0,
+      "minimum_samples_kept": 1,
+      "minimum_optimizer_steps": 1,
+      "expected_verdict": "pass"
+    }
+  }
+}

@@ -124,7 +124,7 @@ def _primary_message(entry) -> str:
     warnings = list(getattr(entry, "warnings", []) or [])
     status = str(getattr(entry, "status", "warn")).lower()
     if status == "pass":
-        return "Ready to launch."
+        return "Launch-ready (contract checks passed)."
     if errors:
         if bool(getattr(entry, "launch_blocked", False)):
             return "Setup check not satisfied (advanced diagnostics)."
@@ -137,7 +137,7 @@ def _primary_message(entry) -> str:
 def _status_summary(status: str, launch_blocked: bool) -> str:
     key = str(status or "").lower()
     if key == "pass":
-        return "Ready to launch."
+        return "Launch is available; this status does not imply production readiness."
     if key == "warn":
         return "Evidence is missing or stale; launch remains enabled."
     if launch_blocked:

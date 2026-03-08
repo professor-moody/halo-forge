@@ -10,7 +10,7 @@ Full documentation is available at **[halo-forge.io/docs](https://halo-forge.io/
 | [How to Train](https://halo-forge.io/docs/training-pipeline/how-to-train/) | Complete step-by-step guide |
 | [Command Index](https://halo-forge.io/docs/reference/command-index/) | Every command and flag |
 | [Verifiers](https://halo-forge.io/docs/verifiers/) | Verification options |
-| [Experimental](https://halo-forge.io/docs/experimental/) | VLM, Audio, Reasoning, Agentic |
+| [Experimental](https://halo-forge.io/docs/experimental/) | VLM, Audio, Reasoning, Agentic readiness tiers and modality caveats |
 | [Contributing](https://halo-forge.io/docs/contributing/) | How to contribute |
 
 ## Local Documentation

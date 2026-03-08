@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Literal
 
 from halo_forge.all_module_readiness import ALL_MODULES
+from halo_forge.all_module_qualification import TRAINING_MODULES
 from ui.state import state
 
 from .ops_readiness_service import get_ops_readiness_service
@@ -64,6 +65,8 @@ class DashboardModuleCard:
     surface_route: str
     primary_action: DashboardAction
     secondary_actions: List[DashboardAction] = field(default_factory=list)
+    readiness_tier: str | None = None
+    production_ready: bool = False
 
 
 @dataclass
@@ -78,6 +81,7 @@ class DashboardHubSummary:
     burnin_status: str | None
     bootstrap_status: str | None
     qualification_status: str | None
+    qualification_training_readiness_tier: str | None
     live_status: str | None
     active_jobs_count: int
     completed_jobs_count: int
@@ -108,6 +112,14 @@ class DashboardHubService:
         qualification_meta = self.ops_readiness_service.get_qualification_provenance(
             force_refresh=force_refresh
         )
+        qualification_report = None
+        if qualification_meta.get("qualification_report_present"):
+            try:
+                qualification_report = self.ops_readiness_service.load_qualification_report(
+                    force_refresh=force_refresh
+                )
+            except Exception:
+                qualification_report = None
         live_meta = self.ops_readiness_service.get_live_provenance(
             force_refresh=force_refresh
         )
@@ -138,8 +150,19 @@ class DashboardHubService:
             evidence_root = str(output_map.get(module) or entry.last_output_dir or "")
             launch_blocked = bool(getattr(entry, "launch_blocked", False))
             issue_class = str(getattr(entry, "issue_class", "") or "none")
-            primary_message = self._primary_message(entry)
-            next_action = self._next_action(entry)
+            qualification_entry = None
+            if qualification_report is not None:
+                qualification_entry = qualification_report.modules.get(module)
+            primary_message = self._primary_message(
+                module=module,
+                entry=entry,
+                qualification_entry=qualification_entry,
+            )
+            next_action = self._next_action(
+                module=module,
+                entry=entry,
+                qualification_entry=qualification_entry,
+            )
             primary_action = self._select_primary_action(
                 module=module,
                 status=status,
@@ -162,6 +185,12 @@ class DashboardHubService:
                 surface_route=surface_route,
                 primary_action=primary_action,
                 secondary_actions=secondary_actions,
+                readiness_tier=(
+                    str(getattr(qualification_entry, "readiness_tier", "") or "") or None
+                ),
+                production_ready=bool(
+                    getattr(qualification_entry, "production_ready", False)
+                ),
             )
 
             for group, modules in MODULE_GROUPS.items():
@@ -180,20 +209,32 @@ class DashboardHubService:
             burnin_status=burnin_meta.get("burnin_status"),
             bootstrap_status=bootstrap_meta.get("bootstrap_status"),
             qualification_status=qualification_meta.get("qualification_status"),
+            qualification_training_readiness_tier=qualification_meta.get(
+                "qualification_training_readiness_tier"
+            ),
             live_status=live_meta.get("live_status"),
             active_jobs_count=len(state.get_active_jobs()),
             completed_jobs_count=len(state.get_jobs_by_status("completed")),
             failed_jobs_count=len(state.get_jobs_by_status("failed")),
         )
 
-    def _primary_message(self, entry) -> str:
+    def _primary_message(self, *, module: str, entry, qualification_entry=None) -> str:
         errors = list(getattr(entry, "errors", []) or [])
         warnings = list(getattr(entry, "warnings", []) or [])
         status = str(getattr(entry, "status", "warn")).lower()
         launch_blocked = bool(getattr(entry, "launch_blocked", False))
+        readiness_tier = str(getattr(qualification_entry, "readiness_tier", "") or "").strip()
+        production_ready = bool(getattr(qualification_entry, "production_ready", False))
 
+        if module in TRAINING_MODULES and readiness_tier:
+            if production_ready:
+                return "Production-ready qualification passed."
+            if readiness_tier == "qualified" and status == "pass":
+                return "Launch-ready; full train+eval qualification still pending."
+            if readiness_tier == "experimental" and status == "pass":
+                return "Launch-ready, but production qualification is still experimental."
         if status == "pass":
-            return "Ready to launch."
+            return "Launch-ready."
         if errors:
             if launch_blocked:
                 return "Setup check not satisfied (advanced diagnostics)."
@@ -202,11 +243,21 @@ class DashboardHubService:
             return f"Needs setup artifacts (launch available): {warnings[0]}"
         return "No setup diagnostics available."
 
-    def _next_action(self, entry) -> str:
+    def _next_action(self, *, module: str, entry, qualification_entry=None) -> str:
         status = str(getattr(entry, "status", "warn")).lower()
         launch_blocked = bool(getattr(entry, "launch_blocked", False))
         fix_now = str(getattr(entry, "fix_now", "") or "").strip()
         action_hint = str(getattr(entry, "action_hint", "") or "").strip()
+        readiness_tier = str(getattr(qualification_entry, "readiness_tier", "") or "").strip()
+        production_ready = bool(getattr(qualification_entry, "production_ready", False))
+
+        if module in TRAINING_MODULES and readiness_tier:
+            if production_ready:
+                return "Open the training surface and run the qualified workflow."
+            if readiness_tier == "qualified":
+                return "Open training, run the deterministic qualification pack, and confirm eval stays above baseline."
+            if readiness_tier == "experimental":
+                return "Open training and close the remaining qualification gaps before calling this modality production-ready."
 
         if launch_blocked:
             return fix_now or action_hint or "Open surface and complete required inputs."

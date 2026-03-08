@@ -161,6 +161,8 @@ class ResearchHub:
                 f"burn-in={burnin_meta.get('burnin_status', 'unavailable')}",
                 f"setup-files={bootstrap_meta.get('bootstrap_status', 'unavailable')}",
                 f"setup-check={qualification_meta.get('qualification_status', 'unavailable')}",
+                "training-tier="
+                f"{qualification_meta.get('qualification_training_readiness_tier', 'unavailable')}",
                 f"health-check={live_meta.get('live_status', 'unavailable')}",
             ]
             ui.label(" • ".join(status_bits)).classes(
@@ -218,6 +220,11 @@ class ResearchHub:
                             "qualification "
                             f"status={qualification_meta.get('qualification_status')} "
                             f"profile={qualification_meta.get('qualification_profile')} "
+                            "training_tier="
+                            f"{qualification_meta.get('qualification_training_readiness_tier')} "
+                            "production_ready="
+                            f"{qualification_meta.get('qualification_training_production_ready_count')}/"
+                            f"{qualification_meta.get('qualification_training_module_count')} "
                             f"source={qualification_meta.get('qualification_source')} "
                             f"generated_at={qualification_meta.get('qualification_generated_at')}"
                         ).classes(f"text-xs text-[{COLORS['text_muted']}] font-mono")
@@ -389,7 +396,9 @@ class ResearchHub:
                     f"qualification status={qualification_entry.status} "
                     f"launch_ok={1 if qualification_entry.launch_ok else 0} "
                     f"monitor_ok={1 if qualification_entry.monitor_ok else 0} "
-                    f"results_ok={1 if qualification_entry.results_ingestion_ok else 0}"
+                    f"results_ok={1 if qualification_entry.results_ingestion_ok else 0} "
+                    f"tier={qualification_entry.readiness_tier or 'n/a'} "
+                    f"production_ready={1 if qualification_entry.production_ready else 0}"
                 ).classes(f"text-xs text-[{qual_color}] font-mono")
                 if qualification_entry.errors:
                     error_color = (

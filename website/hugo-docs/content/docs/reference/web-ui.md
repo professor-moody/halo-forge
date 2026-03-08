@@ -191,6 +191,9 @@ Cross-module ops readiness visibility:
   - `qualification_generated_at`
   - `qualification_status`
   - `qualification_profile`
+  - `qualification_training_readiness_tier`
+  - `qualification_training_production_ready_count`
+  - `qualification_training_module_count`
 - Shows bootstrap evidence-generation provenance when available:
   - `bootstrap_report_present`
   - `bootstrap_generated_at`
