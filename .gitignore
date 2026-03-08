@@ -94,6 +94,8 @@ website/.backup/
 public_app/.next/
 public_app/node_modules/
 public_app/out/
+!public_app/lib/
+!public_app/lib/*.ts
 
 # Experimental/internal docs
 .experimental/

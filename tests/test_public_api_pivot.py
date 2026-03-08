@@ -146,12 +146,16 @@ def test_public_api_docs_catalog_tracks_public_frontend_and_internal_console(tmp
 
 
 def test_public_frontend_scaffold_references_public_workflows():
+    api_helper = Path("public_app/lib/api.ts").read_text(encoding="utf-8")
     train_source = Path("public_app/app/train/page.tsx").read_text(encoding="utf-8")
     run_source = Path("public_app/app/runs/[id]/page.tsx").read_text(encoding="utf-8")
     results_source = Path("public_app/app/results/page.tsx").read_text(encoding="utf-8")
     readiness_source = Path("public_app/app/readiness/page.tsx").read_text(encoding="utf-8")
     docs_source = Path("public_app/app/docs/page.tsx").read_text(encoding="utf-8")
+    home_source = Path("public_app/app/page.tsx").read_text(encoding="utf-8")
 
+    assert "export const API_BASE" in api_helper
+    assert 'from "../lib/api"' in home_source
     assert "Training workspace" in train_source
     assert "Run monitor" in run_source
     assert "Results and recovery" in results_source
