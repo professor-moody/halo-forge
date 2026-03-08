@@ -35,7 +35,7 @@ class PublicActionView:
 
 @dataclass(frozen=True)
 class ProductUserSummaryView:
-    """Plain-language summary used across train, monitor, and results."""
+    """Plain-language summary used across dashboard, monitor, and results."""
 
     headline: str
     why_it_matters: str
@@ -43,6 +43,29 @@ class ProductUserSummaryView:
     confidence_tone: str
     primary_action: Optional[PublicActionView] = None
     secondary_actions: List[PublicActionView] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RunMetricsSummaryView:
+    """Compact metrics row for run cards and tables."""
+
+    progress_percent: float
+    keep_rate: Optional[float] = None
+    update_steps: int = 0
+    final_train_loss: Optional[float] = None
+    eval_metric_name: str = ""
+    eval_metric_value: Optional[float] = None
+    eval_delta: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class ResearchSectionView:
+    """Structured expandable research section."""
+
+    key: str
+    title: str
+    summary: str
+    items: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -73,7 +96,7 @@ class TrainingLaunchPreflightView:
 
 @dataclass(frozen=True)
 class TrainingRunListItemView:
-    """Compact training run row for lists and cards."""
+    """Compact training run row for lists and dashboard cards."""
 
     id: str
     run_id: str
@@ -81,10 +104,14 @@ class TrainingRunListItemView:
     model_name: str
     status: str
     timestamp: str
-    progress_percent: float
+    headline: str
+    next_step: str
+    top_issue: Optional[str]
     user_summary: ProductUserSummaryView
+    metrics_summary: RunMetricsSummaryView
+    primary_action: Optional[PublicActionView] = None
     details: Dict[str, Any] = field(default_factory=dict)
-    research_details: Dict[str, Any] = field(default_factory=dict)
+    research_sections: List[ResearchSectionView] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -97,11 +124,15 @@ class TrainingRunDetailView:
     model_name: str
     status: str
     timestamp: str
-    progress_percent: float
+    headline: str
+    next_step: str
+    top_issue: Optional[str]
     user_summary: ProductUserSummaryView
+    metrics_summary: RunMetricsSummaryView
     recovery: TrainingRecoveryView
+    primary_action: Optional[PublicActionView] = None
     details: Dict[str, Any] = field(default_factory=dict)
-    research_details: Dict[str, Any] = field(default_factory=dict)
+    research_sections: List[ResearchSectionView] = field(default_factory=list)
     internal_details: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -121,8 +152,55 @@ class TrainingRunLiveView:
     latest_loss: Optional[float]
     latest_learning_rate: Optional[float]
     latest_grad_norm: Optional[float]
+    headline: str
+    next_step: str
+    top_issue: Optional[str]
     user_summary: ProductUserSummaryView
-    research_details: Dict[str, Any] = field(default_factory=dict)
+    metrics_summary: RunMetricsSummaryView
+    primary_action: Optional[PublicActionView] = None
+    research_sections: List[ResearchSectionView] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ActiveRunRowView:
+    """Dashboard row for an active run."""
+
+    id: str
+    modality: str
+    model_name: str
+    status: str
+    headline: str
+    next_step: str
+    primary_action: Optional[PublicActionView]
+    metrics_summary: RunMetricsSummaryView
+
+
+@dataclass(frozen=True)
+class AttentionItemView:
+    """Dashboard attention queue item."""
+
+    id: str
+    modality: str
+    headline: str
+    why_it_matters: str
+    next_step: str
+    confidence_tone: str
+    primary_action: Optional[PublicActionView]
+
+
+@dataclass(frozen=True)
+class DashboardSummaryView:
+    """Dashboard aggregate summary for the public workstation."""
+
+    readiness_tier: str
+    generated_at: Optional[str]
+    active_runs_count: int
+    attention_count: int
+    production_ready_count: int
+    modality_count: int
+    active_runs: List[ActiveRunRowView] = field(default_factory=list)
+    attention_items: List[AttentionItemView] = field(default_factory=list)
+    recent_outcomes: List[TrainingRunListItemView] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -50,6 +50,10 @@ def create_app() -> "FastAPI":
     async def health() -> Dict[str, Any]:
         return {"ok": True}
 
+    @router.get("/dashboard")
+    async def dashboard_summary() -> Dict[str, Any]:
+        return service.get_dashboard_summary()
+
     @router.get("/train/presets")
     async def list_training_presets() -> Dict[str, Any]:
         return {"items": service.list_training_presets()}

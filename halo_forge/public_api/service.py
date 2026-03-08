@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 from halo_forge.training_recovery import build_recovery_guidance
 from ui.services.ops_readiness_service import OpsReadinessService, get_ops_readiness_service
@@ -18,9 +18,15 @@ from ui.services.training_service import TrainingLaunchPreflight, TrainingServic
 from ui.state import AppState, JobState, state as default_state
 
 from .views import (
+    ActiveRunRowView,
+    AttentionItemView,
+    DashboardSummaryView,
     DocsCapabilitySummaryView,
     ModalityReadinessView,
     ProductUserSummaryView,
+    PublicActionView,
+    ResearchSectionView,
+    RunMetricsSummaryView,
     TrainingLaunchPreflightView,
     TrainingRecoveryView,
     TrainingRunDetailView,
@@ -271,6 +277,55 @@ class PublicApiService:
         items.sort(key=lambda item: item.timestamp, reverse=True)
         return {"items": [to_dict(item) for item in items]}
 
+    def get_dashboard_summary(self) -> Dict[str, Any]:
+        """Return the workstation dashboard summary."""
+        readiness = self.list_readiness()
+        active_rows = [
+            self._to_active_row(self._job_to_list_item(job, include_research=False))
+            for job in sorted(
+                [job for job in self.app_state.jobs.values() if job.type in TRAINING_MODALITIES and job.status in {"pending", "running"}],
+                key=lambda current: current.created_at,
+                reverse=True,
+            )
+        ]
+        completed_runs = [
+            self._summary_to_list_item(summary, include_research=False)
+            for summary in self.results_service.list_training_runs(force_refresh=True)
+        ]
+        completed_runs.sort(key=lambda item: item.timestamp, reverse=True)
+        attention_source = active_rows[:]
+        attention_source.extend(
+            self._to_active_row(item)
+            for item in completed_runs
+            if item.user_summary.confidence_tone in {"warning", "danger"}
+        )
+        attention_items = [
+            AttentionItemView(
+                id=row.id,
+                modality=row.modality,
+                headline=row.headline,
+                why_it_matters=row.metrics_summary.eval_metric_name or row.next_step,
+                next_step=row.next_step,
+                confidence_tone=row.primary_action.tone if row.primary_action else "warning",
+                primary_action=row.primary_action,
+            )
+            for row in attention_source[:5]
+        ]
+        dashboard = DashboardSummaryView(
+            readiness_tier=str(readiness.get("aggregate_tier") or "experimental"),
+            generated_at=readiness.get("generated_at"),
+            active_runs_count=len(active_rows),
+            attention_count=len(attention_items),
+            production_ready_count=sum(
+                1 for item in readiness.get("items", []) if bool(item.get("production_ready"))
+            ),
+            modality_count=len(readiness.get("items", [])),
+            active_runs=active_rows[:6],
+            attention_items=attention_items,
+            recent_outcomes=completed_runs[:6],
+        )
+        return to_dict(dashboard)
+
     def get_run_detail(
         self,
         run_identifier: str,
@@ -330,8 +385,13 @@ class PublicApiService:
                 latest_loss=detail.details.get("final_train_loss"),
                 latest_learning_rate=None,
                 latest_grad_norm=None,
+                headline=detail.headline,
+                next_step=detail.next_step,
+                top_issue=detail.top_issue,
                 user_summary=detail.user_summary,
-                research_details=detail.research_details,
+                metrics_summary=detail.metrics_summary,
+                primary_action=detail.primary_action,
+                research_sections=detail.research_sections,
             )
         )
 
@@ -504,6 +564,28 @@ class PublicApiService:
             can_resume_latest=summary.modality in {"raft", "vlm", "audio", "reasoning", "agentic"},
             weights_updated=summary.weights_updated,
         )
+        metrics_summary = self._metrics_summary(
+            progress_percent=100.0 if status == "completed" else 0.0,
+            keep_rate=summary.keep_rate,
+            update_steps=summary.total_train_steps_executed,
+            final_train_loss=summary.final_train_loss,
+            effectiveness=dict(summary.raw_data.get("effectiveness") or {}),
+        )
+        research_sections = (
+            self._build_research_sections(
+                yield_diagnostics=summary.yield_diagnostics,
+                effectiveness=dict(summary.raw_data.get("effectiveness") or {}),
+                recovery=self._summary_recovery(summary),
+                representative_examples=list(summary.representative_examples),
+                lineage={
+                    "run_id": summary.run_id,
+                    "resume_from_cycle": summary.resume_from_cycle,
+                    "final_model_available": bool(summary.final_model_path),
+                },
+            )
+            if include_research
+            else []
+        )
         return TrainingRunListItemView(
             id=summary.id,
             run_id=str(summary.run_id or summary.id),
@@ -511,8 +593,12 @@ class PublicApiService:
             model_name=summary.model_name,
             status=status,
             timestamp=self._isoformat(summary.timestamp),
-            progress_percent=100.0 if status == "completed" else 0.0,
+            headline=user_summary.headline,
+            next_step=user_summary.next_step,
+            top_issue=summary.dominant_rejection_reason,
             user_summary=user_summary,
+            metrics_summary=metrics_summary,
+            primary_action=user_summary.primary_action,
             details={
                 "verdict": summary.effectiveness_verdict,
                 "keep_rate": summary.keep_rate,
@@ -521,16 +607,7 @@ class PublicApiService:
                 "update_steps": summary.total_train_steps_executed,
                 "final_train_loss": summary.final_train_loss,
             },
-            research_details=(
-                {
-                    "yield_diagnostics": summary.yield_diagnostics,
-                    "effectiveness": dict(summary.raw_data.get("effectiveness") or {}),
-                    "recovery_guidance": self._summary_recovery(summary),
-                    "representative_examples": list(summary.representative_examples),
-                }
-                if include_research
-                else {}
-            ),
+            research_sections=research_sections,
         )
 
     def _summary_to_detail_view(
@@ -549,9 +626,13 @@ class PublicApiService:
             model_name=item.model_name,
             status=item.status,
             timestamp=item.timestamp,
-            progress_percent=item.progress_percent,
+            headline=item.headline,
+            next_step=item.next_step,
+            top_issue=item.top_issue,
             user_summary=item.user_summary,
+            metrics_summary=item.metrics_summary,
             recovery=recovery,
+            primary_action=item.primary_action,
             details={
                 **item.details,
                 "cycles_executed": summary.cycles_executed,
@@ -559,7 +640,7 @@ class PublicApiService:
                 "resume_from_cycle": summary.resume_from_cycle,
                 "final_model_available": bool(summary.final_model_path),
             },
-            research_details=item.research_details,
+            research_sections=item.research_sections,
             internal_details=(
                 {
                     "output_dir": str(summary.output_dir),
@@ -598,6 +679,29 @@ class PublicApiService:
             can_resume_latest=job.type in {"raft", "vlm", "audio", "reasoning", "agentic"},
             weights_updated=job.current_step > 0 or job.current_cycle > 0,
         )
+        metrics_summary = self._metrics_summary(
+            progress_percent=job.progress_percent,
+            keep_rate=self._coerce_float(yield_rates.get("keep_rate")),
+            update_steps=job.current_step,
+            final_train_loss=job.latest_loss,
+            effectiveness={},
+        )
+        research_sections = (
+            self._build_research_sections(
+                yield_diagnostics=live_yield,
+                effectiveness={},
+                recovery=recovery,
+                representative_examples=list(recovery.representative_examples),
+                lineage={
+                    "run_id": job.id,
+                    "current_epoch": job.current_epoch,
+                    "current_cycle": job.current_cycle,
+                    "output_dir": str(job.output_dir) if job.output_dir else "",
+                },
+            )
+            if include_research
+            else []
+        )
         return TrainingRunListItemView(
             id=job.id,
             run_id=job.id,
@@ -605,8 +709,16 @@ class PublicApiService:
             model_name=job.name,
             status=job.status,
             timestamp=self._isoformat(job.created_at),
-            progress_percent=job.progress_percent,
+            headline=user_summary.headline,
+            next_step=user_summary.next_step,
+            top_issue=(
+                str(yield_summary.get("dominant_rejection_reason"))
+                if yield_summary.get("dominant_rejection_reason") not in (None, "")
+                else None
+            ),
             user_summary=user_summary,
+            metrics_summary=metrics_summary,
+            primary_action=user_summary.primary_action,
             details={
                 "quality_status": yield_summary.get("status"),
                 "keep_rate": yield_rates.get("keep_rate"),
@@ -614,14 +726,7 @@ class PublicApiService:
                 "update_steps": job.current_step,
                 "final_train_loss": job.latest_loss,
             },
-            research_details=(
-                {
-                    "yield_diagnostics": live_yield,
-                    "yield_history": list(job.yield_history),
-                }
-                if include_research
-                else {}
-            ),
+            research_sections=research_sections,
         )
 
     def _job_to_detail_view(
@@ -640,9 +745,13 @@ class PublicApiService:
             model_name=item.model_name,
             status=item.status,
             timestamp=item.timestamp,
-            progress_percent=item.progress_percent,
+            headline=item.headline,
+            next_step=item.next_step,
+            top_issue=item.top_issue,
             user_summary=item.user_summary,
+            metrics_summary=item.metrics_summary,
             recovery=recovery,
+            primary_action=item.primary_action,
             details={
                 **item.details,
                 "current_epoch": job.current_epoch,
@@ -651,7 +760,7 @@ class PublicApiService:
                 "total_cycles": job.total_cycles,
                 "verification_rate": job.verification_rate,
             },
-            research_details=item.research_details,
+            research_sections=item.research_sections,
             internal_details=(
                 {
                     "output_dir": str(job.output_dir) if job.output_dir else None,
@@ -679,7 +788,7 @@ class PublicApiService:
         return TrainingRunLiveView(
             id=detail.id,
             status=detail.status,
-            progress_percent=detail.progress_percent,
+            progress_percent=job.progress_percent,
             current_step=job.current_step,
             total_steps=job.total_steps,
             current_epoch=job.current_epoch,
@@ -689,8 +798,13 @@ class PublicApiService:
             latest_loss=job.latest_loss,
             latest_learning_rate=job.latest_lr,
             latest_grad_norm=job.latest_grad_norm,
+            headline=detail.headline,
+            next_step=detail.next_step,
+            top_issue=detail.top_issue,
             user_summary=detail.user_summary,
-            research_details=detail.research_details,
+            metrics_summary=detail.metrics_summary,
+            primary_action=detail.primary_action,
+            research_sections=detail.research_sections,
         )
 
     def _summary_recovery(self, summary: TrainingRunSummary) -> TrainingRecoveryView:
@@ -768,6 +882,123 @@ class PublicApiService:
                 break
         return title, summary
 
+    def _build_research_sections(
+        self,
+        *,
+        yield_diagnostics: Dict[str, Any],
+        effectiveness: Dict[str, Any],
+        recovery: TrainingRecoveryView,
+        representative_examples: list[dict[str, Any]],
+        lineage: Dict[str, Any],
+    ) -> list[ResearchSectionView]:
+        sections: list[ResearchSectionView] = []
+        yield_summary = yield_diagnostics.get("summary") if isinstance(yield_diagnostics.get("summary"), dict) else {}
+        yield_rates = yield_diagnostics.get("rates") if isinstance(yield_diagnostics.get("rates"), dict) else {}
+        sections.append(
+            ResearchSectionView(
+                key="data_yield",
+                title="Data yield",
+                summary=str(yield_summary.get("text") or "Yield details unavailable."),
+                items=[
+                    {"label": "Quality", "value": yield_summary.get("status")},
+                    {"label": "Keep rate", "value": yield_rates.get("keep_rate")},
+                    {"label": "Top issue", "value": yield_summary.get("dominant_rejection_reason")},
+                ],
+            )
+        )
+        update_quality = effectiveness.get("update_quality") if isinstance(effectiveness.get("update_quality"), dict) else {}
+        sections.append(
+            ResearchSectionView(
+                key="update_quality",
+                title="Update quality",
+                summary=str(effectiveness.get("verdict") or "No effectiveness verdict."),
+                items=[
+                    {"label": "Optimizer steps", "value": update_quality.get("optimizer_steps") or update_quality.get("train_steps_executed")},
+                    {"label": "Final loss", "value": update_quality.get("final_train_loss") or update_quality.get("loss_delta")},
+                    {"label": "Weights updated", "value": update_quality.get("weights_updated")},
+                ],
+            )
+        )
+        evaluation = effectiveness.get("evaluation") if isinstance(effectiveness.get("evaluation"), dict) else {}
+        sections.append(
+            ResearchSectionView(
+                key="eval_outcome",
+                title="Eval outcome",
+                summary=str(evaluation.get("status") or evaluation.get("metric_name") or "Eval unavailable."),
+                items=[
+                    {"label": "Metric", "value": evaluation.get("metric_name")},
+                    {"label": "Current", "value": evaluation.get("final_value")},
+                    {"label": "Delta", "value": evaluation.get("delta")},
+                ],
+            )
+        )
+        sections.append(
+            ResearchSectionView(
+                key="recovery_reasoning",
+                title="Recovery reasoning",
+                summary=recovery.evidence_summary or "No guided recovery recommendation.",
+                items=[
+                    {"label": "Status", "value": recovery.status},
+                    {"label": "Recommended action", "value": recovery.recommended_action},
+                    {"label": "Reason", "value": recovery.reason_code},
+                ],
+            )
+        )
+        if representative_examples:
+            sections.append(
+                ResearchSectionView(
+                    key="representative_examples",
+                    title="Representative examples",
+                    summary="Representative evidence from dropped or weak samples.",
+                    items=[dict(example) for example in representative_examples[:3]],
+                )
+            )
+        sections.append(
+            ResearchSectionView(
+                key="artifact_lineage",
+                title="Artifact lineage",
+                summary="Artifact and resume lineage for this run.",
+                items=[
+                    {"label": str(key).replace("_", " ").title(), "value": value}
+                    for key, value in lineage.items()
+                    if value not in (None, "", False)
+                ],
+            )
+        )
+        return sections
+
+    def _metrics_summary(
+        self,
+        *,
+        progress_percent: float,
+        keep_rate: Optional[float],
+        update_steps: int,
+        final_train_loss: Optional[float],
+        effectiveness: Dict[str, Any],
+    ) -> RunMetricsSummaryView:
+        evaluation = effectiveness.get("evaluation") if isinstance(effectiveness.get("evaluation"), dict) else {}
+        return RunMetricsSummaryView(
+            progress_percent=progress_percent,
+            keep_rate=keep_rate,
+            update_steps=update_steps,
+            final_train_loss=final_train_loss,
+            eval_metric_name=str(evaluation.get("metric_name") or ""),
+            eval_metric_value=self._coerce_float(evaluation.get("final_value")),
+            eval_delta=self._coerce_float(evaluation.get("delta")),
+        )
+
+    def _to_active_row(self, item: TrainingRunListItemView) -> ActiveRunRowView:
+        return ActiveRunRowView(
+            id=item.id,
+            modality=item.modality,
+            model_name=item.model_name,
+            status=item.status,
+            headline=item.headline,
+            next_step=item.next_step,
+            primary_action=item.primary_action,
+            metrics_summary=item.metrics_summary,
+        )
+
     @staticmethod
     def _isoformat(value: datetime) -> str:
         if value.tzinfo is None:
@@ -790,3 +1021,12 @@ class PublicApiService:
     def _optional_str(value: Any) -> Optional[str]:
         text = str(value or "").strip()
         return text or None
+
+    @staticmethod
+    def _coerce_float(value: Any) -> Optional[float]:
+        try:
+            if value in (None, ""):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None

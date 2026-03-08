@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { AppShell, SectionCard, StatusChip } from "../../components/ui";
+import { AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
 import { apiGet } from "../../lib/api";
 
 type ResultsResponse = {
@@ -8,18 +8,19 @@ type ResultsResponse = {
     id: string;
     modality: string;
     model_name: string;
-    timestamp: string;
+    headline: string;
+    next_step: string;
+    top_issue?: string | null;
     user_summary: {
-      headline: string;
       why_it_matters: string;
-      next_step: string;
       confidence_tone: string;
     };
-    details: {
-      verdict?: string | null;
+    metrics_summary: {
       keep_rate?: number | null;
-      top_issue?: string | null;
+      update_steps: number;
       final_train_loss?: number | null;
+      eval_metric_name?: string;
+      eval_metric_value?: number | null;
     };
   }>;
 };
@@ -36,48 +37,63 @@ export default async function ResultsPage() {
   const payload = await getResults();
 
   return (
-    <AppShell>
-      <SectionCard
-        title="Results and recovery"
-        subtitle="Did the run work, why or why not, and what should happen next?"
-      >
-        <div className="list">
+    <AppShell
+      title="Results"
+      subtitle="Dense review of completed runs, causes, and the next action each one suggests."
+      statusItems={[
+        { label: "Completed runs", value: String(payload.items.length), tone: "neutral" },
+        { label: "Focus", value: "outcome review", tone: "success" },
+      ]}
+    >
+      <SectionCard title="Training outcomes" subtitle="Each row answers whether the run worked, what went wrong, and what to do next.">
+        <div className="run-list">
           {payload.items.length ? (
             payload.items.map((item) => (
-              <Link key={item.id} href={`/runs/${encodeURIComponent(item.id)}`} className="list-row">
-                <header>
+              <Link key={item.id} href={`/runs/${encodeURIComponent(item.id)}`} className="table-row">
+                <div className="table-row-header">
+                  <div className="table-row-title">
+                    <h3>{item.modality.toUpperCase()} · {item.model_name}</h3>
+                    <p>{item.user_summary.why_it_matters}</p>
+                  </div>
+                  <StatusChip tone={item.user_summary.confidence_tone} label={item.headline} />
+                </div>
+                <div className="table-row-metrics">
                   <div>
-                    <h3>{item.modality.toUpperCase()}</h3>
-                    <p>{item.model_name}</p>
+                    <div className="cell-label">Next step</div>
+                    <div className="cell-value">{item.next_step}</div>
                   </div>
-                  <StatusChip tone={item.user_summary.confidence_tone} label={item.user_summary.headline} />
-                </header>
-                <p>{item.user_summary.why_it_matters}</p>
-                <div className="metric-grid">
-                  <div className="metric">
-                    <label>Next step</label>
-                    <strong>{item.user_summary.next_step}</strong>
+                  <div>
+                    <div className="cell-label">Top issue</div>
+                    <div className="cell-value">{item.top_issue ?? "—"}</div>
                   </div>
-                  <div className="metric">
-                    <label>Top issue</label>
-                    <strong>{item.details.top_issue ?? "—"}</strong>
-                  </div>
-                  <div className="metric">
-                    <label>Keep rate</label>
-                    <strong>
-                      {typeof item.details.keep_rate === "number"
-                        ? `${Math.round(item.details.keep_rate * 100)}%`
+                  <div>
+                    <div className="cell-label">Keep rate</div>
+                    <div className="cell-value">
+                      {typeof item.metrics_summary.keep_rate === "number"
+                        ? `${Math.round(item.metrics_summary.keep_rate * 100)}%`
                         : "—"}
-                    </strong>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="cell-label">Eval</div>
+                    <div className="cell-value">
+                      {item.metrics_summary.eval_metric_name
+                        ? `${item.metrics_summary.eval_metric_name}: ${item.metrics_summary.eval_metric_value ?? "—"}`
+                        : "pending"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="cell-label">Final loss</div>
+                    <div className="cell-value">{item.metrics_summary.final_train_loss ?? "—"}</div>
                   </div>
                 </div>
               </Link>
             ))
           ) : (
-            <div className="callout">
-              <h3>No completed runs yet</h3>
-              <p>Training results will appear here once the first run writes its summary artifact.</p>
-            </div>
+            <EmptyState
+              title="No completed runs"
+              body="As training summaries are written, this workspace becomes the fastest place to review outcomes and recovery paths."
+            />
           )}
         </div>
       </SectionCard>

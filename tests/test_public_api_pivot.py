@@ -107,9 +107,10 @@ def test_public_api_training_results_expose_product_and_research_layers(tmp_path
 
     assert len(payload["items"]) == 1
     item = payload["items"][0]
-    assert item["user_summary"]["headline"] == "Run completed"
+    assert item["headline"] == "Run completed"
     assert item["details"]["keep_rate"] == 0.95
-    assert item["research_details"]["yield_diagnostics"]["summary"]["status"] == "healthy"
+    assert item["research_sections"][0]["key"] == "data_yield"
+    assert item["research_sections"][0]["summary"] == "Most samples were usable for SFT."
     assert "internal_details" not in item
 
 
@@ -127,6 +128,64 @@ def test_public_api_readiness_uses_qualification_truth(tmp_path):
     assert payload["aggregate_tier"] == "qualified"
     assert payload["items"][0]["readiness_tier"] == "production_ready"
     assert payload["items"][1]["next_step"] == "Finish deterministic eval coverage."
+
+
+def test_public_api_dashboard_summary_exposes_workstation_queues(tmp_path):
+    output_dir = tmp_path / "models" / "raft_attention_run"
+    output_dir.mkdir(parents=True)
+    summary_payload = {
+        "modality": "raft",
+        "model_name": "Qwen/Qwen2.5-Coder-1.5B",
+        "run_id": "raft-attention-1",
+        "weights_updated": True,
+        "final_update_reason": "updated",
+        "total_train_steps_executed": 8,
+        "final_train_loss": 0.91,
+        "effectiveness": {
+            "verdict": "warn",
+            "reasons": ["evaluation unavailable"],
+            "evaluation": {
+                "metric_name": "pass@1",
+                "baseline_value": 0.3,
+                "final_value": None,
+                "delta": None,
+            },
+        },
+        "yield_diagnostics": {
+            "rates": {"keep_rate": 0.25},
+            "summary": {
+                "status": "low_yield",
+                "text": "Only a quarter of candidates were kept.",
+                "dominant_rejection_reason": "below_reward_threshold",
+            },
+        },
+        "recovery_guidance": {
+            "status": "ready",
+            "recommended_action": "Lower reward threshold",
+            "reason_code": "below_reward_threshold",
+            "evidence_summary": "Reward filtering removed too many candidates.",
+            "suggested_overrides": {"reward_threshold": 0.45},
+            "representative_examples": [],
+        },
+    }
+    (output_dir / "training_summary.json").write_text(json.dumps(summary_payload), encoding="utf-8")
+
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=_fake_readiness_service(),
+        training_service=TrainingService(AppState()),
+        base_path=tmp_path,
+    )
+
+    payload = service.get_dashboard_summary()
+
+    assert payload["readiness_tier"] == "qualified"
+    assert payload["production_ready_count"] == 1
+    assert payload["modality_count"] == 2
+    assert payload["attention_count"] == 1
+    assert payload["recent_outcomes"][0]["next_step"] == "Lower reward threshold"
+    assert payload["attention_items"][0]["headline"] == "Suggested fix ready"
 
 
 def test_public_api_docs_catalog_tracks_public_frontend_and_internal_console(tmp_path):
@@ -156,16 +215,19 @@ def test_public_frontend_scaffold_references_public_workflows():
 
     assert "export const API_BASE" in api_helper
     assert 'from "../lib/api"' in home_source
-    assert "Training workspace" in train_source
+    assert "System summary" in home_source
+    assert "Training" in train_source
     assert "Run monitor" in run_source
-    assert "Results and recovery" in results_source
-    assert "Training modality readiness" in readiness_source
-    assert "Docs grounded in qualification truth" in docs_source
+    assert "Training outcomes" in results_source
+    assert "Qualification matrix" in readiness_source
+    assert "Documentation catalog" in docs_source
+    assert "Training that stays understandable" not in home_source
 
 
 def test_public_api_transport_exposes_public_workflows():
     api_source = Path("halo_forge/public_api/app.py").read_text(encoding="utf-8")
 
+    assert "/dashboard" in api_source
     assert "/train/preflight" in api_source
     assert "/train/launch" in api_source
     assert "/runs/{run_id}/live" in api_source
