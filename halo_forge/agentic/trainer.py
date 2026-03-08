@@ -21,8 +21,11 @@ from halo_forge.capabilities import is_model_family_supported, get_supported_mod
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
+    build_reward_distribution_from_values,
+    build_reward_filter_rejection_reasons,
     build_cycle_summary,
     build_training_summary,
+    emit_yield_log_line,
     normalize_update_metrics,
     write_json_atomic,
 )
@@ -416,6 +419,9 @@ class AgenticRAFTTrainer:
         successful = sum(1 for c in all_completions if c.result and c.result.success)
         avg_reward = sum(c.reward for c in all_completions) / max(total_samples, 1)
         success_rate = successful / max(total_samples, 1)
+        above_threshold_count = sum(
+            1 for c in all_completions if float(c.reward) >= self.config.reward_threshold
+        )
         
         # Log sample-level rewards to MetricsTracker
         rewards = [c.reward for c in all_completions]
@@ -447,11 +453,51 @@ class AgenticRAFTTrainer:
                 train_metrics,
                 default_reason="no_filtered_samples",
             ),
+            yield_diagnostics={
+                "stage_counts": {
+                    "generated": total_samples,
+                    "verified": total_samples,
+                    "filtered": above_threshold_count,
+                    "kept": len(filtered),
+                    "dropped": max(0, total_samples - len(filtered)),
+                },
+                "rates": {
+                    "verification_rate": success_rate,
+                    "success_rate": success_rate,
+                },
+                "thresholds": {
+                    "configured_reward_threshold": self.config.reward_threshold,
+                    "effective_reward_threshold": self.config.reward_threshold,
+                    "keep_percent": self.config.keep_top_percent,
+                    "threshold_adjusted": False,
+                },
+                "minimums": {"minimum_samples_target": 1},
+                "rejection_reasons": build_reward_filter_rejection_reasons(
+                    total_count=total_samples,
+                    success_count=successful,
+                    above_threshold_count=above_threshold_count,
+                    kept_count=len(filtered),
+                ),
+                "reward_distribution": build_reward_distribution_from_values(rewards),
+                "summary": {
+                    "text": (
+                        "Agentic verifier yield looks healthy."
+                        if len(filtered) > 0 and success_rate >= 0.3
+                        else "Agentic yield is low; inspect tool-call formatting or relax the threshold."
+                    )
+                },
+            },
             extra={
                 "success_rate": success_rate,
                 "avg_reward": avg_reward,
                 "training_samples": len(filtered),
             },
+        )
+        emit_yield_log_line(
+            {
+                "cycle": cycle,
+                **canonical_metrics["yield_diagnostics"],
+            }
         )
 
         return AgenticRAFTCycleResult(

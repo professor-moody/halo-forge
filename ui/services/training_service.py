@@ -67,6 +67,7 @@ class TrainingLaunchPreflight:
     warnings: list[str] = field(default_factory=list)
     resolved_paths: dict[str, str] = field(default_factory=dict)
     suggested_fixes: list[str] = field(default_factory=list)
+    quality_outlook: dict[str, Any] = field(default_factory=dict)
 
 
 class TrainingService:
@@ -349,6 +350,202 @@ class TrainingService:
             marker_path.write_text(json.dumps(marker, indent=2), encoding="utf-8")
         return output_path
 
+    def _count_jsonl_rows(self, path_value: str) -> Optional[int]:
+        path = Path(str(path_value or "").strip()).expanduser()
+        if not path.exists() or not path.is_file():
+            return None
+        if path.suffix.lower() != ".jsonl":
+            return None
+        count = 0
+        try:
+            with path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if line.strip():
+                        count += 1
+        except Exception:
+            return None
+        return count
+
+    def _read_previous_quality_status(self, output_dir: str) -> Optional[str]:
+        candidate = Path(str(output_dir or "").strip()).expanduser() / "training_summary.json"
+        if not candidate.exists():
+            return None
+        try:
+            import json
+
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        yield_diagnostics = (
+            payload.get("yield_diagnostics")
+            if isinstance(payload, dict)
+            else None
+        )
+        if not isinstance(yield_diagnostics, dict):
+            return None
+        summary = yield_diagnostics.get("summary")
+        if not isinstance(summary, dict):
+            return None
+        status = str(summary.get("status") or "").strip().lower()
+        return status or None
+
+    def _build_quality_outlook(
+        self,
+        *,
+        mode_key: str,
+        output_dir: str,
+        warnings: list[str],
+        suggestions: list[str],
+        artifact_notes: list[str],
+    ) -> dict[str, Any]:
+        status = "healthy"
+        if (
+            len(warnings) >= 2
+            or any(
+                marker in warning.lower()
+                for warning in warnings
+                for marker in ("low signal", "too small", "starve", "aggressive")
+            )
+        ):
+            status = "low_yield"
+        elif warnings:
+            status = "caution"
+        summary = {
+            "healthy": "Current settings should produce enough signal for a first useful run.",
+            "caution": "This run may complete, but some settings could reduce usable training signal.",
+            "low_yield": "This run is at risk of producing very little usable training signal.",
+        }[status]
+        return {
+            "status": status,
+            "summary": summary,
+            "warnings": warnings[:3],
+            "suggested_adjustments": suggestions[:3],
+            "artifact_notes": artifact_notes,
+            "yield_safety_note": (
+                "Balanced defaults for first useful updates."
+                if status == "healthy"
+                else (
+                    "Watch sample budget and thresholds to avoid starving updates."
+                    if mode_key != "sft"
+                    else "Use enough examples to avoid a no-signal SFT run."
+                )
+            ),
+        }
+
+    def _quality_outlook_for_sft(
+        self,
+        *,
+        output_dir: str,
+        epochs: int,
+        batch_size: int,
+        max_samples: Optional[int],
+    ) -> dict[str, Any]:
+        warnings: list[str] = []
+        suggestions: list[str] = []
+        if max_samples is not None and max_samples < 32:
+            warnings.append("Sample budget is very small for SFT and may produce low signal.")
+            suggestions.append("Increase max_samples to at least 32-64 for a more representative update.")
+        if max_samples is not None and max_samples < 64 and epochs > 1:
+            warnings.append("Tiny dataset limits with multiple epochs may overfit before learning stabilizes.")
+            suggestions.append("Use one epoch for smoke runs or raise max_samples before repeating epochs.")
+        if batch_size * max(1, epochs) > max_samples and max_samples is not None and max_samples > 0:
+            suggestions.append("If loss looks noisy, increase max_samples or lower epochs before relaunch.")
+        previous_status = self._read_previous_quality_status(output_dir)
+        if previous_status in {"low_yield", "no_signal"}:
+            warnings.append("This output directory previously ended with low signal.")
+            suggestions.append("Use a fresh output directory or raise sample supply before resuming this run.")
+        return self._build_quality_outlook(
+            mode_key="sft",
+            output_dir=output_dir,
+            warnings=warnings,
+            suggestions=suggestions,
+            artifact_notes=self.expected_output_artifacts("sft"),
+        )
+
+    def _quality_outlook_for_raft(
+        self,
+        *,
+        prompts: str,
+        output_dir: str,
+        cycles: int,
+        samples_per_prompt: int,
+        keep_percent: float,
+        reward_threshold: float,
+        min_samples: int,
+    ) -> dict[str, Any]:
+        warnings: list[str] = []
+        suggestions: list[str] = []
+        prompt_count = self._count_jsonl_rows(prompts)
+        sample_budget = (prompt_count or 0) * max(1, samples_per_prompt)
+        if prompt_count and sample_budget < 32:
+            warnings.append("Prompt/sample budget is small for RAFT and may not produce enough kept examples.")
+            suggestions.append("Increase prompts or samples_per_prompt so each cycle sees at least 32 candidates.")
+        if keep_percent <= 0.2:
+            warnings.append("Keep percent is very selective and may starve updates.")
+            suggestions.append("Raise keep percent closer to 0.4-0.6 for exploratory runs.")
+        if reward_threshold >= 0.85:
+            warnings.append("Reward threshold is aggressive and may drop nearly all verified samples.")
+            suggestions.append("Lower reward_threshold for first-pass runs, then tighten once yield is stable.")
+        if prompt_count and min_samples > sample_budget:
+            warnings.append("min_samples exceeds the likely sample supply for a single cycle.")
+            suggestions.append("Lower min_samples or increase prompts/sample budget so the floor is reachable.")
+        if prompt_count and cycles > 1 and sample_budget < max(min_samples, 24):
+            warnings.append("Multi-cycle training with a tiny sample pool is likely to recycle weak signal.")
+            suggestions.append("Increase prompt variety before running multiple cycles.")
+        previous_status = self._read_previous_quality_status(output_dir)
+        if previous_status in {"low_yield", "no_signal"}:
+            warnings.append("The prior run in this output directory ended with low signal.")
+            suggestions.append("Adjust thresholds or sample supply before resuming the same run directory.")
+        return self._build_quality_outlook(
+            mode_key="raft",
+            output_dir=output_dir,
+            warnings=warnings,
+            suggestions=suggestions,
+            artifact_notes=self.expected_output_artifacts("raft"),
+        )
+
+    def _quality_outlook_for_modality(
+        self,
+        *,
+        modality: str,
+        output_dir: str,
+        cycles: int,
+        limit: Optional[int],
+        samples_per_prompt: Optional[int],
+        keep_percent: Optional[float],
+        reward_threshold: Optional[float],
+        resume_from_cycle: int,
+    ) -> dict[str, Any]:
+        warnings: list[str] = []
+        suggestions: list[str] = []
+        effective_limit = int(limit) if limit is not None else 0
+        spp = int(samples_per_prompt) if samples_per_prompt is not None else 1
+        cycle_supply = effective_limit * max(1, spp) if effective_limit > 0 else 0
+        if effective_limit and cycle_supply < 24:
+            warnings.append("Sample budget is small for this modality and may produce low signal.")
+            suggestions.append("Raise the dataset limit or samples-per-prompt before long runs.")
+        if keep_percent is not None and keep_percent <= 0.2:
+            warnings.append("Keep percent is very selective and may leave too little supervision.")
+            suggestions.append("Increase keep percent for first runs, then tighten after yield stabilizes.")
+        if reward_threshold is not None and reward_threshold >= 0.85:
+            warnings.append("Reward threshold is aggressive for a first run.")
+            suggestions.append("Lower the threshold slightly to confirm the verifier and data pipeline first.")
+        if effective_limit and cycles > 1 and cycle_supply < 16:
+            warnings.append("Tiny dataset limits paired with multiple cycles can recycle weak signal.")
+            suggestions.append("Use more source samples or fewer cycles for the first pass.")
+        if resume_from_cycle > 0:
+            previous_status = self._read_previous_quality_status(output_dir)
+            if previous_status in {"low_yield", "no_signal"}:
+                warnings.append("Resume target previously produced low signal.")
+                suggestions.append("Consider adjusting thresholds or using a fresh output directory before resuming.")
+        return self._build_quality_outlook(
+            mode_key=modality,
+            output_dir=output_dir,
+            warnings=warnings,
+            suggestions=suggestions,
+            artifact_notes=self.expected_output_artifacts(modality),
+        )
+
     def preflight_sft_launch(
         self,
         *,
@@ -384,6 +581,7 @@ class TrainingService:
                 warnings=warnings,
                 resolved_paths=resolved_paths,
                 suggested_fixes=["Fix required inputs before launch."],
+                quality_outlook={},
             )
 
         resolved_paths["model"] = model
@@ -403,6 +601,12 @@ class TrainingService:
             warnings=warnings,
             resolved_paths=resolved_paths,
             suggested_fixes=suggested_fixes,
+            quality_outlook=self._quality_outlook_for_sft(
+                output_dir=output_dir,
+                epochs=epochs,
+                batch_size=batch_size,
+                max_samples=max_samples,
+            ),
         )
 
     def preflight_raft_launch(
@@ -446,6 +650,7 @@ class TrainingService:
                 warnings=warnings,
                 resolved_paths=resolved_paths,
                 suggested_fixes=["Fix required inputs before launch."],
+                quality_outlook={},
             )
 
         resolved_paths["model"] = model
@@ -465,6 +670,15 @@ class TrainingService:
             warnings=warnings,
             resolved_paths=resolved_paths,
             suggested_fixes=suggested_fixes,
+            quality_outlook=self._quality_outlook_for_raft(
+                prompts=prompts,
+                output_dir=output_dir,
+                cycles=cycles,
+                samples_per_prompt=samples_per_prompt,
+                keep_percent=keep_percent,
+                reward_threshold=reward_threshold,
+                min_samples=min_samples,
+            ),
         )
 
     def preflight_modality_train_launch(
@@ -481,6 +695,8 @@ class TrainingService:
         limit: Optional[int] = None,
         task: Optional[str] = None,
         samples_per_prompt: Optional[int] = None,
+        keep_percent: Optional[float] = None,
+        reward_threshold: Optional[float] = None,
     ) -> TrainingLaunchPreflight:
         """Run structured preflight checks for modality training launch."""
         errors: list[str] = []
@@ -509,6 +725,7 @@ class TrainingService:
                 warnings=warnings,
                 resolved_paths=resolved_paths,
                 suggested_fixes=["Fix required inputs before launch."],
+                quality_outlook={},
             )
 
         capability = check_modality_train_capability(
@@ -539,6 +756,16 @@ class TrainingService:
             warnings=warnings,
             resolved_paths=resolved_paths,
             suggested_fixes=suggested_fixes,
+            quality_outlook=self._quality_outlook_for_modality(
+                modality=modality,
+                output_dir=output_dir,
+                cycles=cycles,
+                limit=limit,
+                samples_per_prompt=samples_per_prompt,
+                keep_percent=keep_percent,
+                reward_threshold=reward_threshold,
+                resume_from_cycle=resume_from_cycle,
+            ),
         )
 
     def _event_extra_fields(self, job) -> dict[str, Any]:
@@ -1376,6 +1603,7 @@ class TrainingService:
                                 'total_cycles': metrics.total_cycles,
                                 'compile_rate': metrics.compile_rate,
                                 'grad_norm': metrics.grad_norm,
+                                'yield_snapshot': metrics.yield_snapshot,
                             }
                         ))
                 
@@ -1537,6 +1765,10 @@ class TrainingService:
         if metrics.grad_norm is not None:
             job.latest_grad_norm = metrics.grad_norm
             self.state.add_metric(job_id, 'grad_norm', job.current_step, metrics.grad_norm)
+        
+        if metrics.yield_snapshot is not None:
+            job.latest_yield_snapshot = dict(metrics.yield_snapshot)
+            job.yield_history.append(dict(metrics.yield_snapshot))
     
     async def stop_job(self, job_id: str, timeout: float = 30.0) -> bool:
         """

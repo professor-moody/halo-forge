@@ -5,6 +5,7 @@ Parse training metrics from HuggingFace Trainer and RAFT output.
 Extracts loss, learning rate, epoch, step, and other metrics from log lines.
 """
 
+import json
 import re
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ class ParsedMetrics:
     total_cycles: Optional[int] = None
     compile_rate: Optional[float] = None
     grad_norm: Optional[float] = None
+    yield_snapshot: Optional[Dict[str, Any]] = None
     is_checkpoint: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
@@ -123,6 +125,9 @@ class MetricsParser:
         'eval_loss': re.compile(
             r"(?:Eval|Validation)\s+Loss:\s*([\d.]+)"
         ),
+        'yield_snapshot': re.compile(
+            r'HALO_YIELD\s+(\{.*\})'
+        ),
     }
     
     def __init__(self):
@@ -144,7 +149,14 @@ class MetricsParser:
             return None
         
         metrics = ParsedMetrics()
-        
+
+        match = self.PATTERNS['yield_snapshot'].search(line)
+        if match:
+            try:
+                metrics.yield_snapshot = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                metrics.yield_snapshot = None
+
         # Try JSON log format first (most complete)
         match = self.PATTERNS['json_log'].search(line)
         if match:

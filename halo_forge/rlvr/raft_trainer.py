@@ -34,6 +34,21 @@ from datasets import Dataset
 from tqdm import tqdm
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
+from halo_forge.runtime_determinism import (
+    DEFAULT_TRAINING_SEED,
+    build_run_id,
+    set_global_seed,
+)
+from halo_forge.training_contracts import (
+    attach_effectiveness_contract,
+    build_cycle_summary,
+    build_reward_distribution_from_values,
+    build_reward_filter_rejection_reasons,
+    build_training_summary,
+    emit_yield_log_line,
+    normalize_update_metrics,
+    write_json_atomic,
+)
 
 # Rich UI (optional, falls back to plain print)
 try:
@@ -107,6 +122,7 @@ class RAFTConfig:
     # Minimum samples per cycle: if too few samples pass threshold,
     # automatically lower the threshold to ensure sufficient training data
     min_samples_per_cycle: Optional[int] = None  # e.g., 200 to ensure 200+ samples
+    seed: int = DEFAULT_TRAINING_SEED
     
     def get_temperature_for_cycle(self, cycle: int) -> float:
         """Get temperature for a specific cycle with optional scheduling."""
@@ -189,6 +205,8 @@ class RAFTTrainer:
         
         # Statistics
         self.cycle_stats = []
+        self.run_id: str = ""
+        self.training_summary: Dict[str, Any] = {}
     
     def _log(self, msg: str, level: str = "info"):
         """Log a message with simple text prefix (works through pipes)."""
@@ -622,7 +640,7 @@ class RAFTTrainer:
         self,
         filtered_samples: List[Dict],
         cycle: int
-    ):
+    ) -> Dict[str, Any]:
         """
         SFT on filtered samples.
         
@@ -708,12 +726,42 @@ class RAFTTrainer:
             data_collator=data_collator
         )
         
-        trainer.train()
-        
+        train_result = trainer.train()
+        log_history = list(getattr(trainer.state, "log_history", []))
+        train_loss_points = [
+            float(entry["loss"])
+            for entry in log_history
+            if isinstance(entry, dict) and isinstance(entry.get("loss"), (int, float))
+        ]
+        total_train_steps = int(
+            getattr(train_result, "global_step", 0)
+            or getattr(train_result, "metrics", {}).get("global_step", 0)
+            or 0
+        )
+        final_train_loss = (
+            train_loss_points[-1]
+            if train_loss_points
+            else (
+                float(train_result.training_loss)
+                if isinstance(getattr(train_result, "training_loss", None), (int, float))
+                else None
+            )
+        )
+        initial_train_loss = train_loss_points[0] if train_loss_points else final_train_loss
+
         # Save checkpoint
         checkpoint_path = self.output_dir / f"cycle_{cycle}_final"
         trainer.save_model(str(checkpoint_path))
         self._log(f"Saved checkpoint: {checkpoint_path}", "success")
+        return {
+            "train_steps_executed": total_train_steps,
+            "train_loss": final_train_loss,
+            "initial_train_loss": initial_train_loss,
+            "weights_updated": total_train_steps > 0,
+            "update_reason": "updated" if total_train_steps > 0 else "no_optimizer_steps",
+            "optimizer_steps": total_train_steps,
+            "skipped_batches_non_finite": 0,
+        }
     
     def run_cycle(
         self,
@@ -746,7 +794,7 @@ class RAFTTrainer:
         if final_checkpoint.exists():
             self._log(f"Cycle {cycle} already complete, skipping...", "dim")
             self._reload_model(str(final_checkpoint))
-            return {'cycle': cycle, 'skipped': True}
+            return {"cycle": cycle, "skipped": True}
         
         # Get temperature for this cycle (supports scheduling)
         cycle_temp = self.config.get_temperature_for_cycle(cycle)
@@ -784,7 +832,16 @@ class RAFTTrainer:
                 'above_threshold': len(above_threshold),
                 'kept': len(filtered),
                 'avg_reward': sum(d['reward'] for d in all_data) / len(all_data),
-                'avg_kept_reward': sum(d['reward'] for d in filtered) / len(filtered) if filtered else 0
+                'avg_kept_reward': sum(d['reward'] for d in filtered) / len(filtered) if filtered else 0,
+                'success_rate': (
+                    sum(1 for d in all_data if d.get('success')) / len(all_data)
+                    if all_data else 0.0
+                ),
+                'reward_distribution': build_reward_distribution_from_values(
+                    d.get("reward") for d in all_data
+                ),
+                'threshold_adjusted': False,
+                'effective_threshold': cfg.reward_threshold,
             }
         else:
             filtered, stats, all_data = self.verify_and_filter(samples)
@@ -804,7 +861,10 @@ class RAFTTrainer:
             return None
         
         # Train
-        self.train_on_filtered(filtered, cycle)
+        update_metrics = normalize_update_metrics(
+            self.train_on_filtered(filtered, cycle),
+            default_reason="no_filtered_samples",
+        )
         
         # FREE MEMORY: Clear training data before model reload
         del filtered
@@ -821,13 +881,71 @@ class RAFTTrainer:
         
         cycle_elapsed = time.time() - cycle_start
         
-        cycle_stats = {
-            'cycle': cycle,
-            'elapsed_minutes': cycle_elapsed / 60,
-            **stats
+        yield_diagnostics = {
+            "stage_counts": {
+                "generated": stats["total_samples"],
+                "verified": stats["total_samples"],
+                "filtered": (
+                    stats["kept"] if stats.get("threshold_adjusted") else stats["above_threshold"]
+                ),
+                "kept": stats["kept"],
+                "dropped": max(0, stats["total_samples"] - stats["kept"]),
+            },
+            "rates": {
+                "verification_rate": stats.get("success_rate"),
+                "keep_rate": (
+                    stats["kept"] / stats["total_samples"]
+                    if stats["total_samples"] > 0 else 0.0
+                ),
+                "success_rate": stats.get("success_rate"),
+            },
+            "thresholds": {
+                "configured_reward_threshold": self.config.reward_threshold,
+                "effective_reward_threshold": stats.get("effective_threshold", self.config.reward_threshold),
+                "keep_percent": self.config.keep_top_percent,
+                "threshold_adjusted": stats.get("threshold_adjusted", False),
+            },
+            "minimums": {
+                "minimum_samples_target": int(self.config.min_samples_per_cycle or 1),
+            },
+            "rejection_reasons": build_reward_filter_rejection_reasons(
+                total_count=stats["total_samples"],
+                success_count=int(round(float(stats.get("success_rate", 0.0)) * stats["total_samples"])),
+                above_threshold_count=(
+                    stats["kept"] if stats.get("threshold_adjusted") else stats["above_threshold"]
+                ),
+                kept_count=stats["kept"],
+            ),
+            "reward_distribution": stats.get("reward_distribution"),
+            "summary": {
+                "text": (
+                    "RAFT yield looks healthy for continued code updates."
+                    if stats["kept"] > 0 and float(stats.get("success_rate", 0.0)) >= 0.25
+                    else "RAFT yield is low; relax the threshold or increase prompt/sample budget."
+                )
+            },
         }
+        cycle_stats = build_cycle_summary(
+            cycle=cycle,
+            learning_rate=self.config.get_learning_rate_for_cycle(cycle),
+            samples_seen=stats["total_samples"],
+            samples_kept=stats["kept"],
+            cycle_duration_seconds=cycle_elapsed,
+            update_metrics=update_metrics,
+            yield_diagnostics=yield_diagnostics,
+            extra={
+                "elapsed_minutes": cycle_elapsed / 60,
+                **stats,
+            },
+        )
         
         self.cycle_stats.append(cycle_stats)
+        emit_yield_log_line(
+            {
+                "cycle": cycle,
+                **cycle_stats["yield_diagnostics"],
+            }
+        )
         self._log(f"Cycle {cycle} complete in {cycle_elapsed/60:.1f} minutes", "success")
         
         return cycle_stats
@@ -871,7 +989,7 @@ class RAFTTrainer:
         self,
         prompts: List[str],
         num_cycles: int = None
-    ):
+    ) -> str:
         """
         Run full RAFT training.
         
@@ -880,6 +998,8 @@ class RAFTTrainer:
             num_cycles: Number of cycles (overrides config)
         """
         num_cycles = num_cycles or self.config.num_cycles
+        self.config.seed = set_global_seed(self.config.seed)
+        self.run_id = build_run_id("raft")
         
         cfg = self.config
         # Print banner with Rich if available (startup only), then plain text
@@ -1014,6 +1134,38 @@ class RAFTTrainer:
         self.verifier.cleanup()
         
         final_path = self.output_dir / f"cycle_{num_cycles}_final"
+        summary = build_training_summary(
+            modality="raft",
+            model_name=self.config.base_model,
+            total_cycles_planned=num_cycles,
+            cycles=self.cycle_stats,
+            run_id=self.run_id,
+            seed=self.config.seed,
+            base_model_name=self.config.base_model,
+            active_model_name=str(final_path),
+            failure_reason=(
+                None
+                if self.cycle_stats and self.cycle_stats[-1].get("weights_updated", False)
+                else (self.cycle_stats[-1].get("update_reason") if self.cycle_stats else "no_cycles")
+            ),
+            extra={
+                "sft_checkpoint": self.config.sft_checkpoint,
+                "prompt_count": len(prompts),
+            },
+        )
+        summary["final_model_path"] = str(final_path) if final_path.exists() else ""
+        attach_effectiveness_contract(
+            summary,
+            minimum_samples_kept=max(1, int(self.config.min_samples_per_cycle or 1)),
+            minimum_optimizer_steps=1,
+            evaluation=None,
+            evaluation_required=False,
+            checkpoint_written=bool(self.cycle_stats),
+            final_model_path=str(final_path) if final_path.exists() else "",
+            training_summary_path=self.output_dir / "training_summary.json",
+        )
+        write_json_atomic(self.output_dir / "training_summary.json", summary)
+        self.training_summary = summary
         self._log(f"Final model: {final_path}", "success")
         
         return str(final_path)
@@ -1024,4 +1176,3 @@ class RAFTTrainer:
         with open(stats_path, 'w') as f:
             json.dump(self.cycle_stats, f, indent=2)
         self._log(f"Saved statistics: {stats_path}", "dim")
-

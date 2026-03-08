@@ -107,6 +107,13 @@ class TrainingRunSummary:
     weights_updated: bool = False
     final_update_reason: str = ""
     failure_reason: Optional[str] = None
+    effectiveness_verdict: Optional[str] = None
+    effectiveness_reasons: List[str] = field(default_factory=list)
+    quality_status: Optional[str] = None
+    quality_summary: Optional[str] = None
+    keep_rate: Optional[float] = None
+    dominant_rejection_reason: Optional[str] = None
+    yield_diagnostics: Dict[str, Any] = field(default_factory=dict)
     final_model_path: Optional[str] = None
     launch_context_path: Optional[Path] = None
     has_relaunch_context: bool = False
@@ -826,6 +833,20 @@ class ResultsService:
         timestamp = self._parse_timestamp(data, path)
         final_model_path = data.get("final_model_path")
         run_id = data.get("run_id")
+        effectiveness = data.get("effectiveness") if isinstance(data.get("effectiveness"), dict) else {}
+        yield_diagnostics = (
+            data.get("yield_diagnostics") if isinstance(data.get("yield_diagnostics"), dict) else {}
+        )
+        yield_summary = (
+            yield_diagnostics.get("summary")
+            if isinstance(yield_diagnostics.get("summary"), dict)
+            else {}
+        )
+        yield_rates = (
+            yield_diagnostics.get("rates")
+            if isinstance(yield_diagnostics.get("rates"), dict)
+            else {}
+        )
         seed = data.get("seed")
         try:
             if seed is not None:
@@ -873,6 +894,33 @@ class ResultsService:
                 if data.get("failure_reason") not in (None, "")
                 else None
             ),
+            effectiveness_verdict=(
+                str(effectiveness.get("verdict"))
+                if effectiveness.get("verdict") not in (None, "")
+                else None
+            ),
+            effectiveness_reasons=[
+                str(reason)
+                for reason in effectiveness.get("reasons", [])
+                if isinstance(reason, str)
+            ],
+            quality_status=(
+                str(yield_summary.get("status"))
+                if yield_summary.get("status") not in (None, "")
+                else None
+            ),
+            quality_summary=(
+                str(yield_summary.get("text"))
+                if yield_summary.get("text") not in (None, "")
+                else None
+            ),
+            keep_rate=self._as_float(yield_rates.get("keep_rate")),
+            dominant_rejection_reason=(
+                str(yield_summary.get("dominant_rejection_reason"))
+                if yield_summary.get("dominant_rejection_reason") not in (None, "")
+                else None
+            ),
+            yield_diagnostics=yield_diagnostics,
             final_model_path=str(final_model_path) if final_model_path else None,
             launch_context_path=launch_context_path if launch_context_path.exists() else None,
             has_relaunch_context=launch_context_path.exists(),

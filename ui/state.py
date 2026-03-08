@@ -60,6 +60,8 @@ class JobState:
     latest_lr: Optional[float] = None
     latest_grad_norm: Optional[float] = None
     verification_rate: Optional[float] = None  # RAFT only
+    latest_yield_snapshot: Optional[Dict[str, Any]] = None
+    yield_history: deque = field(default_factory=lambda: deque(maxlen=12))
     
     # Error handling
     error_message: Optional[str] = None

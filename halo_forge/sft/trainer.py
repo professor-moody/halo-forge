@@ -9,7 +9,7 @@ Supports Qwen, Llama, and other transformer models.
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 
 import torch
@@ -36,7 +36,9 @@ from halo_forge.runtime_determinism import DEFAULT_TRAINING_SEED, build_run_id, 
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
     build_cycle_summary,
+    build_yield_diagnostics,
     build_training_summary,
+    emit_yield_log_line,
     write_json_atomic,
 )
 
@@ -159,6 +161,7 @@ class SFTTrainer:
         self.tokenizer = None
         self.training_summary: Dict[str, Union[str, int, float, dict, list, None]] = {}
         self.run_id: str = ""
+        self.dataset_yield_diagnostics: Dict[str, Any] = {}
     
     def check_environment(self):
         """Verify ROCm/PyTorch environment."""
@@ -231,6 +234,24 @@ class SFTTrainer:
             )
             
             print(f"Loaded {len(dataset)} examples")
+            self.dataset_yield_diagnostics = build_yield_diagnostics(
+                stage_counts={
+                    "generated": len(dataset),
+                    "verified": len(dataset),
+                    "filtered": len(dataset),
+                    "kept": 0,
+                    "dropped": 0,
+                },
+                minimums={"minimum_samples_target": 1},
+                summary={
+                    "status": "healthy" if len(dataset) > 0 else "no_signal",
+                    "text": (
+                        "Most samples were usable for SFT."
+                        if len(dataset) > 0
+                        else "No usable records were found in the dataset."
+                    ),
+                },
+            )
             
         elif file_path:
             # Load from local file
@@ -241,19 +262,65 @@ class SFTTrainer:
             print(f"Loading from local file: {file_path}")
             
             examples = []
+            raw_records = 0
+            missing_text = 0
+            format_invalid = 0
             with jsonlines.open(file_path) as reader:
                 for obj in reader:
-                    if 'text' in obj:
-                        examples.append({'text': obj['text']})
-            
+                    raw_records += 1
+                    if not isinstance(obj, dict):
+                        format_invalid += 1
+                        continue
+                    text = obj.get("text")
+                    if not isinstance(text, str):
+                        missing_text += 1
+                        continue
+                    if not text.strip():
+                        missing_text += 1
+                        continue
+                    examples.append({"text": text})
+
             print(f"Loaded {len(examples)} examples")
             
             dataset = Dataset.from_list(examples)
             
             # Apply max_samples limit
+            truncated_count = 0
             if self.config.max_samples and len(dataset) > self.config.max_samples:
+                truncated_count = len(dataset) - self.config.max_samples
                 dataset = dataset.shuffle(seed=self.config.seed).select(range(self.config.max_samples))
                 print(f"Limited to {self.config.max_samples} samples")
+            self.dataset_yield_diagnostics = build_yield_diagnostics(
+                stage_counts={
+                    "generated": raw_records,
+                    "verified": len(examples),
+                    "filtered": len(dataset),
+                    "kept": 0,
+                    "dropped": max(0, raw_records - len(dataset)),
+                },
+                minimums={"minimum_samples_target": 1},
+                rejection_reasons={
+                    "missing_text": missing_text,
+                    "format_invalid": format_invalid,
+                    "truncated_or_skipped": truncated_count,
+                },
+                summary={
+                    "status": "healthy" if len(dataset) > 0 else "no_signal",
+                    "text": (
+                        "Most records were usable for SFT."
+                        if len(dataset) > 0 and (missing_text + format_invalid) == 0
+                        else (
+                            "Many records were skipped because text was missing."
+                            if missing_text > format_invalid and missing_text > 0
+                            else (
+                                "Some records were skipped because they were not valid training rows."
+                                if (missing_text + format_invalid + truncated_count) > 0
+                                else "No usable records were found in the dataset."
+                            )
+                        )
+                    ),
+                },
+            )
         else:
             raise ValueError("Either dataset or train_file must be specified")
         
@@ -267,6 +334,19 @@ class SFTTrainer:
         print(f"  Train: {len(train_dataset)} examples")
         print(f"  Validation: {len(val_dataset)} examples")
         print()
+
+        stage_counts = dict(self.dataset_yield_diagnostics.get("stage_counts") or {})
+        if stage_counts:
+            stage_counts["kept"] = len(train_dataset)
+            stage_counts["dropped"] = max(0, stage_counts.get("generated", 0) - len(train_dataset))
+            self.dataset_yield_diagnostics = build_yield_diagnostics(
+                stage_counts=stage_counts,
+                rates=self.dataset_yield_diagnostics.get("rates"),
+                minimums={"minimum_samples_target": 1},
+                rejection_reasons=self.dataset_yield_diagnostics.get("rejection_reasons"),
+                summary=self.dataset_yield_diagnostics.get("summary"),
+            )
+            emit_yield_log_line(self.dataset_yield_diagnostics)
         
         return train_dataset, val_dataset
     
@@ -641,6 +721,13 @@ class SFTTrainer:
                 "optimizer_steps": total_train_steps,
                 "skipped_batches_non_finite": 0,
             },
+            yield_diagnostics={
+                "stage_counts": self.dataset_yield_diagnostics.get("stage_counts"),
+                "rates": self.dataset_yield_diagnostics.get("rates"),
+                "minimums": {"minimum_samples_target": max(1, len(train_dataset))},
+                "rejection_reasons": self.dataset_yield_diagnostics.get("rejection_reasons"),
+                "summary": self.dataset_yield_diagnostics.get("summary"),
+            },
             extra={
                 "train_examples": len(train_dataset),
                 "validation_examples": len(val_dataset),
@@ -656,6 +743,13 @@ class SFTTrainer:
             seed=cfg.seed,
             base_model_name=cfg.model_name,
             active_model_name=cfg.model_name,
+            yield_diagnostics={
+                "stage_counts": self.dataset_yield_diagnostics.get("stage_counts"),
+                "rates": self.dataset_yield_diagnostics.get("rates"),
+                "minimums": {"minimum_samples_target": max(1, len(train_dataset))},
+                "rejection_reasons": self.dataset_yield_diagnostics.get("rejection_reasons"),
+                "summary": self.dataset_yield_diagnostics.get("summary"),
+            },
             extra={
                 "dataset": dataset or cfg.dataset or "",
                 "train_file": train_file or cfg.train_file or "",

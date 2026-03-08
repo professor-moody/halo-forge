@@ -683,6 +683,10 @@ class Training:
             ui.label(
                 f'{selected_preset.description} • Use when: {selected_preset.recommendation.when_to_use}'
             ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+            if selected_preset.recommendation.yield_safety:
+                ui.label(
+                    f'Yield safety: {selected_preset.recommendation.yield_safety}'
+                ).classes(f'text-xs text-[{COLORS["success"]}]')
 
     def _render_guided_onboarding_panel(self) -> None:
         """Render a concise onboarding panel for first-run training success."""
@@ -704,6 +708,10 @@ class Training:
                 ui.label(
                     f"Preset: {preset.label} ({preset.recommendation.expected_runtime}) • {preset.recommendation.when_to_use}"
                 ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+                if preset.recommendation.yield_safety:
+                    ui.label(
+                        f"Yield safety: {preset.recommendation.yield_safety}"
+                    ).classes(f'text-xs text-[{COLORS["success"]}]')
 
             with ui.row().classes("w-full gap-3 flex-wrap"):
                 for label, value in defaults:
@@ -1902,6 +1910,8 @@ class Training:
                     limit=data.limit if key in {"reasoning", "agentic"} else None,
                     task=data.task if key == "audio" else None,
                     samples_per_prompt=data.samples_per_prompt if key in {"vlm", "audio"} else None,
+                    keep_percent=data.keep_percent if key in {"vlm", "audio", "reasoning", "agentic"} else None,
+                    reward_threshold=data.reward_threshold if key in {"vlm", "audio"} else None,
                 )
         except Exception as e:
             return TrainingLaunchPreflight(
@@ -1910,6 +1920,7 @@ class Training:
                 warnings=[],
                 resolved_paths={},
                 suggested_fixes=["Fix required inputs before launch."],
+                quality_outlook={},
             )
         return TrainingLaunchPreflight(
             ok=False,
@@ -1917,6 +1928,7 @@ class Training:
             warnings=[],
             resolved_paths={},
             suggested_fixes=["Choose a supported training mode."],
+            quality_outlook={},
         )
 
     def _render_output_scaffold_controls(
@@ -1983,6 +1995,63 @@ class Training:
         except Exception as e:
             ui.notify(f"Failed to create scaffold: {e}", type="negative", timeout=2500)
 
+    def _render_quality_outlook(self, preflight: TrainingLaunchPreflight) -> None:
+        """Render advisory-only training quality heuristics for the current payload."""
+        outlook = preflight.quality_outlook if isinstance(preflight.quality_outlook, dict) else {}
+        if not outlook:
+            return
+        status = str(outlook.get("status") or "healthy").strip().lower()
+        status_color = {
+            "healthy": COLORS["success"],
+            "caution": COLORS["warning"],
+            "low_yield": COLORS["error"],
+        }.get(status, COLORS["text_secondary"])
+        warnings = [str(item) for item in outlook.get("warnings", []) if item]
+        suggestions = [str(item) for item in outlook.get("suggested_adjustments", []) if item]
+        artifact_notes = [str(item) for item in outlook.get("artifact_notes", []) if item]
+
+        with ui.column().classes(
+            f'w-full gap-3 p-4 rounded-xl bg-[{COLORS["bg_card"]}] border border-[#2d343c]'
+        ):
+            with ui.row().classes("w-full items-center justify-between gap-3"):
+                ui.label("Training Quality Outlook").classes(
+                    f'text-sm font-semibold text-[{COLORS["text_primary"]}]'
+                )
+                ui.label(status.replace("_", " ")).classes(
+                    f'px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{status_color}]'
+                )
+            ui.label(str(outlook.get("summary") or "")).classes(
+                f'text-xs text-[{COLORS["text_secondary"]}]'
+            )
+            if warnings:
+                with ui.column().classes("w-full gap-1"):
+                    for item in warnings[:3]:
+                        ui.label(f"- {item}").classes(f'text-xs text-[{COLORS["warning"]}]')
+            if suggestions:
+                with ui.expansion(
+                    text="Suggested adjustments",
+                    icon="tune",
+                    value=False,
+                ).classes(
+                    f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ).props('dense dark'):
+                    with ui.column().classes("w-full gap-1 p-2"):
+                        for item in suggestions[:3]:
+                            ui.label(f"- {item}").classes(f'text-xs text-[{COLORS["text_secondary"]}]')
+            if artifact_notes:
+                with ui.expansion(
+                    text="Expected artifacts",
+                    icon="inventory_2",
+                    value=False,
+                ).classes(
+                    f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ).props('dense dark'):
+                    with ui.column().classes("w-full gap-1 p-2"):
+                        for item in artifact_notes:
+                            ui.label(f"- {item}").classes(
+                                f'text-xs font-mono text-[{COLORS["text_muted"]}]'
+                            )
+
     def _render_launch_button(self, label: str, on_click, mode_key: str):
         """Render the launch training button."""
         is_valid, validation_message = self._validate_launch_inputs(mode_key)
@@ -1992,6 +2061,7 @@ class Training:
             warnings=[],
             resolved_paths={},
             suggested_fixes=[],
+            quality_outlook={},
         )
         with ui.row().classes('w-full justify-end pt-4'):
             launch_button = ui.button(on_click=on_click).props('unelevated').classes(
@@ -2017,6 +2087,7 @@ class Training:
             ui.label(preflight.warnings[0]).classes(
                 f'text-xs text-[{COLORS["warning"]}] text-right w-full'
             )
+        self._render_quality_outlook(preflight)
         self._render_output_scaffold_controls(mode_key, preflight)
     
     def _apply_preset(self, preset_name: str):

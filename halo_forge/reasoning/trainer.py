@@ -17,8 +17,11 @@ from halo_forge.capabilities import is_model_family_supported, get_supported_mod
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
+    build_reward_distribution_from_values,
+    build_reward_filter_rejection_reasons,
     build_cycle_summary,
     build_training_summary,
+    emit_yield_log_line,
     normalize_update_metrics,
     write_json_atomic,
 )
@@ -306,7 +309,44 @@ class ReasoningRAFTTrainer:
         # 4. Calculate metrics
         accuracy = sum(1 for c in completions if c.verified) / len(completions)
         avg_reward = sum(c.reward for c in completions) / len(completions)
+        positive_rewards = sum(1 for c in completions if c.reward > 0)
         cycle_duration = time.time() - start_time
+        yield_diagnostics = {
+            "stage_counts": {
+                "generated": len(completions),
+                "verified": len(completions),
+                "filtered": positive_rewards,
+                "kept": len(filtered),
+                "dropped": max(0, len(completions) - len(filtered)),
+            },
+            "rates": {
+                "verification_rate": accuracy,
+                "success_rate": accuracy,
+            },
+            "thresholds": {
+                "configured_reward_threshold": 0.0,
+                "effective_reward_threshold": 0.0,
+                "keep_percent": self.config.keep_top_percent,
+                "threshold_adjusted": False,
+            },
+            "minimums": {"minimum_samples_target": 1},
+            "rejection_reasons": build_reward_filter_rejection_reasons(
+                total_count=len(completions),
+                success_count=sum(1 for c in completions if c.verified),
+                above_threshold_count=positive_rewards,
+                kept_count=len(filtered),
+            ),
+            "reward_distribution": build_reward_distribution_from_values(
+                c.reward for c in completions
+            ),
+            "summary": {
+                "text": (
+                    "Most reasoning completions produced usable supervision."
+                    if len(filtered) > 0 and accuracy >= 0.35
+                    else "Reasoning yield was low; inspect verifier failures or increase sample budget."
+                )
+            },
+        }
         train_metrics = normalize_update_metrics(
             self._train_on_filtered(filtered, cycle),
             default_reason="no_filtered_samples",
@@ -318,6 +358,7 @@ class ReasoningRAFTTrainer:
             samples_kept=len(filtered),
             cycle_duration_seconds=cycle_duration,
             update_metrics=train_metrics,
+            yield_diagnostics=yield_diagnostics,
             extra={
                 "total_completions": len(completions),
                 "filtered_completions": len(filtered),
@@ -350,6 +391,12 @@ class ReasoningRAFTTrainer:
                 if isinstance(metrics["train_loss"], (float, int))
                 else "n/a"
             ),
+        )
+        emit_yield_log_line(
+            {
+                "cycle": cycle,
+                **metrics["yield_diagnostics"],
+            }
         )
         
         return metrics

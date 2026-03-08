@@ -24,6 +24,7 @@ class QuickstartRecommendation:
 
     when_to_use: str
     expected_runtime: RuntimeSize
+    yield_safety: str = ""
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
         recommendation=QuickstartRecommendation(
             when_to_use="First local SFT run and smoke validation.",
             expected_runtime="quick",
+            yield_safety="Enough samples for a smoke run without starving updates.",
         ),
         values={
             "model": "Qwen/Qwen2.5-Coder-1.5B",
@@ -80,6 +82,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
         recommendation=QuickstartRecommendation(
             when_to_use="Initial RAFT pipeline validation with low risk defaults.",
             expected_runtime="quick",
+            yield_safety="Balanced threshold and keep-rate defaults for first useful signal.",
         ),
         values={
             "model": "Qwen/Qwen2.5-Coder-3B",
@@ -105,6 +108,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
         recommendation=QuickstartRecommendation(
             when_to_use="Sanity-check VLM training loop quickly.",
             expected_runtime="quick",
+            yield_safety="Small but viable sample count for first VLM updates.",
         ),
         values={
             "model": "Qwen/Qwen2-VL-2B-Instruct",
@@ -128,6 +132,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
         recommendation=QuickstartRecommendation(
             when_to_use="Validate audio training path in minimum time.",
             expected_runtime="quick",
+            yield_safety="Conservative sample count to keep verifier yield usable.",
         ),
         values={
             "model": "openai/whisper-tiny",
@@ -152,6 +157,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
         recommendation=QuickstartRecommendation(
             when_to_use="Check reasoning training orchestration and artifacts.",
             expected_runtime="quick",
+            yield_safety="Limited fixture size while keeping enough reasoning samples to update.",
         ),
         values={
             "model": "Qwen/Qwen2.5-1.5B-Instruct",
@@ -175,6 +181,7 @@ _PRESETS: Dict[str, QuickstartPreset] = {
         recommendation=QuickstartRecommendation(
             when_to_use="Validate agentic loop, resume metadata, and summaries.",
             expected_runtime="quick",
+            yield_safety="Enough tool-call attempts to surface verifier and formatting issues.",
         ),
         values={
             "model": "Qwen/Qwen2.5-1.5B-Instruct",

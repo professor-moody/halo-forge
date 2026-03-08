@@ -27,8 +27,11 @@ from halo_forge.capabilities import is_model_family_supported, get_supported_mod
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
+    build_reward_distribution_from_values,
+    build_reward_filter_rejection_reasons,
     build_cycle_summary,
     build_training_summary,
+    emit_yield_log_line,
     normalize_update_metrics,
     write_json_atomic,
 )
@@ -510,6 +513,9 @@ class VLMRAFTTrainer:
         rewards = [s.reward for s in samples]
         successes = sum(1 for s in samples if s.success)
         sample_count = len(samples)
+        above_threshold_count = sum(
+            1 for s in samples if float(s.reward) >= self.config.reward_threshold
+        )
         
         success_rate = (successes / sample_count) if sample_count else 0.0
         avg_reward = (sum(rewards) / sample_count) if sample_count else 0.0
@@ -520,6 +526,12 @@ class VLMRAFTTrainer:
         
         # 2. Filter samples
         filtered = self.filter_samples(samples)
+        threshold_adjusted = above_threshold_count == 0 and len(filtered) > 0
+        effective_threshold = (
+            min((s.reward for s in filtered), default=self.config.reward_threshold)
+            if threshold_adjusted
+            else self.config.reward_threshold
+        )
         
         self._log(f"Filtered to {len(filtered)} samples", "ok")
         
@@ -539,6 +551,42 @@ class VLMRAFTTrainer:
                 train_metrics,
                 default_reason="no_filtered_samples",
             ),
+            yield_diagnostics={
+                "stage_counts": {
+                    "generated": sample_count,
+                    "verified": sample_count,
+                    "filtered": above_threshold_count if not threshold_adjusted else len(filtered),
+                    "kept": len(filtered),
+                    "dropped": max(0, sample_count - len(filtered)),
+                },
+                "rates": {
+                    "verification_rate": success_rate,
+                    "success_rate": success_rate,
+                },
+                "thresholds": {
+                    "configured_reward_threshold": self.config.reward_threshold,
+                    "effective_reward_threshold": effective_threshold,
+                    "keep_percent": self.config.keep_top_percent,
+                    "threshold_adjusted": threshold_adjusted,
+                },
+                "minimums": {"minimum_samples_target": 1},
+                "rejection_reasons": build_reward_filter_rejection_reasons(
+                    total_count=sample_count,
+                    success_count=successes,
+                    above_threshold_count=(
+                        above_threshold_count if not threshold_adjusted else len(filtered)
+                    ),
+                    kept_count=len(filtered),
+                ),
+                "reward_distribution": build_reward_distribution_from_values(rewards),
+                "summary": {
+                    "text": (
+                        "VLM yield is healthy enough for continued updates."
+                        if len(filtered) > 0 and success_rate >= 0.35
+                        else "VLM yield is low; lower the threshold or increase samples per prompt."
+                    )
+                },
+            },
             extra={
                 "num_samples": sample_count,
                 "num_filtered": len(filtered),
@@ -548,6 +596,12 @@ class VLMRAFTTrainer:
                 # Backward-compatible alias.
                 "cycle_time_min": cycle_time / 60,
             },
+        )
+        emit_yield_log_line(
+            {
+                "cycle": cycle,
+                **metrics["yield_diagnostics"],
+            }
         )
         
         self.training_history.append(metrics)

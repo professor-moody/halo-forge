@@ -350,6 +350,15 @@ class Results:
                 ui.label("Model").classes(
                     f'flex-[2] text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
                 )
+                ui.label("Quality").classes(
+                    f'w-24 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
+                ui.label("Keep").classes(
+                    f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
+                )
+                ui.label("Top Drop").classes(
+                    f'w-28 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                )
                 ui.label("Updated").classes(
                     f'w-20 text-xs uppercase tracking-wider text-[{COLORS["text_muted"]}] text-right'
                 )
@@ -387,6 +396,22 @@ class Results:
                         ui.label(str(run.output_dir)).classes(
                             f'text-xs text-[{COLORS["text_muted"]}] truncate'
                         )
+                    with ui.column().classes("w-24 gap-1"):
+                        verdict = run.effectiveness_verdict or run.quality_status or "--"
+                        verdict_color = self._training_quality_color(run)
+                        ui.label(verdict.replace("_", " ")).classes(
+                            f'inline-flex px-2 py-1 rounded text-[11px] uppercase tracking-wider bg-[{COLORS["bg_secondary"]}] text-[{verdict_color}]'
+                        )
+                    ui.label(
+                        f"{run.keep_rate:.0%}" if isinstance(run.keep_rate, (int, float)) else "--"
+                    ).classes(
+                        f'w-20 text-sm font-mono text-[{COLORS["text_secondary"]}] text-right'
+                    )
+                    ui.label(
+                        (run.dominant_rejection_reason or "--").replace("_", " ")
+                    ).classes(
+                        f'w-28 text-xs text-[{COLORS["text_muted"]}] truncate'
+                    )
                     ui.label("yes" if run.weights_updated else "no").classes(
                         f'w-20 text-sm font-mono text-[{COLORS["primary"]}] text-right'
                     )
@@ -408,6 +433,12 @@ class Results:
                         f'w-24 text-sm font-mono text-[{COLORS["text_muted"]}] text-right'
                     )
                     with ui.row().classes("w-36 justify-end gap-1"):
+                        ui.button(
+                            icon="insights",
+                            on_click=lambda r=run: self._show_training_run_details(r),
+                        ).props("flat round dense").classes(
+                            f'text-[{COLORS["text_secondary"]}]'
+                        ).tooltip("Quality details")
                         if run.has_relaunch_context and run.launch_context_path:
                             ui.button(
                                 icon="replay",
@@ -432,8 +463,82 @@ class Results:
                             ).tooltip("Clone to Training form")
                         else:
                             ui.label("--").classes(
-                                f'w-36 text-xs text-[{COLORS["text_muted"]}] text-right'
+                                f'text-xs text-[{COLORS["text_muted"]}] text-right'
                             )
+
+    def _training_quality_color(self, run: TrainingRunSummary) -> str:
+        verdict = str(run.effectiveness_verdict or run.quality_status or "").strip().lower()
+        if verdict in {"pass", "healthy"}:
+            return COLORS["success"]
+        if verdict in {"fail", "low_yield", "no_signal", "error"}:
+            return COLORS["error"]
+        return COLORS["warning"]
+
+    def _recommended_training_adjustment(self, run: TrainingRunSummary) -> str:
+        reason = str(run.dominant_rejection_reason or "").strip().lower()
+        if reason == "below_reward_threshold":
+            return "Lower the reward threshold or raise samples per prompt before relaunch."
+        if reason == "dropped_by_keep_percent":
+            return "Increase keep percent so more verified samples reach updates."
+        if reason in {"missing_text", "empty_target"}:
+            return "Inspect the dataset formatting before rerunning."
+        if reason == "verification_failed":
+            return "Inspect verifier failures or increase sample diversity before rerunning."
+        if run.quality_status in {"low_yield", "no_signal"}:
+            return "Increase sample budget and review training inputs before rerunning."
+        return "Use clone or relaunch if you want to iterate on this run."
+
+    def _show_training_run_details(self, run: TrainingRunSummary) -> None:
+        dialog = ui.dialog()
+        with dialog, ui.card().classes(
+            f'w-[720px] max-w-[95vw] gap-4 bg-[{COLORS["bg_card"]}] text-[{COLORS["text_primary"]}]'
+        ):
+            ui.label("Training Quality Details").classes("text-lg font-semibold")
+            if run.quality_summary:
+                ui.label(run.quality_summary).classes(
+                    f'text-sm text-[{COLORS["text_secondary"]}]'
+                )
+            with ui.row().classes("w-full gap-3 flex-wrap"):
+                for label, value in (
+                    ("Verdict", run.effectiveness_verdict or "--"),
+                    ("Yield", run.quality_status or "--"),
+                    ("Keep rate", f"{run.keep_rate:.0%}" if isinstance(run.keep_rate, (int, float)) else "--"),
+                    ("Top drop", (run.dominant_rejection_reason or "--").replace("_", " ")),
+                ):
+                    with ui.column().classes(
+                        f'flex-1 min-w-[140px] gap-1 p-3 rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                    ):
+                        ui.label(label).classes(
+                            f'text-[11px] uppercase tracking-wider text-[{COLORS["text_muted"]}]'
+                        )
+                        ui.label(str(value)).classes(
+                            f'text-sm text-[{COLORS["text_primary"]}]'
+                        )
+            diagnostics = run.yield_diagnostics if isinstance(run.yield_diagnostics, dict) else {}
+            if diagnostics:
+                reasons = diagnostics.get("rejection_reasons") if isinstance(diagnostics.get("rejection_reasons"), dict) else {}
+                thresholds = diagnostics.get("thresholds") if isinstance(diagnostics.get("thresholds"), dict) else {}
+                with ui.expansion(text="Yield breakdown", icon="analytics", value=True).classes(
+                    f'w-full rounded-lg bg-[{COLORS["bg_secondary"]}] border border-[#2d343c]'
+                ).props('dense dark'):
+                    with ui.column().classes("w-full gap-2 p-3"):
+                        if reasons:
+                            for key, value in reasons.items():
+                                ui.label(f"{key.replace('_', ' ')}: {value}").classes(
+                                    f'text-xs text-[{COLORS["text_secondary"]}]'
+                                )
+                        ui.label(
+                            f"Thresholds: configured={thresholds.get('configured_reward_threshold', '--')} "
+                            f"effective={thresholds.get('effective_reward_threshold', '--')} "
+                            f"keep={thresholds.get('keep_percent', '--')}"
+                        ).classes(f'text-xs text-[{COLORS["text_muted"]}]')
+            ui.separator()
+            ui.label(self._recommended_training_adjustment(run)).classes(
+                f'text-sm text-[{COLORS["accent"]}]'
+            )
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Close", on_click=dialog.close).props("flat")
+        dialog.open()
 
     def _render_utility_runs_table(self, rows: list[UtilityRunSummary]):
         with ui.column().classes(

@@ -24,8 +24,11 @@ from halo_forge.audio.models import (
 from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
+    build_reward_distribution_from_values,
+    build_reward_filter_rejection_reasons,
     build_cycle_summary,
     build_training_summary,
+    emit_yield_log_line,
     normalize_update_metrics,
     write_json_atomic,
 )
@@ -368,6 +371,10 @@ class AudioRAFTTrainer:
         
         # 4. Calculate metrics
         rewards = [v["reward"] for v in verified]
+        successful = sum(1 for v in verified if v.get("success"))
+        above_threshold = sum(
+            1 for v in verified if float(v.get("reward", 0.0)) >= self.config.reward_threshold
+        )
         avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
         train_metrics: Dict[str, Any]
 
@@ -392,11 +399,51 @@ class AudioRAFTTrainer:
                 train_metrics,
                 default_reason="no_filtered_samples",
             ),
+            yield_diagnostics={
+                "stage_counts": {
+                    "generated": len(predictions),
+                    "verified": len(verified),
+                    "filtered": above_threshold,
+                    "kept": len(kept),
+                    "dropped": max(0, len(predictions) - len(kept)),
+                },
+                "rates": {
+                    "verification_rate": (successful / len(verified)) if verified else 0.0,
+                    "success_rate": (successful / len(verified)) if verified else 0.0,
+                },
+                "thresholds": {
+                    "configured_reward_threshold": self.config.reward_threshold,
+                    "effective_reward_threshold": self.config.reward_threshold,
+                    "keep_percent": self.config.keep_top_percent,
+                    "threshold_adjusted": False,
+                },
+                "minimums": {"minimum_samples_target": 1},
+                "rejection_reasons": build_reward_filter_rejection_reasons(
+                    total_count=len(verified),
+                    success_count=successful,
+                    above_threshold_count=above_threshold,
+                    kept_count=len(kept),
+                ),
+                "reward_distribution": build_reward_distribution_from_values(rewards),
+                "summary": {
+                    "text": (
+                        "Audio yield looks healthy for continued updates."
+                        if len(kept) > 0 and successful >= max(1, len(verified) // 3)
+                        else "Audio yield is low; consider lowering the reward threshold or increasing sample budget."
+                    )
+                },
+            },
             extra={
                 "min_reward": min(rewards) if rewards else 0.0,
                 "max_reward": max(rewards) if rewards else 0.0,
                 "average_reward": avg_reward,
             },
+        )
+        emit_yield_log_line(
+            {
+                "cycle": cycle,
+                **canonical_metrics["yield_diagnostics"],
+            }
         )
 
         return AudioRAFTCycleResult(

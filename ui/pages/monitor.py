@@ -94,6 +94,10 @@ class Monitor:
         self._seed_label = None
         self._resume_label = None
         self._failure_reason_label = None
+        self._quality_status_label = None
+        self._quality_keep_rate_label = None
+        self._quality_drop_reason_label = None
+        self._quality_action_label = None
         self._benchmark_metric_labels: Dict[str, Any] = {}
         self._inference_metric_labels: Dict[str, Any] = {}
         self._utility_metric_labels: Dict[str, Any] = {}
@@ -715,6 +719,31 @@ class Monitor:
                 self._resume_label = ui.label(summary["resume"]).classes(
                     f'text-sm font-mono text-[{COLORS["text_primary"]}]'
                 )
+            ui.separator().classes('my-2')
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Training Quality').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._quality_status_label = ui.label(summary["quality_status"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Keep Rate').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._quality_keep_rate_label = ui.label(summary["quality_keep_rate"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Top Drop Reason').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._quality_drop_reason_label = ui.label(summary["quality_drop_reason"]).classes(
+                    f'text-sm font-mono text-[{COLORS["text_primary"]}]'
+                )
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Action Hint').classes(f'text-sm text-[{COLORS["text_secondary"]}]')
+                self._quality_action_label = ui.label(summary["quality_action"]).classes(
+                    f'text-sm font-mono text-[{COLORS["accent"]}]'
+                )
+            if summary["quality_summary"] != "--":
+                ui.label(summary["quality_summary"]).classes(
+                    f'text-xs text-[{COLORS["text_muted"]}]'
+                )
 
     def _render_inference_metrics_panel(self) -> None:
         """Render inference-specific metrics summary."""
@@ -897,6 +926,11 @@ class Monitor:
     def _derive_training_outcome(self) -> Dict[str, str]:
         """Compute display-safe training outcome fields from summary payloads."""
         payload = self._read_training_summary_payload()
+        live_yield = (
+            self.job.latest_yield_snapshot
+            if self.job and isinstance(self.job.latest_yield_snapshot, dict)
+            else None
+        )
         if not payload:
             return {
                 "weights_updated": "--",
@@ -907,6 +941,19 @@ class Monitor:
                 "run_id": "--",
                 "seed": "--",
                 "resume": "--",
+                "quality_status": str(
+                    ((live_yield or {}).get("summary") or {}).get("status") or "--"
+                ),
+                "quality_keep_rate": self._format_percent(
+                    ((live_yield or {}).get("rates") or {}).get("keep_rate")
+                ),
+                "quality_drop_reason": str(
+                    ((live_yield or {}).get("summary") or {}).get("dominant_rejection_reason") or "--"
+                ).replace("_", " "),
+                "quality_action": self._yield_action_hint(live_yield),
+                "quality_summary": str(
+                    ((live_yield or {}).get("summary") or {}).get("text") or "--"
+                ),
             }
 
         total_steps = int(payload.get("total_train_steps_executed", 0) or 0)
@@ -918,6 +965,21 @@ class Monitor:
         failure_reason = payload.get("failure_reason")
         resume_cycle = payload.get("resume_from_cycle")
         resumed_checkpoint = payload.get("resumed_from_checkpoint")
+        yield_diagnostics = (
+            payload.get("yield_diagnostics")
+            if isinstance(payload.get("yield_diagnostics"), dict)
+            else live_yield or {}
+        )
+        yield_summary = (
+            yield_diagnostics.get("summary")
+            if isinstance(yield_diagnostics.get("summary"), dict)
+            else {}
+        )
+        yield_rates = (
+            yield_diagnostics.get("rates")
+            if isinstance(yield_diagnostics.get("rates"), dict)
+            else {}
+        )
 
         cycle_entries = payload.get("cycles") or payload.get("cycle_results") or []
         if isinstance(cycle_entries, list):
@@ -975,7 +1037,38 @@ class Monitor:
                 if isinstance(resumed_checkpoint, dict) and (resume_cycle or 0) > 0
                 else (f"cycle {resume_cycle}" if (resume_cycle or 0) > 0 else "none")
             ),
+            "quality_status": str(yield_summary.get("status") or "--"),
+            "quality_keep_rate": self._format_percent(yield_rates.get("keep_rate")),
+            "quality_drop_reason": str(
+                yield_summary.get("dominant_rejection_reason") or "--"
+            ).replace("_", " "),
+            "quality_action": self._yield_action_hint(yield_diagnostics),
+            "quality_summary": str(yield_summary.get("text") or "--"),
         }
+
+    def _format_percent(self, value: Any) -> str:
+        try:
+            return f"{float(value):.0%}"
+        except (TypeError, ValueError):
+            return "--"
+
+    def _yield_action_hint(self, diagnostics: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(diagnostics, dict):
+            return "--"
+        summary = diagnostics.get("summary") if isinstance(diagnostics.get("summary"), dict) else {}
+        reason = str(summary.get("dominant_rejection_reason") or "").strip().lower()
+        if reason == "below_reward_threshold":
+            return "Lower threshold"
+        if reason == "dropped_by_keep_percent":
+            return "Increase keep percent"
+        if reason in {"missing_text", "empty_target"}:
+            return "Inspect dataset formatting"
+        if reason == "verification_failed":
+            return "Inspect verifier failures"
+        status = str(summary.get("status") or "").strip().lower()
+        if status in {"low_yield", "no_signal"}:
+            return "Increase sample budget"
+        return "Settings look balanced"
 
     def _derive_qualification_outcome(self) -> Dict[str, str]:
         """Compute display-safe qualification summary fields from report payload."""
@@ -1559,6 +1652,14 @@ class Monitor:
                 self._seed_label.set_text(summary["seed"])
             if self._resume_label:
                 self._resume_label.set_text(summary["resume"])
+            if self._quality_status_label:
+                self._quality_status_label.set_text(summary["quality_status"])
+            if self._quality_keep_rate_label:
+                self._quality_keep_rate_label.set_text(summary["quality_keep_rate"])
+            if self._quality_drop_reason_label:
+                self._quality_drop_reason_label.set_text(summary["quality_drop_reason"])
+            if self._quality_action_label:
+                self._quality_action_label.set_text(summary["quality_action"])
 
             if self._benchmark_metric_labels:
                 benchmark_summary = self._derive_benchmark_outcome()

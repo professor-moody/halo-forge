@@ -4,10 +4,29 @@ Canonical training telemetry contracts shared across modality trainers.
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+
+
+YIELD_LOG_PREFIX = "HALO_YIELD"
+
+_CANONICAL_REJECTION_REASONS = {
+    "invalid_input",
+    "verification_failed",
+    "below_reward_threshold",
+    "dropped_by_keep_percent",
+    "duplicate",
+    "empty_target",
+    "schema_invalid",
+    "unsupported_model_family",
+    "no_optimizer_steps",
+    "missing_text",
+    "format_invalid",
+    "truncated_or_skipped",
+}
 
 
 def normalize_update_metrics(
@@ -62,6 +81,7 @@ def build_cycle_summary(
     samples_kept: int,
     cycle_duration_seconds: float,
     update_metrics: Optional[Dict[str, Any]],
+    yield_diagnostics: Optional[Dict[str, Any]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build canonical per-cycle telemetry payload."""
@@ -73,6 +93,8 @@ def build_cycle_summary(
         "cycle_duration_seconds": float(max(0.0, cycle_duration_seconds)),
     }
     summary.update(normalize_update_metrics(update_metrics))
+    if yield_diagnostics:
+        summary["yield_diagnostics"] = build_yield_diagnostics(**yield_diagnostics)
     if extra:
         summary.update(extra)
     return summary
@@ -91,6 +113,7 @@ def build_training_summary(
     base_model_name: Optional[str] = None,
     active_model_name: Optional[str] = None,
     failure_reason: Optional[str] = None,
+    yield_diagnostics: Optional[Dict[str, Any]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build canonical final training summary payload."""
@@ -124,9 +147,327 @@ def build_training_summary(
             else (final_cycle.get("update_reason", "no_cycles") if not weights_updated else None)
         ),
     }
+    summary["yield_diagnostics"] = (
+        build_yield_diagnostics(**yield_diagnostics)
+        if yield_diagnostics
+        else aggregate_yield_diagnostics(cycle_list)
+    )
     if extra:
         summary.update(extra)
     return summary
+
+
+def build_yield_diagnostics(
+    *,
+    stage_counts: Optional[Dict[str, Any]] = None,
+    rates: Optional[Dict[str, Any]] = None,
+    thresholds: Optional[Dict[str, Any]] = None,
+    minimums: Optional[Dict[str, Any]] = None,
+    rejection_reasons: Optional[Dict[str, Any]] = None,
+    reward_distribution: Optional[Dict[str, Any]] = None,
+    summary: Optional[Dict[str, Any] | str] = None,
+) -> Dict[str, Any]:
+    """Build a normalized training-yield diagnostics payload."""
+    normalized_stage_counts = {
+        "generated": max(0, _coerce_int((stage_counts or {}).get("generated"))),
+        "verified": max(0, _coerce_int((stage_counts or {}).get("verified"))),
+        "filtered": max(0, _coerce_int((stage_counts or {}).get("filtered"))),
+        "kept": max(0, _coerce_int((stage_counts or {}).get("kept"))),
+        "dropped": max(0, _coerce_int((stage_counts or {}).get("dropped"))),
+    }
+
+    normalized_rates = {
+        "verification_rate": _coerce_optional_float((rates or {}).get("verification_rate")),
+        "keep_rate": _coerce_optional_float((rates or {}).get("keep_rate")),
+        "success_rate": _coerce_optional_float((rates or {}).get("success_rate")),
+    }
+    generated = normalized_stage_counts["generated"]
+    verified = normalized_stage_counts["verified"]
+    kept = normalized_stage_counts["kept"]
+    if normalized_rates["verification_rate"] is None and generated > 0:
+        normalized_rates["verification_rate"] = verified / generated
+    if normalized_rates["keep_rate"] is None and generated > 0:
+        normalized_rates["keep_rate"] = kept / generated
+
+    minimum_target = max(0, _coerce_int((minimums or {}).get("minimum_samples_target")))
+    minimum_met = (minimums or {}).get("minimum_samples_met")
+    shortfall_count = _coerce_int((minimums or {}).get("shortfall_count"))
+    if minimum_target > 0 and shortfall_count <= 0:
+        shortfall_count = max(0, minimum_target - kept)
+    if minimum_met is None:
+        minimum_met = minimum_target <= 0 or kept >= minimum_target
+
+    normalized_thresholds = {
+        "configured_reward_threshold": _coerce_optional_float(
+            (thresholds or {}).get("configured_reward_threshold")
+        ),
+        "effective_reward_threshold": _coerce_optional_float(
+            (thresholds or {}).get("effective_reward_threshold")
+        ),
+        "keep_percent": _coerce_optional_float((thresholds or {}).get("keep_percent")),
+        "threshold_adjusted": bool((thresholds or {}).get("threshold_adjusted", False)),
+    }
+
+    normalized_reasons = normalize_rejection_reasons(rejection_reasons)
+    dominant_reason = dominant_rejection_reason(normalized_reasons)
+    status, text = summarize_yield_diagnostics(
+        stage_counts=normalized_stage_counts,
+        rates=normalized_rates,
+        minimum_target=minimum_target,
+        minimum_met=bool(minimum_met),
+        dominant_reason=dominant_reason,
+        explicit_summary=summary,
+    )
+
+    return {
+        "stage_counts": normalized_stage_counts,
+        "rates": normalized_rates,
+        "thresholds": normalized_thresholds,
+        "minimums": {
+            "minimum_samples_target": minimum_target,
+            "minimum_samples_met": bool(minimum_met),
+            "shortfall_count": max(0, shortfall_count),
+        },
+        "rejection_reasons": normalized_reasons,
+        "reward_distribution": normalize_reward_distribution(reward_distribution),
+        "summary": {
+            "status": status,
+            "text": text,
+            "dominant_rejection_reason": dominant_reason,
+        },
+    }
+
+
+def aggregate_yield_diagnostics(cycles: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate cycle-level yield diagnostics into a final summary payload."""
+    cycle_list = [dict(cycle) for cycle in cycles]
+    if not cycle_list:
+        return build_yield_diagnostics(
+            stage_counts={},
+            minimums={"minimum_samples_target": 0, "minimum_samples_met": False},
+            summary={"status": "no_signal", "text": "No training cycles executed yet."},
+        )
+
+    aggregate_counts = {key: 0 for key in ("generated", "verified", "filtered", "kept", "dropped")}
+    aggregate_reasons: Dict[str, int] = {}
+    reward_distribution: Dict[str, int] = {}
+    minimum_target = 0
+    threshold_adjusted = False
+    configured_reward_threshold = None
+    effective_reward_threshold = None
+    keep_percent = None
+    success_rate = None
+    verification_rate = None
+
+    for cycle in cycle_list:
+        diagnostics = cycle.get("yield_diagnostics")
+        if not isinstance(diagnostics, dict):
+            diagnostics = build_yield_diagnostics(
+                stage_counts={
+                    "generated": cycle.get("samples_seen"),
+                    "verified": cycle.get("samples_seen"),
+                    "filtered": cycle.get("samples_kept"),
+                    "kept": cycle.get("samples_kept"),
+                    "dropped": max(
+                        0,
+                        _coerce_int(cycle.get("samples_seen")) - _coerce_int(cycle.get("samples_kept")),
+                    ),
+                },
+                rates={
+                    "success_rate": cycle.get("success_rate"),
+                },
+                minimums={"minimum_samples_target": 0},
+                rejection_reasons={},
+            )
+        stage_counts = diagnostics.get("stage_counts") if isinstance(diagnostics.get("stage_counts"), dict) else {}
+        for key in aggregate_counts:
+            aggregate_counts[key] += max(0, _coerce_int(stage_counts.get(key)))
+        for key, value in (diagnostics.get("rejection_reasons") or {}).items():
+            if isinstance(key, str):
+                aggregate_reasons[key] = aggregate_reasons.get(key, 0) + max(0, _coerce_int(value))
+        for key, value in (diagnostics.get("reward_distribution") or {}).items():
+            if isinstance(key, str):
+                reward_distribution[key] = reward_distribution.get(key, 0) + max(0, _coerce_int(value))
+
+        minimums = diagnostics.get("minimums") if isinstance(diagnostics.get("minimums"), dict) else {}
+        minimum_target = max(minimum_target, _coerce_int(minimums.get("minimum_samples_target")))
+
+        thresholds = diagnostics.get("thresholds") if isinstance(diagnostics.get("thresholds"), dict) else {}
+        if configured_reward_threshold is None:
+            configured_reward_threshold = _coerce_optional_float(thresholds.get("configured_reward_threshold"))
+        effective_reward_threshold = _coerce_optional_float(
+            thresholds.get("effective_reward_threshold")
+        ) or effective_reward_threshold
+        keep_percent = _coerce_optional_float(thresholds.get("keep_percent")) or keep_percent
+        threshold_adjusted = threshold_adjusted or bool(thresholds.get("threshold_adjusted", False))
+
+        rates = diagnostics.get("rates") if isinstance(diagnostics.get("rates"), dict) else {}
+        success_rate = _coerce_optional_float(rates.get("success_rate")) or success_rate
+        verification_rate = _coerce_optional_float(rates.get("verification_rate")) or verification_rate
+
+    return build_yield_diagnostics(
+        stage_counts=aggregate_counts,
+        rates={
+            "verification_rate": verification_rate,
+            "keep_rate": (
+                aggregate_counts["kept"] / aggregate_counts["generated"]
+                if aggregate_counts["generated"] > 0
+                else None
+            ),
+            "success_rate": success_rate,
+        },
+        thresholds={
+            "configured_reward_threshold": configured_reward_threshold,
+            "effective_reward_threshold": effective_reward_threshold,
+            "keep_percent": keep_percent,
+            "threshold_adjusted": threshold_adjusted,
+        },
+        minimums={
+            "minimum_samples_target": minimum_target,
+            "minimum_samples_met": minimum_target <= 0 or aggregate_counts["kept"] >= minimum_target,
+        },
+        rejection_reasons=aggregate_reasons,
+        reward_distribution=reward_distribution,
+    )
+
+
+def normalize_rejection_reasons(
+    rejection_reasons: Optional[Dict[str, Any]],
+) -> Dict[str, int]:
+    """Normalize rejection-reason counts while preserving path-local keys."""
+    normalized: Dict[str, int] = {}
+    for key, value in (rejection_reasons or {}).items():
+        if not isinstance(key, str):
+            continue
+        reason = key.strip().lower().replace(" ", "_")
+        if not reason:
+            continue
+        canonical = reason if reason in _CANONICAL_REJECTION_REASONS else reason
+        normalized[canonical] = normalized.get(canonical, 0) + max(0, _coerce_int(value))
+    return dict(sorted(normalized.items()))
+
+
+def normalize_reward_distribution(reward_distribution: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    """Normalize reward bucket counts to a small stable dictionary."""
+    normalized: Dict[str, int] = {}
+    for key, value in (reward_distribution or {}).items():
+        if isinstance(key, str):
+            normalized[key] = max(0, _coerce_int(value))
+    return normalized
+
+
+def build_reward_distribution_from_values(rewards: Iterable[Any]) -> Dict[str, int]:
+    """Bucket reward values into a compact stable distribution."""
+    buckets = {
+        "lt_0_2": 0,
+        "0_2_to_0_5": 0,
+        "0_5_to_0_8": 0,
+        "0_8_plus": 0,
+    }
+    for reward in rewards:
+        value = _coerce_optional_float(reward)
+        if value is None:
+            continue
+        if value < 0.2:
+            buckets["lt_0_2"] += 1
+        elif value < 0.5:
+            buckets["0_2_to_0_5"] += 1
+        elif value < 0.8:
+            buckets["0_5_to_0_8"] += 1
+        else:
+            buckets["0_8_plus"] += 1
+    return buckets
+
+
+def build_reward_filter_rejection_reasons(
+    *,
+    total_count: int,
+    success_count: Optional[int] = None,
+    above_threshold_count: Optional[int] = None,
+    kept_count: int = 0,
+) -> Dict[str, int]:
+    """Build common rejection reasons for verifier + threshold + keep-percent flows."""
+    total = max(0, _coerce_int(total_count))
+    kept = max(0, _coerce_int(kept_count))
+    if success_count is None:
+        success = total
+    else:
+        success = min(total, max(0, _coerce_int(success_count)))
+    if above_threshold_count is None:
+        above_threshold = success
+    else:
+        above_threshold = min(total, max(0, _coerce_int(above_threshold_count)))
+    below_threshold = max(0, success - above_threshold)
+    return normalize_rejection_reasons(
+        {
+            "verification_failed": max(0, total - success),
+            "below_reward_threshold": below_threshold,
+            "dropped_by_keep_percent": max(0, above_threshold - kept),
+        }
+    )
+
+
+def summarize_yield_diagnostics(
+    *,
+    stage_counts: Dict[str, int],
+    rates: Dict[str, Optional[float]],
+    minimum_target: int,
+    minimum_met: bool,
+    dominant_reason: Optional[str],
+    explicit_summary: Optional[Dict[str, Any] | str] = None,
+) -> tuple[str, str]:
+    """Generate a compact user-facing yield summary."""
+    if isinstance(explicit_summary, dict):
+        status = str(explicit_summary.get("status") or "").strip().lower()
+        text = str(explicit_summary.get("text") or "").strip()
+        if status in {"healthy", "low_yield", "no_signal", "error"} and text:
+            return status, text
+    if isinstance(explicit_summary, str) and explicit_summary.strip():
+        inferred_status = "healthy" if stage_counts.get("kept", 0) > 0 else "no_signal"
+        return inferred_status, explicit_summary.strip()
+
+    generated = stage_counts.get("generated", 0)
+    kept = stage_counts.get("kept", 0)
+    keep_rate = rates.get("keep_rate")
+    verification_rate = rates.get("verification_rate")
+
+    if generated <= 0:
+        return "no_signal", "No candidate samples were produced for training."
+    if kept <= 0:
+        if dominant_reason == "missing_text":
+            return "no_signal", "No usable samples reached training because records were missing text."
+        if dominant_reason == "verification_failed":
+            return "no_signal", "No usable samples reached training because verification failed."
+        if dominant_reason == "below_reward_threshold":
+            return "no_signal", "No usable samples reached training because the reward threshold was too strict."
+        return "no_signal", "No usable samples reached training updates."
+    if not minimum_met:
+        shortfall = max(0, minimum_target - kept)
+        return "low_yield", f"Training kept some samples, but it missed the target by {shortfall}."
+    if keep_rate is not None and keep_rate < 0.2:
+        reason_text = dominant_reason.replace("_", " ") if dominant_reason else "filtering pressure"
+        return "low_yield", f"Only {keep_rate:.0%} of samples were kept, mostly due to {reason_text}."
+    if verification_rate is not None and verification_rate < 0.35:
+        return "low_yield", "Verification passed for only a small share of samples."
+    return "healthy", "Most samples were usable and enough reached training updates."
+
+
+def dominant_rejection_reason(rejection_reasons: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Return the rejection reason with the largest count."""
+    normalized = normalize_rejection_reasons(rejection_reasons)
+    if not normalized:
+        return None
+    return max(normalized.items(), key=lambda item: item[1])[0]
+
+
+def format_yield_log_line(payload: Dict[str, Any]) -> str:
+    """Serialize a machine-readable yield snapshot for live log parsing."""
+    return f"{YIELD_LOG_PREFIX} {json.dumps(payload, sort_keys=True)}"
+
+
+def emit_yield_log_line(payload: Dict[str, Any]) -> None:
+    """Print a machine-readable yield snapshot for UI log consumers."""
+    print(format_yield_log_line(payload), flush=True)
 
 
 def build_effectiveness_evaluation(
@@ -319,6 +660,9 @@ def attach_effectiveness_contract(
         if resume_contract_ok is not None
         else _derive_resume_contract_ok(summary)
     )
+
+    if not isinstance(summary.get("yield_diagnostics"), dict):
+        summary["yield_diagnostics"] = aggregate_yield_diagnostics(cycle_list)
 
     summary["effectiveness"] = build_effectiveness_contract(
         data_yield={
