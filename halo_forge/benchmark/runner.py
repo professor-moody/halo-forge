@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import gc
 
+from halo_forge.training_contracts import (
+    build_effectiveness_contract,
+    build_effectiveness_evaluation,
+)
 from halo_forge.utils.hw_monitor import HardwareMonitor, HardwareSummary
 
 
@@ -90,6 +94,52 @@ class BenchmarkResult:
     cycles: List[CycleResult] = field(default_factory=list)
     final: Optional[EvalResult] = None
     hardware_summary: Optional[Dict[str, Any]] = None
+
+    def _build_effectiveness(self) -> Dict[str, Any]:
+        """Map benchmark training/eval results into the shared effectiveness contract."""
+        total_generated = sum(max(0, int(c.generated)) for c in self.cycles)
+        total_kept = sum(max(0, int(c.kept)) for c in self.cycles)
+        total_train_steps = sum(max(0, int(c.training_steps)) for c in self.cycles)
+        weights_updated = total_train_steps > 0
+
+        loss_values = [
+            float(c.training_loss)
+            for c in self.cycles
+            if c.training_steps > 0 and isinstance(c.training_loss, (int, float))
+        ]
+        evaluation = build_effectiveness_evaluation(
+            metric_name="pass_at_1",
+            baseline_value=(self.baseline.pass_at_1 if self.baseline else None),
+            final_value=(self.final.pass_at_1 if self.final else None),
+            higher_is_better=True,
+            tolerance=0.0,
+            status="available" if self.final is not None else "not_available",
+        )
+        return build_effectiveness_contract(
+            data_yield={
+                "samples_seen": total_generated,
+                "samples_kept": total_kept,
+                "minimum_samples_kept": 1,
+            },
+            update_quality={
+                "train_steps_executed": total_train_steps,
+                "optimizer_steps": total_train_steps,
+                "weights_updated": weights_updated,
+                "initial_train_loss": loss_values[0] if loss_values else None,
+                "final_train_loss": loss_values[-1] if loss_values else None,
+                "skipped_batches_non_finite": 0,
+                "update_reason": "updated" if weights_updated else "no_optimizer_steps",
+                "minimum_optimizer_steps": 1,
+            },
+            checkpoint_quality={
+                "checkpoint_written": bool(self.cycles),
+                "final_model_written": bool(self.final),
+                "training_summary_written": True,
+                "resume_contract_ok": True,
+            },
+            evaluation=evaluation,
+            evaluation_required=self.final is not None,
+        )
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -101,6 +151,7 @@ class BenchmarkResult:
             "cycles": [c.to_dict() for c in self.cycles],
             "final": self.final.to_dict() if self.final else None,
             "hardware_summary": self.hardware_summary,
+            "effectiveness": self._build_effectiveness(),
             "improvement": {
                 "compile_rate": round(
                     (self.final.compile_rate - self.baseline.compile_rate) 
@@ -936,4 +987,3 @@ DEFAULT_MODELS = [
     "Qwen/Qwen2.5-Coder-1.5B",
     "Qwen/Qwen2.5-Coder-3B",
 ]
-

@@ -58,6 +58,7 @@ def run_text_supervised_updates(
     grad_accum = max(1, gradient_accumulation_steps)
     per_step_limit = max(1, max_steps)
     last_loss_value = 0.0
+    initial_loss_value = None
     skipped_batches_non_finite = 0
 
     for batch in _chunk_texts(texts, max(1, batch_size)):
@@ -96,6 +97,8 @@ def run_text_supervised_updates(
             optimizer.zero_grad(set_to_none=True)
             continue
 
+        if initial_loss_value is None:
+            initial_loss_value = float(loss.detach().item())
         (loss / grad_accum).backward()
         last_loss_value = float(loss.detach().item())
         micro_steps += 1
@@ -124,6 +127,7 @@ def run_text_supervised_updates(
         return {
             "train_steps_executed": 0,
             "train_loss": None,
+            "initial_train_loss": initial_loss_value,
             "weights_updated": False,
             "update_reason": "no_optimizer_steps",
             "optimizer_steps": 0,
@@ -133,6 +137,7 @@ def run_text_supervised_updates(
     return {
         "train_steps_executed": optimizer_steps,
         "train_loss": total_loss / optimizer_steps if total_loss else 0.0,
+        "initial_train_loss": initial_loss_value,
         "weights_updated": True,
         "update_reason": "updated",
         "optimizer_steps": optimizer_steps,

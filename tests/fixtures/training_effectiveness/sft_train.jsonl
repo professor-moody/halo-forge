@@ -1,0 +1,4 @@
+{"text":"<|im_start|>user\nAdd 1 and 1.<|im_end|>\n<|im_start|>assistant\n2<|im_end|>"}
+{"text":"<|im_start|>user\nSay hello.<|im_end|>\n<|im_start|>assistant\nhello<|im_end|>"}
+{"text":"<|im_start|>user\nReturn yes.<|im_end|>\n<|im_start|>assistant\nyes<|im_end|>"}
+{"text":"<|im_start|>user\nReturn no.<|im_end|>\n<|im_start|>assistant\nno<|im_end|>"}

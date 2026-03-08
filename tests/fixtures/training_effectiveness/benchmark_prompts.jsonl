@@ -1,0 +1,2 @@
+{"id":"sum","prompt":"Write a program that prints 3.","expected_output":"3"}
+{"id":"echo","prompt":"Write a program that prints ok.","expected_output":"ok"}

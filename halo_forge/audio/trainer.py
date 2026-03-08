@@ -23,6 +23,7 @@ from halo_forge.audio.models import (
 )
 from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_contracts import (
+    attach_effectiveness_contract,
     build_cycle_summary,
     build_training_summary,
     normalize_update_metrics,
@@ -309,6 +310,26 @@ class AudioRAFTTrainer:
             extra_state={"task": self.config.task},
         )
         summary["final_model_path"] = final_state["final_model_dir"]
+        attach_effectiveness_contract(
+            summary,
+            minimum_samples_kept=1,
+            minimum_optimizer_steps=1,
+            evaluation={
+                "metric_name": "average_reward",
+                "baseline_value": (
+                    self.cycle_results[0].average_reward if self.cycle_results else None
+                ),
+                "final_value": (
+                    self.cycle_results[-1].average_reward if self.cycle_results else None
+                ),
+                "higher_is_better": True,
+                "tolerance": 0.0,
+            },
+            evaluation_required=False,
+            checkpoint_written=bool(self.cycle_results),
+            final_model_path=final_state["final_model_dir"],
+            training_summary_path=self.output_dir / "training_summary.json",
+        )
         self.training_summary = summary
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         
@@ -504,6 +525,7 @@ class AudioRAFTTrainer:
         micro_steps = 0
         grad_accum = max(1, self.config.gradient_accumulation_steps)
         last_loss_value = 0.0
+        initial_loss_value = None
         skipped_batches_non_finite = 0
 
         for item in kept:
@@ -541,6 +563,8 @@ class AudioRAFTTrainer:
                 optimizer.zero_grad(set_to_none=True)
                 continue
 
+            if initial_loss_value is None:
+                initial_loss_value = float(loss.detach().item())
             (loss / grad_accum).backward()
             last_loss_value = float(loss.detach().item())
             micro_steps += 1
@@ -561,6 +585,7 @@ class AudioRAFTTrainer:
             return {
                 "train_steps_executed": 0,
                 "train_loss": None,
+                "initial_train_loss": initial_loss_value,
                 "weights_updated": False,
                 "update_reason": "no_optimizer_steps",
                 "optimizer_steps": 0,
@@ -570,6 +595,7 @@ class AudioRAFTTrainer:
         return {
             "train_steps_executed": optimizer_steps,
             "train_loss": total_loss / optimizer_steps if total_loss else 0.0,
+            "initial_train_loss": initial_loss_value,
             "weights_updated": True,
             "update_reason": "updated",
             "optimizer_steps": optimizer_steps,

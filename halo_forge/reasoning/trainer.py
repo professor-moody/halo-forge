@@ -16,6 +16,7 @@ from halo_forge.reasoning.data import MathSample
 from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
+    attach_effectiveness_contract,
     build_cycle_summary,
     build_training_summary,
     normalize_update_metrics,
@@ -444,6 +445,26 @@ class ReasoningRAFTTrainer:
             tokenizer=self.tokenizer,
         )
         summary["final_model_path"] = final_state["final_model_dir"]
+        attach_effectiveness_contract(
+            summary,
+            minimum_samples_kept=1,
+            minimum_optimizer_steps=1,
+            evaluation={
+                "metric_name": "accuracy",
+                "baseline_value": (
+                    self.metrics["cycle_accuracy"][0] if self.metrics["cycle_accuracy"] else None
+                ),
+                "final_value": (
+                    self.metrics["cycle_accuracy"][-1] if self.metrics["cycle_accuracy"] else None
+                ),
+                "higher_is_better": True,
+                "tolerance": 0.0,
+            },
+            evaluation_required=False,
+            checkpoint_written=bool(self._all_cycle_metrics),
+            final_model_path=final_state["final_model_dir"],
+            training_summary_path=self.output_dir / "training_summary.json",
+        )
         self.training_summary = summary
 
         write_json_atomic(self.output_dir / "training_summary.json", summary)

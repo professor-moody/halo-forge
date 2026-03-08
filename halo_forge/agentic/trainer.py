@@ -20,6 +20,7 @@ from halo_forge.agentic.data.formatters import HermesFormatter, create_training_
 from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
+    attach_effectiveness_contract,
     build_cycle_summary,
     build_training_summary,
     normalize_update_metrics,
@@ -333,6 +334,26 @@ class AgenticRAFTTrainer:
             tokenizer=self.tokenizer,
         )
         final_metrics["final_model_path"] = final_state["final_model_dir"]
+        attach_effectiveness_contract(
+            final_metrics,
+            minimum_samples_kept=1,
+            minimum_optimizer_steps=1,
+            evaluation={
+                "metric_name": "success_rate",
+                "baseline_value": (
+                    self.cycle_results[0].success_rate if self.cycle_results else None
+                ),
+                "final_value": (
+                    self.cycle_results[-1].success_rate if self.cycle_results else None
+                ),
+                "higher_is_better": True,
+                "tolerance": 0.0,
+            },
+            evaluation_required=False,
+            checkpoint_written=bool(self.cycle_results),
+            final_model_path=final_state["final_model_dir"],
+            training_summary_path=self.output_dir / "training_summary.json",
+        )
         self.training_summary = final_metrics
         
         # Save metrics summary

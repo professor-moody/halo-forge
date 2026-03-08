@@ -26,6 +26,7 @@ from halo_forge.vlm.data import VLMSample, load_vlm_dataset
 from halo_forge.capabilities import is_model_family_supported, get_supported_model_families
 from halo_forge.training_updates import run_text_supervised_updates
 from halo_forge.training_contracts import (
+    attach_effectiveness_contract,
     build_cycle_summary,
     build_training_summary,
     normalize_update_metrics,
@@ -342,6 +343,7 @@ class VLMRAFTTrainer:
         grad_accum = 1
         micro_steps = 0
         last_loss_value = 0.0
+        initial_loss_value = None
         skipped_batches_non_finite = 0
 
         for sample in samples[:8]:
@@ -392,6 +394,8 @@ class VLMRAFTTrainer:
                 optimizer.zero_grad(set_to_none=True)
                 continue
 
+            if initial_loss_value is None:
+                initial_loss_value = float(loss.detach().item())
             (loss / grad_accum).backward()
             last_loss_value = float(loss.detach().item())
             micro_steps += 1
@@ -429,6 +433,7 @@ class VLMRAFTTrainer:
         return {
             "train_steps_executed": optimizer_steps,
             "train_loss": (total_loss / optimizer_steps) if total_loss else 0.0,
+            "initial_train_loss": initial_loss_value,
             "weights_updated": optimizer_steps > 0,
             "update_reason": "updated" if optimizer_steps > 0 else "no_optimizer_steps",
             "optimizer_steps": optimizer_steps,
@@ -691,6 +696,26 @@ class VLMRAFTTrainer:
             extra_state={"best_avg_reward": self.best_reward},
         )
         summary["final_model_path"] = final_state["final_model_dir"]
+        attach_effectiveness_contract(
+            summary,
+            minimum_samples_kept=1,
+            minimum_optimizer_steps=1,
+            evaluation={
+                "metric_name": "avg_reward",
+                "baseline_value": (
+                    self.training_history[0].get("avg_reward") if self.training_history else None
+                ),
+                "final_value": (
+                    self.training_history[-1].get("avg_reward") if self.training_history else None
+                ),
+                "higher_is_better": True,
+                "tolerance": 0.0,
+            },
+            evaluation_required=False,
+            checkpoint_written=bool(self.training_history),
+            final_model_path=final_state["final_model_dir"],
+            training_summary_path=self.output_dir / "training_summary.json",
+        )
         write_json_atomic(self.output_dir / "training_summary.json", summary)
         return summary
 

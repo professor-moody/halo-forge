@@ -19,6 +19,7 @@ def test_training_contract_helpers_emit_stable_shapes():
     assert update == {
         "train_steps_executed": 0,
         "train_loss": None,
+        "initial_train_loss": None,
         "weights_updated": False,
         "update_reason": "no_filtered_samples",
         "optimizer_steps": 0,
@@ -42,6 +43,7 @@ def test_training_contract_helpers_emit_stable_shapes():
         "cycle_duration_seconds",
         "train_steps_executed",
         "train_loss",
+        "initial_train_loss",
         "weights_updated",
         "update_reason",
     }.issubset(cycle.keys())

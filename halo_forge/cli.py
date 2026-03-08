@@ -74,6 +74,20 @@ def _enforce_modality_train_contract(modality: str, args) -> None:
 
 def _enforce_training_outcome_or_exit(modality: str, summary: dict) -> None:
     """Fail non-zero when a train command produced no optimizer updates."""
+    effectiveness = summary.get("effectiveness")
+    if isinstance(effectiveness, dict) and effectiveness.get("verdict") == "fail":
+        reason_text = ",".join(effectiveness.get("reasons") or []) or "effectiveness_failed"
+        steps = int(summary.get("total_train_steps_executed", 0) or 0)
+        print(
+            f"{RED}TRAINING_CONTRACT_ERROR modality={modality} "
+            f"reason={reason_text} total_train_steps_executed={steps}{NC}"
+        )
+        print(
+            "Training completed but failed the effectiveness contract. "
+            "Check sample filtering, optimizer updates, artifact writes, and evaluation deltas."
+        )
+        sys.exit(2)
+
     if summary.get("weights_updated", False):
         return
 
@@ -103,6 +117,23 @@ def _print_training_run_metadata(summary: dict) -> None:
     resumed_from = summary.get("resumed_from_checkpoint")
     if isinstance(resumed_from, dict) and resumed_from.get("model_dir"):
         print(f"Resumed checkpoint: {resumed_from['model_dir']}")
+
+
+def _print_completed_training_summary(modality: str, output_dir: str, summary: dict) -> None:
+    """Print canonical post-train summary details."""
+    _enforce_training_outcome_or_exit(modality, summary)
+    print(f"\n{GREEN}Training complete!{NC}")
+    print(f"Output: {output_dir}")
+    if summary.get("final_model_path"):
+        print(f"Final model: {summary['final_model_path']}")
+    _print_training_run_metadata(summary)
+    print(f"Train steps executed: {int(summary.get('total_train_steps_executed', 0) or 0)}")
+    final_loss = summary.get("final_train_loss")
+    if isinstance(final_loss, (int, float)):
+        print(f"Final train loss: {final_loss:.4f}")
+    effectiveness = summary.get("effectiveness")
+    if isinstance(effectiveness, dict):
+        print(f"Effectiveness verdict: {effectiveness.get('verdict', 'unknown')}")
 
 
 # =============================================================================
@@ -537,7 +568,8 @@ def cmd_sft_train(args):
         return
     
     trainer = SFTTrainer(config)
-    trainer.train(resume_from_checkpoint=args.resume)
+    summary = trainer.train(resume_from_checkpoint=args.resume)
+    _print_completed_training_summary("sft", config.output_dir, summary)
 
 
 def cmd_sft_datasets(args):
@@ -3323,7 +3355,8 @@ def cmd_vlm_sft(args):
     )
     
     trainer = SFTTrainer(config)
-    trainer.train()
+    summary = trainer.train()
+    _print_completed_training_summary("vlm_sft", args.output, summary)
 
 
 def cmd_vlm_benchmark(args):
@@ -3517,7 +3550,8 @@ def cmd_audio_sft(args):
     )
     
     trainer = SFTTrainer(config)
-    trainer.train()
+    summary = trainer.train()
+    _print_completed_training_summary("audio_sft", args.output, summary)
 
 
 def cmd_audio_benchmark(args):
@@ -4396,7 +4430,8 @@ def cmd_reasoning_sft(args):
     )
     
     trainer = SFTTrainer(config)
-    trainer.train()
+    summary = trainer.train()
+    _print_completed_training_summary("reasoning_sft", args.output, summary)
 
 
 def cmd_reasoning_benchmark(args):
@@ -4652,7 +4687,8 @@ def cmd_agentic_sft(args):
     )
     
     trainer = SFTTrainer(config)
-    trainer.train()
+    summary = trainer.train()
+    _print_completed_training_summary("agentic_sft", args.output, summary)
 
 
 def cmd_agentic_benchmark(args):

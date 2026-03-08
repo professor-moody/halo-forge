@@ -32,6 +32,13 @@ from peft import (
     get_peft_model,
     prepare_model_for_kbit_training
 )
+from halo_forge.runtime_determinism import DEFAULT_TRAINING_SEED, build_run_id, set_global_seed
+from halo_forge.training_contracts import (
+    attach_effectiveness_contract,
+    build_cycle_summary,
+    build_training_summary,
+    write_json_atomic,
+)
 
 
 @dataclass
@@ -75,6 +82,7 @@ class SFTConfig:
     # Optimization
     bf16: bool = True
     gradient_checkpointing: bool = True
+    seed: int = DEFAULT_TRAINING_SEED
     
     # Saving
     save_steps: int = 500
@@ -149,6 +157,8 @@ class SFTTrainer:
         self.config = config or SFTConfig()
         self.model = None
         self.tokenizer = None
+        self.training_summary: Dict[str, Union[str, int, float, dict, list, None]] = {}
+        self.run_id: str = ""
     
     def check_environment(self):
         """Verify ROCm/PyTorch environment."""
@@ -242,13 +252,13 @@ class SFTTrainer:
             
             # Apply max_samples limit
             if self.config.max_samples and len(dataset) > self.config.max_samples:
-                dataset = dataset.shuffle(seed=42).select(range(self.config.max_samples))
+                dataset = dataset.shuffle(seed=self.config.seed).select(range(self.config.max_samples))
                 print(f"Limited to {self.config.max_samples} samples")
         else:
             raise ValueError("Either dataset or train_file must be specified")
         
         # Shuffle and split
-        dataset = dataset.shuffle(seed=42)
+        dataset = dataset.shuffle(seed=self.config.seed)
         
         split_idx = int(len(dataset) * (1 - self.config.validation_split))
         train_dataset = dataset.select(range(split_idx))
@@ -429,6 +439,8 @@ class SFTTrainer:
         print()
         
         cfg = self.config
+        cfg.seed = set_global_seed(cfg.seed)
+        self.run_id = build_run_id("sft")
         
         # Environment check
         self.check_environment()
@@ -563,7 +575,7 @@ class SFTTrainer:
         if resume_from_checkpoint:
             print(f"Resuming from: {resume_from_checkpoint}")
         
-        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         
         print()
         print("=" * 70)
@@ -585,6 +597,92 @@ class SFTTrainer:
             peak_memory = torch.cuda.max_memory_allocated(0) / 1e9
             print(f"Peak memory usage: {peak_memory:.2f} GB")
             print()
-        
-        return str(final_output)
 
+        log_history = list(getattr(trainer.state, "log_history", []))
+        train_loss_points = [
+            float(entry["loss"])
+            for entry in log_history
+            if isinstance(entry, dict) and isinstance(entry.get("loss"), (int, float))
+        ]
+        eval_loss_points = [
+            float(entry["eval_loss"])
+            for entry in log_history
+            if isinstance(entry, dict) and isinstance(entry.get("eval_loss"), (int, float))
+        ]
+        total_train_steps = int(
+            getattr(train_result, "global_step", 0)
+            or getattr(train_result, "metrics", {}).get("global_step", 0)
+            or 0
+        )
+        final_train_loss = (
+            train_loss_points[-1]
+            if train_loss_points
+            else (
+                float(train_result.training_loss)
+                if isinstance(getattr(train_result, "training_loss", None), (int, float))
+                else None
+            )
+        )
+        initial_train_loss = train_loss_points[0] if train_loss_points else final_train_loss
+        cycle_summary = build_cycle_summary(
+            cycle=0,
+            learning_rate=cfg.learning_rate,
+            samples_seen=len(train_dataset),
+            samples_kept=len(train_dataset),
+            cycle_duration_seconds=float(
+                getattr(train_result, "metrics", {}).get("train_runtime", 0.0) or 0.0
+            ),
+            update_metrics={
+                "train_steps_executed": total_train_steps,
+                "train_loss": final_train_loss,
+                "initial_train_loss": initial_train_loss,
+                "weights_updated": total_train_steps > 0,
+                "update_reason": "updated" if total_train_steps > 0 else "no_optimizer_steps",
+                "optimizer_steps": total_train_steps,
+                "skipped_batches_non_finite": 0,
+            },
+            extra={
+                "train_examples": len(train_dataset),
+                "validation_examples": len(val_dataset),
+                "eval_loss": eval_loss_points[-1] if eval_loss_points else None,
+            },
+        )
+        summary = build_training_summary(
+            modality="sft",
+            model_name=cfg.model_name,
+            total_cycles_planned=1,
+            cycles=[cycle_summary],
+            run_id=self.run_id,
+            seed=cfg.seed,
+            base_model_name=cfg.model_name,
+            active_model_name=cfg.model_name,
+            extra={
+                "dataset": dataset or cfg.dataset or "",
+                "train_file": train_file or cfg.train_file or "",
+                "train_examples": len(train_dataset),
+                "validation_examples": len(val_dataset),
+                "eval_loss": eval_loss_points[-1] if eval_loss_points else None,
+                "resume_from_checkpoint": resume_from_checkpoint or "",
+            },
+        )
+        summary["final_model_path"] = str(final_output)
+        attach_effectiveness_contract(
+            summary,
+            minimum_samples_kept=max(1, len(train_dataset)),
+            minimum_optimizer_steps=1,
+            evaluation={
+                "metric_name": "eval_loss",
+                "baseline_value": eval_loss_points[0] if eval_loss_points else None,
+                "final_value": eval_loss_points[-1] if eval_loss_points else None,
+                "higher_is_better": False,
+                "tolerance": 0.0,
+            },
+            evaluation_required=False,
+            checkpoint_written=any(Path(cfg.output_dir).glob("checkpoint-*")),
+            final_model_path=str(final_output),
+            training_summary_path=Path(cfg.output_dir) / "training_summary.json",
+        )
+        write_json_atomic(Path(cfg.output_dir) / "training_summary.json", summary)
+        self.training_summary = summary
+
+        return summary
