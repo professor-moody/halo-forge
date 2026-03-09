@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "halo-forge public",
-  description: "Public training, monitoring, results, and readiness surface for halo-forge.",
+  title: "halo-forge",
+  description: "Training, monitoring, results, and readiness for halo-forge.",
 };
 
 export default function RootLayout({
@@ -13,8 +15,10 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className="dark">
+      <body className={`${GeistSans.variable} ${GeistMono.variable} font-sans antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }

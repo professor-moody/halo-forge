@@ -76,6 +76,43 @@ def test_results_page_consumes_service_and_has_no_demo_or_filesystem_parsing():
     assert "No benchmark results found" in source
 
 
+def test_results_domain_table_has_single_actions_header():
+    """Domain result header should render one Actions column to preserve alignment."""
+    source = Path("ui/pages/results.py").read_text(encoding="utf-8")
+    domain_block = re.search(
+        r"def _render_domain_table\(self, domain: str, rows: list\[BenchmarkResult\]\):(.*?)for result in rows:",
+        source,
+        re.DOTALL,
+    )
+    assert domain_block
+    assert domain_block.group(1).count('ui.label("Actions")') == 1
+    assert 'ui.label("Actions").classes(\n                    f\'w-36' in source
+
+
+def test_results_service_inferrs_model_and_benchmark_from_path_for_legacy_audio_outputs(tmp_path):
+    """Legacy audio outputs without explicit model/benchmark fields should still normalize cleanly."""
+    target = tmp_path / "results/benchmarks/whisper-tiny-librispeech/benchmark.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(
+            {
+                "success_rate": 1.0,
+                "average_reward": 0.95,
+                "average_wer": 0.04,
+                "samples": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    service = ResultsService(base_path=tmp_path)
+    items = service.list_results(force_refresh=True)
+    assert len(items) == 1
+    assert items[0].model == "whisper-tiny"
+    assert items[0].benchmark == "librispeech"
+    assert items[0].domain == "audio"
+
+
 def test_dashboard_benchmark_quick_action_routes_to_benchmark_page():
     """Dashboard quick action should navigate directly to /benchmark."""
     source = Path("ui/pages/dashboard.py").read_text(encoding="utf-8")

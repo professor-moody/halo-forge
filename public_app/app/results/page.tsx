@@ -1,5 +1,5 @@
-import { AppShell, ActionLink } from "../../components/ui";
-import { apiGet } from "../../lib/api";
+import { AppShell, ActionLink } from "@/components/app-ui";
+import { apiGet } from "@/lib/api";
 import { ResultsClient } from "./results-client";
 
 type ResultsResponse = {
@@ -38,10 +38,9 @@ export default async function ResultsPage() {
   return (
     <AppShell
       title="Results"
-      subtitle="Review completed runs by outcome, cause, and next action without digging through raw training artifacts."
+      subtitle="Completed runs by outcome, cause, and next action."
       statusItems={[
-        { label: "Completed runs", value: String(payload.items.length), tone: "neutral" },
-        { label: "Review focus", value: "outcomes", tone: "success" },
+        { label: "Completed", value: String(payload.items.length), tone: "neutral" },
       ]}
       headerActions={<ActionLink href="/train" label="Start training" tone="primary" />}
     >

@@ -1,5 +1,8 @@
-import { ActionLink, AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
-import { apiGet } from "../../lib/api";
+import { ActionLink, AppShell, EmptyState, SectionCard, StatusBadge } from "@/components/app-ui";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { apiGet } from "@/lib/api";
 
 type DocsResponse = {
   items: Array<{
@@ -25,39 +28,37 @@ export default async function DocsPage() {
   return (
     <AppShell
       title="Docs"
-      subtitle="Product guidance and capability references backed by repo-truth summaries and qualification-aware language."
+      subtitle="Product guidance and capability references."
       statusItems={[
-        { label: "Docs indexed", value: String(payload.items.length), tone: "neutral" },
-        { label: "Source", value: "repo truth", tone: "success" },
+        { label: "Indexed", value: String(payload.items.length), tone: "neutral" },
       ]}
       headerActions={<ActionLink href="/readiness" label="View readiness" tone="secondary" />}
     >
-      <SectionCard title="Documentation catalog" subtitle="Core references grouped like software documentation, not long-form marketing content." eyebrow="Docs">
+      <SectionCard title="Documentation catalog" eyebrow="Docs">
         {payload.items.length ? (
-          <div className="docs-grid">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {payload.items.map((item) => (
-              <article key={item.slug} className="doc-card">
-                <div className="row-main">
-                  <div>
-                    <h3>{item.title}</h3>
-                    <div className="doc-meta">{item.source_path}</div>
+              <Card key={item.slug}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-medium text-foreground">{item.title}</h3>
+                    <Badge variant={item.audience === "product" ? "success" : "secondary"} className="shrink-0">
+                      {item.audience}
+                    </Badge>
                   </div>
-                  <StatusChip tone={item.audience === "product" ? "success" : "neutral"} label={item.audience} />
-                </div>
-                <p>{item.summary}</p>
-                <div className="button-row">
-                  <a className="secondary-button" href={item.doc_url}>
-                    Open docs
-                  </a>
-                </div>
-              </article>
+                  <div className="text-xs text-muted-foreground mt-1">{item.source_path}</div>
+                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{item.summary}</p>
+                  <div className="mt-3">
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={item.doc_url}>Open docs</a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         ) : (
-          <EmptyState
-            title="No docs indexed"
-            body="The public docs summaries could not be loaded from repo-hosted sources."
-          />
+          <EmptyState title="No docs indexed" body="Public docs could not be loaded." />
         )}
       </SectionCard>
     </AppShell>

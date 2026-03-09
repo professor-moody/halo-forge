@@ -2,14 +2,18 @@
 
 import { useEffect, useState } from "react";
 
-import { apiGet, apiPost } from "../../lib/api";
+import { apiGet, apiPost } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   ActionLink,
   ActionButton,
-  InlineCallout,
-  MetricTile,
+  Callout,
+  MetricRow,
   SectionCard,
-} from "../../components/ui";
+} from "@/components/app-ui";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 type Preset = {
   key: string;
@@ -75,9 +79,7 @@ export function TrainClient() {
 
   function applyPreset(key: string) {
     const preset = presets.find((item) => item.key === key);
-    if (!preset) {
-      return;
-    }
+    if (!preset) return;
     setSelectedPreset(key);
     setPreflight(null);
     setLaunchError("");
@@ -116,7 +118,7 @@ export function TrainClient() {
     mode === "sft"
       ? "Max samples"
       : mode === "raft"
-        ? "Samples per prompt"
+        ? "Samples / prompt"
         : "Dataset limit";
   const highlightedFields = new Set(
     preflight?.suggested_fixes.some(Boolean)
@@ -125,44 +127,44 @@ export function TrainClient() {
   );
 
   return (
-    <div className="split-layout">
-      <div className="stack-tight">
-        <SectionCard
-          title="Choose a run profile"
-          subtitle="Presets should feel like product modes. Start with one, then tune only what matters."
-          eyebrow="Quickstart"
-        >
-          <div className="segmented-preset-list">
+    <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)] gap-4 items-start">
+      <div className="space-y-3">
+        <SectionCard title="Run profile" eyebrow="Quickstart">
+          <div className="flex flex-wrap gap-1.5">
             {presets.map((preset) => (
               <button
                 key={preset.key}
                 type="button"
-                className={
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-sm text-left border transition-colors",
                   preset.key === selectedPreset
-                    ? "segmented-preset is-active"
-                    : "segmented-preset"
-                }
+                    ? "bg-accent border-primary/40 text-foreground font-medium"
+                    : "border-border text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                )}
                 onClick={() => applyPreset(preset.key)}
               >
-                <strong>{preset.label}</strong>
-                <small>{preset.description}</small>
+                <span className="font-medium text-foreground">{preset.label}</span>
+                <span className="block text-xs text-muted-foreground mt-0.5">{preset.description}</span>
               </button>
             ))}
           </div>
         </SectionCard>
 
-        <SectionCard
-          title="Run configuration"
-          subtitle="The launch controls are grouped by what the user is deciding, not by raw trainer parameters."
-          eyebrow="Configuration"
-        >
-          <div className="stack-tight">
-            <div className="config-block">
-              <h3>Required inputs</h3>
-              <div className="field-grid">
-                <div className="field">
-                  <label>Mode</label>
-                  <select value={mode} onChange={(event) => updateField("mode", event.target.value)}>
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="text-xs font-medium text-muted-foreground">Configuration</div>
+            <CardTitle className="text-sm">Run configuration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <h3 className="text-sm font-medium text-foreground mb-2">Required inputs</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <FieldGroup label="Mode">
+                  <select
+                    value={mode}
+                    onChange={(e) => updateField("mode", e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
                     <option value="sft">SFT</option>
                     <option value="raft">RAFT</option>
                     <option value="vlm">VLM</option>
@@ -170,168 +172,153 @@ export function TrainClient() {
                     <option value="reasoning">Reasoning</option>
                     <option value="agentic">Agentic</option>
                   </select>
-                </div>
-                <div className="field">
-                  <label>Model</label>
-                  <input
+                </FieldGroup>
+                <FieldGroup label="Model">
+                  <Input
                     value={String(form.model ?? "")}
-                    onChange={(event) => updateField("model", event.target.value)}
+                    onChange={(e) => updateField("model", e.target.value)}
                   />
-                </div>
-                <div className="field">
-                  <label>{mode === "raft" ? "Prompts" : "Dataset"}</label>
-                  <input
+                </FieldGroup>
+                <FieldGroup label={mode === "raft" ? "Prompts" : "Dataset"}>
+                  <Input
                     value={String(form[datasetField] ?? "")}
-                    onChange={(event) => updateField(datasetField, event.target.value)}
+                    onChange={(e) => updateField(datasetField, e.target.value)}
                   />
-                </div>
-                <div className="field">
-                  <label>Output directory</label>
-                  <input
+                </FieldGroup>
+                <FieldGroup label="Output directory">
+                  <Input
                     value={String(form.output_dir ?? "")}
-                    onChange={(event) => updateField("output_dir", event.target.value)}
+                    onChange={(e) => updateField("output_dir", e.target.value)}
                   />
-                </div>
+                </FieldGroup>
               </div>
             </div>
 
-            <div className="config-block">
-              <h3>Run shape</h3>
-              <p>These settings control the amount of work the run will attempt before you inspect the outcome.</p>
-              <div className="field-grid compact">
-                <div className="field">
-                  <label>{runShapeLabel}</label>
-                  <input
+            <div>
+              <h3 className="text-sm font-medium text-foreground mb-1">Run shape</h3>
+              <p className="text-xs text-muted-foreground mb-2">Controls the amount of work before inspection.</p>
+              <div className="grid grid-cols-3 gap-3">
+                <FieldGroup label={runShapeLabel}>
+                  <Input
                     value={numberInputValue(form[runShapeField] ?? (mode === "sft" ? "1" : "2"))}
-                    onChange={(event) => updateField(runShapeField, Number(event.target.value))}
+                    onChange={(e) => updateField(runShapeField, Number(e.target.value))}
                   />
-                </div>
-                <div className="field">
-                  <label>{budgetLabel}</label>
-                  <input
+                </FieldGroup>
+                <FieldGroup label={budgetLabel}>
+                  <Input
                     value={numberInputValue(form[budgetField] ?? "")}
-                    onChange={(event) => updateField(budgetField, Number(event.target.value))}
+                    onChange={(e) => updateField(budgetField, Number(e.target.value))}
                   />
-                </div>
-                <div className="field">
-                  <label>{mode === "sft" ? "Batch size" : "Keep percent"}</label>
-                  <input
+                </FieldGroup>
+                <FieldGroup label={mode === "sft" ? "Batch size" : "Keep percent"}>
+                  <Input
                     value={numberInputValue(mode === "sft" ? form.batch_size ?? "2" : form.keep_percent ?? "0.5")}
-                    onChange={(event) =>
-                      updateField(
-                        mode === "sft" ? "batch_size" : "keep_percent",
-                        Number(event.target.value),
-                      )
+                    onChange={(e) =>
+                      updateField(mode === "sft" ? "batch_size" : "keep_percent", Number(e.target.value))
                     }
                   />
-                </div>
+                </FieldGroup>
               </div>
             </div>
 
-            <div className="config-block">
-              <h3>Quality-sensitive knobs</h3>
-              <p>Only change these if the launch review tells you the first configuration is too weak or too strict.</p>
-              <div className="field-grid compact">
+            <div>
+              <h3 className="text-sm font-medium text-foreground mb-1">Quality-sensitive knobs</h3>
+              <p className="text-xs text-muted-foreground mb-2">Only change if the launch review recommends it.</p>
+              <div className="grid grid-cols-2 gap-3">
                 {mode === "sft" ? (
                   <>
-                    <div className={highlightedFields.has("learning_rate") ? "field is-highlighted" : "field"}>
-                      <label>Learning rate</label>
-                      <input
+                    <FieldGroup
+                      label="Learning rate"
+                      highlighted={highlightedFields.has("learning_rate")}
+                    >
+                      <Input
                         value={numberInputValue(form.learning_rate ?? "0.0002")}
-                        onChange={(event) => updateField("learning_rate", Number(event.target.value))}
+                        onChange={(e) => updateField("learning_rate", Number(e.target.value))}
                       />
-                    </div>
-                    <div className="field">
-                      <label>Gradient accumulation</label>
-                      <input
+                    </FieldGroup>
+                    <FieldGroup label="Gradient accumulation">
+                      <Input
                         value={numberInputValue(form.gradient_accumulation_steps ?? "4")}
-                        onChange={(event) =>
-                          updateField("gradient_accumulation_steps", Number(event.target.value))
-                        }
+                        onChange={(e) => updateField("gradient_accumulation_steps", Number(e.target.value))}
                       />
-                    </div>
+                    </FieldGroup>
                   </>
                 ) : (
                   <>
-                    <div className={highlightedFields.has("reward_threshold") ? "field is-highlighted" : "field"}>
-                      <label>Reward threshold</label>
-                      <input
+                    <FieldGroup
+                      label="Reward threshold"
+                      highlighted={highlightedFields.has("reward_threshold")}
+                    >
+                      <Input
                         value={numberInputValue(form.reward_threshold ?? "0.5")}
-                        onChange={(event) => updateField("reward_threshold", Number(event.target.value))}
+                        onChange={(e) => updateField("reward_threshold", Number(e.target.value))}
                       />
-                    </div>
-                    <div className="field">
-                      <label>Temperature</label>
-                      <input
+                    </FieldGroup>
+                    <FieldGroup label="Temperature">
+                      <Input
                         value={numberInputValue(form.temperature ?? "0.7")}
-                        onChange={(event) => updateField("temperature", Number(event.target.value))}
+                        onChange={(e) => updateField("temperature", Number(e.target.value))}
                       />
-                    </div>
+                    </FieldGroup>
                   </>
                 )}
               </div>
             </div>
-          </div>
-        </SectionCard>
+          </CardContent>
+        </Card>
       </div>
 
-      <aside className="review-column">
-        <SectionCard
-          title="Launch review"
-          subtitle="This panel explains what the selected run is for and whether the current configuration looks safe enough to try."
-          eyebrow="Run profile"
-        >
-          <div className="stack-tight">
-            <InlineCallout
+      <aside className="space-y-3 sticky top-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="text-xs font-medium text-muted-foreground">Run profile</div>
+            <CardTitle className="text-sm">Launch review</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Callout
               title={activePreset?.label ?? "No preset selected"}
-              body={activePreset?.description ?? "Choose a preset to load a supported starting configuration."}
+              body={activePreset?.description ?? "Choose a preset to load a starting configuration."}
               tone="neutral"
             />
-            <div className="metric-grid">
-              <MetricTile label="Mode" value={mode.toUpperCase()} meta="Training path selected for this run" />
-              <MetricTile label="Runtime" value={activePreset?.expected_runtime ?? "unknown"} meta="Expected run size from the preset" />
-              <MetricTile label="Yield safety" value={activePreset?.yield_safety ?? "unknown"} meta="How conservative the preset is about data yield" />
+            <div className="rounded-md border border-border divide-y divide-border">
+              <MetricRow label="Mode" value={mode.toUpperCase()} />
+              <MetricRow label="Runtime" value={activePreset?.expected_runtime ?? "unknown"} />
+              <MetricRow label="Yield safety" value={activePreset?.yield_safety ?? "unknown"} />
             </div>
-            <InlineCallout
-              title="When to use this"
-              body={activePreset?.when_to_use ?? "Preset guidance will appear here when a preset is selected."}
+            <Callout
+              title="When to use"
+              body={activePreset?.when_to_use ?? "Preset guidance appears when a preset is selected."}
               tone="success"
             />
-            <div className="config-block">
-              <h3>Expected outputs</h3>
-              <div className="field-grid compact">
-                <div className="row-detail">
-                  <div className="cell-label">Model</div>
-                  <strong>{String(form.model ?? "—")}</strong>
-                </div>
-                <div className="row-detail">
-                  <div className="cell-label">Dataset</div>
-                  <strong>{String(form[datasetField] ?? "—")}</strong>
-                </div>
-                <div className="row-detail">
-                  <div className="cell-label">Output</div>
-                  <strong>{String(form.output_dir ?? "—")}</strong>
-                </div>
+            <div className="rounded-md border border-border divide-y divide-border">
+              <MetricRow label="Model" value={String(form.model ?? "—")} />
+              <MetricRow label="Dataset" value={String(form[datasetField] ?? "—")} />
+              <MetricRow label="Output" value={String(form.output_dir ?? "—")} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">Recommendation</div>
+                <CardTitle className="text-sm mt-1">Launch outlook</CardTitle>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => void runPreflight()}>
+                  Review
+                </Button>
+                <Button size="sm" onClick={() => void launchRun()}>
+                  Start run
+                </Button>
               </div>
             </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Launch outlook"
-          subtitle="Review the current risk summary before you commit the run."
-          eyebrow="Recommendation"
-          actions={
-            <div className="button-row">
-              <ActionButton label="Review launch" tone="secondary" onClick={() => void runPreflight()} />
-              <ActionButton label="Start run" tone="primary" onClick={() => void launchRun()} />
-            </div>
-          }
-        >
-          <div className="stack-tight">
+          </CardHeader>
+          <CardContent className="space-y-3">
             {preflight ? (
               <>
-                <InlineCallout
+                <Callout
                   title={preflight.user_summary.headline}
                   body={preflight.user_summary.why_it_matters}
                   tone={
@@ -342,51 +329,36 @@ export function TrainClient() {
                         : "success"
                   }
                 />
-                <div className="metric-grid">
-                  <MetricTile label="Recommended next step" value={preflight.user_summary.next_step} />
-                  <MetricTile
-                    label="Recommended adjustment"
-                    value={preflight.details.recommended_adjustment ?? "None"}
-                  />
+                <div className="rounded-md border border-border divide-y divide-border">
+                  <MetricRow label="Next step" value={preflight.user_summary.next_step} />
+                  <MetricRow label="Adjustment" value={preflight.details.recommended_adjustment ?? "None"} />
                 </div>
                 {preflight.errors.length ? (
-                  <InlineCallout
-                    title="Errors found"
-                    body={preflight.errors.join(" ")}
-                    tone="danger"
-                  />
+                  <Callout title="Errors" body={preflight.errors.join(" ")} tone="danger" />
                 ) : null}
                 {preflight.warnings.length ? (
-                  <InlineCallout
-                    title="Warnings"
-                    body={preflight.warnings.join(" ")}
-                    tone="warning"
-                  />
+                  <Callout title="Warnings" body={preflight.warnings.join(" ")} tone="warning" />
                 ) : null}
                 {preflight.suggested_fixes.length ? (
-                  <InlineCallout
-                    title="Suggested fixes"
-                    body={preflight.suggested_fixes.join(" ")}
-                    tone="neutral"
-                  />
+                  <Callout title="Suggested fixes" body={preflight.suggested_fixes.join(" ")} tone="neutral" />
                 ) : null}
               </>
             ) : (
-              <InlineCallout
-                title="No launch review yet"
-                body="Run a launch review to see quality risk, recommended next step, and any fixable issues before you start."
+              <Callout
+                title="No review yet"
+                body="Run a launch review to see risk, next step, and fixable issues."
                 tone="neutral"
               />
             )}
 
             {launchError ? (
-              <InlineCallout title="Launch failed" body={launchError} tone="danger" />
+              <Callout title="Launch failed" body={launchError} tone="danger" />
             ) : null}
 
             {launchedRunId ? (
-              <InlineCallout
+              <Callout
                 title="Run started"
-                body="The launch succeeded. Open the run monitor to track progress and recovery guidance."
+                body="Launch succeeded. Open the run monitor to track progress."
                 tone="success"
                 actions={
                   <ActionLink
@@ -397,9 +369,28 @@ export function TrainClient() {
                 }
               />
             ) : null}
-          </div>
-        </SectionCard>
+          </CardContent>
+        </Card>
       </aside>
+    </div>
+  );
+}
+
+function FieldGroup({
+  label,
+  highlighted,
+  children,
+}: {
+  label: string;
+  highlighted?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className={cn("text-xs font-medium", highlighted ? "text-primary" : "text-muted-foreground")}>
+        {label}
+      </label>
+      {children}
     </div>
   );
 }

@@ -4,11 +4,20 @@ import {
   ActionLink,
   AppShell,
   EmptyState,
-  MetricTile,
   SectionCard,
-  StatusChip,
-} from "../components/ui";
-import { apiGet } from "../lib/api";
+  StatusBadge,
+} from "@/components/app-ui";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { apiGet } from "@/lib/api";
 
 type DashboardResponse = {
   readiness_tier: string;
@@ -63,9 +72,7 @@ async function getDashboard() {
 }
 
 function percent(value?: number | null) {
-  if (typeof value !== "number") {
-    return "—";
-  }
+  if (typeof value !== "number") return "—";
   return `${Math.round(value * 100)}%`;
 }
 
@@ -75,10 +82,10 @@ export default async function HomePage() {
   return (
     <AppShell
       title="Overview"
-      subtitle="See live work, qualification truth, and the runs that need action without digging through diagnostics."
+      subtitle="Live work, qualification status, and runs that need action."
       statusItems={[
         {
-          label: "Qualification status",
+          label: "Qualification",
           value: dashboard?.readiness_tier ?? "unavailable",
           tone:
             dashboard?.readiness_tier === "production_ready"
@@ -88,165 +95,146 @@ export default async function HomePage() {
                 : "neutral",
         },
         {
-          label: "Active runs",
+          label: "Active",
           value: String(dashboard?.active_runs_count ?? 0),
           tone: "neutral",
         },
         {
-          label: "Needs attention",
+          label: "Attention",
           value: String(dashboard?.attention_count ?? 0),
           tone: (dashboard?.attention_count ?? 0) > 0 ? "warning" : "success",
         },
       ]}
       headerActions={
-        <div className="action-strip">
+        <div className="flex gap-2">
           <ActionLink href="/train" label="Start training" tone="primary" />
           <ActionLink href="/results" label="Review outcomes" tone="secondary" />
         </div>
       }
     >
-      <SectionCard
-        title="System summary"
-        subtitle="The product should tell you where the work is, what the system trusts, and what to do next."
-        eyebrow="Control center"
-        className="surface-hero"
-      >
-        <div className="summary-strip">
-          <MetricTile
-            label="Readiness"
-            value={dashboard?.readiness_tier ?? "unavailable"}
-            meta={dashboard?.generated_at ? `Updated ${dashboard.generated_at}` : "Qualification data unavailable"}
-          />
-          <MetricTile
-            label="Production ready"
-            value={`${dashboard?.production_ready_count ?? 0}/${dashboard?.modality_count ?? 0}`}
-            meta="Modalities passing deterministic launch, update, artifact, resume, and eval checks"
-          />
-          <MetricTile
-            label="Active runs"
-            value={String(dashboard?.active_runs_count ?? 0)}
-            meta="Jobs that are still consuming compute or attention"
-          />
-          <MetricTile
-            label="Needs attention"
-            value={String(dashboard?.attention_count ?? 0)}
-            meta="Low-yield, failed, or recovery-ready runs"
-          />
-        </div>
-      </SectionCard>
-
-      <div className="dashboard-grid">
-        <SectionCard title="Active runs" subtitle="Running or pending jobs, with the minimum context needed to decide whether to keep watching or intervene.">
-          <div className="data-table">
-            {dashboard?.active_runs.length ? (
-              dashboard.active_runs.map((run) => (
-                <Link key={run.id} href={`/runs/${encodeURIComponent(run.id)}`} className="data-row">
-                  <div className="row-main">
-                    <div className="row-title">
-                      <h3>{run.modality.toUpperCase()} · {run.model_name}</h3>
-                      <p>{run.headline}</p>
-                    </div>
-                    <StatusChip
-                      tone={run.status === "running" ? "success" : "warning"}
-                      label={run.status}
-                    />
-                  </div>
-                  <div className="row-metrics">
-                    <div className="row-detail">
-                      <div className="cell-label">Progress</div>
-                      <strong>{run.metrics_summary.progress_percent.toFixed(1)}%</strong>
-                    </div>
-                    <div className="row-detail">
-                      <div className="cell-label">Update steps</div>
-                      <strong>{run.metrics_summary.update_steps}</strong>
-                    </div>
-                    <div className="row-detail">
-                      <div className="cell-label">Keep rate</div>
-                      <strong>{percent(run.metrics_summary.keep_rate)}</strong>
-                    </div>
-                    <div className="row-detail">
-                      <div className="cell-label">Recommended next step</div>
-                      <strong>{run.next_step}</strong>
-                    </div>
-                  </div>
-                </Link>
-              ))
-            ) : (
-              <EmptyState
-                title="No active runs"
-                body="Start a run from Training or review completed outcomes below."
-              />
-            )}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">System summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-4 gap-4">
+            <Stat label="Readiness" value={dashboard?.readiness_tier ?? "unavailable"} sub={dashboard?.generated_at ? `Updated ${dashboard.generated_at}` : undefined} />
+            <Stat label="Production ready" value={`${dashboard?.production_ready_count ?? 0}/${dashboard?.modality_count ?? 0}`} sub="Modalities passing all checks" />
+            <Stat label="Active runs" value={String(dashboard?.active_runs_count ?? 0)} sub="Consuming compute" />
+            <Stat label="Needs attention" value={String(dashboard?.attention_count ?? 0)} sub="Low-yield or failed" />
           </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-[1.4fr_1fr] gap-4">
+        <SectionCard title="Active runs" subtitle="Running or pending jobs.">
+          {dashboard?.active_runs.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Run</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Progress</TableHead>
+                  <TableHead className="text-right">Steps</TableHead>
+                  <TableHead className="text-right">Keep rate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dashboard.active_runs.map((run) => (
+                  <TableRow key={run.id}>
+                    <TableCell>
+                      <Link href={`/runs/${encodeURIComponent(run.id)}`} className="hover:underline">
+                        <span className="font-medium">{run.modality.toUpperCase()}</span>
+                        <span className="text-muted-foreground"> · {run.model_name}</span>
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={run.status === "running" ? "success" : "warning"}>{run.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{run.metrics_summary.progress_percent.toFixed(1)}%</TableCell>
+                    <TableCell className="text-right tabular-nums">{run.metrics_summary.update_steps}</TableCell>
+                    <TableCell className="text-right tabular-nums">{percent(run.metrics_summary.keep_rate)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState title="No active runs" body="Start a run from Training." />
+          )}
         </SectionCard>
 
-        <SectionCard title="Needs attention" subtitle="The small set of runs that currently deserve a closer look or a recovery action.">
-          <div className="attention-grid">
-            {dashboard?.attention_items.length ? (
-              dashboard.attention_items.map((item) => (
-                <Link key={item.id} href={`/runs/${encodeURIComponent(item.id)}`} className="attention-card">
-                  <div className="row-main">
-                    <div className="row-title">
-                      <h3>{item.modality.toUpperCase()} · {item.headline}</h3>
-                      <p>{item.why_it_matters}</p>
+        <SectionCard title="Needs attention" subtitle="Runs requiring a closer look.">
+          {dashboard?.attention_items.length ? (
+            <div className="space-y-1.5">
+              {dashboard.attention_items.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/runs/${encodeURIComponent(item.id)}`}
+                  className="block rounded-md border border-border border-l-2 border-l-amber-500 px-3 py-2 hover:bg-accent/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-medium">{item.modality.toUpperCase()} · {item.headline}</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.why_it_matters}</p>
                     </div>
-                    <StatusChip tone={item.confidence_tone} label={item.next_step} />
+                    <Badge variant="warning" className="shrink-0">{item.next_step}</Badge>
                   </div>
                 </Link>
-              ))
-            ) : (
-              <EmptyState
-                title="No urgent intervention"
-                body="The current run set is not surfacing high-priority recovery issues."
-              />
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No urgent items" body="No high-priority recovery issues." />
+          )}
         </SectionCard>
       </div>
 
-      <SectionCard
-        title="Recent outcomes"
-        subtitle="Completed runs distilled to outcome, cause, and next action."
-      >
-        <div className="data-table">
-          {dashboard?.recent_outcomes.length ? (
-            dashboard.recent_outcomes.map((run) => (
-              <Link key={run.id} href={`/runs/${encodeURIComponent(run.id)}`} className="data-row">
-                <div className="row-main">
-                  <div className="row-title">
-                    <h3>{run.modality.toUpperCase()} · {run.model_name}</h3>
-                    <p>{run.user_summary.why_it_matters}</p>
-                  </div>
-                  <StatusChip tone={run.user_summary.confidence_tone} label={run.headline} />
-                </div>
-                <div className="row-metrics">
-                  <div className="row-detail">
-                    <div className="cell-label">Top issue</div>
-                    <strong>{run.top_issue ?? "—"}</strong>
-                  </div>
-                  <div className="row-detail">
-                    <div className="cell-label">Next step</div>
-                    <strong>{run.next_step}</strong>
-                  </div>
-                  <div className="row-detail">
-                    <div className="cell-label">Update steps</div>
-                    <strong>{run.metrics_summary.update_steps}</strong>
-                  </div>
-                  <div className="row-detail">
-                    <div className="cell-label">Final loss</div>
-                    <strong>{run.metrics_summary.final_train_loss ?? "—"}</strong>
-                  </div>
-                </div>
-              </Link>
-            ))
-          ) : (
-            <EmptyState
-              title="No completed outcomes yet"
-              body="Once training summaries land, this becomes the fastest way to review what happened."
-            />
-          )}
-        </div>
+      <SectionCard title="Recent outcomes" subtitle="Completed runs distilled to outcome and next action.">
+        {dashboard?.recent_outcomes.length ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Run</TableHead>
+                <TableHead>Outcome</TableHead>
+                <TableHead>Top issue</TableHead>
+                <TableHead>Next step</TableHead>
+                <TableHead className="text-right">Steps</TableHead>
+                <TableHead className="text-right">Final loss</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {dashboard.recent_outcomes.map((run) => (
+                <TableRow key={run.id}>
+                  <TableCell>
+                    <Link href={`/runs/${encodeURIComponent(run.id)}`} className="hover:underline">
+                      <span className="font-medium">{run.modality.toUpperCase()}</span>
+                      <span className="text-muted-foreground"> · {run.model_name}</span>
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge tone={run.user_summary.confidence_tone} label={run.headline} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{run.top_issue ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{run.next_step}</TableCell>
+                  <TableCell className="text-right tabular-nums">{run.metrics_summary.update_steps}</TableCell>
+                  <TableCell className="text-right tabular-nums">{run.metrics_summary.final_train_loss ?? "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <EmptyState title="No completed outcomes" body="Outcomes appear here after training summaries are written." />
+        )}
       </SectionCard>
     </AppShell>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold text-foreground mt-0.5">{value}</div>
+      {sub ? <div className="text-xs text-muted-foreground mt-0.5">{sub}</div> : null}
+    </div>
   );
 }

@@ -3589,7 +3589,10 @@ def cmd_audio_benchmark(args):
     # Run benchmark
     trainer = AudioRAFTTrainer(config)
     results = trainer.benchmark(args.dataset, limit=args.limit)
-    
+    results["model"] = args.model
+    results["benchmark"] = args.dataset
+    results["task"] = args.task
+
     print(f"\n{GREEN}Results:{NC}")
     print(f"  Samples: {results['samples']}")
     print(f"  Success rate: {results['success_rate']:.1%}")

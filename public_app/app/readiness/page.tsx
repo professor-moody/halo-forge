@@ -1,5 +1,13 @@
-import { ActionLink, AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
-import { apiGet } from "../../lib/api";
+import { ActionLink, AppShell, EmptyState, SectionCard, StatusBadge } from "@/components/app-ui";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { apiGet } from "@/lib/api";
 
 type ReadinessResponse = {
   aggregate_tier: string;
@@ -29,52 +37,51 @@ export default async function ReadinessPage() {
   return (
     <AppShell
       title="Readiness"
-      subtitle="Qualification status for each training modality, grounded in deterministic launch, update, artifact, resume, and eval checks."
+      subtitle="Qualification status for each training modality."
       statusItems={[
-        { label: "Qualification status", value: payload.aggregate_tier, tone: payload.aggregate_tier === "production_ready" ? "success" : payload.aggregate_tier === "qualified" ? "warning" : "neutral" },
+        {
+          label: "Qualification",
+          value: payload.aggregate_tier,
+          tone: payload.aggregate_tier === "production_ready" ? "success" : payload.aggregate_tier === "qualified" ? "warning" : "neutral",
+        },
         { label: "Modalities", value: String(payload.items.length), tone: "neutral" },
       ]}
       headerActions={<ActionLink href="/train" label="Start training" tone="secondary" />}
     >
-      <SectionCard title="Qualification matrix" subtitle="Production-ready means the deterministic train, resume, artifact, and eval checks are currently passing." eyebrow="Readiness">
+      <SectionCard title="Qualification matrix" eyebrow="Readiness">
         {payload.items.length ? (
-          <div className="table-matrix">
-            <div className="matrix-head">
-              <div className="cell-label">Modality</div>
-              <div className="cell-label">Tier</div>
-              <div className="cell-label">Metric</div>
-              <div className="cell-label">Delta</div>
-              <div className="cell-label">Next required work</div>
-            </div>
-            {payload.items.map((item) => (
-              <div key={item.modality} className="matrix-row">
-                <div className="matrix-primary">
-                  <h3>{item.modality.toUpperCase()}</h3>
-                  <p>{item.caveat}</p>
-                </div>
-                <div>
-                  <StatusChip tone={item.production_ready ? "success" : item.readiness_tier === "qualified" ? "warning" : "neutral"} label={item.readiness_tier} />
-                </div>
-                <div className="row-detail">
-                  <div className="cell-label">Metric</div>
-                  <strong>{item.eval_metric_name || "pending"}</strong>
-                </div>
-                <div className="row-detail">
-                  <div className="cell-label">Delta</div>
-                  <strong>{item.delta ?? "—"}</strong>
-                </div>
-                <div className="row-detail">
-                  <div className="cell-label">Next step</div>
-                  <strong>{item.next_step}</strong>
-                </div>
-              </div>
-            ))}
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Modality</TableHead>
+                <TableHead>Tier</TableHead>
+                <TableHead>Metric</TableHead>
+                <TableHead className="text-right">Delta</TableHead>
+                <TableHead>Next step</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {payload.items.map((item) => (
+                <TableRow key={item.modality}>
+                  <TableCell>
+                    <div className="font-medium">{item.modality.toUpperCase()}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{item.caveat}</div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge
+                      tone={item.production_ready ? "success" : item.readiness_tier === "qualified" ? "warning" : "neutral"}
+                      label={item.readiness_tier}
+                    />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{item.eval_metric_name || "pending"}</TableCell>
+                  <TableCell className="text-right tabular-nums">{item.delta ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{item.next_step}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         ) : (
-          <EmptyState
-            title="Readiness unavailable"
-            body="Qualification data could not be loaded for the current environment."
-          />
+          <EmptyState title="Readiness unavailable" body="Qualification data could not be loaded." />
         )}
       </SectionCard>
     </AppShell>
