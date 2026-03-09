@@ -5,10 +5,10 @@ export default function TrainPage() {
   return (
     <AppShell
       title="Training"
-      subtitle="Configure a run, review launch risk, and start from a compact control workspace."
+      subtitle="Configure a run, review launch risk, and start with a clear understanding of what the run is expected to produce."
       statusItems={[
-        { label: "Workspace", value: "launch review", tone: "neutral" },
-        { label: "Default mode", value: "quickstart", tone: "success" },
+        { label: "Launch review", value: "available", tone: "success" },
+        { label: "Default flow", value: "quickstart", tone: "neutral" },
       ]}
     >
       <TrainClient />

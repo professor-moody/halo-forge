@@ -207,21 +207,31 @@ def test_public_api_docs_catalog_tracks_public_frontend_and_internal_console(tmp
 def test_public_frontend_scaffold_references_public_workflows():
     api_helper = Path("public_app/lib/api.ts").read_text(encoding="utf-8")
     train_source = Path("public_app/app/train/page.tsx").read_text(encoding="utf-8")
+    train_client_source = Path("public_app/app/train/train-client.tsx").read_text(encoding="utf-8")
     run_source = Path("public_app/app/runs/[id]/page.tsx").read_text(encoding="utf-8")
+    run_client_source = Path("public_app/app/runs/[id]/run-client.tsx").read_text(encoding="utf-8")
     results_source = Path("public_app/app/results/page.tsx").read_text(encoding="utf-8")
+    results_client_source = Path("public_app/app/results/results-client.tsx").read_text(encoding="utf-8")
     readiness_source = Path("public_app/app/readiness/page.tsx").read_text(encoding="utf-8")
     docs_source = Path("public_app/app/docs/page.tsx").read_text(encoding="utf-8")
     home_source = Path("public_app/app/page.tsx").read_text(encoding="utf-8")
+    shell_source = Path("public_app/components/ui.tsx").read_text(encoding="utf-8")
 
     assert "export const API_BASE" in api_helper
     assert 'from "../lib/api"' in home_source
     assert "System summary" in home_source
-    assert "Training" in train_source
+    assert "Training platform" in shell_source
+    assert "Run configuration" in train_client_source
+    assert "Launch review" in train_client_source
     assert "Run monitor" in run_source
-    assert "Training outcomes" in results_source
+    assert "Run status" in run_client_source
+    assert "Training outcomes" in results_client_source
     assert "Qualification matrix" in readiness_source
     assert "Documentation catalog" in docs_source
     assert "Training that stays understandable" not in home_source
+    assert "Public workstation" not in shell_source
+    assert "Launch workspace" not in train_client_source
+    assert "Review quality" not in train_client_source
 
 
 def test_public_api_transport_exposes_public_workflows():

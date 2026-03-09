@@ -1,4 +1,4 @@
-import { AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
+import { ActionLink, AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
 import { apiGet } from "../../lib/api";
 
 type ReadinessResponse = {
@@ -29,45 +29,43 @@ export default async function ReadinessPage() {
   return (
     <AppShell
       title="Readiness"
-      subtitle="Qualification-driven matrix for training modalities, with caveats and the next required work."
+      subtitle="Qualification status for each training modality, grounded in deterministic launch, update, artifact, resume, and eval checks."
       statusItems={[
-        { label: "Aggregate", value: payload.aggregate_tier, tone: payload.aggregate_tier === "production_ready" ? "success" : payload.aggregate_tier === "qualified" ? "warning" : "neutral" },
+        { label: "Qualification status", value: payload.aggregate_tier, tone: payload.aggregate_tier === "production_ready" ? "success" : payload.aggregate_tier === "qualified" ? "warning" : "neutral" },
         { label: "Modalities", value: String(payload.items.length), tone: "neutral" },
       ]}
+      headerActions={<ActionLink href="/train" label="Start training" tone="secondary" />}
     >
-      <SectionCard title="Qualification matrix" subtitle="Production-ready means the deterministic train, resume, artifact, and eval checks are currently passing.">
+      <SectionCard title="Qualification matrix" subtitle="Production-ready means the deterministic train, resume, artifact, and eval checks are currently passing." eyebrow="Readiness">
         {payload.items.length ? (
-          <div className="run-list">
+          <div className="table-matrix">
+            <div className="matrix-head">
+              <div className="cell-label">Modality</div>
+              <div className="cell-label">Tier</div>
+              <div className="cell-label">Metric</div>
+              <div className="cell-label">Delta</div>
+              <div className="cell-label">Next required work</div>
+            </div>
             {payload.items.map((item) => (
-              <div key={item.modality} className="table-row">
-                <div className="table-row-header">
-                  <div className="table-row-title">
-                    <h3>{item.modality.toUpperCase()}</h3>
-                    <p>{item.caveat}</p>
-                  </div>
+              <div key={item.modality} className="matrix-row">
+                <div className="matrix-primary">
+                  <h3>{item.modality.toUpperCase()}</h3>
+                  <p>{item.caveat}</p>
+                </div>
+                <div>
                   <StatusChip tone={item.production_ready ? "success" : item.readiness_tier === "qualified" ? "warning" : "neutral"} label={item.readiness_tier} />
                 </div>
-                <div className="table-row-metrics">
-                  <div>
-                    <div className="cell-label">Metric</div>
-                    <div className="cell-value">{item.eval_metric_name || "pending"}</div>
-                  </div>
-                  <div>
-                    <div className="cell-label">Baseline</div>
-                    <div className="cell-value">{item.baseline_value ?? "—"}</div>
-                  </div>
-                  <div>
-                    <div className="cell-label">Current</div>
-                    <div className="cell-value">{item.final_value ?? "—"}</div>
-                  </div>
-                  <div>
-                    <div className="cell-label">Delta</div>
-                    <div className="cell-value">{item.delta ?? "—"}</div>
-                  </div>
-                  <div>
-                    <div className="cell-label">Next work</div>
-                    <div className="cell-value">{item.next_step}</div>
-                  </div>
+                <div className="row-detail">
+                  <div className="cell-label">Metric</div>
+                  <strong>{item.eval_metric_name || "pending"}</strong>
+                </div>
+                <div className="row-detail">
+                  <div className="cell-label">Delta</div>
+                  <strong>{item.delta ?? "—"}</strong>
+                </div>
+                <div className="row-detail">
+                  <div className="cell-label">Next step</div>
+                  <strong>{item.next_step}</strong>
                 </div>
               </div>
             ))}

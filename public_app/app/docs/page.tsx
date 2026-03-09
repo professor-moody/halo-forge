@@ -1,4 +1,4 @@
-import { AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
+import { ActionLink, AppShell, EmptyState, SectionCard, StatusChip } from "../../components/ui";
 import { apiGet } from "../../lib/api";
 
 type DocsResponse = {
@@ -25,18 +25,19 @@ export default async function DocsPage() {
   return (
     <AppShell
       title="Docs"
-      subtitle="Compact product documentation backed by repo-truth summaries and qualification-aware capability language."
+      subtitle="Product guidance and capability references backed by repo-truth summaries and qualification-aware language."
       statusItems={[
         { label: "Docs indexed", value: String(payload.items.length), tone: "neutral" },
         { label: "Source", value: "repo truth", tone: "success" },
       ]}
+      headerActions={<ActionLink href="/readiness" label="View readiness" tone="secondary" />}
     >
-      <SectionCard title="Documentation catalog" subtitle="Core product references grouped as software documentation, not long-form marketing content.">
+      <SectionCard title="Documentation catalog" subtitle="Core references grouped like software documentation, not long-form marketing content." eyebrow="Docs">
         {payload.items.length ? (
           <div className="docs-grid">
             {payload.items.map((item) => (
               <article key={item.slug} className="doc-card">
-                <div className="table-row-header">
+                <div className="row-main">
                   <div>
                     <h3>{item.title}</h3>
                     <div className="doc-meta">{item.source_path}</div>
