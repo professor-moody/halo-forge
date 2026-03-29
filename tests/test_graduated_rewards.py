@@ -12,6 +12,8 @@ These graduated rewards are critical for RAFT training as they provide
 learning signal even from imperfect samples.
 """
 
+import shutil
+
 import pytest
 from halo_forge.rlvr.verifiers import GCCVerifier, RustVerifier, GoVerifier
 from halo_forge.rlvr.verifiers.base import RewardLevel
@@ -48,12 +50,17 @@ class TestGCCGraduatedRewards:
     @pytest.fixture
     def verifier_mvp(self):
         """MVP mode verifier (compile-only)."""
-        return GCCVerifier(run_after_compile=False, timeout=10)
+        return GCCVerifier(run_after_compile=False, timeout=10, execution_policy="unsafe_host")
     
     @pytest.fixture
     def verifier_mvr(self):
         """MVR mode verifier (full verification)."""
-        return GCCVerifier(run_after_compile=True, timeout=10, run_timeout=5)
+        return GCCVerifier(
+            run_after_compile=True,
+            timeout=10,
+            run_timeout=5,
+            execution_policy="unsafe_host",
+        )
     
     def test_mvp_syntax_error_returns_0(self, verifier_mvp):
         """Syntax error should return 0.0 reward."""
@@ -102,7 +109,8 @@ class TestGCCGraduatedRewards:
             run_after_compile=True,
             timeout=10,
             run_timeout=5,
-            expected_output="42"
+            expected_output="42",
+            execution_policy="unsafe_host",
         )
         code = """
         #include <stdio.h>
@@ -121,7 +129,8 @@ class TestGCCGraduatedRewards:
             run_after_compile=True,
             timeout=10,
             run_timeout=5,
-            expected_output="42"
+            expected_output="42",
+            execution_policy="unsafe_host",
         )
         code = """
         #include <stdio.h>
@@ -150,6 +159,7 @@ class TestGCCGraduatedRewards:
         assert result.reward == 0.5
 
 
+@pytest.mark.skipif(shutil.which("cargo") is None, reason="cargo not available")
 class TestRustGraduatedRewards:
     """Test graduated rewards from Rust verifier."""
     
@@ -211,7 +221,7 @@ class TestMVPvsMVR:
     
     def test_mvp_max_reward_is_05(self):
         """MVP mode should cap at 0.5 reward."""
-        verifier = GCCVerifier(run_after_compile=False, timeout=10)
+        verifier = GCCVerifier(run_after_compile=False, timeout=10, execution_policy="unsafe_host")
         
         code = """
         #include <stdio.h>
@@ -231,7 +241,8 @@ class TestMVPvsMVR:
         verifier = GCCVerifier(
             run_after_compile=True,
             timeout=10,
-            expected_output="Hello"
+            expected_output="Hello",
+            execution_policy="unsafe_host",
         )
         
         code = """

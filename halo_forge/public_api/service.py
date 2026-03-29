@@ -39,6 +39,86 @@ from .views import (
 
 TRAINING_MODALITIES = ("sft", "raft", "vlm", "audio", "reasoning", "agentic")
 
+PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
+    "sft": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "epochs",
+        "max_samples",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+    },
+    "raft": {
+        "mode",
+        "model",
+        "prompts",
+        "output_dir",
+        "cycles",
+        "samples_per_prompt",
+        "keep_percent",
+        "reward_threshold",
+        "temperature",
+    },
+    "vlm": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "cycles",
+        "limit",
+        "samples_per_prompt",
+        "keep_percent",
+        "reward_threshold",
+        "temperature",
+    },
+    "audio": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "cycles",
+        "samples_per_prompt",
+        "keep_percent",
+        "reward_threshold",
+        "temperature",
+        "task",
+    },
+    "reasoning": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "cycles",
+        "limit",
+        "keep_percent",
+        "temperature",
+        "learning_rate",
+    },
+    "agentic": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "cycles",
+        "limit",
+        "keep_percent",
+        "temperature",
+        "learning_rate",
+    },
+}
+
+PUBLIC_TRAIN_REQUIRED_TEXT_FIELDS: dict[str, tuple[str, ...]] = {
+    "sft": ("model", "dataset", "output_dir"),
+    "raft": ("model", "prompts", "output_dir"),
+    "vlm": ("model", "dataset", "output_dir"),
+    "audio": ("model", "dataset", "output_dir", "task"),
+    "reasoning": ("model", "dataset", "output_dir"),
+    "agentic": ("model", "dataset", "output_dir"),
+}
+
 
 @dataclass(frozen=True)
 class _DocsSource:
@@ -115,9 +195,8 @@ class PublicApiService:
 
     def preflight_training(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Run launch preflight for the requested training mode."""
-        mode = str(payload.get("mode") or "").strip().lower()
-        if mode not in TRAINING_MODALITIES:
-            raise ValueError(f"Unsupported training mode: {mode}")
+        payload = self._sanitize_public_training_payload(payload)
+        mode = str(payload["mode"])
 
         if mode == "sft":
             preflight = self.training_service.preflight_sft_launch(
@@ -163,7 +242,8 @@ class PublicApiService:
 
     async def launch_training(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Launch training from the public API."""
-        mode = str(payload.get("mode") or "").strip().lower()
+        payload = self._sanitize_public_training_payload(payload)
+        mode = str(payload["mode"])
         if mode == "sft":
             job_id = await self.training_service.launch_sft(
                 model=str(payload.get("model") or ""),
@@ -173,6 +253,7 @@ class PublicApiService:
                 batch_size=int(payload.get("batch_size") or 2),
                 gradient_accumulation_steps=int(payload.get("gradient_accumulation_steps") or 4),
                 max_samples=self._optional_int(payload.get("max_samples")),
+                learning_rate=float(payload.get("learning_rate") or 2e-4),
                 source_ui_page="/public/train",
             )
         elif mode == "raft":
@@ -213,6 +294,36 @@ class PublicApiService:
         else:
             raise ValueError(f"Unsupported training mode: {mode}")
         return self.get_run_detail(job_id, include_research=True, include_internal=False)
+
+    def _sanitize_public_training_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        mode = str(payload.get("mode") or "").strip().lower()
+        if mode not in TRAINING_MODALITIES:
+            raise ValueError(f"Unsupported training mode: {mode}")
+
+        allowed_fields = PUBLIC_TRAIN_ALLOWED_FIELDS[mode]
+        unsupported_fields = sorted(
+            key
+            for key, value in payload.items()
+            if key not in allowed_fields and self._has_public_value(value)
+        )
+        if unsupported_fields:
+            raise ValueError(
+                f"Unsupported fields for {mode}: {', '.join(unsupported_fields)}"
+            )
+
+        sanitized: Dict[str, Any] = {"mode": mode}
+        for field_name in PUBLIC_TRAIN_REQUIRED_TEXT_FIELDS[mode]:
+            text = str(payload.get(field_name) or "").strip()
+            if not text:
+                raise ValueError(f"{field_name} is required")
+            sanitized[field_name] = text
+
+        optional_fields = allowed_fields - {"mode"} - set(PUBLIC_TRAIN_REQUIRED_TEXT_FIELDS[mode])
+        for field_name in sorted(optional_fields):
+            value = payload.get(field_name)
+            if self._has_public_value(value):
+                sanitized[field_name] = value
+        return sanitized
 
     async def apply_guided_recovery(
         self,
@@ -1021,6 +1132,14 @@ class PublicApiService:
     def _optional_str(value: Any) -> Optional[str]:
         text = str(value or "").strip()
         return text or None
+
+    @staticmethod
+    def _has_public_value(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        return True
 
     @staticmethod
     def _coerce_float(value: Any) -> Optional[float]:

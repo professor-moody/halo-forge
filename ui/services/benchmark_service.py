@@ -987,13 +987,23 @@ class BenchmarkService:
         try:
             job.process.terminate()
         except ProcessLookupError:
-            self.state.update_job_status(
+            transitioned = self.state.update_job_status(
                 job_id,
                 "stopped",
                 source="benchmark_service.stop_job",
                 reason="process_missing",
                 metadata=self._merge_transition_metadata(job),
             )
+            if transitioned:
+                transition = self.state.get_last_transition(job_id)
+                await get_event_bus().emit(Event(
+                    type=EventType.JOB_STOPPED,
+                    job_id=job_id,
+                    data=build_transition_payload(
+                        transition,
+                        **self._event_extra_fields(job),
+                    ),
+                ))
             return True
         
         try:
@@ -1005,13 +1015,6 @@ class BenchmarkService:
             except ProcessLookupError:
                 pass
         
-        self.state.update_job_status(
-            job_id,
-            "stopped",
-            source="benchmark_service.stop_job",
-            reason="stop_completed",
-            metadata=self._merge_transition_metadata(job),
-        )
         return True
     
     def get_logs(self, job_id: str, last_n: Optional[int] = None) -> list[dict]:

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from halo_forge.cli import RAFT_TRAIN_SUPPORTED_VERIFIERS
+from halo_forge.rlvr.verifiers.execution_runner import VerifierExecutionRunner
 from halo_forge.rlvr.verifiers.pytest_verifier import RLVRPytestVerifier
 from halo_forge.rlvr.verifiers.test_runner import UnittestVerifier
 from ui.services.benchmark_service import BenchmarkService, BenchmarkType
@@ -193,14 +194,14 @@ def test_rlvr_pytest_verifier_uses_sys_executable(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    verifier = RLVRPytestVerifier(str(dataset_path))
+    verifier = RLVRPytestVerifier(str(dataset_path), execution_policy="unsafe_host")
     captured = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(self, cmd, **kwargs):
         captured["cmd"] = cmd
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(VerifierExecutionRunner, "run", fake_run)
 
     result = verifier.verify("def add(a, b):\n    return a + b", "t1", "mbpp")
     assert result.success is True

@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Optional, List, Tuple, Callable
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult, RewardLevel
+from halo_forge.rlvr.verifiers.execution_runner import (
+    ExecutionPolicy,
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 try:
     import resource
@@ -52,7 +57,8 @@ class CompileVerifier(Verifier):
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
         warn_as_error: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize compile verifier.
@@ -81,6 +87,11 @@ class CompileVerifier(Verifier):
         self.memory_limit_mb = memory_limit_mb
         self.warn_as_error = warn_as_error
         self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(
+            execution_policy=execution_policy,
+            workspace_root=Path.cwd(),
+        )
         
         # Create cache directory if needed
         if self.binary_cache_dir:
@@ -114,22 +125,15 @@ class CompileVerifier(Verifier):
         is_windows_target = 'mingw' in self.compiler.lower()
         output_ext = '.exe' if is_windows_target else '.out'
         
-        # Write to temp file
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix=suffix,
-            delete=False,
-            encoding='utf-8'
-        ) as f:
-            f.write(extracted)
-            source_file = f.name
-        
-        output_file = source_file.replace(suffix, output_ext)
         cached_path = None  # Track cached binary path for metadata
-        
-        try:
+
+        with tempfile.TemporaryDirectory(prefix="halo_forge_verify_") as tmp_dir:
+            source_file = str(Path(tmp_dir) / f"candidate{suffix}")
+            output_file = str(Path(tmp_dir) / f"candidate{output_ext}")
+            Path(source_file).write_text(extracted, encoding="utf-8")
+
             # Step 1: Compile
-            compile_result = self._compile(source_file, output_file)
+            compile_result = self._compile(source_file, output_file, cwd=tmp_dir)
             
             if not compile_result['success']:
                 return VerifyResult(
@@ -237,35 +241,14 @@ class CompileVerifier(Verifier):
                 }
             )
                 
-        except subprocess.TimeoutExpired:
-            return VerifyResult(
-                success=False,
-                reward=RewardLevel.FAILURE.value,
-                details="Timeout",
-                error=f"Exceeded {self.timeout}s timeout"
-            )
-        except FileNotFoundError:
-            return VerifyResult(
-                success=False,
-                reward=RewardLevel.FAILURE.value,
-                details="Compiler not found",
-                error=f"Compiler '{self.compiler}' not found in PATH"
-            )
-        except Exception as e:
-            return VerifyResult(
-                success=False,
-                reward=RewardLevel.FAILURE.value,
-                details="Verification error",
-                error=str(e)
-            )
-        finally:
-            # Cleanup temp files
-            if os.path.exists(source_file):
-                os.unlink(source_file)
-            if os.path.exists(output_file):
-                os.unlink(output_file)
-    
-    def _compile(self, source_file: str, output_file: str) -> dict:
+        return VerifyResult(
+            success=False,
+            reward=RewardLevel.FAILURE.value,
+            details="Verification error",
+            error="Unreachable verifier state",
+        )
+
+    def _compile(self, source_file: str, output_file: str, *, cwd: str | Path) -> dict:
         """
         Compile source file.
         
@@ -279,12 +262,17 @@ class CompileVerifier(Verifier):
         
         cmd = [self.compiler] + flags + [source_file, '-o', output_file]
         
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=self.timeout
-        )
+        try:
+            result = self._execution_runner.run(
+                cmd,
+                cwd=cwd,
+                timeout=self.timeout,
+            )
+        except SandboxUnavailableError as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
         
         if result.returncode == 0:
             # Check for warnings in stderr
@@ -310,13 +298,12 @@ class CompileVerifier(Verifier):
         preexec_fn = self._build_limit_preexec(self.run_timeout)
         
         try:
-            result = subprocess.run(
+            result = self._execution_runner.run(
                 [executable],
-                input=self.stdin_input,
-                capture_output=True,
-                text=True,
+                cwd=Path(executable).parent,
+                input_text=self.stdin_input,
                 timeout=self.run_timeout,
-                preexec_fn=preexec_fn
+                preexec_fn=preexec_fn,
             )
             
             if result.returncode == 0:
@@ -339,6 +326,12 @@ class CompileVerifier(Verifier):
             return {
                 'success': False,
                 'error': f"Execution exceeded {self.run_timeout}s timeout",
+                'exit_code': -1
+            }
+        except SandboxUnavailableError as e:
+            return {
+                'success': False,
+                'error': str(e),
                 'exit_code': -1
             }
         except Exception as e:
@@ -447,7 +440,8 @@ class GCCVerifier(CompileVerifier):
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
         warn_as_error: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize GCC verifier.
@@ -476,7 +470,8 @@ class GCCVerifier(CompileVerifier):
             stdin_input=stdin_input,
             memory_limit_mb=memory_limit_mb,
             warn_as_error=warn_as_error,
-            binary_cache_dir=binary_cache_dir
+            binary_cache_dir=binary_cache_dir,
+            execution_policy=execution_policy,
         )
 
 
@@ -504,7 +499,8 @@ class MinGWVerifier(CompileVerifier):
         timeout: int = 30,
         max_workers: int = 8,
         warn_as_error: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize MinGW verifier.
@@ -530,7 +526,8 @@ class MinGWVerifier(CompileVerifier):
             max_workers=max_workers,
             run_after_compile=False,  # Cannot run Windows binaries on Linux
             warn_as_error=warn_as_error,
-            binary_cache_dir=binary_cache_dir
+            binary_cache_dir=binary_cache_dir,
+            execution_policy=execution_policy,
         )
 
 
@@ -557,7 +554,8 @@ class ClangVerifier(CompileVerifier):
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
         warn_as_error: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         default_flags = ['-w', '-O2']
         super().__init__(
@@ -571,5 +569,6 @@ class ClangVerifier(CompileVerifier):
             stdin_input=stdin_input,
             memory_limit_mb=memory_limit_mb,
             warn_as_error=warn_as_error,
-            binary_cache_dir=binary_cache_dir
+            binary_cache_dir=binary_cache_dir,
+            execution_policy=execution_policy,
         )

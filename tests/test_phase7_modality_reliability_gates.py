@@ -48,6 +48,105 @@ def test_training_service_modality_launch_includes_seed(monkeypatch, tmp_path):
     assert cmd[cmd.index("--seed") + 1] == "7"
 
 
+@pytest.mark.parametrize(
+    ("modality", "model_name", "dataset_name", "expected_pairs", "absent_flags"),
+    [
+        (
+            "vlm",
+            "Qwen/Qwen2-VL-7B-Instruct",
+            "textvqa",
+            {
+                "--limit": "24",
+                "--samples-per-prompt": "3",
+                "--reward-threshold": "0.5",
+                "--temperature": "0.7",
+                "--keep-percent": "0.6",
+            },
+            {"--lr", "--task"},
+        ),
+        (
+            "audio",
+            "openai/whisper-tiny",
+            "librispeech",
+            {
+                "--samples-per-prompt": "3",
+                "--reward-threshold": "0.5",
+                "--temperature": "0.7",
+                "--keep-percent": "0.6",
+                "--task": "asr",
+                "--lr": "1e-05",
+            },
+            {"--limit"},
+        ),
+        (
+            "reasoning",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "gsm8k",
+            {
+                "--limit": "64",
+                "--temperature": "0.7",
+                "--keep-percent": "0.6",
+                "--lr": "1e-05",
+            },
+            {"--reward-threshold", "--samples-per-prompt", "--task"},
+        ),
+        (
+            "agentic",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "xlam",
+            {
+                "--limit": "64",
+                "--temperature": "0.7",
+                "--keep-percent": "0.6",
+                "--lr": "1e-05",
+            },
+            {"--reward-threshold", "--samples-per-prompt", "--task"},
+        ),
+    ],
+)
+def test_training_service_modality_launch_forwards_only_supported_flags(
+    monkeypatch,
+    tmp_path,
+    modality,
+    model_name,
+    dataset_name,
+    expected_pairs,
+    absent_flags,
+):
+    """Modality launches should only forward CLI-supported flags for that mode."""
+    service = TrainingService(AppState())
+    captured = {}
+
+    async def _fake_launch(job_id, cmd, on_log=None):
+        captured["cmd"] = cmd
+
+    monkeypatch.setattr(service, "_launch_process", _fake_launch)
+
+    asyncio.run(
+        service.launch_modality_train(
+            modality=modality,
+            model=model_name,
+            dataset=dataset_name,
+            output_dir=str(tmp_path / modality),
+            cycles=2,
+            learning_rate=1e-5,
+            samples_per_prompt=3,
+            temperature=0.7,
+            keep_percent=0.6,
+            reward_threshold=0.5,
+            task="asr",
+            limit=24 if modality == "vlm" else 64,
+        )
+    )
+
+    cmd = captured["cmd"]
+    for flag, value in expected_pairs.items():
+        assert flag in cmd
+        assert cmd[cmd.index(flag) + 1] == value
+    for flag in absent_flags:
+        assert flag not in cmd
+
+
 def test_trainer_preflight_rejects_unsupported_reasoning_model(tmp_path):
     """Trainer entrypoint should enforce model-family policy without CLI gate."""
     from halo_forge.reasoning.trainer import ReasoningRAFTConfig, ReasoningRAFTTrainer

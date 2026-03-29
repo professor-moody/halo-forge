@@ -4,10 +4,14 @@
 import asyncio
 import json
 import re
+import signal
 from pathlib import Path
 
+import pytest
+
 from ui.services.benchmark_service import BenchmarkService, BenchmarkType
-from ui.services.event_bus import build_transition_payload
+from ui.services.event_bus import EventType, build_transition_payload
+from ui.services.inference_service import InferenceService
 from ui.services.results_service import ResultsService
 from ui.services.training_service import TrainingService
 from ui.state import AppState
@@ -264,3 +268,75 @@ def test_benchmark_service_job_created_event_includes_transition_context(monkeyp
     assert event_data["source"] == "benchmark_service.launch_benchmark"
     assert event_data["reason"] == "job_created"
     assert event_data["timestamp"]
+
+
+class _EmptyAsyncStdout:
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise StopAsyncIteration
+
+
+class _FakeProcess:
+    def __init__(self, return_code: int):
+        self.stdout = _EmptyAsyncStdout()
+        self._return_code = return_code
+        self.terminated = False
+
+    async def wait(self):
+        return self._return_code
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self._return_code = -signal.SIGKILL
+
+
+@pytest.mark.parametrize(
+    ("service_factory", "module_path", "job_type"),
+    [
+        (TrainingService, "ui.services.training_service", "sft"),
+        (BenchmarkService, "ui.services.benchmark_service", "benchmark"),
+        (InferenceService, "ui.services.inference_service", "inference"),
+    ],
+)
+def test_manual_stop_emits_exactly_one_job_stopped_event(
+    monkeypatch,
+    tmp_path,
+    service_factory,
+    module_path,
+    job_type,
+):
+    """Manual stop should emit one terminal stopped event via the stream-completion path."""
+    state = AppState()
+    service = service_factory(state)
+    captured = []
+
+    class FakeBus:
+        def emit_sync(self, event):
+            captured.append(event)
+
+        async def emit(self, event):
+            captured.append(event)
+
+    monkeypatch.setattr(f"{module_path}.get_event_bus", lambda: FakeBus())
+
+    job = state.create_job(
+        job_type=job_type,
+        name=f"{job_type}-test",
+        output_dir=tmp_path / job_type,
+    )
+    job.process = _FakeProcess(return_code=-signal.SIGTERM)
+    assert state.update_job_status(job.id, "running", source="test", reason="start") is True
+
+    assert asyncio.run(service.stop_job(job.id, timeout=0.01)) is True
+    assert job.stop_requested is True
+
+    asyncio.run(service._stream_logs(job.id))
+
+    stopped_events = [event for event in captured if event.type == EventType.JOB_STOPPED]
+    assert len(stopped_events) == 1
+    assert state.get_job(job.id).status == "stopped"
+    assert stopped_events[0].data["to_status"] == "stopped"

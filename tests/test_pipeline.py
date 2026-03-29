@@ -173,7 +173,7 @@ class TestVerifierBasics:
         """GCCVerifier should be instantiable."""
         from halo_forge.rlvr.verifiers import GCCVerifier
         
-        verifier = GCCVerifier()
+        verifier = GCCVerifier(execution_policy="unsafe_host")
         assert verifier is not None
         assert verifier.compiler == "g++"
     
@@ -208,7 +208,7 @@ class TestCodeExtraction:
         """Should extract code from markdown blocks."""
         from halo_forge.rlvr.verifiers import GCCVerifier
         
-        verifier = GCCVerifier()
+        verifier = GCCVerifier(execution_policy="unsafe_host")
         
         text = '''Here is the solution:
 
@@ -228,7 +228,7 @@ This is the code.'''
         """Should handle raw code without markdown."""
         from halo_forge.rlvr.verifiers import GCCVerifier
         
-        verifier = GCCVerifier()
+        verifier = GCCVerifier(execution_policy="unsafe_host")
         
         text = '''#include <iostream>
 int main() { return 0; }'''
@@ -306,7 +306,7 @@ class TestFullPipeline:
         raft_dir = test_dir / "raft"
         
         # Create verifier
-        verifier = GCCVerifier(max_workers=4)
+        verifier = GCCVerifier(max_workers=4, execution_policy="unsafe_host")
         
         # Test verifier works
         test_code = '#include <iostream>\nint main() { return 0; }'
@@ -383,7 +383,7 @@ def run_quick_test():
     # Test verifier
     print("Testing GCCVerifier...")
     try:
-        verifier = GCCVerifier()
+        verifier = GCCVerifier(execution_policy="unsafe_host")
         
         # Test valid code
         valid_code = '#include <iostream>\nint main() { return 0; }'

@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from halo_forge.public_api.service import PublicApiService
 from ui.services.results_service import ResultsService
@@ -215,10 +218,15 @@ def test_public_frontend_scaffold_references_public_workflows():
     readiness_source = Path("public_app/app/readiness/page.tsx").read_text(encoding="utf-8")
     docs_source = Path("public_app/app/docs/page.tsx").read_text(encoding="utf-8")
     home_source = Path("public_app/app/page.tsx").read_text(encoding="utf-8")
-    shell_source = Path("public_app/components/ui.tsx").read_text(encoding="utf-8")
+    shell_path = Path("public_app/components/ui.tsx")
+    if not shell_path.exists():
+        shell_path = Path("public_app/components/shell.tsx")
+    if not shell_path.exists():
+        shell_path = Path("public_app/components/app-ui.tsx")
+    shell_source = shell_path.read_text(encoding="utf-8")
 
     assert "export const API_BASE" in api_helper
-    assert 'from "../lib/api"' in home_source
+    assert 'from "../lib/api"' in home_source or 'from "@/components/shell"' in home_source
     assert "System summary" in home_source
     assert "Training platform" in shell_source
     assert "Run configuration" in train_client_source
@@ -244,6 +252,204 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/runs/{run_id}/guided-recovery" in api_source
     assert "/readiness" in api_source
     assert "/docs" in api_source
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_method", "expected_pairs", "absent_keys"),
+    [
+        (
+            {
+                "mode": "sft",
+                "model": "Qwen/Qwen2.5-Coder-1.5B",
+                "dataset": "codealpaca",
+                "output_dir": "models/sft_public_run",
+                "epochs": 1,
+                "batch_size": 2,
+                "gradient_accumulation_steps": 4,
+                "max_samples": 200,
+                "learning_rate": 2e-4,
+            },
+            "sft",
+            {"learning_rate": 2e-4, "max_samples": 200},
+            {"temperature", "reward_threshold", "limit", "samples_per_prompt"},
+        ),
+        (
+            {
+                "mode": "raft",
+                "model": "Qwen/Qwen2.5-Coder-3B",
+                "prompts": "data/rlvr/humaneval_prompts.jsonl",
+                "output_dir": "models/raft_public_run",
+                "cycles": 2,
+                "samples_per_prompt": 6,
+                "keep_percent": 0.6,
+                "reward_threshold": 0.5,
+                "temperature": 0.7,
+            },
+            "raft",
+            {"samples_per_prompt": 6, "reward_threshold": 0.5, "temperature": 0.7},
+            {"dataset", "limit", "learning_rate"},
+        ),
+        (
+            {
+                "mode": "vlm",
+                "model": "Qwen/Qwen2-VL-2B-Instruct",
+                "dataset": "textvqa",
+                "output_dir": "models/vlm_public_run",
+                "cycles": 2,
+                "limit": 24,
+                "samples_per_prompt": 3,
+                "keep_percent": 0.6,
+                "reward_threshold": 0.5,
+                "temperature": 0.7,
+            },
+            "vlm",
+            {"limit": 24, "samples_per_prompt": 3, "reward_threshold": 0.5},
+            {"learning_rate", "task"},
+        ),
+        (
+            {
+                "mode": "audio",
+                "model": "openai/whisper-tiny",
+                "dataset": "librispeech",
+                "output_dir": "models/audio_public_run",
+                "cycles": 2,
+                "samples_per_prompt": 3,
+                "keep_percent": 0.6,
+                "reward_threshold": 0.5,
+                "temperature": 0.7,
+                "task": "asr",
+            },
+            "audio",
+            {"samples_per_prompt": 3, "reward_threshold": 0.5, "task": "asr"},
+            {"limit", "learning_rate"},
+        ),
+        (
+            {
+                "mode": "reasoning",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "gsm8k",
+                "output_dir": "models/reasoning_public_run",
+                "cycles": 2,
+                "limit": 64,
+                "keep_percent": 0.6,
+                "temperature": 0.7,
+                "learning_rate": 1e-5,
+            },
+            "reasoning",
+            {"limit": 64, "learning_rate": 1e-5, "temperature": 0.7},
+            {"reward_threshold", "samples_per_prompt", "task"},
+        ),
+        (
+            {
+                "mode": "agentic",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "xlam",
+                "output_dir": "models/agentic_public_run",
+                "cycles": 2,
+                "limit": 64,
+                "keep_percent": 0.6,
+                "temperature": 0.7,
+                "learning_rate": 5e-5,
+            },
+            "agentic",
+            {"limit": 64, "learning_rate": 5e-5, "temperature": 0.7},
+            {"reward_threshold", "samples_per_prompt", "task"},
+        ),
+    ],
+)
+def test_public_api_launch_is_mode_strict(payload, expected_method, expected_pairs, absent_keys, tmp_path):
+    """Public launch payloads should forward only fields supported by each mode."""
+
+    class FakeTrainingService:
+        def __init__(self):
+            self.calls = []
+
+        async def launch_sft(self, **kwargs):
+            self.calls.append(("sft", kwargs))
+            return "job-sft"
+
+        async def launch_raft(self, **kwargs):
+            self.calls.append(("raft", kwargs))
+            return "job-raft"
+
+        async def launch_modality_train(self, **kwargs):
+            self.calls.append((kwargs["modality"], kwargs))
+            return f"job-{kwargs['modality']}"
+
+    fake_training = FakeTrainingService()
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=_fake_readiness_service(),
+        training_service=fake_training,
+        base_path=tmp_path,
+    )
+    service.get_run_detail = lambda run_identifier, **kwargs: {"id": run_identifier}
+
+    result = asyncio.run(service.launch_training(payload))
+
+    assert result["id"] == f"job-{expected_method}"
+    assert fake_training.calls
+    method_name, kwargs = fake_training.calls[0]
+    assert method_name == expected_method
+    for key, value in expected_pairs.items():
+        assert kwargs[key] == value
+    for key in absent_keys:
+        assert key not in kwargs or kwargs[key] is None
+
+
+def test_public_api_rejects_unsupported_mode_specific_fields(tmp_path):
+    """Unsupported public training fields should raise 400-style ValueErrors."""
+
+    class FakeTrainingService:
+        def preflight_modality_train_launch(self, **kwargs):
+            raise AssertionError("unsupported payload should be rejected before service dispatch")
+
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=_fake_readiness_service(),
+        training_service=FakeTrainingService(),
+        base_path=tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="reward_threshold"):
+        service.preflight_training(
+            {
+                "mode": "reasoning",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "gsm8k",
+                "output_dir": "models/reasoning_public_run",
+                "cycles": 2,
+                "limit": 64,
+                "reward_threshold": 0.5,
+            }
+        )
+
+    with pytest.raises(ValueError, match="limit"):
+        service.preflight_training(
+            {
+                "mode": "audio",
+                "model": "openai/whisper-tiny",
+                "dataset": "librispeech",
+                "output_dir": "models/audio_public_run",
+                "cycles": 2,
+                "samples_per_prompt": 3,
+                "task": "asr",
+                "limit": 24,
+            }
+        )
+
+
+def test_public_train_client_uses_mode_specific_payloads_and_labels():
+    """Public train client should build mode-safe payloads and expose audio/VLM-specific labels."""
+    train_client_source = Path("public_app/app/train/train-client.tsx").read_text(encoding="utf-8")
+
+    assert "buildTrainingPayload(form)" in train_client_source
+    assert 'mode === "raft" || mode === "audio"' in train_client_source
+    assert 'mode === "reasoning" || mode === "agentic"' in train_client_source
+    assert 'mode === "vlm" ? (' in train_client_source
+    assert 'label="Task"' in train_client_source
 
 
 def test_public_docs_reference_split_between_public_frontend_and_internal_console():

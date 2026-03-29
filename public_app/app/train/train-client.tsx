@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { apiGet, apiPost } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import {
-  ActionLink,
-  ActionButton,
-  Callout,
-  MetricRow,
-  SectionCard,
-} from "@/components/app-ui";
+import { Callout, MetricRow } from "@/components/domain";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Preset = {
   key: string;
@@ -45,8 +47,90 @@ type PreflightResponse = {
   };
 };
 
+type TrainMode = "sft" | "raft" | "vlm" | "audio" | "reasoning" | "agentic";
+
 function numberInputValue(value: string | number | boolean | undefined) {
   return value === undefined ? "" : String(value);
+}
+
+function hasMeaningfulValue(value: string | number | boolean | undefined) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
+}
+
+function buildTrainingPayload(form: Record<string, string | number | boolean>) {
+  const mode = String(form.mode ?? "sft") as TrainMode;
+
+  if (mode === "sft") {
+    return {
+      mode,
+      model: String(form.model ?? ""),
+      dataset: String(form.dataset ?? ""),
+      output_dir: String(form.output_dir ?? ""),
+      epochs: Number(form.epochs ?? 1),
+      max_samples: Number(form.max_samples ?? 200),
+      batch_size: Number(form.batch_size ?? 2),
+      gradient_accumulation_steps: Number(form.gradient_accumulation_steps ?? 4),
+      learning_rate: Number(form.learning_rate ?? 0.0002),
+    };
+  }
+
+  if (mode === "raft") {
+    return {
+      mode,
+      model: String(form.model ?? ""),
+      prompts: String(form.prompts ?? ""),
+      output_dir: String(form.output_dir ?? ""),
+      cycles: Number(form.cycles ?? 2),
+      samples_per_prompt: Number(form.samples_per_prompt ?? 4),
+      keep_percent: Number(form.keep_percent ?? 0.5),
+      reward_threshold: Number(form.reward_threshold ?? 0.5),
+      temperature: Number(form.temperature ?? 0.7),
+    };
+  }
+
+  if (mode === "vlm") {
+    return {
+      mode,
+      model: String(form.model ?? ""),
+      dataset: String(form.dataset ?? ""),
+      output_dir: String(form.output_dir ?? ""),
+      cycles: Number(form.cycles ?? 2),
+      limit: Number(form.limit ?? 24),
+      samples_per_prompt: Number(form.samples_per_prompt ?? 3),
+      keep_percent: Number(form.keep_percent ?? 0.5),
+      reward_threshold: Number(form.reward_threshold ?? 0.5),
+      temperature: Number(form.temperature ?? 0.7),
+    };
+  }
+
+  if (mode === "audio") {
+    return {
+      mode,
+      model: String(form.model ?? ""),
+      dataset: String(form.dataset ?? ""),
+      output_dir: String(form.output_dir ?? ""),
+      cycles: Number(form.cycles ?? 2),
+      samples_per_prompt: Number(form.samples_per_prompt ?? 3),
+      keep_percent: Number(form.keep_percent ?? 0.5),
+      reward_threshold: Number(form.reward_threshold ?? 0.5),
+      temperature: Number(form.temperature ?? 0.7),
+      task: String(form.task ?? "asr"),
+    };
+  }
+
+  return {
+    mode,
+    model: String(form.model ?? ""),
+    dataset: String(form.dataset ?? ""),
+    output_dir: String(form.output_dir ?? ""),
+    cycles: Number(form.cycles ?? 2),
+    limit: Number(form.limit ?? 64),
+    keep_percent: Number(form.keep_percent ?? 0.5),
+    temperature: Number(form.temperature ?? 0.7),
+    learning_rate: Number(form.learning_rate ?? 0.00005),
+  };
 }
 
 export function TrainClient() {
@@ -65,6 +149,7 @@ export function TrainClient() {
   const [preflight, setPreflight] = useState<PreflightResponse | null>(null);
   const [launchError, setLaunchError] = useState<string>("");
   const [launchedRunId, setLaunchedRunId] = useState<string>("");
+  const [launching, setLaunching] = useState(false);
 
   useEffect(() => {
     void apiGet<{ items: Preset[] }>("/train/presets").then((payload) => {
@@ -93,62 +178,79 @@ export function TrainClient() {
 
   async function runPreflight() {
     setLaunchError("");
-    const payload = await apiPost<PreflightResponse>("/train/preflight", form);
+    const payload = await apiPost<PreflightResponse>("/train/preflight", buildTrainingPayload(form));
     setPreflight(payload);
   }
 
   async function launchRun() {
     try {
       setLaunchError("");
-      const payload = await apiPost<{ id: string }>("/train/launch", form);
+      setLaunching(true);
+      const payload = await apiPost<{ id: string }>("/train/launch", buildTrainingPayload(form));
       setLaunchedRunId(payload.id);
     } catch (error) {
       setLaunchError(error instanceof Error ? error.message : "Launch failed.");
+    } finally {
+      setLaunching(false);
     }
   }
 
-  const mode = String(form.mode ?? "sft");
+  const mode = String(form.mode ?? "sft") as TrainMode;
   const activePreset = presets.find((preset) => preset.key === selectedPreset);
   const datasetField = mode === "raft" ? "prompts" : "dataset";
   const runShapeField = mode === "sft" ? "epochs" : "cycles";
   const runShapeLabel = mode === "sft" ? "Epochs" : "Cycles";
   const budgetField =
-    mode === "sft" ? "max_samples" : mode === "raft" ? "samples_per_prompt" : "limit";
+    mode === "sft"
+      ? "max_samples"
+      : mode === "raft" || mode === "audio"
+        ? "samples_per_prompt"
+        : "limit";
   const budgetLabel =
     mode === "sft"
       ? "Max samples"
-      : mode === "raft"
+      : mode === "raft" || mode === "audio"
         ? "Samples / prompt"
         : "Dataset limit";
+  const primaryQualityField =
+    mode === "sft" || mode === "reasoning" || mode === "agentic"
+      ? "learning_rate"
+      : "reward_threshold";
   const highlightedFields = new Set(
     preflight?.suggested_fixes.some(Boolean)
-      ? [mode === "sft" ? "learning_rate" : "reward_threshold"]
+      ? [primaryQualityField]
       : [],
   );
 
   return (
-    <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)] gap-4 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)] gap-4 items-start">
       <div className="space-y-3">
-        <SectionCard title="Run profile" eyebrow="Quickstart">
-          <div className="flex flex-wrap gap-1.5">
-            {presets.map((preset) => (
-              <button
-                key={preset.key}
-                type="button"
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-sm text-left border transition-colors",
-                  preset.key === selectedPreset
-                    ? "bg-accent border-primary/40 text-foreground font-medium"
-                    : "border-border text-muted-foreground hover:text-foreground hover:bg-accent/50",
-                )}
-                onClick={() => applyPreset(preset.key)}
-              >
-                <span className="font-medium text-foreground">{preset.label}</span>
-                <span className="block text-xs text-muted-foreground mt-0.5">{preset.description}</span>
-              </button>
-            ))}
-          </div>
-        </SectionCard>
+        <Card>
+          <CardHeader>
+            <div className="text-xs font-medium text-muted-foreground">Quickstart</div>
+            <CardTitle className="text-sm">Run profile</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+              {presets.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-sm text-left border transition-colors",
+                    preset.key === selectedPreset
+                      ? "bg-accent border-primary/40 text-foreground font-medium"
+                      : "border-border text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                  )}
+                  onClick={() => applyPreset(preset.key)}
+                >
+                  <span className="font-medium text-foreground">{preset.label}</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">{preset.description}</span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="pb-3">
@@ -160,18 +262,19 @@ export function TrainClient() {
               <h3 className="text-sm font-medium text-foreground mb-2">Required inputs</h3>
               <div className="grid grid-cols-2 gap-3">
                 <FieldGroup label="Mode">
-                  <select
-                    value={mode}
-                    onChange={(e) => updateField("mode", e.target.value)}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="sft">SFT</option>
-                    <option value="raft">RAFT</option>
-                    <option value="vlm">VLM</option>
-                    <option value="audio">Audio</option>
-                    <option value="reasoning">Reasoning</option>
-                    <option value="agentic">Agentic</option>
-                  </select>
+                  <Select value={mode} onValueChange={(v) => updateField("mode", v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sft">SFT</SelectItem>
+                      <SelectItem value="raft">RAFT</SelectItem>
+                      <SelectItem value="vlm">VLM</SelectItem>
+                      <SelectItem value="audio">Audio</SelectItem>
+                      <SelectItem value="reasoning">Reasoning</SelectItem>
+                      <SelectItem value="agentic">Agentic</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </FieldGroup>
                 <FieldGroup label="Model">
                   <Input
@@ -185,6 +288,14 @@ export function TrainClient() {
                     onChange={(e) => updateField(datasetField, e.target.value)}
                   />
                 </FieldGroup>
+                {mode === "audio" ? (
+                  <FieldGroup label="Task">
+                    <Input
+                      value={String(form.task ?? "asr")}
+                      onChange={(e) => updateField("task", e.target.value)}
+                    />
+                  </FieldGroup>
+                ) : null}
                 <FieldGroup label="Output directory">
                   <Input
                     value={String(form.output_dir ?? "")}
@@ -219,6 +330,16 @@ export function TrainClient() {
                   />
                 </FieldGroup>
               </div>
+              {mode === "vlm" ? (
+                <div className="grid grid-cols-1 gap-3 mt-3">
+                  <FieldGroup label="Samples / prompt">
+                    <Input
+                      value={numberInputValue(form.samples_per_prompt ?? "3")}
+                      onChange={(e) => updateField("samples_per_prompt", Number(e.target.value))}
+                    />
+                  </FieldGroup>
+                </div>
+              ) : null}
             </div>
 
             <div>
@@ -240,6 +361,24 @@ export function TrainClient() {
                       <Input
                         value={numberInputValue(form.gradient_accumulation_steps ?? "4")}
                         onChange={(e) => updateField("gradient_accumulation_steps", Number(e.target.value))}
+                      />
+                    </FieldGroup>
+                  </>
+                ) : mode === "reasoning" || mode === "agentic" ? (
+                  <>
+                    <FieldGroup
+                      label="Learning rate"
+                      highlighted={highlightedFields.has("learning_rate")}
+                    >
+                      <Input
+                        value={numberInputValue(form.learning_rate ?? "0.00005")}
+                        onChange={(e) => updateField("learning_rate", Number(e.target.value))}
+                      />
+                    </FieldGroup>
+                    <FieldGroup label="Temperature">
+                      <Input
+                        value={numberInputValue(form.temperature ?? "0.7")}
+                        onChange={(e) => updateField("temperature", Number(e.target.value))}
                       />
                     </FieldGroup>
                   </>
@@ -275,11 +414,12 @@ export function TrainClient() {
             <CardTitle className="text-sm">Launch review</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Callout
-              title={activePreset?.label ?? "No preset selected"}
-              body={activePreset?.description ?? "Choose a preset to load a starting configuration."}
-              tone="neutral"
-            />
+            <div>
+              <div className="text-sm font-medium">{activePreset?.label ?? "No preset selected"}</div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {activePreset?.description ?? "Choose a preset to load a starting configuration."}
+              </p>
+            </div>
             <div className="rounded-md border border-border divide-y divide-border">
               <MetricRow label="Mode" value={mode.toUpperCase()} />
               <MetricRow label="Runtime" value={activePreset?.expected_runtime ?? "unknown"} />
@@ -293,6 +433,9 @@ export function TrainClient() {
             <div className="rounded-md border border-border divide-y divide-border">
               <MetricRow label="Model" value={String(form.model ?? "—")} />
               <MetricRow label="Dataset" value={String(form[datasetField] ?? "—")} />
+              {mode === "audio" && hasMeaningfulValue(form.task) ? (
+                <MetricRow label="Task" value={String(form.task ?? "—")} />
+              ) : null}
               <MetricRow label="Output" value={String(form.output_dir ?? "—")} />
             </div>
           </CardContent>
@@ -309,8 +452,8 @@ export function TrainClient() {
                 <Button variant="outline" size="sm" onClick={() => void runPreflight()}>
                   Review
                 </Button>
-                <Button size="sm" onClick={() => void launchRun()}>
-                  Start run
+                <Button size="sm" onClick={() => void launchRun()} disabled={launching}>
+                  {launching ? "Starting…" : "Start run"}
                 </Button>
               </div>
             </div>
@@ -344,11 +487,9 @@ export function TrainClient() {
                 ) : null}
               </>
             ) : (
-              <Callout
-                title="No review yet"
-                body="Run a launch review to see risk, next step, and fixable issues."
-                tone="neutral"
-              />
+              <p className="text-xs text-muted-foreground">
+                Run a launch review to see risk, next step, and fixable issues.
+              </p>
             )}
 
             {launchError ? (
@@ -361,11 +502,9 @@ export function TrainClient() {
                 body="Launch succeeded. Open the run monitor to track progress."
                 tone="success"
                 actions={
-                  <ActionLink
-                    href={`/runs/${encodeURIComponent(launchedRunId)}`}
-                    label="Open run monitor"
-                    tone="primary"
-                  />
+                  <Button size="sm" asChild>
+                    <Link href={`/runs/${encodeURIComponent(launchedRunId)}`}>Open run monitor</Link>
+                  </Button>
                 }
               />
             ) : null}

@@ -18,12 +18,17 @@ Usage:
 
 import json
 import tempfile
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from halo_forge.rlvr.verifiers.execution_runner import (
+    ExecutionPolicy,
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 
 @dataclass
@@ -62,7 +67,8 @@ class RLVRPytestVerifier:
         self,
         dataset_path: str,
         timeout: int = 30,
-        max_workers: int = 8
+        max_workers: int = 8,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize verifier with dataset.
@@ -74,9 +80,14 @@ class RLVRPytestVerifier:
         """
         self.timeout = timeout
         self.max_workers = max_workers
+        self.execution_policy = execution_policy
         self.test_cases: Dict[str, Dict] = {}
         self.prompt_to_task_id: Dict[str, str] = {}  # Reverse lookup
         self.dataset_type = "humaneval"  # Default, override in subclasses
+        self._execution_runner = VerifierExecutionRunner(
+            execution_policy=execution_policy,
+            workspace_root=Path.cwd(),
+        )
         
         self._load_dataset(dataset_path)
     
@@ -249,12 +260,10 @@ test_solution()
             cmd = [sys.executable, str(test_file)]
             
             try:
-                result = subprocess.run(
+                result = self._execution_runner.run(
                     cmd,
-                    capture_output=True,
-                    text=True,
+                    cwd=tmpdir,
                     timeout=self.timeout,
-                    cwd=tmpdir
                 )
                 
                 success = result.returncode == 0
@@ -274,12 +283,19 @@ test_solution()
                     tests_total=tests_total
                 )
                 
-            except subprocess.TimeoutExpired:
+            except TimeoutError:
                 return VerifyResult(
                     success=False,
                     reward=0.0,
                     details="Test execution timed out",
                     error=f"Timeout after {self.timeout}s"
+                )
+            except SandboxUnavailableError as e:
+                return VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Test execution unavailable",
+                    error=str(e)
                 )
             except Exception as e:
                 return VerifyResult(

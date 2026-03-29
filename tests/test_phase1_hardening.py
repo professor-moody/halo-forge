@@ -12,6 +12,10 @@ import pytest
 from halo_forge.rlvr.verifiers.base import VerifyResult
 from halo_forge.rlvr.verifiers.custom import SubprocessVerifier
 from halo_forge.rlvr.verifiers.execution import ExecutionVerifier
+from halo_forge.rlvr.verifiers.execution_runner import (
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 from halo_forge.rlvr.verifiers.multi_language import LanguageConfig, MultiLanguageVerifier
 
 
@@ -53,7 +57,7 @@ def test_subprocess_verifier_uses_argv_shell_false_and_placeholder_substitution(
 
 def test_execution_verifier_test_case_run_passes_resource_limit_hook(monkeypatch):
     """ExecutionVerifier must pass the limit hook for per-test execution."""
-    verifier = ExecutionVerifier(test_cases=[])
+    verifier = ExecutionVerifier(test_cases=[], execution_policy="unsafe_host")
     sentinel_preexec = lambda: None
 
     def fake_limit(timeout_seconds):
@@ -62,13 +66,13 @@ def test_execution_verifier_test_case_run_passes_resource_limit_hook(monkeypatch
 
     captured = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(self, cmd, **kwargs):
         captured["cmd"] = cmd
         captured["kwargs"] = kwargs
         return SimpleNamespace(returncode=0, stdout="42\n", stderr="")
 
     monkeypatch.setattr(verifier, "_build_limit_preexec", fake_limit)
-    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(VerifierExecutionRunner, "run", fake_run)
 
     tc = SimpleNamespace(input="", expected="42", name="t1", timeout=3)
     outcome = verifier._run_test_case("/tmp/fake_binary", tc)
@@ -77,6 +81,28 @@ def test_execution_verifier_test_case_run_passes_resource_limit_hook(monkeypatch
     assert captured["cmd"] == ["/tmp/fake_binary"]
     assert captured["kwargs"]["preexec_fn"] is sentinel_preexec
     assert captured["kwargs"]["timeout"] == 3
+
+
+def test_execution_verifier_defaults_to_sandbox_policy():
+    """ExecutionVerifier should default to sandboxed execution."""
+    verifier = ExecutionVerifier(test_cases=[])
+
+    assert verifier.execution_policy == "sandbox"
+    assert verifier._execution_runner.execution_policy == "sandbox"
+
+
+def test_execution_runner_fails_closed_without_sandbox_backend(monkeypatch, tmp_path):
+    """Sandbox execution should fail closed when no backend is available."""
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    runner = VerifierExecutionRunner(execution_policy="sandbox", workspace_root=tmp_path)
+
+    with pytest.raises(SandboxUnavailableError, match="supported sandbox backend"):
+        runner.run(
+            ["/bin/echo", "hello"],
+            cwd=tmp_path,
+            timeout=1,
+        )
 
 
 def test_mingw_benchmark_factory_does_not_pass_run_after_compile(monkeypatch):

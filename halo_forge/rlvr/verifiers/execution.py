@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from halo_forge.rlvr.verifiers.compile import CompileVerifier
 from halo_forge.rlvr.verifiers.base import VerifyResult, RewardLevel
+from halo_forge.rlvr.verifiers.execution_runner import ExecutionPolicy, SandboxUnavailableError
 
 
 @dataclass
@@ -78,7 +79,8 @@ class ExecutionVerifier(CompileVerifier):
         max_workers: int = 8,
         match_mode: str = 'exact',
         partial_credit: bool = True,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize execution verifier.
@@ -101,7 +103,8 @@ class ExecutionVerifier(CompileVerifier):
             max_workers=max_workers,
             run_after_compile=True,  # We handle running ourselves
             run_timeout=run_timeout,
-            binary_cache_dir=binary_cache_dir
+            binary_cache_dir=binary_cache_dir,
+            execution_policy=execution_policy,
         )
         
         # Override run_after_compile - we handle test case running
@@ -149,21 +152,13 @@ class ExecutionVerifier(CompileVerifier):
         is_windows_target = 'mingw' in self.compiler.lower()
         output_ext = '.exe' if is_windows_target else '.out'
         
-        # Write source to temp file
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix=suffix,
-            delete=False,
-            encoding='utf-8'
-        ) as f:
-            f.write(extracted)
-            source_file = f.name
-        
-        output_file = source_file.replace(suffix, output_ext)
-        
-        try:
+        with tempfile.TemporaryDirectory(prefix="halo_forge_exec_verify_") as tmp_dir:
+            source_file = str(Path(tmp_dir) / f"candidate{suffix}")
+            output_file = str(Path(tmp_dir) / f"candidate{output_ext}")
+            Path(source_file).write_text(extracted, encoding="utf-8")
+
             # Step 1: Compile
-            compile_result = self._compile(source_file, output_file)
+            compile_result = self._compile(source_file, output_file, cwd=tmp_dir)
             
             if not compile_result['success']:
                 return VerifyResult(
@@ -255,14 +250,12 @@ class ExecutionVerifier(CompileVerifier):
                 }
             )
             
-        finally:
-            # Cleanup temp files
-            try:
-                os.unlink(source_file)
-                if os.path.exists(output_file):
-                    os.unlink(output_file)
-            except OSError:
-                pass
+        return VerifyResult(
+            success=False,
+            reward=RewardLevel.FAILURE.value,
+            details="Verification error",
+            error="Unreachable verifier state",
+        )
     
     def _run_test_case(self, binary_path: str, test_case: TestCase) -> Dict[str, Any]:
         """
@@ -278,11 +271,10 @@ class ExecutionVerifier(CompileVerifier):
         preexec_fn = self._build_limit_preexec(test_case.timeout)
 
         try:
-            result = subprocess.run(
+            result = self._execution_runner.run(
                 [binary_path],
-                input=test_case.input,
-                capture_output=True,
-                text=True,
+                cwd=Path(binary_path).parent,
+                input_text=test_case.input,
                 timeout=test_case.timeout,
                 preexec_fn=preexec_fn,
             )
@@ -308,6 +300,14 @@ class ExecutionVerifier(CompileVerifier):
                 'actual': None,
                 'expected': test_case.expected[:500],
                 'error': f'Timeout after {test_case.timeout}s'
+            }
+        except SandboxUnavailableError as e:
+            return {
+                'name': test_case.name,
+                'passed': False,
+                'actual': None,
+                'expected': test_case.expected[:500],
+                'error': str(e),
             }
         except Exception as e:
             return {

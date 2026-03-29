@@ -31,6 +31,14 @@ def _compiler_available(compiler: str) -> bool:
     return shutil.which(compiler) is not None
 
 
+def _gcc_verifier(**kwargs):
+    return GCCVerifier(execution_policy="unsafe_host", **kwargs)
+
+
+def _clang_verifier(**kwargs):
+    return ClangVerifier(execution_policy="unsafe_host", **kwargs)
+
+
 # =============================================================================
 # Test Data
 # =============================================================================
@@ -126,7 +134,7 @@ class TestGCCVerifier:
     
     def test_valid_code_compiles(self):
         """Valid C++ should compile with reward 0.5."""
-        verifier = GCCVerifier()
+        verifier = _gcc_verifier()
         result = verifier.verify(VALID_CPP)
         
         assert result.success is True
@@ -135,7 +143,7 @@ class TestGCCVerifier:
     
     def test_invalid_code_fails(self):
         """Syntax errors should fail with reward 0.0."""
-        verifier = GCCVerifier()
+        verifier = _gcc_verifier()
         result = verifier.verify(INVALID_CPP_SYNTAX)
         
         assert result.success is False
@@ -144,7 +152,7 @@ class TestGCCVerifier:
     
     def test_wrapped_code_extracted(self):
         """Code in markdown blocks should be extracted."""
-        verifier = GCCVerifier()
+        verifier = _gcc_verifier()
         result = verifier.verify(WRAPPED_CPP)
         
         assert result.success is True
@@ -152,7 +160,7 @@ class TestGCCVerifier:
     
     def test_run_after_compile(self):
         """With run_after_compile, reward should be higher."""
-        verifier = GCCVerifier(run_after_compile=True)
+        verifier = _gcc_verifier(run_after_compile=True)
         result = verifier.verify(VALID_CPP)
         
         assert result.success is True
@@ -160,7 +168,7 @@ class TestGCCVerifier:
     
     def test_run_with_crash(self):
         """Code that crashes should get compile reward only."""
-        verifier = GCCVerifier(run_after_compile=True, run_timeout=2)
+        verifier = _gcc_verifier(run_after_compile=True, run_timeout=2)
         result = verifier.verify(VALID_CPP_CRASHES)
         
         # Should compile but crash
@@ -169,7 +177,7 @@ class TestGCCVerifier:
     
     def test_output_verification(self):
         """Correct output should get full reward."""
-        verifier = GCCVerifier(
+        verifier = _gcc_verifier(
             run_after_compile=True,
             expected_output="42"
         )
@@ -180,7 +188,7 @@ class TestGCCVerifier:
     
     def test_wrong_output(self):
         """Wrong output should get partial reward."""
-        verifier = GCCVerifier(
+        verifier = _gcc_verifier(
             run_after_compile=True,
             expected_output="99"
         )
@@ -191,7 +199,7 @@ class TestGCCVerifier:
     
     def test_batch_verification(self):
         """Batch verification should process all samples."""
-        verifier = GCCVerifier(max_workers=4)
+        verifier = _gcc_verifier(max_workers=4)
         codes = [VALID_CPP, INVALID_CPP_SYNTAX, VALID_CPP]
         
         results = verifier.verify_batch(codes)
@@ -215,7 +223,7 @@ class TestClangVerifier:
     )
     def test_valid_code_compiles(self):
         """Valid C++ should compile with Clang."""
-        verifier = ClangVerifier()
+        verifier = _clang_verifier()
         result = verifier.verify(VALID_CPP)
         
         assert result.success is True
@@ -235,7 +243,7 @@ class TestMinGWVerifier:
     )
     def test_valid_code_compiles(self):
         """Valid C++ should cross-compile with MinGW."""
-        verifier = MinGWVerifier()
+        verifier = MinGWVerifier(execution_policy="unsafe_host")
         result = verifier.verify(VALID_CPP)
         
         assert result.success is True
@@ -277,8 +285,8 @@ class TestChainedVerifier:
     def test_all_pass(self):
         """If all verifiers pass, should get combined reward."""
         verifier = ChainedVerifier([
-            GCCVerifier(),
-            GCCVerifier()
+            _gcc_verifier(),
+            _gcc_verifier()
         ])
         result = verifier.verify(VALID_CPP)
         
@@ -288,8 +296,8 @@ class TestChainedVerifier:
     def test_first_fails(self):
         """If first verifier fails, should stop early."""
         verifier = ChainedVerifier([
-            GCCVerifier(),
-            GCCVerifier()
+            _gcc_verifier(),
+            _gcc_verifier()
         ])
         result = verifier.verify(INVALID_CPP_SYNTAX)
         
@@ -299,7 +307,7 @@ class TestChainedVerifier:
     def test_weighted_rewards(self):
         """Weights should affect final reward."""
         verifier = ChainedVerifier(
-            verifiers=[GCCVerifier(), GCCVerifier()],
+            verifiers=[_gcc_verifier(), _gcc_verifier()],
             weights=[0.3, 0.7]
         )
         result = verifier.verify(VALID_CPP)
@@ -361,4 +369,3 @@ def _compiler_available(compiler: str) -> bool:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

@@ -1360,21 +1360,21 @@ class TrainingService:
             "--resume-from-cycle", str(max(0, resume_from_cycle)),
             "--seed", str(seed),
         ]
-        if learning_rate is not None:
+        if learning_rate is not None and modality in {"audio", "reasoning", "agentic"}:
             cmd.extend(["--lr", str(learning_rate)])
         if lr_decay is not None:
             cmd.extend(["--lr-decay", str(lr_decay)])
-        if samples_per_prompt is not None:
+        if samples_per_prompt is not None and modality in {"vlm", "audio"}:
             cmd.extend(["--samples-per-prompt", str(samples_per_prompt)])
         if temperature is not None:
             cmd.extend(["--temperature", str(temperature)])
         if keep_percent is not None:
             cmd.extend(["--keep-percent", str(keep_percent)])
-        if reward_threshold is not None:
+        if reward_threshold is not None and modality in {"vlm", "audio"}:
             cmd.extend(["--reward-threshold", str(reward_threshold)])
         if modality == "audio" and task:
             cmd.extend(["--task", task])
-        if limit is not None and modality in {"reasoning", "agentic"}:
+        if limit is not None and modality in {"vlm", "reasoning", "agentic"}:
             cmd.extend(["--limit", str(limit)])
         if capability.capability.status == "prototype" and allow_prototype_train:
             cmd.append("--allow-prototype-train")
@@ -1879,13 +1879,23 @@ class TrainingService:
             job.process.terminate()
         except ProcessLookupError:
             # Process already dead
-            self.state.update_job_status(
+            transitioned = self.state.update_job_status(
                 job_id,
                 "stopped",
                 source="training_service.stop_job",
                 reason="process_missing",
                 metadata=self._merge_transition_metadata(job),
             )
+            if transitioned:
+                transition = self.state.get_last_transition(job_id)
+                await get_event_bus().emit(Event(
+                    type=EventType.JOB_STOPPED,
+                    job_id=job_id,
+                    data=build_transition_payload(
+                        transition,
+                        **self._event_extra_fields(job),
+                    ),
+                ))
             return True
         
         try:
@@ -1899,13 +1909,6 @@ class TrainingService:
             except ProcessLookupError:
                 pass
         
-        self.state.update_job_status(
-            job_id,
-            "stopped",
-            source="training_service.stop_job",
-            reason="stop_completed",
-            metadata=self._merge_transition_metadata(job),
-        )
         return True
     
     def get_logs(self, job_id: str, last_n: Optional[int] = None) -> list[dict]:
