@@ -1,0 +1,39 @@
+<!--
+  halo-forge brand mark.
+
+  Two visual elements anchored on the original PNG concept:
+    - upper "halo" arch (the forge crown / anvil top)
+    - lower forge column with a copper-glow base (the molten ingot)
+
+  Geometric, no gradients on the silhouette so it stays crisp at 16px.
+  Copper fill matches the system accent token; the glow at the base is
+  a soft radial that adds presence without muddying the silhouette.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="halo-copper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4a04a"/>
+      <stop offset="100%" stop-color="#c2590f"/>
+    </linearGradient>
+    <radialGradient id="halo-glow" cx="0.5" cy="0.85" r="0.4">
+      <stop offset="0%" stop-color="#ff7a1a" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#ff7a1a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Forge ingot glow -->
+  <circle cx="16" cy="27" r="5" fill="url(#halo-glow)"/>
+
+  <!-- Halo arch (top) -->
+  <path
+    d="M7 11 Q16 4 25 11 L25 13 L20 13 L18 9 L14 9 L12 13 L7 13 Z"
+    fill="url(#halo-copper)"
+  />
+
+  <!-- Forge column (vertical pillar) -->
+  <rect x="14" y="13" width="4" height="11" rx="1" fill="url(#halo-copper)"/>
+
+  <!-- Anvil base (the hot ingot) -->
+  <rect x="11" y="24" width="10" height="3" rx="0.5" fill="#ff8c34"/>
+  <rect x="13" y="27" width="6" height="2" rx="0.5" fill="#c2590f"/>
+</svg>

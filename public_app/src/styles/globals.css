@@ -1,0 +1,209 @@
+@import "tailwindcss";
+
+/*
+ * halo-forge design tokens.
+ *
+ * Visual direction: engineering instrument, not AI dashboard. References
+ * are Bloomberg Terminal / Logic Pro / DaVinci Resolve / MATLAB — dense,
+ * precise, mono-numeric, color-as-data.
+ *
+ * Color: warm-neutral surfaces (slight copper undertone in the greys)
+ * with a single high-saturation copper accent reserved for active state,
+ * primary CTA, focus ring, and current selection. Status hues are kept
+ * functional (success/warning/danger/info) — never decorative.
+ *
+ * Geometry: small radii (2/4/6/8 px), 1px hairlines, no fuzzy shadows.
+ * Density: tight type scale, tabular numerals everywhere, mono for any
+ * value the operator might want to compare across rows.
+ */
+@theme {
+  /* ------------------------------------------------------------------
+   * Surfaces — warm-neutral greys with a hint of copper undertone in the
+   * shadows so the accent feels native rather than tacked-on. Six tiers
+   * for visual hierarchy in dense panels.
+   * ---------------------------------------------------------------- */
+  --color-bg: oklch(13% 0.005 50);            /* page background — slightly warmer than pure neutral */
+  --color-bg-subtle: oklch(15.5% 0.006 50);   /* sidebar / topbar */
+  --color-surface: oklch(17.5% 0.006 50);     /* cards */
+  --color-surface-hover: oklch(20.5% 0.006 50);
+  --color-surface-pressed: oklch(23% 0.006 50);
+  --color-elevated: oklch(20% 0.007 50);      /* dialogs, command palette, popovers */
+
+  /* ------------------------------------------------------------------
+   * Foreground tiers. Hierarchy through these tiers, not via opacity.
+   * ---------------------------------------------------------------- */
+  --color-fg: oklch(96% 0.005 50);
+  --color-fg-muted: oklch(70% 0.005 50);
+  --color-fg-subtle: oklch(52% 0.005 50);
+  --color-fg-disabled: oklch(38% 0.005 50);
+
+  /* ------------------------------------------------------------------
+   * Borders. Hairlines at 1px — `border` is the workhorse, `-strong`
+   * for active/hover/selected, `-subtle` for in-card divisions.
+   * ---------------------------------------------------------------- */
+  --color-border: oklch(26% 0.006 50);
+  --color-border-strong: oklch(36% 0.008 50);
+  --color-border-subtle: oklch(20% 0.006 50);
+
+  /* ------------------------------------------------------------------
+   * Copper accent. The single signature color. Matches the brand mark
+   * (#c2590f → #f97316). Used surgically: active nav, primary CTA,
+   * focus rings, training-in-flight pulse, current selection. If a
+   * second "accent" feels needed, reach for a status hue instead.
+   * ---------------------------------------------------------------- */
+  --color-accent: oklch(67% 0.165 48);          /* ~#d97a2c */
+  --color-accent-hover: oklch(73% 0.17 48);     /* ~#ed8d3a */
+  --color-accent-pressed: oklch(60% 0.16 48);
+  --color-accent-fg: oklch(12% 0.01 50);        /* near-black text on copper fills */
+  --color-accent-bg: oklch(22% 0.04 48);        /* tinted background for accent zones */
+
+  /* ------------------------------------------------------------------
+   * Status hues — functional only. Each has a `-bg` for tinted zones.
+   * Passing/failing/degraded/info; pick by *meaning*, never aesthetic.
+   * ---------------------------------------------------------------- */
+  --color-success: oklch(70% 0.13 150);
+  --color-success-bg: oklch(23% 0.04 150);
+  --color-warning: oklch(78% 0.14 80);
+  --color-warning-bg: oklch(26% 0.05 80);
+  --color-danger: oklch(67% 0.18 22);
+  --color-danger-bg: oklch(26% 0.07 22);
+  --color-info: oklch(70% 0.10 230);
+  --color-info-bg: oklch(23% 0.04 230);
+
+  /* ------------------------------------------------------------------
+   * Type. IBM Plex carries engineering-tool credentials (the family
+   * was commissioned for IBM's design system; reads as instrument
+   * panel, not marketing site). Sans for chrome, Mono for any value
+   * an operator compares across rows.
+   * ---------------------------------------------------------------- */
+  --font-sans:
+    "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", sans-serif;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* ------------------------------------------------------------------
+   * Radii — tight. Cards 6px, controls 4px, chips 2px. The previous
+   * step was 4/6/8/12; pulling it in by 2px each tier moves the feel
+   * from "consumer dashboard" to "engineering instrument".
+   * ---------------------------------------------------------------- */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+
+  /* ------------------------------------------------------------------
+   * Animation — precise, not bouncy. Linear-style 16/24ms transitions.
+   * Spring physics belong on consumer apps, not workstations.
+   * ---------------------------------------------------------------- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-quick: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Base layer */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "ss02", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tabular numerals everywhere by default. Non-aligned digits in
+     tables are the single biggest "looks unprofessional" tell. */
+  body,
+  table,
+  [data-mono] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Selection — copper at low opacity so the underlying type stays
+     readable when wrapping a multi-line block. */
+  ::selection {
+    background: color-mix(in oklch, var(--color-accent) 35%, transparent);
+    color: var(--color-fg);
+  }
+
+  /* Scrollbars — thin, monochrome, only present on hover. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-strong);
+  }
+
+  /* Focus ring — copper, 2px outside the element. Covers any
+     interactive element using `focus-visible:` (buttons, inputs,
+     links, table rows, sidebar items). */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* Utility helpers — kept lean. Most styling should compose Tailwind. */
+@utility status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Workstation-feel grid backdrop — subtle, only visible on bg-subtle
+   surfaces (sidebar, topbar). Adds engineering-instrument character
+   without becoming a distraction. */
+@utility instrument-grid {
+  background-image:
+    linear-gradient(to right, var(--color-border-subtle) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-border-subtle) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+/* Pulse used for "training in flight" indicators along the topbar.
+   Single thin copper line, 1.5s loop, intentionally non-bouncy. */
+@keyframes halo-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+@utility pulse-accent {
+  animation: halo-pulse 1.5s var(--ease-quick) infinite;
+}

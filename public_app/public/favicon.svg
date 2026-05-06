@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1717"/>
+      <stop offset="100%" stop-color="#0d0c0c"/>
+    </linearGradient>
+    <linearGradient id="copper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4a04a"/>
+      <stop offset="100%" stop-color="#c2590f"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="url(#bg)"/>
+  <path
+    d="M8 12 Q16 6 24 12 L24 14 L20 14 L18 11 L14 11 L12 14 L8 14 Z"
+    fill="url(#copper)"
+  />
+  <rect x="14.5" y="14" width="3" height="10" fill="url(#copper)"/>
+  <rect x="11" y="24" width="10" height="2.5" fill="#ff8c34"/>
+</svg>
