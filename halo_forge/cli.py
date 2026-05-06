@@ -665,6 +665,39 @@ def cmd_dpo_train(args):
     _print_completed_training_summary("dpo", config.output_dir, summary)
 
 
+def cmd_serve(args):
+    """Run an OpenAI-compatible serving endpoint (Track I1).
+
+    Spins up uvicorn on `--host`/`--port` (default 127.0.0.1:8001) serving
+    `--model` via the active backend. The model loads lazily on the first
+    request so `halo-forge serve` returns control quickly even for large
+    weights — the first chat call eats the load cost.
+    """
+    import uvicorn
+
+    from halo_forge.serving.app import create_serving_app
+
+    print_banner()
+    print(f"{GREEN}halo-forge serve{NC} — OpenAI-compatible endpoint")
+    print("=" * 60)
+    print(f"  model:   {args.model}")
+    print(f"  bind:    {args.host}:{args.port}")
+    if args.backend:
+        print(f"  backend: {args.backend} (forced)")
+    print()
+    print("Try:")
+    print(f"  curl http://{args.host}:{args.port}/v1/models")
+    print(
+        f"  curl http://{args.host}:{args.port}/v1/chat/completions "
+        '-H "Content-Type: application/json" '
+        '-d \'{"model":"' + args.model + '","messages":[{"role":"user","content":"hi"}]}\''
+    )
+    print()
+
+    app = create_serving_app(model_name=args.model, backend_name=args.backend)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
 def cmd_dpo_datasets(args):
     """List the canonical preference datasets halo-forge ships short names for."""
     from halo_forge.dpo.datasets import list_preference_datasets
@@ -4062,6 +4095,21 @@ def main():
         'datasets', help='List available preference datasets'
     )
 
+    # serve command (Track I1) — OpenAI-compatible serving endpoint.
+    serve_parser = subparsers.add_parser(
+        'serve',
+        help='Run an OpenAI-compatible serving endpoint for a trained model',
+    )
+    serve_parser.add_argument('--model', '-m', required=True,
+                              help='Model id, mlx-community id, or local path to serve')
+    serve_parser.add_argument('--host', default='127.0.0.1',
+                              help='Bind host (default: 127.0.0.1; loopback only)')
+    serve_parser.add_argument('--port', type=int, default=8001,
+                              help='Bind port (default: 8001)')
+    serve_parser.add_argument('--backend',
+                              help='Force a backend (mlx, mps, cuda, rocm_gfx1151, cpu); '
+                                   'defaults to autodetect')
+
     # raft command
     raft_parser = subparsers.add_parser('raft', help='RAFT training')
     raft_subparsers = raft_parser.add_subparsers(dest='raft_command', required=True)
@@ -5198,6 +5246,8 @@ def _dispatch_commands(args):
             cmd_dpo_train(args)
         elif args.dpo_command == 'datasets':
             cmd_dpo_datasets(args)
+    elif args.command == 'serve':
+        cmd_serve(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
