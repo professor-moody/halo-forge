@@ -119,6 +119,10 @@ def create_app() -> "FastAPI":
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @router.post("/runs/{run_id}/cancel")
+    async def cancel_run(run_id: str) -> Dict[str, Any]:
+        return await service.cancel_run(run_id)
+
     @router.get("/runs/{run_id}/logs")
     async def get_run_logs(
         run_id: str,

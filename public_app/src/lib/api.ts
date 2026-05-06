@@ -258,6 +258,11 @@ export const api = {
   backendInfo: () => request<BackendInfo>("/backend"),
   telemetry: () => request<TelemetrySample>("/telemetry"),
   dashboard: () => request<DashboardSummary>("/dashboard"),
+  runCancel: (runId: string) =>
+    request<{ ok: boolean; reason: string | null; run_id: string; status: string | null }>(
+      `/runs/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST" },
+    ),
   runLogs: (runId: string, tail = 200) =>
     request<RunLogs>(`/runs/${encodeURIComponent(runId)}/logs?tail=${tail}`),
   runSamples: (

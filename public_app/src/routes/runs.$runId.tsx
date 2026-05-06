@@ -1,14 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Cpu,
   Layers,
+  Loader2,
   RefreshCw,
+  Square,
   Target,
   TrendingDown,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { api, type CycleMetric, type RunDetail } from "@/lib/api";
 import { queryKeys } from "@/lib/hooks";
 import { Topbar } from "@/components/shell";
@@ -22,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MetricChart, type MetricSeries } from "@/components/charts/metric-chart";
+import { CycleScrubber } from "@/components/run/cycle-scrubber";
 import { LogsPanel } from "@/components/run/logs-panel";
 import { SampleInspector } from "@/components/run/sample-inspector";
 import { cn, relativeTime } from "@/lib/utils";
@@ -47,6 +50,7 @@ export const Route = createFileRoute("/runs/$runId")({
 
 function RunDetailRoute() {
   const { runId } = Route.useParams();
+  const queryClient = useQueryClient();
   const detailQuery = useQuery<RunDetail>({
     queryKey: queryKeys.runDetail(runId),
     queryFn: () => api.runDetail(runId),
@@ -61,6 +65,25 @@ function RunDetailRoute() {
 
   const isLive = isJobRunning(data?.status);
 
+  // Phase D v3 — chart focus state. `null` means "show all cycles";
+  // a number means "slice the chart to cycles 0..focusCycle inclusive".
+  // The CycleScrubber reads/writes this; chart cards consume the
+  // sliced view via slicedCycles below.
+  const [focusCycle, setFocusCycle] = useState<number | null>(null);
+  const slicedCycles = useMemo<CycleMetric[]>(() => {
+    if (focusCycle === null) return cycleMetrics;
+    return cycleMetrics.filter((c) => c.cycle <= focusCycle);
+  }, [cycleMetrics, focusCycle]);
+
+  // Cancel button — only meaningful for active jobs. Mutation invalidates
+  // the run-detail query so the topbar status pulls the post-cancel state.
+  const cancelMutation = useMutation({
+    mutationFn: () => api.runCancel(runId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runDetail(runId) });
+    },
+  });
+
   return (
     <>
       <Topbar
@@ -70,6 +93,22 @@ function RunDetailRoute() {
         live={isLive}
         actions={
           <>
+            {isLive ? (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => cancelMutation.mutate()}
+                disabled={cancelMutation.isPending}
+                title="Send SIGTERM and wait for graceful checkpoint save"
+              >
+                {cancelMutation.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Square />
+                )}
+                Cancel run
+              </Button>
+            ) : null}
             <Button variant="ghost" size="icon" asChild aria-label="Back to runs">
               <Link to="/runs">
                 <ArrowLeft />
@@ -118,10 +157,23 @@ function RunDetailRoute() {
         <div className="px-5 py-5 space-y-4">
           <StatRibbon data={data} />
 
+          {/* Cycle scrubber — playback head for the charts below. */}
+          {cycleMetrics.length > 1 ? (
+            <Card>
+              <CardContent className="px-4 py-2.5">
+                <CycleScrubber
+                  cycles={cycleMetrics.map((c) => c.cycle)}
+                  focus={focusCycle}
+                  onFocusChange={setFocusCycle}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div className="lg:col-span-2 space-y-3">
-              <LossCard cycles={cycleMetrics} />
-              <RewardCard cycles={cycleMetrics} modality={String(data.modality)} />
+              <LossCard cycles={slicedCycles} />
+              <RewardCard cycles={slicedCycles} modality={String(data.modality)} />
             </div>
             <div className="space-y-3">
               <RunSummaryCard data={data} />

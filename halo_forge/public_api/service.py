@@ -192,6 +192,54 @@ class PublicApiService:
             "inference_defaults": backend.inference_defaults(),
         }
 
+    async def cancel_run(self, run_identifier: str) -> Dict[str, Any]:
+        """Cancel a running training job.
+
+        Only valid for active jobs (`_resolve_run_source` returns
+        kind="job"); completed runs in the results service have no
+        process to stop. Returns a stable envelope so the frontend can
+        render result-or-reason without branching on HTTP status.
+
+        Backed by `TrainingService.stop_job` which sends SIGTERM, waits
+        for graceful shutdown (so the trainer can save a checkpoint),
+        then SIGKILLs on timeout.
+        """
+        try:
+            source = self._resolve_run_source(run_identifier)
+        except KeyError as exc:
+            return {
+                "ok": False,
+                "reason": f"Run not found: {exc}",
+                "run_id": run_identifier,
+                "status": None,
+            }
+
+        if source.get("kind") != "job":
+            return {
+                "ok": False,
+                "reason": "Run is not active; only running jobs can be cancelled.",
+                "run_id": run_identifier,
+                "status": "completed",
+            }
+
+        job = source["job"]
+        try:
+            stopped = await self.training_service.stop_job(job.id)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": f"stop_job failed: {exc}",
+                "run_id": job.id,
+                "status": job.status,
+            }
+
+        return {
+            "ok": bool(stopped),
+            "reason": None if stopped else "Job was not running.",
+            "run_id": job.id,
+            "status": job.status,
+        }
+
     def get_run_logs(
         self,
         run_identifier: str,
