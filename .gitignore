@@ -90,12 +90,15 @@ website/hugo-docs/resources/
 website/hugo-docs/.hugo_build.lock
 website/.backup/
 
-# Next.js public frontend
+# Public frontend (Vite)
 public_app/.next/
 public_app/node_modules/
 public_app/out/
+public_app/dist/
 !public_app/lib/
 !public_app/lib/*.ts
+!public_app/src/lib/
+!public_app/src/lib/**
 
 # Experimental/internal docs
 .experimental/

@@ -1,12 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Activity,
   ArrowUpRight,
   Cpu,
-  Gauge,
   Plus,
   RefreshCw,
-  Thermometer,
   Zap,
 } from "lucide-react";
 import { useDashboard, useRuns, useBackendInfo } from "@/lib/hooks";
@@ -85,13 +82,6 @@ function OverviewRoute() {
         }
       />
 
-      {/* Telemetry strip — Phase B will wire real values from
-          GET /api/public/telemetry. For now we show static placeholders
-          so the visual real-estate is allocated and the design intent
-          is visible. Marked with a subtle `opacity-60` so reviewers
-          don't read the values as live. */}
-      <TelemetryStrip />
-
       <div className="px-5 py-5 space-y-4">
         <StatRibbon items={items} />
 
@@ -105,98 +95,6 @@ function OverviewRoute() {
         </div>
       </div>
     </>
-  );
-}
-
-/* ------------------------------------------------------------------------
- * Telemetry strip — hardware vitals, the visual signature of halo-forge.
- *
- * Phase A ships the layout + placeholder values. Phase B wires real
- * values pulled from rocm-smi / nvidia-smi / powermetrics on the
- * backend and streamed via SSE.
- * ---------------------------------------------------------------------- */
-
-function TelemetryStrip() {
-  return (
-    <div className="border-b border-border bg-bg-subtle/40">
-      <div className="flex items-stretch divide-x divide-border-subtle px-5">
-        <Telemetry
-          icon={Gauge}
-          label="GPU UTIL"
-          value="—"
-          unit="%"
-          hint="Phase B"
-        />
-        <Telemetry
-          icon={Cpu}
-          label="VRAM"
-          value="—"
-          unit="GB"
-          hint="of —"
-        />
-        <Telemetry
-          icon={Zap}
-          label="POWER"
-          value="—"
-          unit="W"
-          hint="—"
-        />
-        <Telemetry
-          icon={Thermometer}
-          label="TEMP"
-          value="—"
-          unit="°C"
-          hint="—"
-        />
-        <Telemetry
-          icon={Activity}
-          label="THROUGHPUT"
-          value="—"
-          unit="tok/s"
-          hint="—"
-        />
-      </div>
-    </div>
-  );
-}
-
-function Telemetry({
-  icon: Icon,
-  label,
-  value,
-  unit,
-  hint,
-}: {
-  icon: typeof Cpu;
-  label: string;
-  value: string;
-  unit?: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex flex-1 items-center gap-3 px-4 py-2.5 opacity-60 first:pl-0 last:pr-0">
-      <Icon className="h-3.5 w-3.5 text-fg-subtle shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-fg-disabled">
-          {label}
-        </div>
-        <div className="flex items-baseline gap-1.5 mt-0.5">
-          <span className="font-mono text-[15px] tabular-nums tracking-tight text-fg">
-            {value}
-          </span>
-          {unit ? (
-            <span className="font-mono text-[10px] uppercase tracking-wider text-fg-subtle">
-              {unit}
-            </span>
-          ) : null}
-          {hint ? (
-            <span className="font-mono text-[10px] text-fg-disabled ml-auto">
-              {hint}
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </div>
   );
 }
 

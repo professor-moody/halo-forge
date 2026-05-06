@@ -54,6 +54,10 @@ def create_app() -> "FastAPI":
     async def backend_info() -> Dict[str, Any]:
         return service.get_backend_info()
 
+    @router.get("/telemetry")
+    async def telemetry() -> Dict[str, Any]:
+        return service.get_telemetry()
+
     @router.get("/dashboard")
     async def dashboard_summary() -> Dict[str, Any]:
         return service.get_dashboard_summary()

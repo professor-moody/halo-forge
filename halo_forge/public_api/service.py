@@ -192,6 +192,39 @@ class PublicApiService:
             "inference_defaults": backend.inference_defaults(),
         }
 
+    def get_telemetry(self) -> Dict[str, Any]:
+        """Live hardware telemetry — the data behind the public_app's
+        telemetry strip.
+
+        Polled by the frontend at ~3s intervals. The provider's own
+        cache (1s TTL on rocm-smi/nvidia-smi subprocess output) keeps
+        the cost bounded even if a flood of clients polls in lockstep.
+
+        Failures inside the provider are caught and surfaced as a
+        `note` field on the sample rather than 5xx responses, because
+        the strip is meant to *always* render; missing values render
+        as "—" but the contract stays stable.
+        """
+        from halo_forge.telemetry import (
+            TelemetryUnavailableError,
+            get_telemetry_provider,
+        )
+
+        try:
+            provider = get_telemetry_provider()
+        except TelemetryUnavailableError as exc:
+            # Should not happen — the registry falls back to CPU — but
+            # we shape the response identically so the frontend never
+            # sees an undefined payload.
+            return {
+                "timestamp": 0.0,
+                "backend": "unknown",
+                "device_name": None,
+                "note": f"Telemetry unavailable: {exc}",
+            }
+        sample = provider.sample()
+        return sample.to_dict()
+
     def list_training_presets(self) -> list[dict[str, Any]]:
         """Return public-safe quickstart presets for training."""
         items: list[dict[str, Any]] = []
