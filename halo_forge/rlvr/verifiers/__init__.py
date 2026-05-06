@@ -84,5 +84,24 @@ __all__ = [
     "MultiLanguageVerifier",
     "AutoVerifier",  # Alias for MultiLanguageVerifier
     "LanguageConfig",
+    # Track V1 — plugin registry. Decorator-based registration plus lazy
+    # discovery of `~/.halo-forge/verifiers/*.py` and entry-point packages.
+    "register_verifier",
+    "get_verifier",
+    "list_registered_verifiers",
 ]
+
+
+# V1 — register the verifiers halo-forge ships under canonical short
+# names so the registry is non-empty out of the box. The seeding helper
+# is idempotent and the discovery of user plugins still happens lazily
+# on the first `get_verifier` / `list_registered_verifiers` call.
+from halo_forge.rlvr.verifiers.registry import (  # noqa: E402
+    get_verifier,
+    list_registered_verifiers,
+    register_verifier,
+    _seed_builtin_registrations,
+)
+
+_seed_builtin_registrations()
 
