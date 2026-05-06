@@ -157,6 +157,24 @@ export type RunUserSummary = {
   confidence_tone?: string;
 };
 
+/**
+ * Run cost rollup (Track P2). Energy + dollar estimate computed from
+ * wall-clock duration × backend nominal power. `source: "measured"` means
+ * a real per-run sample fed into the estimator; "nominal" means the
+ * backend nominal-power table. The UI renders the source as an "estimate"
+ * badge so users know the difference.
+ */
+export type RunCost = {
+  duration_seconds: number;
+  duration_hours: number;
+  power_watts_estimated: number;
+  energy_kwh: number;
+  cost_usd: number;
+  cost_per_kwh: number;
+  backend: string;
+  source: "measured" | "nominal" | string;
+};
+
 export type RunDetail = {
   id: string;
   run_id: string;
@@ -178,6 +196,7 @@ export type RunDetail = {
     cycle_metrics?: CycleMetric[];
     cycle_losses?: number[];
     yield_diagnostics?: Record<string, unknown>;
+    cost?: RunCost;
     [k: string]: unknown;
   };
 };

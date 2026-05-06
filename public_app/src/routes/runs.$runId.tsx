@@ -7,13 +7,15 @@ import {
   Loader2,
   Pin,
   PinOff,
+  Plug,
   RefreshCw,
   Square,
   Target,
   TrendingDown,
+  Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { api, type CycleMetric, type RunDetail } from "@/lib/api";
+import { api, type CycleMetric, type RunCost, type RunDetail } from "@/lib/api";
 import { queryKeys } from "@/lib/hooks";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
@@ -210,6 +212,7 @@ function RunDetailRoute() {
             </div>
             <div className="space-y-3">
               <RunSummaryCard data={data} />
+              <CostCard cost={data.details?.cost} />
               <YieldCard yieldData={data.details?.yield_diagnostics} />
             </div>
           </div>
@@ -487,6 +490,92 @@ function RunSummaryCard({ data }: { data: RunDetail }) {
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Cost card — Track P2 / F-R. Energy + dollar estimate from wall-clock
+ * × backend nominal-power. Renders an "estimate" badge when source is
+ * "nominal" so users know it isn't a meter reading.
+ * ----------------------------------------------------------------------- */
+
+function CostCard({ cost }: { cost?: RunCost }) {
+  if (!cost) return null;
+  const isMeasured = cost.source === "measured";
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardEyebrow>COST</CardEyebrow>
+          <CardTitle>Energy &amp; spend</CardTitle>
+          <Zap className="h-3.5 w-3.5 text-fg-disabled" />
+        </div>
+        <Badge tone={isMeasured ? "success" : "neutral"} dot size="sm">
+          {isMeasured ? "measured" : "estimate"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="p-0 divide-y divide-border-subtle text-[12.5px]">
+        <CostRow
+          label="Wall clock"
+          value={fmtDuration(cost.duration_seconds)}
+          mono
+        />
+        <CostRow
+          label="Power draw"
+          value={`${cost.power_watts_estimated.toFixed(0)} W`}
+          mono
+          icon={<Plug className="h-3 w-3 text-fg-disabled" />}
+        />
+        <CostRow
+          label="Energy"
+          value={`${cost.energy_kwh.toFixed(3)} kWh`}
+          mono
+        />
+        <CostRow
+          label={`Cost @ $${cost.cost_per_kwh.toFixed(2)}/kWh`}
+          value={`$${cost.cost_usd.toFixed(2)}`}
+          mono
+          emphasis
+        />
+        <CostRow label="Backend" value={cost.backend} mono className="text-fg-muted" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function CostRow({
+  label,
+  value,
+  mono,
+  emphasis,
+  icon,
+  className,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  emphasis?: boolean;
+  icon?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 px-3.5 py-2">
+      <span className="text-fg-muted flex items-center gap-1.5">
+        {icon}
+        {label}
+      </span>
+      <span
+        className={cn(
+          "text-right truncate max-w-[18ch]",
+          mono ? "font-mono" : "",
+          emphasis ? "text-accent text-[13px]" : "text-fg",
+          className,
+        )}
+        title={value}
+      >
+        {value}
+      </span>
+    </div>
   );
 }
 

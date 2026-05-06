@@ -173,6 +173,25 @@ class PublicApiService:
         self.readiness_service = readiness_service or get_ops_readiness_service()
         self.training_service = training_service or TrainingService(self.app_state)
 
+    def _active_backend_name(self) -> str:
+        """Return the active accelerator-kind name for cost / display use.
+
+        Cached per service instance after the first probe — backend
+        detection is cheap but not free, and the run-detail endpoint
+        fires it on every request.
+        """
+        cached = getattr(self, "_cached_backend_name", None)
+        if cached:
+            return cached
+        try:
+            from halo_forge.backend import get_backend
+
+            name = get_backend().name
+        except Exception:
+            name = "unknown"
+        self._cached_backend_name = name
+        return name
+
     def get_backend_info(self) -> Dict[str, Any]:
         """Return the active compute backend and its capabilities.
 
@@ -1370,6 +1389,13 @@ class PublicApiService:
                 "cycle_metrics": _project_cycles_for_charts(summary.raw_data),
                 "cycle_losses": list(summary.cycle_losses),
                 "yield_diagnostics": summary.yield_diagnostics,
+                # Track P2 — energy/cost rollup. Estimated from wall-clock
+                # + active backend's nominal training power; `source` flags
+                # the provenance for the UI.
+                "cost": _project_run_cost(
+                    summary.raw_data,
+                    backend_name=self._active_backend_name(),
+                ),
             },
             research_sections=item.research_sections,
             internal_details=(
@@ -1777,6 +1803,36 @@ class PublicApiService:
 # wire. Defined at module scope so tests can exercise it without standing up
 # the full PublicApiService.
 # ---------------------------------------------------------------------------
+
+
+def _project_run_cost(raw_data: Dict[str, Any], *, backend_name: str) -> Dict[str, Any]:
+    """Roll up wall-clock + nominal-power into a cost estimate (Track P2).
+
+    Sums `cycle_duration_seconds` across the run's cycles and hands them
+    to `telemetry.cost.estimate_run_cost`. The backend name comes from
+    the *currently active host* — the training_summary doesn't carry the
+    backend at write time, so for completed runs displayed on a different
+    host the cost is "what would this run cost *here*". Same-host case
+    is accurate; cross-host is an honest estimate. The frontend renders
+    the `source` field so users know it's an estimate, not a meter
+    reading.
+    """
+    from halo_forge.telemetry.cost import estimate_run_cost
+
+    duration = 0.0
+    if isinstance(raw_data, dict):
+        cycles = raw_data.get("cycles")
+        if isinstance(cycles, list):
+            for entry in cycles:
+                if isinstance(entry, dict):
+                    v = _coerce_optional_float(entry.get("cycle_duration_seconds"))
+                    if v:
+                        duration += v
+    cost = estimate_run_cost(
+        duration_seconds=duration,
+        backend_name=backend_name or "unknown",
+    )
+    return cost.to_dict()
 
 
 def _project_cycles_for_charts(raw_data: Dict[str, Any]) -> list[dict[str, Any]]:
