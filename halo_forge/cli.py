@@ -940,9 +940,35 @@ def cmd_raft_train(args):
         print("Use --prompts or set in config")
         sys.exit(1)
     
-    # Run
-    trainer = RAFTTrainer(verifier=verifier, config=config)
-    trainer.run(prompts, num_cycles=config.num_cycles)
+    # Phase 5: when --accelerator mlx is requested we have two paths.
+    # Default (5b): MLXRAFTTrainer — rollout + verify + SFT all on MLX.
+    # Opt-in (5a): --rollout-only — keep the PyTorch RAFTTrainer but swap
+    # in MLXRolloutGenerator for the rollout step. The 5a hybrid is useful
+    # when the user has an existing PyTorch checkpoint they want to keep
+    # training but wants fast Apple Silicon rollouts.
+    if getattr(args, 'accelerator', 'auto') == 'mlx':
+        mlx_model = getattr(args, 'rollout_model', None) or args.model
+        if getattr(args, 'rollout_only', False):
+            from halo_forge.rlvr.mlx_rollout import MLXRolloutGenerator
+            print(f"[mlx-5a] Hybrid mode: MLX rollouts ({mlx_model}) + PyTorch policy update ({args.model})")
+            trainer = RAFTTrainer(
+                verifier=verifier,
+                config=config,
+                rollout_generator=MLXRolloutGenerator(mlx_model),
+            )
+            trainer.run(prompts, num_cycles=config.num_cycles)
+        else:
+            from halo_forge.rlvr.mlx_raft_trainer import MLXRAFTTrainer
+            print(f"[mlx-5b] Native MLX RAFT: rollout + verify + SFT on MLX ({mlx_model})")
+            mlx_trainer = MLXRAFTTrainer(
+                verifier=verifier,
+                config=config,
+                rollout_model=mlx_model,
+            )
+            mlx_trainer.run(prompts, num_cycles=config.num_cycles)
+    else:
+        trainer = RAFTTrainer(verifier=verifier, config=config)
+        trainer.run(prompts, num_cycles=config.num_cycles)
 
 
 def cmd_benchmark(args):
@@ -3853,6 +3879,25 @@ def main():
     raft_train_parser = raft_subparsers.add_parser('train', help='Run RAFT training')
     raft_train_parser.add_argument('--config', '-c', help='Config file path')
     raft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-3B', help='Base model')
+    # Phase 5a: when --accelerator mlx is set, rollouts run on MLX while
+    # the policy update stays on PyTorch. --rollout-model lets you point at
+    # an MLX-format weight set distinct from the torch base. If omitted, we
+    # use --model for both (only works if it happens to be MLX-loadable).
+    raft_train_parser.add_argument(
+        '--rollout-model',
+        help='MLX-format model used for rollouts when --accelerator mlx is set '
+             '(e.g. mlx-community/Qwen2.5-3B-Instruct-bf16). Defaults to --model.',
+    )
+    # Phase 5a hybrid: --accelerator mlx --rollout-only keeps the PyTorch
+    # RAFT trainer in charge but swaps in MLX-fast rollouts. Without this
+    # flag, --accelerator mlx selects the full MLX-native RAFT trainer
+    # (Phase 5b).
+    raft_train_parser.add_argument(
+        '--rollout-only',
+        action='store_true',
+        help='[--accelerator mlx] Hybrid mode: MLX rollouts + PyTorch policy update. '
+             'Without this, --accelerator mlx runs RAFT entirely on MLX.',
+    )
     raft_train_parser.add_argument('--checkpoint', help='SFT checkpoint path (optional)')
     raft_train_parser.add_argument('--prompts', '-p', help='Prompts file')
     raft_train_parser.add_argument('--output', '-o', default='models/raft', help='Output directory')

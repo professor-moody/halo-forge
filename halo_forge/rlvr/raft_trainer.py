@@ -183,7 +183,8 @@ class RAFTTrainer:
         self,
         verifier: Verifier,
         config: Optional[RAFTConfig] = None,
-        sft_checkpoint: Optional[str] = None
+        sft_checkpoint: Optional[str] = None,
+        rollout_generator: Optional[Any] = None,
     ):
         """
         Initialize RAFT trainer.
@@ -192,6 +193,13 @@ class RAFTTrainer:
             verifier: Verifier instance for checking samples
             config: RAFT configuration
             sft_checkpoint: Path to SFT checkpoint (overrides config)
+            rollout_generator: Optional `RolloutGenerator` (Phase 5a) used to
+                produce samples each cycle. None means "use the trainer's
+                loaded torch model in-process" (historical behavior). Pass an
+                `MLXRolloutGenerator` to do MLX-fast rollouts while keeping
+                the policy update on PyTorch — useful on Apple Silicon. The
+                policy-update step and `_reload_model` invariant are
+                untouched; the verifier still consumes plain text tuples.
         """
         self.config = config or RAFTConfig()
         if sft_checkpoint:
@@ -210,6 +218,12 @@ class RAFTTrainer:
 
         # Load model and tokenizer
         self._load_model()
+
+        # Pluggable rollout. None -> default torch generator built lazily
+        # from the trainer's own model/tokenizer the first time samples are
+        # generated. Constructed lazily so existing tests that mock the
+        # model don't blow up at __init__ time.
+        self._rollout_generator: Optional[Any] = rollout_generator
 
         # Statistics
         self.cycle_stats = []
@@ -388,6 +402,22 @@ class RAFTTrainer:
         max_new_tokens = max_new_tokens or cfg.max_new_tokens
         temperature = temperature or cfg.temperature
         batch_size = batch_size or cfg.generation_batch_size
+
+        # Phase 5a: pluggable rollout. If an explicit RolloutGenerator was
+        # passed at __init__ (e.g. MLXRolloutGenerator on Apple Silicon),
+        # delegate to it. Otherwise fall through to the inline torch path
+        # below — historical behavior, no change for existing callers.
+        if self._rollout_generator is not None:
+            return self._rollout_generator.generate_samples(
+                prompts,
+                num_samples=num_samples,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                batch_size=batch_size,
+                system_prompt=cfg.system_prompt,
+                cache_path=cache_path,
+                log=self._log,
+            )
 
         total = len(prompts) * num_samples
         
