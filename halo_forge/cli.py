@@ -580,6 +580,92 @@ def cmd_sft_train(args):
     _print_completed_training_summary("sft", config.output_dir, summary)
 
 
+def cmd_dpo_train(args):
+    """Run DPO training (Track T1 / phase Q1).
+
+    Wraps `trl.DPOTrainer` so we get the published loss-math (sigmoid, IPO,
+    hinge, KTO-pair, RPO, cDPO via label-smoothing) for free; halo-forge owns
+    the run-id, output_dir, training_summary contract, and recovery guidance
+    so the public API + frontend treat DPO runs identically to SFT/RAFT.
+    """
+    from halo_forge.dpo import DPOConfig, get_dpo_trainer
+
+    print_banner()
+    print(f"{GREEN}DPO Training{NC}")
+    print("=" * 60)
+
+    dataset = getattr(args, "dataset", None)
+    data = getattr(args, "data", None)
+    if not dataset and not data:
+        print(f"{RED}Error: Either --dataset or --data is required{NC}")
+        print()
+        print("Examples:")
+        print("  halo-forge dpo train --dataset ultrafeedback --model Qwen/Qwen2.5-3B-Instruct")
+        print("  halo-forge dpo train --data my_pairs.jsonl --model meta-llama/Llama-3.2-3B")
+        print()
+        print("Available preference datasets:")
+        print("  ultrafeedback, orca_dpo, hh_rlhf, py_dpo")
+        print("  Run 'halo-forge dpo datasets' to see all options")
+        sys.exit(1)
+
+    config = DPOConfig(
+        model_name=args.model,
+        train_file=data,
+        dataset=dataset,
+        max_samples=getattr(args, "max_samples", None),
+        validation_split=getattr(args, "validation_split", 0.05),
+        max_seq_length=getattr(args, "max_seq_length", 1024),
+        max_prompt_length=getattr(args, "max_prompt_length", 512),
+        beta=getattr(args, "beta", 0.1),
+        loss_type=getattr(args, "loss_type", "sigmoid"),
+        reference_free=getattr(args, "reference_free", False),
+        label_smoothing=getattr(args, "label_smoothing", 0.0),
+        output_dir=args.output,
+        num_epochs=getattr(args, "epochs", 1),
+        batch_size=getattr(args, "batch_size", 1),
+        gradient_accumulation_steps=getattr(args, "gradient_accumulation", 16),
+        learning_rate=getattr(args, "learning_rate", 5e-6),
+        warmup_ratio=getattr(args, "warmup_ratio", 0.1),
+        weight_decay=getattr(args, "weight_decay", 0.0),
+        max_grad_norm=getattr(args, "max_grad_norm", 1.0),
+        lora_r=getattr(args, "lora_rank", 16),
+        lora_alpha=getattr(args, "lora_alpha", 32),
+        lora_dropout=getattr(args, "lora_dropout", 0.05),
+        save_steps=getattr(args, "save_steps", 200),
+        eval_steps=getattr(args, "eval_steps", 100),
+        save_total_limit=getattr(args, "save_total_limit", 3),
+        load_in_4bit=getattr(args, "load_in_4bit", False),
+        gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
+    )
+
+    if getattr(args, "dry_run", False):
+        print("Dry run: configuration validated. No training started.")
+        print(f"  model={config.model_name} dataset={config.dataset or '(local)'}")
+        print(f"  beta={config.beta} loss_type={config.loss_type}")
+        return
+
+    trainer = get_dpo_trainer(config)
+    summary = trainer.train(resume_from_checkpoint=args.resume)
+    _print_completed_training_summary("dpo", config.output_dir, summary)
+
+
+def cmd_dpo_datasets(args):
+    """List the canonical preference datasets halo-forge ships short names for."""
+    from halo_forge.dpo.datasets import list_preference_datasets
+
+    print_banner()
+    print(f"{GREEN}Available preference datasets (DPO){NC}")
+    print("=" * 60)
+    print()
+    for ds in list_preference_datasets():
+        print(f"  {CYAN}{ds.name:<16}{NC} [{ds.size_hint:>6}] {ds.description}")
+        print(f"                  HuggingFace: {ds.huggingface_id}")
+    print()
+    print("Usage:")
+    print("  halo-forge dpo train --dataset ultrafeedback --model Qwen/Qwen2.5-3B-Instruct")
+    print()
+
+
 def cmd_sft_datasets(args):
     """List available SFT datasets."""
     from halo_forge.sft.datasets import list_sft_datasets
@@ -3870,7 +3956,76 @@ def main():
     
     # sft datasets
     sft_datasets_parser = sft_subparsers.add_parser('datasets', help='List available SFT datasets')
-    
+
+    # dpo command (Track T1 / phase Q1) - Direct Preference Optimization
+    dpo_parser = subparsers.add_parser('dpo', help='DPO (Direct Preference Optimization) training')
+    dpo_subparsers = dpo_parser.add_subparsers(dest='dpo_command', required=True)
+
+    # dpo train
+    dpo_train_parser = dpo_subparsers.add_parser('train', help='Run DPO training')
+    dpo_train_parser.add_argument('--config', '-c', help='Config file path')
+    dpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
+                                  help='Base / SFT-tuned model to align')
+    dpo_train_parser.add_argument('--dataset', '-d',
+                                  help='HuggingFace dataset id or short name (ultrafeedback, orca_dpo, hh_rlhf, py_dpo)')
+    dpo_train_parser.add_argument('--data',
+                                  help='Local JSONL file with prompt/chosen/rejected rows')
+    dpo_train_parser.add_argument('--output', '-o', default='models/dpo', help='Output directory')
+    dpo_train_parser.add_argument('--resume', help='Resume from checkpoint')
+    dpo_train_parser.add_argument('--dry-run', action='store_true', help='Validate config without training')
+
+    # DPO algorithm knobs
+    dpo_train_parser.add_argument('--beta', type=float, default=0.1,
+                                  help='KL-regularization strength against the reference model (default: 0.1)')
+    dpo_train_parser.add_argument('--loss-type', default='sigmoid',
+                                  choices=['sigmoid', 'ipo', 'hinge', 'kto_pair', 'rpo'],
+                                  help='DPO loss variant (default: sigmoid)')
+    dpo_train_parser.add_argument('--reference-free', action='store_true',
+                                  help='Skip the reference model (uses policy at step 0); saves memory')
+    dpo_train_parser.add_argument('--label-smoothing', type=float, default=0.0,
+                                  help='cDPO label smoothing (default: 0.0)')
+
+    # Training hyperparameters
+    dpo_train_parser.add_argument('--epochs', type=int, default=1, help='Number of epochs')
+    dpo_train_parser.add_argument('--batch-size', type=int, default=1,
+                                  help='Per-device batch size (DPO doubles memory: chosen+rejected)')
+    dpo_train_parser.add_argument('--learning-rate', type=float, default=5e-6,
+                                  help='Learning rate (DPO needs much smaller LR than SFT)')
+    dpo_train_parser.add_argument('--warmup-ratio', type=float, default=0.1, help='Warmup ratio')
+    dpo_train_parser.add_argument('--weight-decay', type=float, default=0.0, help='Weight decay')
+    dpo_train_parser.add_argument('--max-grad-norm', type=float, default=1.0, help='Max gradient norm')
+    dpo_train_parser.add_argument('--gradient-accumulation', type=int, default=16,
+                                  help='Gradient accumulation steps')
+
+    # LoRA
+    dpo_train_parser.add_argument('--lora-rank', type=int, default=16, help='LoRA rank')
+    dpo_train_parser.add_argument('--lora-alpha', type=int, default=32, help='LoRA alpha')
+    dpo_train_parser.add_argument('--lora-dropout', type=float, default=0.05, help='LoRA dropout')
+    dpo_train_parser.add_argument('--load-in-4bit', action='store_true',
+                                  help='QLoRA: load base model in 4-bit (CUDA/ROCm only)')
+
+    # Checkpointing
+    dpo_train_parser.add_argument('--save-steps', type=int, default=200, help='Save every N steps')
+    dpo_train_parser.add_argument('--eval-steps', type=int, default=100, help='Eval every N steps')
+    dpo_train_parser.add_argument('--save-total-limit', type=int, default=3, help='Max checkpoints to keep')
+
+    # Data options
+    dpo_train_parser.add_argument('--max-samples', type=int, help='Limit number of training pairs')
+    dpo_train_parser.add_argument('--validation-split', type=float, default=0.05, help='Validation fraction')
+    dpo_train_parser.add_argument('--max-seq-length', type=int, default=1024,
+                                  help='Combined prompt+response length cap')
+    dpo_train_parser.add_argument('--max-prompt-length', type=int, default=512,
+                                  help='Prompt length cap (DPO truncates from the left after this)')
+
+    # Hardware
+    dpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true',
+                                  help='Disable gradient checkpointing (uses more memory)')
+
+    # dpo datasets
+    dpo_datasets_parser = dpo_subparsers.add_parser(
+        'datasets', help='List available preference datasets'
+    )
+
     # raft command
     raft_parser = subparsers.add_parser('raft', help='RAFT training')
     raft_subparsers = raft_parser.add_subparsers(dest='raft_command', required=True)
@@ -4949,6 +5104,7 @@ def _dispatch_commands(args):
     logged_commands = {
         ('raft', 'train'): 'raft_train',
         ('sft', 'train'): 'sft_train',
+        ('dpo', 'train'): 'dpo_train',
         ('vlm', 'train'): 'vlm_train',
         ('audio', 'train'): 'audio_train',
         ('reasoning', 'train'): 'reasoning_train',
@@ -4965,6 +5121,8 @@ def _dispatch_commands(args):
         subcommand = getattr(args, 'raft_command', None)
     elif args.command == 'sft':
         subcommand = getattr(args, 'sft_command', None)
+    elif args.command == 'dpo':
+        subcommand = getattr(args, 'dpo_command', None)
     elif args.command == 'vlm':
         subcommand = getattr(args, 'vlm_command', None)
     elif args.command == 'audio':
@@ -4999,6 +5157,11 @@ def _dispatch_commands(args):
             cmd_sft_train(args)
         elif args.sft_command == 'datasets':
             cmd_sft_datasets(args)
+    elif args.command == 'dpo':
+        if args.dpo_command == 'train':
+            cmd_dpo_train(args)
+        elif args.dpo_command == 'datasets':
+            cmd_dpo_datasets(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
