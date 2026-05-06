@@ -57,11 +57,53 @@ class VerifierExecutionRunner:
                 preexec_fn=preexec_fn,
             )
 
+        # macOS: sandbox-exec (native, ships with the OS).
+        if sys.platform == "darwin":
+            return self._run_macos_sandbox(
+                cmd,
+                working_dir=working_dir,
+                timeout=timeout,
+                input_text=input_text,
+                env=resolved_env,
+                preexec_fn=preexec_fn,
+            )
+
+        # Linux: bubblewrap (bwrap) — read-only system roots, read-write
+        # working dir, network/IPC/PID namespaces dropped. Phase 6 of the
+        # multi-backend roadmap: previously Linux contributors could only
+        # use execution_policy='unsafe_host'.
+        if sys.platform.startswith("linux"):
+            return self._run_linux_sandbox(
+                cmd,
+                working_dir=working_dir,
+                timeout=timeout,
+                input_text=input_text,
+                env=resolved_env,
+                preexec_fn=preexec_fn,
+            )
+
+        raise SandboxUnavailableError(
+            f"No sandbox backend available for platform {sys.platform!r}. "
+            "Install a supported sandbox backend or opt into execution_policy='unsafe_host'."
+        )
+
+    def _run_macos_sandbox(
+        self,
+        cmd: list[str],
+        *,
+        working_dir: Path,
+        timeout: int,
+        input_text: Optional[str],
+        env: dict[str, str],
+        preexec_fn: Optional[Callable[[], None]],
+    ) -> subprocess.CompletedProcess[str]:
+        """sandbox-exec branch (macOS native)."""
         sandbox_exec = shutil.which("sandbox-exec")
-        if sys.platform != "darwin" or not sandbox_exec:
+        if not sandbox_exec:
             raise SandboxUnavailableError(
-                "Local sandboxed verifier execution is unavailable on this host. "
-                "Install a supported sandbox backend or opt into execution_policy='unsafe_host'."
+                "Local sandboxed verifier execution is unavailable on this host "
+                "(sandbox-exec not found). Install a supported sandbox backend "
+                "or opt into execution_policy='unsafe_host'."
             )
 
         profile_path = self._write_sandbox_profile(working_dir)
@@ -74,7 +116,7 @@ class VerifierExecutionRunner:
                 text=True,
                 timeout=timeout,
                 cwd=str(working_dir),
-                env=resolved_env,
+                env=env,
                 preexec_fn=preexec_fn,
             )
         except FileNotFoundError as exc:
@@ -89,6 +131,73 @@ class VerifierExecutionRunner:
                 "Use a supported local sandbox or opt into execution_policy='unsafe_host'."
             )
         return result
+
+    def _run_linux_sandbox(
+        self,
+        cmd: list[str],
+        *,
+        working_dir: Path,
+        timeout: int,
+        input_text: Optional[str],
+        env: dict[str, str],
+        preexec_fn: Optional[Callable[[], None]],
+    ) -> subprocess.CompletedProcess[str]:
+        """bubblewrap (bwrap) branch for Linux contributors.
+
+        Mirrors the spirit of the macOS sandbox-exec profile:
+          - System dirs (/usr, /lib*, /etc, /bin, /sbin) bound read-only so
+            the verifier can exec compilers/runtimes but not modify them.
+          - The working directory is bound read-write at its real path so
+            the verifier writes its outputs where callers expect them.
+          - The wider workspace_root is *not* mounted: the verifier can't
+            walk up to read other users' or other runs' files.
+          - Network, IPC, PID, UTS, and cgroup namespaces dropped.
+          - /tmp + /dev provided fresh per invocation.
+
+        Requires the `bubblewrap` package (Debian/Ubuntu/Fedora all package it).
+        """
+        bwrap = shutil.which("bwrap")
+        if not bwrap:
+            raise SandboxUnavailableError(
+                "bubblewrap (`bwrap`) is not on PATH. Install it (`apt install bubblewrap` "
+                "or `dnf install bubblewrap`) or opt into execution_policy='unsafe_host'."
+            )
+
+        ro_binds: list[str] = []
+        for system_path in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc"):
+            if os.path.isdir(system_path) or os.path.islink(system_path):
+                ro_binds.extend(["--ro-bind", system_path, system_path])
+
+        bwrap_cmd = [
+            bwrap,
+            *ro_binds,
+            "--bind", str(working_dir), str(working_dir),
+            "--proc", "/proc",
+            "--dev", "/dev",
+            "--tmpfs", "/tmp",
+            "--unshare-all",  # net/ipc/pid/uts/cgroup/user namespaces dropped
+            "--die-with-parent",
+            "--new-session",
+            "--chdir", str(working_dir),
+            *cmd,
+        ]
+
+        try:
+            return subprocess.run(
+                bwrap_cmd,
+                input=input_text,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(working_dir),
+                env=env,
+                preexec_fn=preexec_fn,
+            )
+        except FileNotFoundError as exc:
+            raise SandboxUnavailableError(
+                "bwrap could not be started. Install bubblewrap or opt into "
+                "execution_policy='unsafe_host'."
+            ) from exc
 
     @staticmethod
     def _run_unsafe_host(
