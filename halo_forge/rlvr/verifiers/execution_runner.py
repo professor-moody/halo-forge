@@ -83,8 +83,9 @@ class VerifierExecutionRunner:
             )
 
         raise SandboxUnavailableError(
-            f"No sandbox backend available for platform {sys.platform!r}. "
-            "Install a supported sandbox backend or opt into execution_policy='unsafe_host'."
+            "Local sandboxed verifier execution is unavailable on this host "
+            f"(unsupported platform {sys.platform!r}). Install a supported "
+            "sandbox backend or opt into execution_policy='unsafe_host'."
         )
 
     def _run_macos_sandbox(
@@ -159,8 +160,10 @@ class VerifierExecutionRunner:
         bwrap = shutil.which("bwrap")
         if not bwrap:
             raise SandboxUnavailableError(
-                "bubblewrap (`bwrap`) is not on PATH. Install it (`apt install bubblewrap` "
-                "or `dnf install bubblewrap`) or opt into execution_policy='unsafe_host'."
+                "Local sandboxed verifier execution is unavailable on this host "
+                "(bubblewrap `bwrap` not found). Install a supported sandbox backend "
+                "(`apt install bubblewrap` or `dnf install bubblewrap`) or opt into "
+                "execution_policy='unsafe_host'."
             )
 
         ro_binds: list[str] = []
