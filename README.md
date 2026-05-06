@@ -5,7 +5,7 @@
 <h1 align="center">halo forge</h1>
 
 <p align="center">
-  RLVR training framework for AMD Strix Halo.<br>
+  Multi-backend RLVR training framework for AMD ROCm, Apple Silicon (MPS / MLX), and CUDA.<br>
   Train code generation models using compiler and test verification as reward signals.
 </p>
 
@@ -17,6 +17,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/AMD_Strix_Halo-Optimized-ED1C24?style=flat-square&logo=amd&logoColor=white" alt="Strix Halo">
+  <img src="https://img.shields.io/badge/Apple_Silicon-MPS_/_MLX-000000?style=flat-square&logo=apple&logoColor=white" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/ROCm-7.0+-663399?style=flat-square&logo=amd&logoColor=white" alt="ROCm">
@@ -37,6 +38,17 @@
 | [Verifiers](https://halo-forge.io/docs/verifiers/) | GCC, MinGW, pytest, and more |
 
 ---
+
+## Supported Hardware
+
+| Backend | Status | Notes |
+|---|---|---|
+| AMD ROCm (Strix Halo gfx1151) | First-class | Original target. ROCm 7.0+. Unified-memory tunings on by default. |
+| AMD ROCm (other gfx) | Should work | Trainer paths assume ROCm; gfx-specific env vars only applied when Strix Halo is detected. |
+| Apple Silicon (PyTorch MPS) | Mac primary | Inference and small-model SFT working. RLVR trainer supports MPS via the unified backend layer. |
+| Apple Silicon (MLX) | Roadmap | MLX inference + LoRA SFT + RAFT loops landing in subsequent phases. See [docs/HARDWARE_NOTES.md](docs/HARDWARE_NOTES.md). |
+| NVIDIA CUDA | Should work | Falls out of the ROCm code path; CUDA-specific tunings not yet plumbed. |
+| CPU only | Last-resort fallback | For tests and tiny models; not realistic for training. |
 
 ## Installation Profiles
 

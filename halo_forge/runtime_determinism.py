@@ -47,8 +47,13 @@ def set_global_seed(seed: Optional[int]) -> int:
         import torch
 
         torch.manual_seed(normalized)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(normalized)
+        # Accelerator-side RNG: routes through halo_forge.utils.accelerator so
+        # MPS hosts get torch.mps.manual_seed and ROCm/CUDA hosts get the
+        # legacy torch.cuda.manual_seed_all branch. Best-effort — caller
+        # already wraps in try/except.
+        from halo_forge.utils.accelerator import seed_accelerator
+
+        seed_accelerator(normalized)
     except Exception:
         pass
 

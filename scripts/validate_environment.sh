@@ -75,11 +75,16 @@ check_python "accelerate" "Accelerate"
 check_python "datasets" "Datasets"
 check_python "trl" "TRL"
 
-# Check ROCm/HIP
+# Detect host platform for platform-specific checks below.
+HOST_OS=$(uname -s)
+
+# Check accelerator (CUDA/ROCm or Apple Silicon MPS)
 echo ""
 if python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
     GPU_NAME=$(python -c "import torch; print(torch.cuda.get_device_name(0))" 2>/dev/null)
-    echo -e "  ${GREEN}✓${NC} GPU Available: $GPU_NAME"
+    echo -e "  ${GREEN}✓${NC} GPU Available (CUDA/ROCm): $GPU_NAME"
+elif python -c "import torch; assert torch.backends.mps.is_available() and torch.backends.mps.is_built()" 2>/dev/null; then
+    echo -e "  ${GREEN}✓${NC} GPU Available (Apple Silicon MPS)"
 else
     echo -e "  ${YELLOW}⚠${NC} GPU: Not available (CPU-only mode)"
 fi
@@ -89,9 +94,39 @@ fi
 # =============================================================================
 echo -e "\n${YELLOW}=== Phase 1-2: Code + Inference ===${NC}"
 
-check_python "bitsandbytes" "bitsandbytes"
-check_command "gcc"
-check_command "x86_64-w64-mingw32-g++"
+# bitsandbytes is CUDA/ROCm-only. Skip the hard check on macOS — it has no
+# upstream wheels on Apple Silicon and the trainer falls back to unquantized.
+if [ "$HOST_OS" = "Darwin" ]; then
+    echo -e "  ${YELLOW}⚠${NC} bitsandbytes: skipped on macOS (no Apple Silicon support)"
+else
+    check_python "bitsandbytes" "bitsandbytes"
+fi
+
+# C/C++ toolchain. macOS ships clang as `gcc`, so the command check passes
+# either way; report which one we actually have for clarity.
+if [ "$HOST_OS" = "Darwin" ]; then
+    if command -v clang &>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} clang: $(command -v clang)"
+    else
+        echo -e "  ${RED}✗${NC} clang: NOT FOUND (install Xcode CLT: xcode-select --install)"
+        FAILED=1
+    fi
+else
+    check_command "gcc"
+fi
+
+# Windows cross-compile is needed for the PE/COFF verifier. Optional on macOS
+# (`brew install mingw-w64`); required on Linux contributor hosts.
+if [ "$HOST_OS" = "Darwin" ]; then
+    if command -v x86_64-w64-mingw32-g++ &>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} x86_64-w64-mingw32-g++: $(command -v x86_64-w64-mingw32-g++)"
+    else
+        echo -e "  ${YELLOW}⚠${NC} x86_64-w64-mingw32-g++: NOT FOUND (optional on macOS — \`brew install mingw-w64\` if you need Windows cross-compile verifiers)"
+    fi
+else
+    check_command "x86_64-w64-mingw32-g++"
+fi
+
 check_command "rustc"
 check_command "go"
 check_command "dotnet"
@@ -171,7 +206,7 @@ if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}All dependencies validated successfully!${NC}"
     echo ""
     echo "Environment is ready for:"
-    echo "  - Code training (gcc, mingw, rust, go)"
+    echo "  - Code training (gcc/clang, mingw, rust, go)"
     echo "  - VLM training (ultralytics, easyocr)"
     echo "  - Audio training (torchaudio, librosa)"
     echo "  - Reasoning training (sympy)"
@@ -181,8 +216,15 @@ if [ $FAILED -eq 0 ]; then
 else
     echo -e "${RED}Some dependencies are missing!${NC}"
     echo ""
-    echo "Please ensure you are running inside the halo-forge toolbox:"
-    echo "  toolbox enter halo-forge"
+    if [ "$HOST_OS" = "Darwin" ]; then
+        echo "On macOS, install dependencies with:"
+        echo "  pip install -e '.[all]'"
+        echo "  brew install rust go dotnet"
+        echo "  xcode-select --install"
+    else
+        echo "Please ensure you are running inside the halo-forge toolbox:"
+        echo "  toolbox enter halo-forge"
+    fi
     echo ""
     exit 1
 fi

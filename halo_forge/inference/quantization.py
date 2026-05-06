@@ -13,6 +13,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from halo_forge.inference.calibration import CalibrationDataset, CalibrationConfig
+from halo_forge.utils.accelerator import (
+    empty_accelerator_cache,
+    get_device_map,
+    supports_4bit_quantization,
+)
 
 
 @dataclass
@@ -47,11 +52,18 @@ def prepare_qat(
     Returns:
         QAT-ready model
     """
-    try:
-        import bitsandbytes as bnb
-    except ImportError:
-        raise ImportError("bitsandbytes is required for QAT: pip install bitsandbytes")
-    
+    if target_precision in {"int4", "int8"} and not supports_4bit_quantization():
+        raise RuntimeError(
+            f"QAT target_precision={target_precision!r} requires a CUDA/ROCm host "
+            f"with bitsandbytes. On Apple Silicon / CPU, use target_precision='fp16'."
+        )
+
+    if target_precision in {"int4", "int8"}:
+        try:
+            import bitsandbytes as bnb  # noqa: F401
+        except ImportError:
+            raise ImportError("bitsandbytes is required for QAT: pip install bitsandbytes")
+
     # For int4/int8, we use bitsandbytes quantization
     if target_precision == "int4":
         from transformers import BitsAndBytesConfig
@@ -244,7 +256,15 @@ def quantize_model_simple(
     if precision not in {"int4", "int8", "fp16"}:
         raise ValueError(f"Unsupported precision '{precision}'. Use one of: int4, int8, fp16")
     
-    # Configure quantization
+    # Configure quantization. bitsandbytes only ships kernels for CUDA/ROCm
+    # so int4/int8 fail on Apple Silicon MPS or CPU regardless of whether the
+    # `bitsandbytes` Python package imports — guard at the backend level.
+    if precision in {"int4", "int8"} and not supports_4bit_quantization():
+        raise RuntimeError(
+            f"{precision} quantization requires a CUDA/ROCm host with bitsandbytes. "
+            f"On Apple Silicon / CPU, use precision='fp16' or convert via MLX."
+        )
+
     if precision == "int4":
         try:
             import bitsandbytes  # noqa: F401
@@ -277,7 +297,7 @@ def quantize_model_simple(
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
         quantization_config=quant_config,
-        device_map="auto",
+        device_map=get_device_map(),
         trust_remote_code=True
     )
     
@@ -308,8 +328,7 @@ def quantize_model_simple(
     # Cleanup
     del model
     gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    empty_accelerator_cache()
     
     print(f"Quantized model saved to {output_path}")
     return output_path

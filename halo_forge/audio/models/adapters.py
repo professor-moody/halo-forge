@@ -12,6 +12,8 @@ import logging
 import torch
 import numpy as np
 
+from halo_forge.utils.accelerator import get_torch_device, recommended_dtype
+
 logger = logging.getLogger(__name__)
 
 AUDIO_TRAINING_SUPPORTED_FAMILIES = ("whisper",)
@@ -39,7 +41,7 @@ class AudioAdapter(ABC):
             device: Device to use (auto-detect if None)
         """
         self.model_name = model_name
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or str(get_torch_device())
         self.model = None
         self.processor = None
     
@@ -105,7 +107,7 @@ class WhisperAdapter(AudioAdapter):
         self.processor = WhisperProcessor.from_pretrained(self.model_name)
         self.model = WhisperForConditionalGeneration.from_pretrained(
             self.model_name,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+            dtype=recommended_dtype(),
         ).to(self.device)
         
         logger.info(f"Whisper loaded on {self.device}")
@@ -195,7 +197,7 @@ class Wav2VecAdapter(AudioAdapter):
         self.processor = Wav2Vec2Processor.from_pretrained(self.model_name)
         self.model = Wav2Vec2ForCTC.from_pretrained(
             self.model_name,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+            dtype=recommended_dtype(),
         ).to(self.device)
         
         logger.info(f"Wav2Vec2 loaded on {self.device}")

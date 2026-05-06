@@ -12,6 +12,8 @@ from pathlib import Path
 import torch
 from PIL import Image
 
+from halo_forge.utils.accelerator import empty_accelerator_cache, get_device_map
+
 VLM_TRAINING_SUPPORTED_FAMILIES = ("qwen2-vl", "qwen-vl", "llava")
 
 
@@ -135,9 +137,8 @@ class VLMAdapter(ABC):
             self.processor = None
         
         self._loaded = False
-        
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+
+        empty_accelerator_cache()
 
 
 class QwenVLAdapter(VLMAdapter):
@@ -176,14 +177,14 @@ class QwenVLAdapter(VLMAdapter):
         )
         
         # Load model - use appropriate class for Qwen2-VL
-        device_map = "auto" if self.device == "auto" else self.device
+        device_map = get_device_map() if self.device == "auto" else self.device
         
         # Qwen2-VL requires Qwen2VLForConditionalGeneration, not AutoModelForCausalLM
         if "Qwen2-VL" in self.model_name or "qwen2-vl" in self.model_name.lower():
             from transformers import Qwen2VLForConditionalGeneration
             self.model = Qwen2VLForConditionalGeneration.from_pretrained(
                 self.model_name,
-                torch_dtype=self.dtype,
+                dtype=self.dtype,
                 device_map=device_map,
                 trust_remote_code=self.trust_remote_code
             )
@@ -192,7 +193,7 @@ class QwenVLAdapter(VLMAdapter):
             from transformers import AutoModelForCausalLM
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                torch_dtype=self.dtype,
+                dtype=self.dtype,
                 device_map=device_map,
                 trust_remote_code=self.trust_remote_code
             )
@@ -295,11 +296,11 @@ class LLaVAAdapter(VLMAdapter):
         )
         
         # Load model
-        device_map = "auto" if self.device == "auto" else self.device
+        device_map = get_device_map() if self.device == "auto" else self.device
         
         self.model = LlavaForConditionalGeneration.from_pretrained(
             self.model_name,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             device_map=device_map,
             trust_remote_code=self.trust_remote_code
         )
@@ -392,11 +393,11 @@ class GenericVLMAdapter(VLMAdapter):
                 trust_remote_code=self.trust_remote_code
             )
             
-            device_map = "auto" if self.device == "auto" else self.device
+            device_map = get_device_map() if self.device == "auto" else self.device
             
             self.model = AutoModelForVision2Seq.from_pretrained(
                 self.model_name,
-                torch_dtype=self.dtype,
+                dtype=self.dtype,
                 device_map=device_map,
                 trust_remote_code=self.trust_remote_code
             )
@@ -454,11 +455,11 @@ class GenericVLMAdapter(VLMAdapter):
             
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                torch_dtype=self.dtype,
-                device_map="auto",
+                dtype=self.dtype,
+                device_map=get_device_map() if self.device == "auto" else self.device,
                 trust_remote_code=self.trust_remote_code
             )
-        
+
         self._loaded = True
         print(f"Loaded VLM on {self.model.device}")
     
@@ -547,7 +548,7 @@ class LFMVLAdapter(VLMAdapter):
         
         print(f"Loading LFM VL model: {self.model_name}")
         
-        device_map = "auto" if self.device == "auto" else self.device
+        device_map = get_device_map() if self.device == "auto" else self.device
         
         # Strategy 1: Try AutoProcessor + AutoModelForVision2Seq (most correct for VL models)
         try:
@@ -559,7 +560,7 @@ class LFMVLAdapter(VLMAdapter):
             
             self.model = AutoModelForVision2Seq.from_pretrained(
                 self.model_name,
-                torch_dtype=self.dtype,
+                dtype=self.dtype,
                 device_map=device_map,
                 trust_remote_code=True
             )
@@ -579,7 +580,7 @@ class LFMVLAdapter(VLMAdapter):
             
             self.model = AutoModel.from_pretrained(
                 self.model_name,
-                torch_dtype=self.dtype,
+                dtype=self.dtype,
                 device_map=device_map,
                 trust_remote_code=True
             )
@@ -647,7 +648,7 @@ class LFMVLAdapter(VLMAdapter):
         # Load model with AutoModel (handles Lfm2VlConfig properly)
         self.model = AutoModel.from_pretrained(
             self.model_name,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             device_map=device_map,
             trust_remote_code=True
         )

@@ -1,6 +1,78 @@
-# Hardware Notes: AMD Strix Halo (gfx1151)
+# Hardware Notes
 
-Performance findings and recommendations for training on AMD Strix Halo.
+Performance findings and per-backend recommendations.
+
+- [AMD Strix Halo (gfx1151)](#amd-strix-halo-gfx1151) — first-class, original target
+- [Apple Silicon (PyTorch MPS)](#apple-silicon-pytorch-mps) — Mac primary; supported now
+- [Apple Silicon (MLX)](#apple-silicon-mlx) — roadmap; staged delivery
+- [NVIDIA CUDA](#nvidia-cuda) — falls out of the ROCm code path
+- [CPU only](#cpu-only) — last-resort fallback
+
+---
+
+## Apple Silicon (PyTorch MPS)
+
+Mac with an M-series chip is the second-supported backend. The training and inference code routes through PyTorch's MPS backend automatically when CUDA/ROCm aren't available.
+
+| Capability | Status | Notes |
+|---|---|---|
+| Inference | ✅ | 1B–7B models work; 4-bit quantization is unavailable (no Apple Silicon bitsandbytes wheels). |
+| LoRA SFT | ✅ small models | 1B–3B fine-tunes complete; expect MPS-specific dtype quirks on 7B+. |
+| RLVR/RAFT | ✅ via MPS path | Verifier sandbox uses macOS-native `sandbox-exec` (no extra setup). |
+| `bfloat16` | ⚠️ patchy | Defaults to `float16` on macOS <14. Override with `--dtype bf16` if your macOS version is recent. |
+| `device_map="auto"` | ⚠️ avoid | accelerate's MPS auto-placer was unreliable pre-`transformers` 4.45. We pin to explicit `{"": "mps:0"}`. |
+| Dataloader workers | Use 0 | macOS multiprocessing fork issues with PyTorch tensors. |
+
+### Setup
+
+```bash
+xcode-select --install                  # clang + git
+brew install rust go dotnet mingw-w64    # verifier toolchains (mingw optional)
+pip install -e .
+```
+
+The validator script handles macOS specifics:
+
+```bash
+bash scripts/validate_environment.sh
+```
+
+### Known limitations
+
+- `bitsandbytes` quantization is unavailable. The trainer logs a warning and loads unquantized; gate explicitly with `SFTConfig.allow_quantization_fallback = False` if you want to fail loudly instead.
+- ROCm-specific env vars (`HSA_*`, `PYTORCH_HIP_ALLOC_CONF`, `PYTORCH_ROCM_ARCH`) are skipped on macOS hosts — `setup_strix_halo_env()` no-ops cleanly.
+
+---
+
+## Apple Silicon (MLX)
+
+Roadmap. MLX (Apple's native ML framework) is faster than PyTorch MPS on Apple Silicon for many workloads. Landing in stages:
+
+1. **Phase 3** — MLX inference backend (`halo-forge generate --backend mlx ...`)
+2. **Phase 4** — MLX LoRA SFT via `mlx_lm.tuner`
+3. **Phase 5** — MLX RAFT/RLVR loops (rollout-only first, then full policy update)
+
+Until then, use the MPS backend on Mac.
+
+---
+
+## NVIDIA CUDA
+
+Untested as a primary target but the ROCm code path uses standard PyTorch CUDA APIs throughout, so a CUDA host should work after `pip install` with stock PyTorch CUDA wheels. The Strix-specific env vars and tunings are skipped on non-ROCm hosts.
+
+CUDA-specific tunings (FlashAttention 2, multi-GPU device maps, etc.) aren't yet plumbed; PRs welcome.
+
+---
+
+## CPU only
+
+Tests and tiny models only. No realistic training. The trainer will warn and continue if no accelerator is detected.
+
+---
+
+## AMD Strix Halo (gfx1151)
+
+Performance findings and recommendations for training on AMD Strix Halo — the original first-class target.
 
 ## Hardware Specifications
 

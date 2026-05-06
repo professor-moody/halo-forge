@@ -12,6 +12,11 @@ from typing import List, Optional, Dict, Any
 import torch
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
+from halo_forge.utils.accelerator import (
+    empty_accelerator_cache,
+    get_device_map,
+    recommended_dtype,
+)
 
 
 @dataclass
@@ -93,8 +98,8 @@ class InferenceOptimizationVerifier(Verifier):
             )
             self.baseline_model = AutoModelForCausalLM.from_pretrained(
                 self.baseline_model_name,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
+                dtype=recommended_dtype(),
+                device_map=get_device_map(),
                 trust_remote_code=True
             )
             self._baseline_loaded = True
@@ -330,6 +335,5 @@ class InferenceOptimizationVerifier(Verifier):
             del self.baseline_model
             self.baseline_model = None
             self._baseline_loaded = False
-            
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+
+            empty_accelerator_cache()

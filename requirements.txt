@@ -9,7 +9,7 @@
 
 # Core runtime (`project.dependencies`)
 torch>=2.1.0
-transformers>=4.46.0
+transformers>=4.49.0
 peft>=0.13.0
 datasets>=2.14.0,<4.0.0
 trl>=0.12.0

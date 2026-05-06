@@ -12,6 +12,13 @@ from typing import Optional, List, Dict, Any, Tuple
 
 import torch
 
+from halo_forge.utils.accelerator import (
+    empty_accelerator_cache,
+    get_device_map,
+    recommended_dtype,
+    supports_4bit_quantization,
+)
+
 
 # Valid precision options
 VALID_PRECISIONS = {"int4", "int8", "fp16", "fp32"}
@@ -283,8 +290,8 @@ class InferenceOptimizer:
         
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
             trust_remote_code=True
         )
         
@@ -519,5 +526,4 @@ class InferenceOptimizer:
         self.current_model_name = None
         
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_accelerator_cache()

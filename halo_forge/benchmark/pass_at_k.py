@@ -22,6 +22,11 @@ from peft import PeftModel
 from tqdm import tqdm
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
+from halo_forge.utils.accelerator import (
+    get_device_map,
+    recommended_attn_impl,
+    recommended_dtype,
+)
 
 
 @dataclass
@@ -180,9 +185,9 @@ class Benchmark:
             # Load base model and apply adapter
             base = AutoModelForCausalLM.from_pretrained(
                 base_model,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                attn_implementation="eager",
+                dtype=recommended_dtype(),
+                device_map=get_device_map(),
+                attn_implementation=recommended_attn_impl(),
                 trust_remote_code=True
             )
             self.model = PeftModel.from_pretrained(base, str(model_path))
@@ -199,9 +204,9 @@ class Benchmark:
             
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                attn_implementation="eager",
+                dtype=recommended_dtype(),
+                device_map=get_device_map(),
+                attn_implementation=recommended_attn_impl(),
                 trust_remote_code=True
             )
         

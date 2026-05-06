@@ -31,6 +31,7 @@ from halo_forge.modality_artifacts import (
     persist_final_artifacts,
     resolve_resume_checkpoint,
 )
+from halo_forge.utils.accelerator import get_device_map, recommended_dtype
 from halo_forge.runtime_determinism import (
     DEFAULT_TRAINING_SEED,
     build_run_id,
@@ -153,9 +154,9 @@ class ReasoningRAFTTrainer:
         
         self.model = AutoModelForCausalLM.from_pretrained(
             self.config.model_name,
-            torch_dtype=torch.bfloat16 if self.config.bf16 else torch.float32,
+            dtype=recommended_dtype() if self.config.bf16 else torch.float32,
             trust_remote_code=True,
-            device_map="auto",
+            device_map=get_device_map(),
         )
         
         if self.config.gradient_checkpointing:

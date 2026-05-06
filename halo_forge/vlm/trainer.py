@@ -16,6 +16,7 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
+from halo_forge.utils.accelerator import empty_accelerator_cache, recommended_dtype
 from halo_forge.vlm.verifiers import VisionVerifier
 from halo_forge.vlm.models import (
     VLMAdapter,
@@ -163,7 +164,7 @@ class VLMRAFTTrainer:
         self.adapter = get_vlm_adapter(
             self.config.model_name,
             adapter_type=self.config.adapter_type,
-            dtype=torch.bfloat16 if self.config.bf16 else torch.float16
+            dtype=recommended_dtype() if self.config.bf16 else torch.float16
         )
         self.adapter.load()
         
@@ -877,8 +878,7 @@ class VLMRAFTTrainer:
             self.verifier.cleanup()
         
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_accelerator_cache()
 
 
 def train_vlm_raft(

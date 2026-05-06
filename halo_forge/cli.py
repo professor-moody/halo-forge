@@ -30,6 +30,13 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from halo_forge.capabilities import check_modality_train_capability
+from halo_forge.utils.accelerator import (
+    detect_gpu_kind,
+    empty_accelerator_cache,
+    get_device_map,
+    recommended_attn_impl,
+    recommended_dtype,
+)
 
 # ANSI color codes
 GREEN = "\033[32m"
@@ -426,8 +433,9 @@ def cmd_data_generate(args):
 
 
 def cmd_sft_train(args):
-    """Run SFT training."""
-    from halo_forge.sft.trainer import SFTTrainer, SFTConfig
+    """Run SFT training. Dispatches to the right backend (PyTorch / MLX)."""
+    from halo_forge.sft.trainer import SFTConfig
+    from halo_forge.sft._dispatch import get_sft_trainer
     
     print_banner()
     print(f"{GREEN}SFT Training{NC}")
@@ -567,7 +575,7 @@ def cmd_sft_train(args):
         print(f"{GREEN}Configuration valid!{NC}")
         return
     
-    trainer = SFTTrainer(config)
+    trainer = get_sft_trainer(config)
     summary = trainer.train(resume_from_checkpoint=args.resume)
     _print_completed_training_summary("sft", config.output_dir, summary)
 
@@ -1445,15 +1453,28 @@ class TestRunner:
     # =========================================================================
     
     def test_gpu_available(self) -> bool:
-        """Test GPU availability."""
+        """Test accelerator availability (CUDA/ROCm or Apple Silicon MPS).
+
+        On CPU-only hosts, logs a warning and returns True so smoke tests can
+        still proceed against tiny models. The trainer paths themselves still
+        prefer an accelerator and tune accordingly.
+        """
         import torch
-        if not torch.cuda.is_available():
-            raise RuntimeError("No GPU available (torch.cuda.is_available() = False)")
-        
+        from halo_forge.utils.accelerator import detect_gpu_kind, GPU_KIND_CPU, GPU_KIND_MPS
+
+        kind = detect_gpu_kind()
+        if kind == GPU_KIND_CPU:
+            self.log("WARNING: no accelerator detected; running on CPU. Training will be slow.")
+            return True
+
+        if kind == GPU_KIND_MPS:
+            self.log("Accelerator: Apple Silicon (MPS). Memory probe unavailable on this backend.")
+            return True
+
         device_name = torch.cuda.get_device_name(0)
         props = torch.cuda.get_device_properties(0)
         mem_gb = props.total_memory / 1e9
-        
+
         self.log(f"GPU: {device_name}, Memory: {mem_gb:.1f} GB")
         return True
     
@@ -1470,8 +1491,8 @@ class TestRunner:
         
         model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
             trust_remote_code=True,
         )
         
@@ -2963,13 +2984,33 @@ def cmd_inference_optimize(args):
         InferenceOptimizer, OptimizationConfig,
         check_dependencies, validate_config
     )
-    
+
     print_banner()
     print(f"{GREEN}Inference Optimization{NC}")
     print("=" * 60)
     print(f"Optimizing model: {args.model}")
     print(f"Target precision: {args.target_precision}")
     print(f"Target latency: {args.target_latency}ms")
+
+    # MLX path: bitsandbytes-style quantization is not applicable; weights are
+    # quantized at conversion time (use mlx-community/...-4bit models or
+    # `python -m mlx_lm.convert`). We surface that and run a smoke generation
+    # instead of the full PyTorch optimize/calibrate pipeline.
+    if getattr(args, 'accelerator', 'auto') == 'mlx':
+        from halo_forge.backend.mlx import MLXInferenceAdapter
+        print("\n[MLX] Skipping torch optimize/calibrate; running smoke generation.")
+        adapter = MLXInferenceAdapter(args.model)
+        adapter.load()
+        out = adapter.generate(
+            "Write a function to sort a list.",
+            max_tokens=64,
+            temperature=0.7,
+        )
+        print("\nSample generation:")
+        print(out)
+        adapter.cleanup()
+        print(f"\n{GREEN}MLX smoke OK.{NC} For pre-quantized weights see docs/MLX.md.")
+        return
     
     config = OptimizationConfig(
         target_precision=args.target_precision,
@@ -3115,8 +3156,8 @@ def cmd_inference_benchmark(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
+        dtype=recommended_dtype(),
+        device_map=get_device_map(),
         trust_remote_code=True
     )
     
@@ -3695,13 +3736,25 @@ def cmd_audio_train(args):
 def main():
     parser = argparse.ArgumentParser(
         prog='halo-forge',
-        description='Complete RLVR training framework for AMD Strix Halo'
+        description='Multi-backend RLVR training framework for AMD ROCm, Apple Silicon, and CUDA'
     )
-    
+
     # Global flags
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Suppress terminal output (logs still written to file)')
-    
+    # Compute accelerator override. Distinct from the per-subcommand `--backend`
+    # flag in `data generate` (which selects the LLM API: deepseek/anthropic/...).
+    # Default: auto-detect via halo_forge.backend.get_backend().
+    # `mlx` requires the `[mlx]` extra and currently only powers inference paths.
+    parser.add_argument(
+        '--accelerator',
+        choices=['auto', 'rocm', 'rocm_gfx1151', 'cuda', 'mps', 'mlx', 'cpu'],
+        default='auto',
+        help='Compute accelerator to target. "auto" (default) detects ROCm/CUDA/MPS/CPU; '
+             'pass "mlx" explicitly to use Apple MLX for inference. '
+             'Sets HALOFORGE_BACKEND for downstream code.'
+    )
+
     subparsers = parser.add_subparsers(dest='command', required=True)
     
     # config command
@@ -4356,6 +4409,16 @@ def main():
     
     # Parse arguments and dispatch
     args = parser.parse_args()
+
+    # Plumb --accelerator into HALOFORGE_BACKEND so every downstream
+    # halo_forge.backend.get_backend() call (in trainers, inference,
+    # public_api) sees the user's choice without requiring each subcommand
+    # handler to thread the flag through manually. Note: distinct from
+    # `args.backend` on the `data generate` subcommand (LLM API selection).
+    accelerator_choice = getattr(args, 'accelerator', 'auto')
+    if accelerator_choice and accelerator_choice != 'auto':
+        os.environ['HALOFORGE_BACKEND'] = accelerator_choice
+
     _dispatch_commands(args)
 
 
@@ -4471,8 +4534,8 @@ def cmd_reasoning_benchmark(args):
         
         model = AutoModelForCausalLM.from_pretrained(
             args.model,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
             trust_remote_code=True,
         )
         print(f"Model loaded on {model.device}")

@@ -147,3 +147,56 @@ jobs:
             tests/test_phase26_diagnostics_isolation_and_training_clarity.py \
             tests/test_phase27_training_onboarding_first_run_success.py \
             tests/test_phase28_monitor_truth_and_visual_finish.py
+
+  macos-arm64-smoke:
+    # macOS arm64 (Apple Silicon) smoke job. No GPU/ROCm — exercises the
+    # accelerator-dispatch helpers, validator script, and import surface so
+    # Mac regressions get caught at PR time. Tests gated with
+    # `@pytest.mark.requires_rocm`/`requires_cuda` auto-skip via conftest.
+    runs-on: macos-14
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install minimal test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Syntax compile check
+        run: python -m compileall -q halo_forge ui tests
+
+      - name: Validator script (macOS path)
+        run: bash scripts/validate_environment.sh || true
+
+      - name: Accelerator helpers smoke test
+        run: |
+          python -c "
+          from halo_forge.utils.accelerator import (
+              detect_gpu_kind, get_device_map, recommended_attn_impl,
+              empty_accelerator_cache, supports_4bit_quantization,
+              is_apple_silicon, seed_accelerator,
+          )
+          assert is_apple_silicon(), 'expected Apple Silicon runner'
+          empty_accelerator_cache()
+          seed_accelerator(42)
+          print('accelerator helpers OK on', detect_gpu_kind())
+          "
+
+      - name: ROCm env helpers no-op on macOS
+        run: |
+          python -c "
+          from halo_forge.utils.strix_halo import setup_strix_halo_env, get_strix_halo_env
+          assert setup_strix_halo_env() == {}, 'strix env should no-op on macOS'
+          env = get_strix_halo_env()
+          assert 'HSA_OVERRIDE_GFX_VERSION' not in env, 'ROCm vars must not leak on macOS'
+          print('strix_halo helpers correctly no-op on macOS')
+          "

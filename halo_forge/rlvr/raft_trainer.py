@@ -50,6 +50,13 @@ from halo_forge.training_contracts import (
     write_json_atomic,
 )
 from halo_forge.training_recovery import attach_recovery_guidance
+from halo_forge.utils.accelerator import (
+    empty_accelerator_cache,
+    get_device_map,
+    is_accelerator_available,
+    recommended_attn_impl,
+    recommended_dtype,
+)
 
 # Rich UI (optional, falls back to plain print)
 try:
@@ -180,7 +187,7 @@ class RAFTTrainer:
     ):
         """
         Initialize RAFT trainer.
-        
+
         Args:
             verifier: Verifier instance for checking samples
             config: RAFT configuration
@@ -189,21 +196,21 @@ class RAFTTrainer:
         self.config = config or RAFTConfig()
         if sft_checkpoint:
             self.config.sft_checkpoint = sft_checkpoint
-        
+
         self.verifier = verifier
         self.output_dir = Path(self.config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # UI helpers
         self.use_rich = HAS_RICH
-        
+
         # Graceful shutdown handling
         self._shutdown_requested = False
         self._setup_signal_handlers()
-        
+
         # Load model and tokenizer
         self._load_model()
-        
+
         # Statistics
         self.cycle_stats = []
         self.run_id: str = ""
@@ -321,9 +328,9 @@ class RAFTTrainer:
         self._log(f"Loading base model: {base_model_name}", "dim")
         self.base_model = AutoModelForCausalLM.from_pretrained(
             base_model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            attn_implementation="eager",
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
+            attn_implementation=recommended_attn_impl(),
             trust_remote_code=True
         )
         
@@ -381,7 +388,7 @@ class RAFTTrainer:
         max_new_tokens = max_new_tokens or cfg.max_new_tokens
         temperature = temperature or cfg.temperature
         batch_size = batch_size or cfg.generation_batch_size
-        
+
         total = len(prompts) * num_samples
         
         # Check for partial cache and resume
@@ -496,9 +503,9 @@ class RAFTTrainer:
                 if cache_file:
                     cache_file.flush()
                 
-                # Periodic CUDA cache clearing for memory optimization
+                # Periodic accelerator cache clearing for memory optimization
                 if (batch_idx + 1) % cfg.clear_cache_every_n_batches == 0:
-                    torch.cuda.empty_cache()
+                    empty_accelerator_cache()
                     gc.collect()
                 
                 # Update tqdm postfix with sample count
@@ -912,9 +919,8 @@ class RAFTTrainer:
         except NameError:
             pass
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
+        empty_accelerator_cache()
+
         # Reload for next cycle
         self._reload_model(str(self.output_dir / f"cycle_{cycle}_final"))
         
@@ -1003,16 +1009,15 @@ class RAFTTrainer:
         if hasattr(self, 'base_model'):
             del self.base_model
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
+        empty_accelerator_cache()
+
         # Reload FRESH base model (critical: prevents peft_config accumulation)
         cfg = self.config
         self.base_model = AutoModelForCausalLM.from_pretrained(
             cfg.base_model,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            attn_implementation="eager",
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
+            attn_implementation=recommended_attn_impl(),
             trust_remote_code=True
         )
         

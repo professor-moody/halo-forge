@@ -41,6 +41,11 @@ from halo_forge.runtime_determinism import (
     set_global_seed,
 )
 from halo_forge.utils.metrics import MetricsTracker
+from halo_forge.utils.accelerator import (
+    get_device_map,
+    get_torch_device,
+    recommended_dtype,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +93,7 @@ class AgenticRAFTConfig:
     
     def __post_init__(self):
         if self.device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.device = str(get_torch_device())
 
 
 @dataclass
@@ -201,8 +206,8 @@ class AgenticRAFTTrainer:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.config.model_name,
             trust_remote_code=self.config.trust_remote_code,
-            torch_dtype=torch.bfloat16 if self.config.bf16 else torch.float16,
-            device_map="auto",
+            dtype=recommended_dtype() if self.config.bf16 else torch.float16,
+            device_map=get_device_map(),
         )
         
         if self.config.gradient_checkpointing:

@@ -42,96 +42,17 @@ from halo_forge.training_contracts import (
     write_json_atomic,
 )
 from halo_forge.training_recovery import attach_recovery_guidance
+from halo_forge.utils.accelerator import (
+    empty_accelerator_cache,
+    get_device_map,
+    recommended_attn_impl,
+    recommended_dtype,
+    supports_4bit_quantization,
+)
 
-
-@dataclass
-class SFTConfig:
-    """Configuration for SFT training."""
-    
-    # Model
-    model_name: str = "Qwen/Qwen2.5-Coder-7B"
-    trust_remote_code: bool = True
-    attn_implementation: str = "eager"  # Required for ROCm
-    
-    # Data - supports both local files and HuggingFace datasets
-    train_file: Optional[str] = None  # Local JSONL file
-    dataset: Optional[str] = None  # HuggingFace dataset ID or short name
-    max_samples: Optional[int] = None  # Limit number of samples
-    validation_split: float = 0.05
-    max_seq_length: int = 2048
-    
-    # QLoRA (4-bit is slower on Strix Halo - use BF16 by default)
-    load_in_4bit: bool = False
-    bnb_4bit_quant_type: str = "nf4"
-    bnb_4bit_compute_dtype: str = "bfloat16"
-    bnb_4bit_use_double_quant: bool = True
-    
-    # LoRA
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.05
-    target_modules: List[str] = None
-    
-    # Training
-    output_dir: str = "models/sft"
-    num_epochs: int = 3
-    batch_size: int = 2
-    gradient_accumulation_steps: int = 16
-    learning_rate: float = 2e-4
-    warmup_ratio: float = 0.03
-    weight_decay: float = 0.01
-    max_grad_norm: float = 0.3
-    
-    # Optimization
-    bf16: bool = True
-    gradient_checkpointing: bool = True
-    seed: int = DEFAULT_TRAINING_SEED
-    
-    # Saving
-    save_steps: int = 500
-    save_total_limit: int = 3
-    eval_steps: int = 250
-    
-    # Early stopping
-    early_stopping_patience: int = 5
-    early_stopping_threshold: float = 0.001
-    
-    def __post_init__(self):
-        if self.target_modules is None:
-            # Default for Qwen models
-            self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                                   "gate_proj", "up_proj", "down_proj"]
-    
-    @classmethod
-    def from_yaml(cls, path: str) -> "SFTConfig":
-        """Load config from YAML file."""
-        with open(path) as f:
-            data = yaml.safe_load(f)
-        
-        # Flatten nested config
-        flat = {}
-        for section in ['model', 'data', 'lora', 'qlora', 'training']:
-            if section in data:
-                flat.update(data[section])
-        
-        # Map config keys
-        key_map = {
-            'name': 'model_name',
-            'train_file': 'train_file',
-            'per_device_train_batch_size': 'batch_size',
-            'num_train_epochs': 'num_epochs',
-            'r': 'lora_r',
-            'alpha': 'lora_alpha',
-            'dropout': 'lora_dropout',
-        }
-        
-        mapped = {}
-        for k, v in flat.items():
-            mapped_key = key_map.get(k, k)
-            if hasattr(cls, '__dataclass_fields__') and mapped_key in cls.__dataclass_fields__:
-                mapped[mapped_key] = v
-        
-        return cls(**mapped)
+# SFTConfig moved to halo_forge.sft.config so MLX-only hosts (no torch) can
+# import the config without dragging in this module's torch dependencies.
+from halo_forge.sft.config import SFTConfig
 
 
 class SFTTrainer:
@@ -409,8 +330,24 @@ class SFTTrainer:
         print(f"Tokenizer loaded: {len(self.tokenizer)} tokens")
         print()
         
-        # Quantization config
-        if cfg.load_in_4bit:
+        # Quantization config — gated on backend capability. Apple Silicon
+        # MPS and CPU have no bitsandbytes kernels; we either warn and fall
+        # back to unquantized or fail loudly per cfg.allow_quantization_fallback.
+        use_4bit = bool(cfg.load_in_4bit)
+        if use_4bit and not supports_4bit_quantization():
+            if cfg.allow_quantization_fallback:
+                print(
+                    "WARNING: load_in_4bit requested but bitsandbytes is unavailable on "
+                    "this backend (Apple Silicon MPS / CPU). Falling back to bf16."
+                )
+                use_4bit = False
+            else:
+                raise RuntimeError(
+                    "load_in_4bit requires a CUDA/ROCm host with bitsandbytes; "
+                    "set SFTConfig.allow_quantization_fallback=True to fall back to bf16."
+                )
+
+        if use_4bit:
             print("Configuring 4-bit quantization...")
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -421,22 +358,24 @@ class SFTTrainer:
         else:
             print("Loading model in full bf16 precision...")
             bnb_config = None
-        
-        # Load model directly on GPU (unified memory handles this automatically)
+
+        # Load model. device_map and attn_implementation route through the
+        # accelerator helpers so MPS and CPU hosts pick correct defaults.
         print("Loading base model...")
+        attn_impl = cfg.attn_implementation or recommended_attn_impl()
         self.model = AutoModelForCausalLM.from_pretrained(
             cfg.model_name,
             quantization_config=bnb_config,
-            dtype=torch.bfloat16,
-            device_map="auto",  # Unified memory on Strix Halo makes this optimal
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
             trust_remote_code=cfg.trust_remote_code,
-            attn_implementation=cfg.attn_implementation
+            attn_implementation=attn_impl
         )
-        
+
         print("Base model loaded")
-        
+
         # Prepare for QLoRA
-        if cfg.load_in_4bit:
+        if use_4bit:
             print("Preparing model for QLoRA...")
             self.model = prepare_model_for_kbit_training(self.model)
         
@@ -454,11 +393,9 @@ class SFTTrainer:
         self.model = get_peft_model(self.model, lora_config)
         self.model.print_trainable_parameters()
         
-        # Note: With device_map="auto", model is already on GPU
-        # Just clear cache for memory efficiency
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            print("Model ready on GPU")
+        # Model is already placed by device_map; just free transient buffers.
+        empty_accelerator_cache()
+        print("Model ready")
         
         print()
         
@@ -496,8 +433,7 @@ class SFTTrainer:
             print()
             
             self.model.zero_grad()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            empty_accelerator_cache()
                 
         except Exception as e:
             print(f"Smoke test FAILED: {e}")

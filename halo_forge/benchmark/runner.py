@@ -12,6 +12,12 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import gc
 
+from halo_forge.utils.accelerator import (
+    empty_accelerator_cache,
+    get_device_map,
+    recommended_attn_impl,
+    recommended_dtype,
+)
 from halo_forge.training_contracts import (
     build_effectiveness_contract,
     build_effectiveness_evaluation,
@@ -342,13 +348,13 @@ class BenchmarkRunner:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        # Load base model in BF16 (optimal for Strix Halo)
+        # Load base model in BF16 (optimal for Strix Halo; MPS may downcast to fp16 in Phase 2)
         self.base_model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
+            dtype=recommended_dtype(),
+            device_map=get_device_map(),
             trust_remote_code=True,
-            attn_implementation="eager",
+            attn_implementation=recommended_attn_impl(),
         )
         
         # Apply LoRA for efficient training
@@ -416,9 +422,9 @@ class BenchmarkRunner:
             # Load base model
             self.base_model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                attn_implementation="eager",
+                dtype=recommended_dtype(),
+                device_map=get_device_map(),
+                attn_implementation=recommended_attn_impl(),
                 trust_remote_code=True
             )
             
@@ -437,12 +443,12 @@ class BenchmarkRunner:
             
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                attn_implementation="eager",
+                dtype=recommended_dtype(),
+                device_map=get_device_map(),
+                attn_implementation=recommended_attn_impl(),
                 trust_remote_code=True
             )
-        
+
         self.model.eval()
         total_params = sum(p.numel() for p in self.model.parameters())
         self.log(f"Model loaded for eval: {total_params / 1e6:.0f}M params")
@@ -799,8 +805,8 @@ class BenchmarkRunner:
         # Clean up
         del trainer
         gc.collect()
-        torch.cuda.empty_cache()
-        
+        empty_accelerator_cache()
+
         return result.training_loss, result.global_step
     
     def run_final_eval(self) -> EvalResult:
@@ -957,10 +963,9 @@ def run_benchmark_suite(
         
         # Clean up
         import gc
-        import torch
         del runner
         gc.collect()
-        torch.cuda.empty_cache()
+        empty_accelerator_cache()
     
     # Save comparison summary
     comparison = {

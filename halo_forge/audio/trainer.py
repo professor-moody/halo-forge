@@ -38,6 +38,7 @@ from halo_forge.modality_artifacts import (
     persist_final_artifacts,
     resolve_resume_checkpoint,
 )
+from halo_forge.utils.accelerator import get_torch_device
 from halo_forge.runtime_determinism import (
     DEFAULT_TRAINING_SEED,
     build_run_id,
@@ -90,7 +91,7 @@ class AudioRAFTConfig:
 
     def __post_init__(self):
         if self.device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.device = str(get_torch_device())
 
 
 @dataclass

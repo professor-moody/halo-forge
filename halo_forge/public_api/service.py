@@ -173,6 +173,25 @@ class PublicApiService:
         self.readiness_service = readiness_service or get_ops_readiness_service()
         self.training_service = training_service or TrainingService(self.app_state)
 
+    def get_backend_info(self) -> Dict[str, Any]:
+        """Return the active compute backend and its capabilities.
+
+        Used by the frontend to render "Running on Apple Silicon (MPS)" /
+        "Running on AMD ROCm" badges and to gate UI affordances (e.g. hide
+        4-bit quantization toggles on backends that can't honor them).
+        """
+        from halo_forge.backend import get_backend
+        from dataclasses import asdict
+
+        backend = get_backend()
+        return {
+            "name": backend.name,
+            "device": backend.device(),
+            "capabilities": asdict(backend.capabilities),
+            "training_defaults": backend.training_defaults(),
+            "inference_defaults": backend.inference_defaults(),
+        }
+
     def list_training_presets(self) -> list[dict[str, Any]]:
         """Return public-safe quickstart presets for training."""
         items: list[dict[str, Any]] = []
