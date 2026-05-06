@@ -68,6 +68,13 @@ class DPOConfig:
     lora_alpha: int = 32
     lora_dropout: float = 0.05
     target_modules: Optional[List[str]] = None
+    # PEFT additions (Track T5) — see SFTConfig for documentation.
+    use_dora: bool = False
+    use_rslora: bool = False
+    init_lora_weights: str = "true"
+
+    # Optimizer (Track T4) — see SFTConfig.optim for accepted values.
+    optim: str = "adamw_torch"
 
     # Training
     output_dir: str = "models/dpo"

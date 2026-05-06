@@ -55,6 +55,26 @@ from halo_forge.utils.accelerator import (
 from halo_forge.sft.config import SFTConfig
 
 
+def _parse_init_lora_weights(value: str):
+    """Translate halo-forge's stringly-typed ``init_lora_weights`` to the
+    bool / string value PEFT's ``LoraConfig`` accepts.
+
+    PEFT permits ``True`` (default Kaiming init), ``False`` (zero init for
+    LoRA-A — fast convergence in some settings), ``"gaussian"``, ``"pissa"``,
+    ``"pissa_niter_[N]"``, ``"loftq"``, ``"olora"``, etc. We accept the same
+    strings plus the case-insensitive booleans ``"true"`` / ``"false"`` so
+    the CLI/YAML surface stays uniform.
+    """
+    if value is None:
+        return True
+    text = str(value).strip().lower()
+    if text == "true":
+        return True
+    if text == "false":
+        return False
+    return value
+
+
 class SFTTrainer:
     """
     SFT trainer optimized for AMD Strix Halo.
@@ -379,14 +399,19 @@ class SFTTrainer:
             print("Preparing model for QLoRA...")
             self.model = prepare_model_for_kbit_training(self.model)
         
-        # Apply LoRA
+        # Apply LoRA. PEFT additions (use_dora / use_rslora /
+        # init_lora_weights) come from cfg; they default to vanilla LoRA so
+        # no behavior change unless the user opts in.
         lora_config = LoraConfig(
             r=cfg.lora_r,
             lora_alpha=cfg.lora_alpha,
             target_modules=cfg.target_modules,
             lora_dropout=cfg.lora_dropout,
             bias="none",
-            task_type="CAUSAL_LM"
+            task_type="CAUSAL_LM",
+            use_dora=cfg.use_dora,
+            use_rslora=cfg.use_rslora,
+            init_lora_weights=_parse_init_lora_weights(cfg.init_lora_weights),
         )
         
         print("Applying LoRA adapters...")
@@ -557,7 +582,7 @@ class SFTTrainer:
             warmup_ratio=cfg.warmup_ratio,
             lr_scheduler_type="cosine",
             
-            optim="adamw_torch",
+            optim=cfg.optim,
             weight_decay=cfg.weight_decay,
             max_grad_norm=cfg.max_grad_norm,
             

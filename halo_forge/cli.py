@@ -477,7 +477,11 @@ def cmd_sft_train(args):
     early_stopping_patience = getattr(args, 'early_stopping_patience', 5)
     validation_split = getattr(args, 'validation_split', 0.05)
     max_seq_length = getattr(args, 'max_seq_length', 2048)
-    
+    use_dora = getattr(args, 'use_dora', False)
+    use_rslora = getattr(args, 'use_rslora', False)
+    init_lora_weights = getattr(args, 'init_lora_weights', 'true')
+    optim = getattr(args, 'optim', 'adamw_torch')
+
     if args.config:
         config = SFTConfig.from_yaml(args.config)
         # CLI args override config file
@@ -509,6 +513,10 @@ def cmd_sft_train(args):
         config.early_stopping_patience = early_stopping_patience
         config.validation_split = validation_split
         config.max_seq_length = max_seq_length
+        config.use_dora = use_dora
+        config.use_rslora = use_rslora
+        config.init_lora_weights = init_lora_weights
+        config.optim = optim
         if no_gradient_checkpointing:
             config.gradient_checkpointing = False
     else:
@@ -535,6 +543,10 @@ def cmd_sft_train(args):
             validation_split=validation_split,
             max_seq_length=max_seq_length,
             gradient_checkpointing=not no_gradient_checkpointing,
+            use_dora=use_dora,
+            use_rslora=use_rslora,
+            init_lora_weights=init_lora_weights,
+            optim=optim,
         )
     
     # Disable LoRA if requested (full fine-tuning)
@@ -631,6 +643,10 @@ def cmd_dpo_train(args):
         lora_r=getattr(args, "lora_rank", 16),
         lora_alpha=getattr(args, "lora_alpha", 32),
         lora_dropout=getattr(args, "lora_dropout", 0.05),
+        use_dora=getattr(args, "use_dora", False),
+        use_rslora=getattr(args, "use_rslora", False),
+        init_lora_weights=getattr(args, "init_lora_weights", "true"),
+        optim=getattr(args, "optim", "adamw_torch"),
         save_steps=getattr(args, "save_steps", 200),
         eval_steps=getattr(args, "eval_steps", 100),
         save_total_limit=getattr(args, "save_total_limit", 3),
@@ -3935,6 +3951,16 @@ def main():
     sft_train_parser.add_argument('--lora-alpha', type=int, default=32, help='LoRA alpha')
     sft_train_parser.add_argument('--lora-dropout', type=float, default=0.05, help='LoRA dropout')
     sft_train_parser.add_argument('--no-lora', action='store_true', help='Disable LoRA (full fine-tuning)')
+    # Track T5 — PEFT additions. Vanilla LoRA stays the default; opt in.
+    sft_train_parser.add_argument('--use-dora', action='store_true',
+                                  help='Use DoRA (decomposed magnitude+direction); slightly slower but typically matches LoRA at lower rank')
+    sft_train_parser.add_argument('--use-rslora', action='store_true',
+                                  help='Use rank-stabilized LoRA scaling (alpha/sqrt(r) instead of alpha/r)')
+    sft_train_parser.add_argument('--init-lora-weights', default='true',
+                                  help='LoRA initialization: true (default), pissa, pissa_niter_4, loftq, olora, gaussian, false')
+    # Track T4 — optimizer choice.
+    sft_train_parser.add_argument('--optim', default='adamw_torch',
+                                  help='Optimizer (adamw_torch, adamw_bnb_8bit, lion_8bit, paged_adamw_8bit, ...)')
     
     # Checkpointing
     sft_train_parser.add_argument('--save-steps', type=int, default=500, help='Save checkpoint every N steps')
@@ -4003,6 +4029,16 @@ def main():
     dpo_train_parser.add_argument('--lora-dropout', type=float, default=0.05, help='LoRA dropout')
     dpo_train_parser.add_argument('--load-in-4bit', action='store_true',
                                   help='QLoRA: load base model in 4-bit (CUDA/ROCm only)')
+    # Track T5 — PEFT additions.
+    dpo_train_parser.add_argument('--use-dora', action='store_true',
+                                  help='Use DoRA (decomposed magnitude+direction)')
+    dpo_train_parser.add_argument('--use-rslora', action='store_true',
+                                  help='Use rank-stabilized LoRA scaling')
+    dpo_train_parser.add_argument('--init-lora-weights', default='true',
+                                  help='LoRA initialization: true, pissa, loftq, olora, gaussian, false')
+    # Track T4 — optimizer choice.
+    dpo_train_parser.add_argument('--optim', default='adamw_torch',
+                                  help='Optimizer (adamw_torch, adamw_bnb_8bit, lion_8bit, ...)')
 
     # Checkpointing
     dpo_train_parser.add_argument('--save-steps', type=int, default=200, help='Save every N steps')

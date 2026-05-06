@@ -47,6 +47,27 @@ class SFTConfig:
     lora_alpha: int = 32
     lora_dropout: float = 0.05
     target_modules: List[str] = None
+    # PEFT additions (Track T5):
+    #   use_dora    — DoRA decomposes the weight into magnitude + direction;
+    #                 typically matches LoRA quality at lower rank but
+    #                 trains slightly slower.
+    #   use_rslora  — Rank-stabilized LoRA scaling (alpha / sqrt(r) instead
+    #                 of alpha / r). Free quality win at high rank.
+    #   init_lora_weights — "true" (default), "false", "gaussian", "pissa",
+    #                 "pissa_niter_[N]", "loftq", "olora". PiSSA initializes
+    #                 from SVD of the base weights (faster convergence).
+    use_dora: bool = False
+    use_rslora: bool = False
+    init_lora_weights: str = "true"
+
+    # Optimizer (Track T4) — string forwarded to TrainingArguments.optim.
+    # Common values:
+    #   "adamw_torch" (default)
+    #   "adamw_bnb_8bit" — bitsandbytes 8-bit AdamW; halves optimizer state.
+    #   "lion_8bit" / "lion_32bit" — bitsandbytes Lion.
+    #   "paged_adamw_8bit" — paged variant for huge models.
+    # See transformers.TrainingArguments for the full list.
+    optim: str = "adamw_torch"
 
     # Training
     output_dir: str = "models/sft"

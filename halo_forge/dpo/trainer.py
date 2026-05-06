@@ -30,6 +30,7 @@ from trl import DPOConfig as _TRLDPOConfig
 
 from halo_forge.dpo.config import DPOConfig
 from halo_forge.dpo.datasets import load_preference_dataset
+from halo_forge.sft.trainer import _parse_init_lora_weights
 from halo_forge.runtime_determinism import build_run_id, set_global_seed
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
@@ -124,6 +125,9 @@ class DPOTrainer:
             lora_dropout=cfg.lora_dropout,
             bias="none",
             task_type="CAUSAL_LM",
+            use_dora=cfg.use_dora,
+            use_rslora=cfg.use_rslora,
+            init_lora_weights=_parse_init_lora_weights(cfg.init_lora_weights),
         )
         self.model = get_peft_model(self.model, lora_config)
         self.model.print_trainable_parameters()
@@ -181,7 +185,7 @@ class DPOTrainer:
             weight_decay=cfg.weight_decay,
             max_grad_norm=cfg.max_grad_norm,
             lr_scheduler_type="cosine",
-            optim="adamw_torch",
+            optim=cfg.optim,
             bf16=cfg.bf16,
             gradient_checkpointing=cfg.gradient_checkpointing,
             gradient_checkpointing_kwargs={"use_reentrant": False},
