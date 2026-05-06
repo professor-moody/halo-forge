@@ -39,6 +39,10 @@ from halo_forge.rlvr.verifiers.go_verifier import GoVerifier
 from halo_forge.rlvr.verifiers.dotnet_verifier import DotNetVerifier, CSharpVerifier
 from halo_forge.rlvr.verifiers.powershell_verifier import PowerShellVerifier, PS1Verifier
 from halo_forge.rlvr.verifiers.multi_language import MultiLanguageVerifier, AutoVerifier, LanguageConfig
+# Track V2 — LLM-as-judge. Imported here so the @register_verifier
+# decorator on LLMJudgeVerifier fires at package init and the registry
+# carries it without a separate plugin install.
+from halo_forge.rlvr.verifiers.llm_judge import LLMJudgeVerifier
 
 __all__ = [
     # Base
@@ -89,6 +93,8 @@ __all__ = [
     "register_verifier",
     "get_verifier",
     "list_registered_verifiers",
+    # Track V2 — LLM-as-judge with rubric + pluggable judge callable.
+    "LLMJudgeVerifier",
 ]
 
 
