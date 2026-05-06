@@ -298,6 +298,9 @@ class MLXSFTTrainer:
         deps["linear_to_lora_layers"](
             self.model, num_layers=num_blocks, config=lora_config
         )
+        # Stashed for adapter_config.json — see train() for why mlx_lm
+        # needs the layer count baked into the artifact.
+        self._lora_num_layers = num_blocks
 
         trainable_params = sum(
             v.size for _, v in deps["tree_flatten"](self.model.trainable_parameters())
@@ -449,6 +452,25 @@ class MLXSFTTrainer:
                 val_dataset=val_ds,
                 args=args,
                 training_callback=_LossCollector(),
+            )
+
+            # mlx_lm.load(adapter_path=...) reads adapter_config.json to
+            # rebuild LoRA layers on the base model before loading weights.
+            # mlx_lm.tuner.trainer.train doesn't write that file — we have
+            # to ourselves so the next RAFT cycle (or a manual reload) can
+            # chain adapters via the documented mechanism.
+            adapter_config = {
+                "fine_tune_type": "lora",
+                "num_layers": getattr(self, "_lora_num_layers", 16),
+                "lora_parameters": {
+                    "rank": cfg.lora_r,
+                    "alpha": cfg.lora_alpha,
+                    "dropout": cfg.lora_dropout,
+                    "scale": float(cfg.lora_alpha) / float(cfg.lora_r) if cfg.lora_r else 1.0,
+                },
+            }
+            (adapter_dir / "adapter_config.json").write_text(
+                json.dumps(adapter_config, indent=2)
             )
 
             duration = time.time() - t0
