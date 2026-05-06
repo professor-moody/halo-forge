@@ -111,10 +111,75 @@ export type RunListItem = {
   [key: string]: unknown;
 };
 
-export type RunDetail = RunListItem & {
-  cycles?: Array<Record<string, unknown>>;
-  yield_diagnostics?: Record<string, unknown>;
+/**
+ * Per-cycle metric row exposed by /api/public/runs/{id}.details.cycle_metrics.
+ * Mirrors `_project_cycles_for_charts` on the backend; every numeric field
+ * is null-tolerant so older trainers / partial summaries chart cleanly.
+ */
+export type CycleMetric = {
+  cycle: number;
+  train_loss: number | null;
+  initial_train_loss: number | null;
+  eval_loss: number | null;
+  avg_reward: number | null;
+  avg_kept_reward: number | null;
+  success_rate: number | null;
+  samples_seen: number | null;
+  samples_kept: number | null;
+  train_steps_executed: number | null;
+  cycle_duration_seconds: number | null;
+  learning_rate: number | null;
+};
+
+/**
+ * The detail endpoint returns a `TrainingRunDetailView` that flattens
+ * SFT/RAFT-specific fields into UI-shaped sections: `metrics_summary`
+ * carries the headline numbers; `user_summary` carries the
+ * confidence/verdict; `details` carries the raw extras (cycles, seed,
+ * etc.). The list view has a different (flatter) shape — keep these
+ * separate from RunListItem.
+ */
+export type RunMetricsSummary = {
+  progress_percent?: number | null;
+  keep_rate?: number | null;
+  update_steps?: number | null;
+  final_train_loss?: number | null;
+  eval_metric_name?: string | null;
+  eval_metric_value?: number | null;
+  eval_delta?: number | null;
+};
+
+export type RunUserSummary = {
+  headline?: string;
+  why_it_matters?: string;
+  next_step?: string;
+  /** "success" | "warning" | "danger" | "neutral" — the tone of the verdict. */
+  confidence_tone?: string;
+};
+
+export type RunDetail = {
+  id: string;
+  run_id: string;
+  modality: string;
+  model_name: string;
+  status: string;
+  timestamp?: string | null;
+  headline?: string;
+  next_step?: string;
+  top_issue?: string | null;
+  user_summary?: RunUserSummary;
+  metrics_summary?: RunMetricsSummary;
   recovery?: Record<string, unknown>;
+  details?: {
+    cycles_executed?: number;
+    seed?: number;
+    resume_from_cycle?: number;
+    final_model_available?: boolean;
+    cycle_metrics?: CycleMetric[];
+    cycle_losses?: number[];
+    yield_diagnostics?: Record<string, unknown>;
+    [k: string]: unknown;
+  };
 };
 
 export type TrainingDataset = {

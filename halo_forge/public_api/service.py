@@ -936,6 +936,12 @@ class PublicApiService:
                 "seed": summary.seed,
                 "resume_from_cycle": summary.resume_from_cycle,
                 "final_model_available": bool(summary.final_model_path),
+                # Phase D: per-cycle metric series for the live run view.
+                # Flat plot-friendly entries so the frontend chart code
+                # can hand them straight to recharts without re-shaping.
+                "cycle_metrics": _project_cycles_for_charts(summary.raw_data),
+                "cycle_losses": list(summary.cycle_losses),
+                "yield_diagnostics": summary.yield_diagnostics,
             },
             research_sections=item.research_sections,
             internal_details=(
@@ -1335,3 +1341,74 @@ class PublicApiService:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+
+# ---------------------------------------------------------------------------
+# Phase D helpers — used by `_summary_to_detail_view` to surface chart-ready
+# per-cycle data without leaking the entire training_summary.json across the
+# wire. Defined at module scope so tests can exercise it without standing up
+# the full PublicApiService.
+# ---------------------------------------------------------------------------
+
+
+def _project_cycles_for_charts(raw_data: Dict[str, Any]) -> list[dict[str, Any]]:
+    """Project the cycles array from a training_summary.json payload to a
+    flat plot-friendly shape.
+
+    The raw `cycles` list contains everything the trainer emitted, including
+    `yield_diagnostics` sub-objects, which are not useful for charts and
+    inflate the wire size. We extract just the scalar per-cycle metrics
+    that the live run view actually charts: train/eval loss, reward
+    averages, success rate, and sample counts.
+
+    Tolerates missing fields (older trainers, partial summaries) by
+    returning None for any absent value — the frontend renders gaps as
+    breaks in the line, not as zeros.
+    """
+    if not isinstance(raw_data, dict):
+        return []
+    cycles = raw_data.get("cycles")
+    if not isinstance(cycles, list):
+        return []
+    projected: list[dict[str, Any]] = []
+    for entry in cycles:
+        if not isinstance(entry, dict):
+            continue
+        projected.append(
+            {
+                "cycle": int(entry.get("cycle") or 0),
+                "train_loss": _coerce_optional_float(entry.get("train_loss")),
+                "initial_train_loss": _coerce_optional_float(entry.get("initial_train_loss")),
+                "eval_loss": _coerce_optional_float(entry.get("eval_loss")),
+                "avg_reward": _coerce_optional_float(entry.get("avg_reward")),
+                "avg_kept_reward": _coerce_optional_float(entry.get("avg_kept_reward")),
+                "success_rate": _coerce_optional_float(entry.get("success_rate")),
+                "samples_seen": _coerce_optional_int(entry.get("samples_seen")),
+                "samples_kept": _coerce_optional_int(entry.get("samples_kept")),
+                "train_steps_executed": _coerce_optional_int(entry.get("train_steps_executed")),
+                "cycle_duration_seconds": _coerce_optional_float(
+                    entry.get("cycle_duration_seconds")
+                ),
+                "learning_rate": _coerce_optional_float(entry.get("learning_rate")),
+            }
+        )
+    return projected
+
+
+def _coerce_optional_float(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if not (result != result) else None  # filter NaN
+
+
+def _coerce_optional_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
