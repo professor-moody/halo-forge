@@ -1,6 +1,6 @@
 import { Activity, Cpu, Gauge, Info, Thermometer, Zap } from "lucide-react";
 import type { TelemetrySample } from "@/lib/api";
-import { useTelemetry } from "@/lib/hooks";
+import { useEventSource } from "@/lib/event-source";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -25,7 +25,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
  * to warning (amber) to danger (red) at thresholds.
  */
 export function TelemetryStrip() {
-  const { data, isLoading } = useTelemetry();
+  // Phase E: telemetry now streams over SSE. The browser's EventSource
+  // handles reconnection (server emits `retry: 3000`); we just keep
+  // the latest sample. `isLoading` is true until the first event lands.
+  const { data, status } = useEventSource<TelemetrySample>(
+    "/api/public/telemetry/stream",
+  );
+  const isLoading = data === null && status !== "error";
 
   return (
     <div className="border-b border-border bg-bg-subtle/40">
@@ -37,7 +43,7 @@ export function TelemetryStrip() {
           unit="%"
           loading={isLoading}
         />
-        <VramCell sample={data} loading={isLoading} />
+        <VramCell sample={data ?? undefined} loading={isLoading} />
         <Cell
           icon={Zap}
           label="POWER"

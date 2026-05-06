@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -6,8 +5,8 @@ import {
   Play,
   Terminal,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { api, type RunLogs } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useEventSource } from "@/lib/event-source";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +16,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+
+/**
+ * Per-event payload from the SSE log stream:
+ *   first event: { lines: [...initial tail], log_path, reset: true }
+ *   subsequent:  { lines: [...newly appended], log_path }
+ *   error:       { error: "..." }
+ *
+ * The reset flag tells us to replace the buffer (vs. append) — fires
+ * after a reconnect or a file truncation.
+ */
+type LogStreamEvent = {
+  lines?: string[];
+  log_path?: string;
+  reset?: boolean;
+  error?: string;
+};
 
 /**
  * Logs panel — tails the training log for a run.
@@ -61,12 +76,66 @@ export function LogsPanel({
   const stickToBottomRef = useRef<boolean>(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
-  const { data, isLoading, isError, error, dataUpdatedAt } = useQuery<RunLogs>({
-    queryKey: ["run-logs", runId, tail],
-    queryFn: () => api.runLogs(runId, tail),
-    refetchInterval: autoTail ? 3_000 : false,
-    refetchIntervalInBackground: false,
-  });
+  // Phase E: server-side log stream. Connection toggled by autoTail;
+  // pausing closes the EventSource so the server stops following the
+  // file (saves cycles + makes the "Paused" state literal, not just
+  // a paint freeze).
+  const streamUrl = autoTail
+    ? `/api/public/runs/${encodeURIComponent(runId)}/logs/stream?tail=${tail}`
+    : null;
+  const { data: streamEvent, status: streamStatus } =
+    useEventSource<LogStreamEvent>(streamUrl);
+
+  // Buffer all received lines; replace on `reset`, append otherwise.
+  // We accumulate in a ref so re-renders don't lose history.
+  const linesRef = useRef<string[]>([]);
+  const [logPath, setLogPath] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Bump this counter to trigger re-render when the underlying buffer
+  // mutates — useState would force shallow-copy of the whole array
+  // every poll, which gets expensive for long-running tails.
+  const [bufferTick, setBufferTick] = useState(0);
+
+  useEffect(() => {
+    if (!streamEvent) return;
+    if (streamEvent.error) {
+      setErrorMessage(streamEvent.error);
+      return;
+    }
+    if (streamEvent.log_path !== undefined) setLogPath(streamEvent.log_path ?? null);
+    if (Array.isArray(streamEvent.lines)) {
+      if (streamEvent.reset) {
+        linesRef.current = streamEvent.lines.slice();
+      } else if (streamEvent.lines.length) {
+        linesRef.current = linesRef.current.concat(streamEvent.lines);
+        // Soft cap so a runaway log doesn't blow up the DOM.
+        const MAX = 5000;
+        if (linesRef.current.length > MAX) {
+          linesRef.current = linesRef.current.slice(-MAX);
+        }
+      }
+      setErrorMessage(null);
+      setBufferTick((n) => n + 1);
+    }
+  }, [streamEvent]);
+
+  // Reset buffer when we explicitly disconnect (toggle pause).
+  useEffect(() => {
+    if (autoTail) return;
+    // Don't clear; keep what's on screen. Just halt updates.
+  }, [autoTail]);
+
+  const lines = linesRef.current;
+
+  const isLoading = streamStatus === "connecting" && lines.length === 0;
+  const isUnavailable = !!errorMessage;
+  // The query-driven `isError` from before mapped to network/status
+  // failures; the new SSE world distinguishes "connection lost" (handled
+  // by the browser) from "stream emitted error event" (we render).
+  const error = useMemo(() => (isUnavailable ? new Error(errorMessage!) : null), [
+    isUnavailable,
+    errorMessage,
+  ]);
 
   // Auto-scroll handler: if the user was at the bottom when new lines
   // arrived, follow. Otherwise stay put.
@@ -75,7 +144,7 @@ export function LogsPanel({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [data?.lines.length, dataUpdatedAt]);
+  }, [bufferTick]);
 
   // Track user scroll position. If they've scrolled up by more than
   // 24px, drop the auto-follow flag and show the "jump to latest" pill.
@@ -103,13 +172,26 @@ export function LogsPanel({
           <CardEyebrow>STREAM</CardEyebrow>
           <CardTitle>Logs</CardTitle>
           <Terminal className="h-3.5 w-3.5 text-fg-disabled" />
-          {data?.log_path ? (
+          {logPath ? (
             <span
               className="font-mono text-[10px] text-fg-disabled truncate ml-1"
-              title={data.log_path}
+              title={logPath}
             >
-              {basename(data.log_path)}
+              {basename(logPath)}
             </span>
+          ) : null}
+          {streamStatus === "open" ? (
+            <span
+              className="status-dot ml-0.5"
+              style={{ background: "var(--color-success)" }}
+              aria-label="stream open"
+            />
+          ) : streamStatus === "error" ? (
+            <span
+              className="status-dot ml-0.5"
+              style={{ background: "var(--color-warning)" }}
+              aria-label="stream reconnecting"
+            />
           ) : null}
         </div>
         <div className="flex items-center gap-1.5">
@@ -136,22 +218,21 @@ export function LogsPanel({
       <CardContent className="p-0 relative">
         {isLoading ? (
           <div className="px-4 py-12 text-center text-xs text-fg-subtle">
-            Loading logs…
+            Connecting to log stream…
           </div>
-        ) : isError ? (
-          <div className="px-4 py-8 flex items-center gap-2 text-xs text-danger">
-            <AlertCircle className="h-3.5 w-3.5" />
-            {(error as Error)?.message ?? "Could not load logs."}
-          </div>
-        ) : data && !data.available ? (
+        ) : error ? (
           <div className="px-4 py-12 flex flex-col items-center gap-1.5 text-center">
-            <div className="text-[12px] text-fg">No log file alongside this run.</div>
+            <AlertCircle className="h-4 w-4 text-fg-subtle" />
+            <div className="text-[12px] text-fg">{error.message}</div>
             <div className="text-[11px] text-fg-subtle max-w-[44ch]">
-              {data.reason ??
-                "Logs land here once the trainer's TeeWriter starts emitting."}
+              Logs land here once the trainer's TeeWriter starts emitting.
             </div>
           </div>
-        ) : data && data.lines.length ? (
+        ) : !autoTail && lines.length === 0 ? (
+          <div className="px-4 py-12 text-center text-xs text-fg-subtle">
+            Stream paused.
+          </div>
+        ) : lines.length ? (
           <>
             <div
               ref={scrollRef}
@@ -159,7 +240,7 @@ export function LogsPanel({
               style={{ height }}
               className="overflow-y-auto bg-bg-subtle/50 font-mono text-[11.5px] leading-[1.4]"
             >
-              {data.lines.map((line, i) => {
+              {lines.map((line, i) => {
                 const tone = lineTone(line);
                 return (
                   <div

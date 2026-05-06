@@ -972,6 +972,164 @@ class PublicApiService:
                 break
             await asyncio.sleep(1.0)
 
+    async def stream_telemetry(self, *, interval_seconds: float = 2.0):
+        """Push hardware telemetry as server-sent events.
+
+        Replaces the 3s polling on the public_app's TelemetryStrip.
+        Yields one `data: <json>\\n\\n` event per `interval_seconds`.
+
+        Each event is the same shape `GET /api/public/telemetry` would
+        return — the frontend EventSource can parse it identically and
+        feed it into the same render path. The provider's own internal
+        cache (1s on rocm-smi/nvidia-smi) keeps the actual subprocess
+        cost bounded regardless of how aggressive the interval is.
+
+        Streams until the client disconnects (FastAPI raises
+        asyncio.CancelledError, which propagates out cleanly).
+        """
+        from halo_forge.telemetry import (
+            TelemetryUnavailableError,
+            get_telemetry_provider,
+        )
+
+        try:
+            provider = get_telemetry_provider()
+        except TelemetryUnavailableError as exc:
+            # Emit a single error event then exit so the client gets
+            # a clear signal instead of a silent hang.
+            yield f"data: {json.dumps({'error': f'Telemetry unavailable: {exc}'})}\n\n"
+            return
+
+        # SSE retry hint — if the connection drops, the browser will
+        # re-open after this many milliseconds. Keep it short so a
+        # network blip doesn't leave the strip stale for long.
+        yield f"retry: 3000\n\n"
+
+        while True:
+            try:
+                sample = provider.sample()
+                yield f"data: {json.dumps(sample.to_dict())}\n\n"
+            except Exception as exc:
+                # Don't crash the stream on a single sample failure;
+                # surface the error in the event payload and keep
+                # the connection alive so the next interval recovers.
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            await asyncio.sleep(max(0.5, float(interval_seconds)))
+
+    async def stream_run_logs(
+        self,
+        run_identifier: str,
+        *,
+        initial_tail: int = 200,
+        poll_seconds: float = 1.0,
+    ):
+        """Tail a run's log file and emit new lines as SSE events.
+
+        The first event carries the `initial_tail` last lines so the
+        frontend renders content immediately; subsequent events carry
+        only newly-appended lines. Each event payload is
+        `{"lines": [...], "log_path": "...", "appended_at": ts}`.
+
+        Stops cleanly when the run reaches a terminal status (the file
+        won't grow further) or when the client disconnects.
+        """
+        try:
+            source = self._resolve_run_source(run_identifier)
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': f'Run not found: {exc}'})}\n\n"
+            return
+
+        from pathlib import Path
+
+        out_dir, run_id = _extract_output_dir_and_run_id(source)
+        log_path: Optional[Path] = None
+        if out_dir:
+            for name in ("run.log", "train.log", "training.log"):
+                if (out_dir / name).exists():
+                    log_path = out_dir / name
+                    break
+
+        if log_path is None:
+            # Fall back to logs/ scan once at start; if nothing matches,
+            # emit a single "unavailable" event and exit.
+            logs_dir = self.base_path / "logs"
+            if logs_dir.is_dir():
+                tokens = [t for t in (run_id, out_dir.name if out_dir else "") if t]
+                matches = [
+                    p
+                    for p in logs_dir.glob("*.log")
+                    if any(tok in p.name for tok in tokens)
+                ]
+                matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                if matches:
+                    log_path = matches[0]
+
+        if log_path is None or not log_path.exists():
+            yield f"data: {json.dumps({'error': 'No log file alongside this run.'})}\n\n"
+            return
+
+        yield "retry: 3000\n\n"
+
+        # Send the initial tail up front so the user sees something
+        # without waiting for new lines.
+        try:
+            with log_path.open(encoding="utf-8", errors="replace") as f:
+                buf: list[str] = []
+                for line in f:
+                    buf.append(line.rstrip("\n"))
+                    if len(buf) > initial_tail * 2:
+                        buf = buf[-initial_tail:]
+                initial = buf[-initial_tail:] if len(buf) > initial_tail else buf
+        except OSError as exc:
+            yield f"data: {json.dumps({'error': f'Cannot read log: {exc}'})}\n\n"
+            return
+
+        yield f"data: {json.dumps({'lines': initial, 'log_path': str(log_path), 'reset': True})}\n\n"
+
+        # Now follow the file for newly-appended bytes. We track byte
+        # offset rather than line count so a partial line on disk
+        # doesn't get duplicated when its remainder lands.
+        offset = log_path.stat().st_size
+        while True:
+            try:
+                size = log_path.stat().st_size
+            except OSError:
+                # File rotated/deleted — stop the stream gracefully.
+                yield f"data: {json.dumps({'error': 'Log file disappeared'})}\n\n"
+                return
+
+            if size > offset:
+                try:
+                    with log_path.open(encoding="utf-8", errors="replace") as f:
+                        f.seek(offset)
+                        chunk = f.read(size - offset)
+                except OSError:
+                    chunk = ""
+                if chunk:
+                    new_lines = chunk.splitlines()
+                    if new_lines:
+                        yield f"data: {json.dumps({'lines': new_lines, 'log_path': str(log_path)})}\n\n"
+                offset = size
+            elif size < offset:
+                # File was truncated — re-emit the head so the client
+                # doesn't render stale state.
+                offset = 0
+                continue
+
+            # If the underlying job is in a terminal state, stop here
+            # so we don't hold the connection open forever after the
+            # log stops growing. Re-resolve cheaply each iteration.
+            try:
+                refreshed = self._resolve_run_source(run_identifier)
+                if refreshed.get("kind") == "summary":
+                    # Completed run — give one final flush, then close.
+                    await asyncio.sleep(poll_seconds)
+                    return
+            except Exception:
+                pass
+
+            await asyncio.sleep(max(0.25, float(poll_seconds)))
+
     def list_training_results(self, *, include_research: bool = False) -> Dict[str, Any]:
         """Return completed training results for the public results page."""
         items = [

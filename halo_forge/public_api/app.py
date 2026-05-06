@@ -58,6 +58,15 @@ def create_app() -> "FastAPI":
     async def telemetry() -> Dict[str, Any]:
         return service.get_telemetry()
 
+    @router.get("/telemetry/stream")
+    async def stream_telemetry(
+        interval: float = Query(default=2.0, ge=0.5, le=30.0),
+    ) -> "StreamingResponse":
+        return StreamingResponse(
+            service.stream_telemetry(interval_seconds=interval),
+            media_type="text/event-stream",
+        )
+
     @router.get("/dashboard")
     async def dashboard_summary() -> Dict[str, Any]:
         return service.get_dashboard_summary()
@@ -129,6 +138,16 @@ def create_app() -> "FastAPI":
         tail: int = Query(default=200, ge=1, le=5000),
     ) -> Dict[str, Any]:
         return service.get_run_logs(run_id, tail=tail)
+
+    @router.get("/runs/{run_id}/logs/stream")
+    async def stream_run_logs(
+        run_id: str,
+        tail: int = Query(default=200, ge=1, le=5000),
+    ) -> "StreamingResponse":
+        return StreamingResponse(
+            service.stream_run_logs(run_id, initial_tail=tail),
+            media_type="text/event-stream",
+        )
 
     @router.get("/runs/{run_id}/samples")
     async def get_run_samples(
