@@ -66,6 +66,18 @@ def create_app() -> "FastAPI":
     async def list_training_presets() -> Dict[str, Any]:
         return {"items": service.list_training_presets()}
 
+    @router.get("/train/datasets")
+    async def list_training_datasets() -> Dict[str, Any]:
+        return {"items": service.list_training_datasets()}
+
+    @router.get("/train/verifiers")
+    async def list_training_verifiers() -> Dict[str, Any]:
+        return {"items": service.list_training_verifiers()}
+
+    @router.get("/train/models")
+    async def list_suggested_models() -> Dict[str, Any]:
+        return {"items": service.list_suggested_models()}
+
     @router.post("/train/preflight")
     async def preflight_training(payload: Dict[str, Any]) -> Dict[str, Any]:
         try:

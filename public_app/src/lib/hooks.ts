@@ -1,10 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   api,
   type BackendInfo,
   type DashboardSummary,
   type RunListItem,
+  type SuggestedModel,
   type TelemetrySample,
+  type TrainingDataset,
+  type TrainingVerifier,
 } from "@/lib/api";
 
 /**
@@ -20,6 +23,9 @@ export const queryKeys = {
   runs: (params?: { limit?: number; modality?: string }) =>
     ["runs", params] as const,
   runDetail: (runId: string) => ["runs", runId] as const,
+  trainingDatasets: ["training", "datasets"] as const,
+  trainingVerifiers: ["training", "verifiers"] as const,
+  trainingModels: ["training", "models"] as const,
 };
 
 /**
@@ -65,6 +71,62 @@ export function useTelemetry() {
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
     staleTime: 0, // every poll is fresh data
+  });
+}
+
+/* -------------------------------------------------------------------------
+ * Training configurator data sources.
+ *
+ * Datasets, verifiers, and suggested models are static for the lifetime
+ * of a server, so we cache aggressively (10 min) and never refetch on
+ * window focus. The configurator can re-render on every keystroke
+ * without hitting the backend.
+ * ----------------------------------------------------------------------- */
+
+const TRAINING_STATIC_OPTS = {
+  staleTime: 10 * 60 * 1000,
+  gcTime: 60 * 60 * 1000,
+  refetchOnWindowFocus: false as const,
+};
+
+export function useTrainingDatasets() {
+  return useQuery<{ items: TrainingDataset[] }>({
+    queryKey: queryKeys.trainingDatasets,
+    queryFn: api.trainingDatasets,
+    ...TRAINING_STATIC_OPTS,
+  });
+}
+
+export function useTrainingVerifiers() {
+  return useQuery<{ items: TrainingVerifier[] }>({
+    queryKey: queryKeys.trainingVerifiers,
+    queryFn: api.trainingVerifiers,
+    ...TRAINING_STATIC_OPTS,
+  });
+}
+
+export function useTrainingModels() {
+  return useQuery<{ items: SuggestedModel[] }>({
+    queryKey: queryKeys.trainingModels,
+    queryFn: api.trainingModels,
+    ...TRAINING_STATIC_OPTS,
+  });
+}
+
+/**
+ * Preflight + launch are mutations (POST). Preflight is called on a
+ * debounce while the user edits the form so the right-side panel can
+ * show live validation; launch is the explicit user-triggered action.
+ */
+export function useTrainingPreflight() {
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.trainingPreflight(payload),
+  });
+}
+
+export function useTrainingLaunch() {
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.trainingLaunch(payload),
   });
 }
 

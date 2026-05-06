@@ -501,7 +501,11 @@ class TrainingService:
         if max_samples is not None and max_samples < 64 and epochs > 1:
             warnings.append("Tiny dataset limits with multiple epochs may overfit before learning stabilizes.")
             suggestions.append("Use one epoch for smoke runs or raise max_samples before repeating epochs.")
-        if batch_size * max(1, epochs) > max_samples and max_samples is not None and max_samples > 0:
+        if (
+            max_samples is not None
+            and max_samples > 0
+            and batch_size * max(1, epochs) > max_samples
+        ):
             suggestions.append("If loss looks noisy, increase max_samples or lower epochs before relaunch.")
         previous_status = self._read_previous_quality_status(output_dir)
         if previous_status in {"low_yield", "no_signal"}:

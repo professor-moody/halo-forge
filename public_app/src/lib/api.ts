@@ -117,6 +117,28 @@ export type RunDetail = RunListItem & {
   recovery?: Record<string, unknown>;
 };
 
+export type TrainingDataset = {
+  key: string;
+  huggingface_id: string;
+  description: string;
+  domain: "code" | "vlm" | "audio" | "reasoning" | "agentic" | string;
+  size_hint: string;
+  default_split: string;
+};
+
+export type TrainingVerifier = {
+  key: string;
+  label: string;
+  toolchain: string;
+  modality: string;
+  platforms: string[];
+};
+
+export type SuggestedModel = {
+  id: string;
+  for_backend: string;
+};
+
 export type TrainingPreset = {
   key: string;
   mode: string;
@@ -140,6 +162,19 @@ export const api = {
   telemetry: () => request<TelemetrySample>("/telemetry"),
   dashboard: () => request<DashboardSummary>("/dashboard"),
   trainingPresets: () => request<{ items: TrainingPreset[] }>("/train/presets"),
+  trainingDatasets: () => request<{ items: TrainingDataset[] }>("/train/datasets"),
+  trainingVerifiers: () => request<{ items: TrainingVerifier[] }>("/train/verifiers"),
+  trainingModels: () => request<{ items: SuggestedModel[] }>("/train/models"),
+  trainingPreflight: (payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/train/preflight", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  trainingLaunch: (payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/train/launch", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   listRuns: (params?: { limit?: number; modality?: string }) => {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", String(params.limit));

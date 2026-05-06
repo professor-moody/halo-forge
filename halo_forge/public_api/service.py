@@ -225,6 +225,140 @@ class PublicApiService:
         sample = provider.sample()
         return sample.to_dict()
 
+    def list_training_datasets(self) -> list[dict[str, Any]]:
+        """Catalog of known training datasets for the launch configurator.
+
+        Reads `halo_forge.sft.datasets.SFT_DATASETS` (the same registry the
+        CLI uses) and projects it down to a JSON-shaped list. Domain
+        ('code', 'vlm', 'audio', 'reasoning', 'agentic') is included so
+        the frontend can group + filter by modality without re-deriving
+        the mapping client-side.
+        """
+        from halo_forge.sft.datasets import SFT_DATASETS
+
+        items: list[dict[str, Any]] = []
+        for spec in SFT_DATASETS.values():
+            items.append(
+                {
+                    "key": spec.name,
+                    "huggingface_id": spec.huggingface_id,
+                    "description": spec.description,
+                    "domain": spec.domain,
+                    "size_hint": spec.size_hint,
+                    "default_split": spec.default_split,
+                }
+            )
+        return items
+
+    def list_training_verifiers(self) -> list[dict[str, Any]]:
+        """Verifiers available for the RAFT loop. Each entry exposes the
+        toolchain dependency the user needs locally so the configurator
+        can preflight whether the binary is reachable.
+        """
+        from halo_forge.cli import RAFT_TRAIN_SUPPORTED_VERIFIERS
+
+        # Hand-curated metadata that the CLI surface already understands.
+        # Kept here (not in cli.py) so the API doesn't pull cli imports
+        # at module load.
+        catalog: dict[str, dict[str, Any]] = {
+            "gcc": {
+                "label": "GCC (Linux/POSIX C/C++)",
+                "toolchain": "gcc",
+                "modality": "code",
+                "platforms": ["linux", "macos"],
+            },
+            "mingw": {
+                "label": "MinGW (Windows cross-compile)",
+                "toolchain": "x86_64-w64-mingw32-g++",
+                "modality": "code",
+                "platforms": ["linux", "macos"],
+            },
+            "msvc": {
+                "label": "MSVC (remote Windows host)",
+                "toolchain": "remote-msvc",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+            "humaneval": {
+                "label": "HumanEval (Python)",
+                "toolchain": "python",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+            "mbpp": {
+                "label": "MBPP (Python)",
+                "toolchain": "python",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+            "rust": {
+                "label": "Rust (rustc)",
+                "toolchain": "rustc",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+            "go": {
+                "label": "Go (go build)",
+                "toolchain": "go",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+            "auto": {
+                "label": "Auto-detect",
+                "toolchain": "any",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+            "execution": {
+                "label": "Execution (sandboxed runtime)",
+                "toolchain": "sandbox",
+                "modality": "code",
+                "platforms": ["any"],
+            },
+        }
+        return [
+            {"key": k, **catalog.get(k, {"label": k, "toolchain": k, "modality": "code"})}
+            for k in RAFT_TRAIN_SUPPORTED_VERIFIERS
+        ]
+
+    def list_suggested_models(self) -> list[dict[str, Any]]:
+        """Backend-aware base-model suggestions.
+
+        On torch backends we surface the HF ids the CLI uses by default;
+        on MLX we list a few `mlx-community/...` variants known to load
+        cleanly. The frontend renders this as a quick-pick list inside
+        the model dropdown so users don't have to remember the canonical
+        repo names.
+        """
+        from halo_forge.backend import get_backend
+
+        backend = get_backend()
+        backend_name = backend.name
+
+        if backend_name == "mlx":
+            suggestions = [
+                "mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+                "mlx-community/Qwen2.5-3B-Instruct-bf16",
+                "mlx-community/Qwen2.5-7B-Instruct-bf16",
+                "mlx-community/Llama-3.2-3B-Instruct-4bit",
+            ]
+        else:
+            suggestions = [
+                "Qwen/Qwen2.5-Coder-0.5B",
+                "Qwen/Qwen2.5-Coder-3B",
+                "Qwen/Qwen2.5-Coder-7B",
+                "Qwen/Qwen2.5-3B-Instruct",
+                "Qwen/Qwen2.5-7B-Instruct",
+            ]
+
+        return [
+            {
+                "id": m,
+                "for_backend": backend_name,
+            }
+            for m in suggestions
+        ]
+
     def list_training_presets(self) -> list[dict[str, Any]]:
         """Return public-safe quickstart presets for training."""
         items: list[dict[str, Any]] = []
