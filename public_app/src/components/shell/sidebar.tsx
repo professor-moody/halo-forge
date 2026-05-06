@@ -3,6 +3,7 @@ import {
   Activity,
   BookOpen,
   CheckCircle2,
+  GitCompareArrows,
   LayoutDashboard,
   Play,
   type LucideIcon,
@@ -10,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useBackendInfo } from "@/lib/hooks";
+import { usePinnedRuns } from "@/lib/pinned-runs";
 
 /**
  * Left rail. Three vertical zones:
@@ -113,9 +115,55 @@ export function Sidebar() {
         </ul>
       </nav>
 
+      {/* Comparison tray — only renders when at least one run is pinned.
+          Lives between primary nav and Compute so it reads as "active
+          working set", not part of the static nav. */}
+      <ComparisonTray />
+
       {/* Compute panel */}
       <ComputePanel />
     </aside>
+  );
+}
+
+function ComparisonTray() {
+  const pinned = usePinnedRuns();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  if (pinned.length === 0) return null;
+  const active = pathname === "/runs/compare";
+
+  return (
+    <div className="border-t border-border-subtle px-1.5 py-2">
+      <SectionLabel>Comparison</SectionLabel>
+      <Link
+        to="/runs/compare"
+        className={cn(
+          "relative flex h-7 items-center gap-2.5 rounded-sm px-2 text-[13px] transition-colors",
+          active
+            ? "bg-accent-bg text-accent font-medium"
+            : "text-fg-muted hover:bg-surface hover:text-fg",
+        )}
+      >
+        {active ? (
+          <span
+            aria-hidden
+            className="absolute -left-1.5 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent"
+          />
+        ) : null}
+        <GitCompareArrows className="h-3.5 w-3.5" />
+        <span className="flex-1">Compare runs</span>
+        <span
+          className={cn(
+            "font-mono text-[10px] tabular-nums px-1.5 rounded-sm",
+            active
+              ? "bg-accent/15 text-accent"
+              : "bg-surface text-fg-subtle",
+          )}
+        >
+          {pinned.length}
+        </span>
+      </Link>
+    </div>
   );
 }
 

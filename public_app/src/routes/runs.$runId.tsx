@@ -5,6 +5,8 @@ import {
   Cpu,
   Layers,
   Loader2,
+  Pin,
+  PinOff,
   RefreshCw,
   Square,
   Target,
@@ -27,6 +29,12 @@ import { MetricChart, type MetricSeries } from "@/components/charts/metric-chart
 import { CycleScrubber } from "@/components/run/cycle-scrubber";
 import { LogsPanel } from "@/components/run/logs-panel";
 import { SampleInspector } from "@/components/run/sample-inspector";
+import {
+  PINNED_RUNS_LIMIT,
+  pinRun,
+  unpinRun,
+  usePinnedRuns,
+} from "@/lib/pinned-runs";
 import { cn, relativeTime } from "@/lib/utils";
 
 export const Route = createFileRoute("/runs/$runId")({
@@ -64,6 +72,14 @@ function RunDetailRoute() {
   }, [data]);
 
   const isLive = isJobRunning(data?.status);
+
+  // Phase F — pinning. Pinned runs accumulate in localStorage and feed
+  // the comparison route at /runs/compare. Cap is enforced by the store
+  // itself; we surface a disabled state once the user is at the cap so
+  // the action button doesn't lie about what it'll do.
+  const pinnedIds = usePinnedRuns();
+  const isPinned = pinnedIds.includes(runId);
+  const pinDisabled = !isPinned && pinnedIds.length >= PINNED_RUNS_LIMIT;
 
   // Phase D v3 — chart focus state. `null` means "show all cycles";
   // a number means "slice the chart to cycles 0..focusCycle inclusive".
@@ -109,6 +125,23 @@ function RunDetailRoute() {
                 Cancel run
               </Button>
             ) : null}
+            <Button
+              variant={isPinned ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => (isPinned ? unpinRun(runId) : pinRun(runId))}
+              disabled={pinDisabled}
+              title={
+                isPinned
+                  ? "Unpin from comparison tray"
+                  : pinDisabled
+                    ? `Comparison tray full (${PINNED_RUNS_LIMIT} runs max)`
+                    : "Pin to comparison tray"
+              }
+              aria-pressed={isPinned}
+            >
+              {isPinned ? <PinOff /> : <Pin />}
+              {isPinned ? "Pinned" : "Pin"}
+            </Button>
             <Button variant="ghost" size="icon" asChild aria-label="Back to runs">
               <Link to="/runs">
                 <ArrowLeft />
