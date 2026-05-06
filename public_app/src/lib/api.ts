@@ -221,11 +221,58 @@ export type TrainingPreset = {
  * Endpoints
  * ----------------------------------------------------------------------- */
 
+export type RunLogs = {
+  available: boolean;
+  lines: string[];
+  reason: string | null;
+  log_path: string | null;
+  tail: number;
+  total_lines_returned?: number;
+};
+
+export type RunSample = {
+  prompt?: string;
+  completion?: string;
+  reward?: number;
+  success?: boolean;
+  details?: Record<string, unknown>;
+  /** mlx-flavored chat-format records may surface this instead of prompt+completion */
+  messages?: Array<{ role: string; content: string }>;
+  [k: string]: unknown;
+};
+
+export type RunSamples = {
+  available: boolean;
+  samples: RunSample[];
+  reason: string | null;
+  cycle: number | null;
+  kind: "samples" | "accepted" | string;
+  available_cycles?: number[];
+  limit?: number;
+  total_returned?: number;
+  source_path?: string;
+};
+
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
   backendInfo: () => request<BackendInfo>("/backend"),
   telemetry: () => request<TelemetrySample>("/telemetry"),
   dashboard: () => request<DashboardSummary>("/dashboard"),
+  runLogs: (runId: string, tail = 200) =>
+    request<RunLogs>(`/runs/${encodeURIComponent(runId)}/logs?tail=${tail}`),
+  runSamples: (
+    runId: string,
+    params: { cycle?: number; kind?: "samples" | "accepted"; limit?: number } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.cycle !== undefined) search.set("cycle", String(params.cycle));
+    if (params.kind) search.set("kind", params.kind);
+    if (params.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return request<RunSamples>(
+      `/runs/${encodeURIComponent(runId)}/samples${qs ? `?${qs}` : ""}`,
+    );
+  },
   trainingPresets: () => request<{ items: TrainingPreset[] }>("/train/presets"),
   trainingDatasets: () => request<{ items: TrainingDataset[] }>("/train/datasets"),
   trainingVerifiers: () => request<{ items: TrainingVerifier[] }>("/train/verifiers"),

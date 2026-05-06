@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .service import PublicApiService
 
@@ -118,6 +118,22 @@ def create_app() -> "FastAPI":
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.get("/runs/{run_id}/logs")
+    async def get_run_logs(
+        run_id: str,
+        tail: int = Query(default=200, ge=1, le=5000),
+    ) -> Dict[str, Any]:
+        return service.get_run_logs(run_id, tail=tail)
+
+    @router.get("/runs/{run_id}/samples")
+    async def get_run_samples(
+        run_id: str,
+        cycle: Optional[int] = Query(default=None, ge=0),
+        kind: str = Query(default="samples"),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> Dict[str, Any]:
+        return service.get_run_samples(run_id, cycle=cycle, kind=kind, limit=limit)
 
     @router.get("/runs/{run_id}/live")
     async def get_run_live(

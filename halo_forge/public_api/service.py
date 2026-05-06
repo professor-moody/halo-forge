@@ -192,6 +192,228 @@ class PublicApiService:
             "inference_defaults": backend.inference_defaults(),
         }
 
+    def get_run_logs(
+        self,
+        run_identifier: str,
+        *,
+        tail: int = 200,
+    ) -> Dict[str, Any]:
+        """Return the tail of training logs for a run.
+
+        Looks for `run.log` (or `train.log`) inside the run's output_dir
+        first; falls back to scanning `logs/` for the newest log file
+        whose basename references this run. Honest about unavailability
+        — returns `{"available": False, "lines": [], "reason": "..."}`
+        rather than 5xx-ing.
+
+        Phase D v2 contract: the frontend polls this every few seconds
+        for active runs and renders the last N lines in a virtual-scroll
+        panel.
+        """
+        try:
+            source = self._resolve_run_source(run_identifier)
+        except Exception as exc:
+            return {
+                "available": False,
+                "lines": [],
+                "reason": f"Run not found: {exc}",
+                "log_path": None,
+                "tail": int(tail),
+            }
+
+        from pathlib import Path
+
+        # _resolve_run_source returns either a job (active) or a summary
+        # (completed). Both expose an output_dir, but the field lives in
+        # different places. Normalize them here.
+        output_dir, run_id = _extract_output_dir_and_run_id(source)
+
+        candidates: list[Path] = []
+        if output_dir:
+            for name in ("run.log", "train.log", "training.log"):
+                candidate = output_dir / name
+                if candidate.exists():
+                    candidates.append(candidate)
+
+        # Fall back to logs/ scan — newest file whose basename mentions
+        # the run_id or output_dir basename.
+        if not candidates:
+            logs_dir = self.base_path / "logs"
+            if logs_dir.is_dir():
+                tokens = [t for t in (run_id, output_dir.name if output_dir else "") if t]
+                matches = []
+                for log_file in logs_dir.glob("*.log"):
+                    if any(tok in log_file.name for tok in tokens):
+                        matches.append(log_file)
+                # Newest first
+                matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                candidates.extend(matches[:1])
+
+        if not candidates:
+            return {
+                "available": False,
+                "lines": [],
+                "reason": "No log file found alongside this run.",
+                "log_path": None,
+                "tail": int(tail),
+            }
+
+        log_path = candidates[0]
+        # Defensive line-by-line read with a soft cap so an enormous log
+        # never blows the API memory budget.
+        max_tail = max(1, min(int(tail), 5000))
+        try:
+            with log_path.open(encoding="utf-8", errors="replace") as f:
+                buf: list[str] = []
+                for line in f:
+                    buf.append(line.rstrip("\n"))
+                    if len(buf) > max_tail * 2:
+                        # Keep the trailing window only; deque-like prune
+                        buf = buf[-max_tail:]
+                lines = buf[-max_tail:] if len(buf) > max_tail else buf
+        except OSError as exc:
+            return {
+                "available": False,
+                "lines": [],
+                "reason": f"Could not read {log_path.name}: {exc}",
+                "log_path": str(log_path),
+                "tail": max_tail,
+            }
+
+        return {
+            "available": True,
+            "lines": lines,
+            "reason": None,
+            "log_path": str(log_path),
+            "tail": max_tail,
+            "total_lines_returned": len(lines),
+        }
+
+    def get_run_samples(
+        self,
+        run_identifier: str,
+        *,
+        cycle: Optional[int] = None,
+        kind: str = "samples",
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        """Return RAFT-style sample artifacts for a cycle.
+
+        kind="samples"  -> all generated samples for the cycle
+                           (cycle_{N}_samples.jsonl)
+        kind="accepted" -> the post-filter set fed to SFT
+                           (cycle_{N}/accepted.jsonl)
+
+        Returns a stable JSON envelope so the frontend can render an
+        "available: false" placeholder when the trainer didn't write
+        these artifacts (older summaries, SFT-only runs, or local-only
+        files that never reached this host).
+        """
+        try:
+            source = self._resolve_run_source(run_identifier)
+        except Exception as exc:
+            return {
+                "available": False,
+                "samples": [],
+                "reason": f"Run not found: {exc}",
+                "cycle": cycle,
+                "kind": kind,
+            }
+
+        from pathlib import Path
+
+        out, _ = _extract_output_dir_and_run_id(source)
+        if out is None:
+            return {
+                "available": False,
+                "samples": [],
+                "reason": "Run has no recorded output_dir.",
+                "cycle": cycle,
+                "kind": kind,
+            }
+
+        # Discover cycles by scanning the output dir for cycle_N folders.
+        if cycle is None:
+            available_cycles = sorted(
+                int(p.name.split("_")[1])
+                for p in out.glob("cycle_*")
+                if p.name.split("_", 1)[1].isdigit()
+            )
+            if available_cycles:
+                cycle = available_cycles[-1]
+            else:
+                return {
+                    "available": False,
+                    "samples": [],
+                    "reason": "No cycle artifacts found.",
+                    "cycle": None,
+                    "kind": kind,
+                    "available_cycles": [],
+                }
+        else:
+            cycle = int(cycle)
+
+        if kind == "accepted":
+            jsonl_path = out / f"cycle_{cycle}" / "accepted.jsonl"
+        else:
+            jsonl_path = out / f"cycle_{cycle}_samples.jsonl"
+
+        if not jsonl_path.exists():
+            return {
+                "available": False,
+                "samples": [],
+                "reason": f"{jsonl_path.name} not found.",
+                "cycle": cycle,
+                "kind": kind,
+            }
+
+        import json as _json
+
+        samples: list[dict[str, Any]] = []
+        max_limit = max(1, min(int(limit), 500))
+        try:
+            with jsonl_path.open(encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    samples.append(record)
+                    if len(samples) >= max_limit:
+                        break
+        except OSError as exc:
+            return {
+                "available": False,
+                "samples": [],
+                "reason": f"Could not read {jsonl_path.name}: {exc}",
+                "cycle": cycle,
+                "kind": kind,
+            }
+
+        # Discover all cycles for the scrubber.
+        available_cycles = sorted(
+            int(p.name.split("_")[1])
+            for p in out.glob("cycle_*")
+            if p.name.split("_", 1)[1].isdigit()
+        )
+
+        return {
+            "available": True,
+            "samples": samples,
+            "reason": None,
+            "cycle": cycle,
+            "kind": kind,
+            "available_cycles": available_cycles,
+            "limit": max_limit,
+            "total_returned": len(samples),
+            "source_path": str(jsonl_path),
+        }
+
     def get_telemetry(self) -> Dict[str, Any]:
         """Live hardware telemetry — the data behind the public_app's
         telemetry strip.
@@ -1412,3 +1634,35 @@ def _coerce_optional_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _extract_output_dir_and_run_id(
+    source: Dict[str, Any],
+) -> tuple[Optional["Path"], str]:
+    """Normalize the (output_dir, run_id) pair across the two run-source
+    flavors `_resolve_run_source` returns.
+
+    For active jobs the output_dir lives on `job.output_dir` and the
+    identifier is `job.id`. For completed summaries it's
+    `summary.output_dir` (already a Path) and `summary.run_id` (or the
+    summary id when run_id wasn't recorded). Both are mapped to the
+    same shape so the logs/samples endpoints can read uniformly.
+    """
+    from pathlib import Path
+
+    kind = source.get("kind")
+    if kind == "job":
+        job = source.get("job")
+        out = getattr(job, "output_dir", None)
+        out_path = Path(out) if out else None
+        run_id = str(getattr(job, "id", "") or "")
+        return out_path, run_id
+
+    if kind == "summary":
+        summary = source.get("summary")
+        out = getattr(summary, "output_dir", None)
+        out_path = Path(out) if out else None
+        run_id = str(getattr(summary, "run_id", "") or getattr(summary, "id", "") or "")
+        return out_path, run_id
+
+    return None, ""

@@ -22,6 +22,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MetricChart, type MetricSeries } from "@/components/charts/metric-chart";
+import { LogsPanel } from "@/components/run/logs-panel";
+import { SampleInspector } from "@/components/run/sample-inspector";
 import { cn, relativeTime } from "@/lib/utils";
 
 export const Route = createFileRoute("/runs/$runId")({
@@ -128,6 +130,18 @@ function RunDetailRoute() {
           </div>
 
           <CycleTable cycles={cycleMetrics} modality={String(data.modality)} />
+
+          {/* Phase D v2 panels — sample inspector + logs. Sample inspector
+              is RAFT-only; logs surface for any run with a TeeWriter log
+              alongside its output_dir (else the panel renders an
+              "available: false" state with the reason from the API). */}
+          <SampleInspector
+            runId={runId}
+            availableCycles={cycleMetrics.map((c) => c.cycle)}
+            enabled={String(data.modality) === "raft"}
+          />
+
+          <LogsPanel runId={runId} tail={500} height={420} />
         </div>
       )}
     </>
