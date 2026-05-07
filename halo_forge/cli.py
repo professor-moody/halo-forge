@@ -243,6 +243,48 @@ def print_banner():
 """)
 
 
+def cmd_data_score(args):
+    """Score a JSONL dataset by quality and filter by threshold or top-K%
+    (Track D3)."""
+    from pathlib import Path
+
+    from halo_forge.data.quality import score_file
+
+    print_banner()
+    print(f"{GREEN}halo-forge data score{NC}")
+    print("=" * 60)
+    print(f"  input:  {args.input}")
+    print(f"  output: {args.output}")
+    if args.top_k_pct is not None:
+        print(f"  filter: keep top {args.top_k_pct:.0%}")
+    else:
+        print(f"  filter: score >= {args.threshold}")
+    print()
+
+    try:
+        result = score_file(
+            input_path=Path(args.input),
+            output_path=Path(args.output),
+            threshold=args.threshold,
+            keep_top_k_pct=args.top_k_pct,
+        )
+    except Exception as exc:
+        print(f"{RED}Score failed:{NC} {exc}")
+        sys.exit(1)
+
+    pct_kept = 100.0 * result.n_kept / max(1, result.n_input)
+    print(f"{GREEN}Done{NC} in {result.duration_seconds:.2f}s")
+    print(f"  input:    {result.n_input:>8,}")
+    print(f"  kept:     {result.n_kept:>8,}  ({pct_kept:.1f}%)")
+    print(f"  rejected: {result.n_rejected:>8,}")
+    if result.reasons:
+        print(f"  rejection reasons (by weakest component):")
+        for reason, count in sorted(
+            result.reasons.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            print(f"    {reason:>14}: {count:>5}")
+
+
 def cmd_data_dedup(args):
     """Deduplicate a JSONL dataset (Track D2)."""
     from pathlib import Path
@@ -4232,6 +4274,18 @@ def main():
     validate_parser.add_argument('file', help='Path to JSONL file to validate')
     validate_parser.add_argument('--preview', '-p', action='store_true', help='Show preview of examples')
 
+    # data score (Track D3) — heuristic quality scoring + filter.
+    score_parser = data_subparsers.add_parser(
+        'score',
+        help='Score JSONL records by heuristic quality and filter by threshold / top-K%',
+    )
+    score_parser.add_argument('--input', '-i', required=True)
+    score_parser.add_argument('--output', '-o', required=True)
+    score_parser.add_argument('--threshold', type=float, default=0.5,
+                              help='Composite score below which rows are dropped (default 0.5)')
+    score_parser.add_argument('--top-k-pct', type=float,
+                              help='Keep top K%% by score instead of using --threshold (e.g. 0.5 = top 50%%)')
+
     # data dedup (Track D2)
     dedup_parser = data_subparsers.add_parser(
         'dedup',
@@ -5670,6 +5724,8 @@ def _dispatch_commands(args):
             cmd_data_validate(args)
         elif args.data_command == 'dedup':
             cmd_data_dedup(args)
+        elif args.data_command == 'score':
+            cmd_data_score(args)
     elif args.command == 'sft':
         if args.sft_command == 'train':
             cmd_sft_train(args)
