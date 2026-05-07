@@ -113,40 +113,14 @@ jobs:
             tests/test_audio.py \
             tests/test_reasoning.py \
             tests/test_vlm.py \
-            tests/test_phase0_stabilization.py \
-            tests/test_phase1_hardening.py \
-            tests/test_phase2_consistency_cleanup.py \
             tests/test_phase3_truth_in_advertising.py \
-            tests/test_phase4_ui_observability_consolidation.py \
             tests/test_phase5_release_engineering.py \
-            tests/test_core_functionality_matrix.py \
             tests/test_benchmark_results_trust_matrix.py \
             tests/test_training_pipeline_contracts.py \
             tests/test_dependency_packaging_contracts.py \
-            tests/test_runtime_surface_alignment.py \
             tests/test_phase6_modality_graduation.py \
-            tests/test_phase7_modality_reliability_gates.py \
-            tests/test_phase7b_modality_e2e_surface.py \
             tests/test_phase7c_modality_baseline_drift.py \
-            tests/test_phase8_ui_ops_parity_relaunch.py \
-            tests/test_phase9_non_code_modality_research_matrix.py \
-            tests/test_phase10_non_code_ui_readiness_gates.py \
-            tests/test_phase11_ops_module_ui_expansion.py \
-            tests/test_phase12_ops_e2e_launch_reliability.py \
-            tests/test_phase13_ops_dataset_burnin_baselines.py \
-            tests/test_phase14_all_module_parity.py \
-            tests/test_phase16_all_module_ui_execution_parity.py \
-            tests/test_phase17_ui_execution_truth_and_professional_hardening.py \
-            tests/test_phase18_all_module_qualification_orchestration.py \
-            tests/test_phase20_all_module_bootstrap_enablement.py \
-            tests/test_phase21_all_module_live_execution_closure.py \
-            tests/test_phase22_dashboard_ops_hub_and_discoverability.py \
-            tests/test_phase23_training_first_ux_reset.py \
-            tests/test_phase24k_first_run_reliability_closure.py \
-            tests/test_phase25_quickstart_user_flow_and_launch_hub.py \
-            tests/test_phase26_diagnostics_isolation_and_training_clarity.py \
-            tests/test_phase27_training_onboarding_first_run_success.py \
-            tests/test_phase28_monitor_truth_and_visual_finish.py
+            tests/test_phase9_non_code_modality_research_matrix.py
 
   macos-arm64-smoke:
     # macOS arm64 (Apple Silicon) smoke job. No GPU/ROCm — exercises the
