@@ -24,10 +24,48 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Track P1 — bearer-token storage. Halo-forge auth is automatic when
+ * the API is bound to non-loopback. The token lives in localStorage so
+ * a single dashboard tab persists it across reloads; no cookie path
+ * because the API is same-origin in prod and CORS-allowlisted in dev.
+ */
+const TOKEN_STORAGE_KEY = "halo-forge:api-token";
+
+export function getApiToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setApiToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage may throw in private mode; auth header just won't fire.
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getApiToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
+    headers,
   });
   if (!res.ok) {
     let payload: unknown = undefined;

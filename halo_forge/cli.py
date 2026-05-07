@@ -987,6 +987,55 @@ def cmd_eval(args):
         print(f"\n  {GREEN}average primary metric:{NC} {avg:.4f}")
 
 
+def cmd_token(args):
+    """Manage API tokens for the public API (Track P1)."""
+    from halo_forge.auth import TokenStore, default_store_path
+
+    store = TokenStore()
+    sub = args.token_command
+
+    print_banner()
+    print(f"{GREEN}halo-forge token{NC}")
+    print("=" * 60)
+
+    if sub == "create":
+        try:
+            secret = store.add_token(name=args.name, note=args.note)
+        except ValueError as exc:
+            print(f"{RED}Error:{NC} {exc}")
+            sys.exit(1)
+        print(f"  name:   {args.name}")
+        print(f"  store:  {default_store_path()}")
+        print()
+        print(f"{YELLOW}Save this token now — it won't be shown again:{NC}")
+        print(f"  {secret}")
+        print()
+        print("Use it with:")
+        print(f"  curl -H 'Authorization: Bearer {secret}' http://<host>/api/public/health")
+    elif sub == "list":
+        tokens = store.list_tokens()
+        if not tokens:
+            print("(no tokens)")
+            print(f"Store: {default_store_path()}")
+            print("Create one: halo-forge token create <name>")
+            return
+        print(f"Store: {default_store_path()}")
+        print()
+        print(f"  {'NAME':<24} {'CREATED':<26} {'LAST USED':<26} NOTE")
+        for t in tokens:
+            print(
+                f"  {t.name:<24} {t.created_at:<26} "
+                f"{(t.last_used_at or '—'):<26} {t.note or ''}"
+            )
+    elif sub == "revoke":
+        ok = store.revoke(args.name)
+        if ok:
+            print(f"{GREEN}Revoked{NC} {args.name!r}")
+        else:
+            print(f"{YELLOW}No token named{NC} {args.name!r}")
+            sys.exit(1)
+
+
 def cmd_replay(args):
     """Show or execute the replay command for a captured run (Track T15)."""
     from pathlib import Path
@@ -4968,6 +5017,22 @@ def main():
     eval_parser.add_argument('--list-tasks', action='store_true',
                              help='Print curated task groups and exit')
 
+    # token command (Track P1) — API token lifecycle.
+    token_parser = subparsers.add_parser(
+        'token',
+        help='Manage API tokens for the public API (auto-required when bound to non-loopback)',
+    )
+    token_subparsers = token_parser.add_subparsers(dest='token_command', required=True)
+
+    token_create = token_subparsers.add_parser('create', help='Create a new bearer token')
+    token_create.add_argument('name', help='Friendly name (e.g. "dashboard", "ci")')
+    token_create.add_argument('--note', help='Free-form annotation')
+
+    token_subparsers.add_parser('list', help='List existing tokens (no secrets shown)')
+
+    token_revoke = token_subparsers.add_parser('revoke', help='Revoke a token by name')
+    token_revoke.add_argument('name', help='Name of the token to revoke')
+
     # replay command (Track T15) — deterministic-replay manifest tools.
     replay_parser = subparsers.add_parser(
         'replay',
@@ -6222,6 +6287,8 @@ def _dispatch_commands(args):
         cmd_merge(args)
     elif args.command == 'replay':
         cmd_replay(args)
+    elif args.command == 'token':
+        cmd_token(args)
     elif args.command == 'eval':
         cmd_eval(args)
     elif args.command == 'probe':

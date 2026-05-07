@@ -9,12 +9,12 @@ from .service import PublicApiService
 FASTAPI_IMPORT_ERROR: Exception | None = None
 
 try:
-    from fastapi import APIRouter, FastAPI, HTTPException, Query
+    from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
 except ImportError as exc:  # pragma: no cover - exercised in environments without FastAPI
     FASTAPI_IMPORT_ERROR = exc
-    APIRouter = FastAPI = HTTPException = Query = StreamingResponse = None  # type: ignore[assignment]
+    APIRouter = Depends = FastAPI = HTTPException = Query = Request = StreamingResponse = None  # type: ignore[assignment]
     CORSMiddleware = None  # type: ignore[assignment]
 
 
@@ -44,7 +44,19 @@ def create_app() -> "FastAPI":
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    router = APIRouter(prefix="/api/public", tags=["public"])
+    # Track P1 — bearer-token auth gate. Loopback requests pass through;
+    # non-loopback requests need an Authorization: Bearer <token> header
+    # validated against the token store (or HALOFORGE_API_TOKEN).
+    from halo_forge.auth.dependency import require_token
+
+    async def _auth_gate(request: Request) -> str:
+        return require_token(request)
+
+    router = APIRouter(
+        prefix="/api/public",
+        tags=["public"],
+        dependencies=[Depends(_auth_gate)],
+    )
 
     @router.get("/health")
     async def health() -> Dict[str, Any]:
