@@ -26,6 +26,7 @@ Legend: ✅ supported · ⚠️ supported with caveats (see footnotes) · ❌ no
 | SFT (`halo-forge sft train`) | ✅ | ✅ | ✅¹ | ✅ | ✅² |
 | RAFT (`halo-forge raft train`) | ✅ | ✅ | ✅¹ | ✅ | ✅² |
 | DPO (`halo-forge dpo train`) | ✅ | ✅ | ✅ | ⚠️³ | ✅² |
+| GRPO (`halo-forge grpo train`) | ✅ | ✅ | ✅ | ⚠️¹⁰ | ✅² |
 | **PEFT methods** ||||||
 | LoRA | ✅ | ✅ | ✅ | ✅ | ✅ |
 | QLoRA (4-bit base) | ⚠️⁴ | ✅ | ❌⁵ | ❌⁵ | ❌⁵ |
@@ -60,6 +61,7 @@ Legend: ✅ supported · ⚠️ supported with caveats (see footnotes) · ❌ no
 7. **`--rollout-engine torch` on MLX** is a category error: the trainer is MLX-native, the rollout would have to round-trip through PyTorch on a different backend. Use `--rollout-engine mlx` (default for MLX) or run on a PyTorch backend.
 8. **vLLM on Strix Halo (gfx1151)** is experimental; community ROCm support targets MI300X / 7900 XTX class. Halo-forge prints an experimental-status warning at vLLM init and recommends `--rollout-engine torch` or `--rollout-engine mlx` if you hit issues.
 9. **`--rollout-engine mlx` on MPS** technically works (uses `mlx_lm.generate` which doesn't care that the host trainer is on MPS) but is unusual; prefer `--accelerator mlx` end-to-end for an MLX-native trainer.
+10. **MLX GRPO** v1 ships **reference-free** sigmoid-equivalent GRPO only (`--reference-free`). Pass that flag and the MLX-native trainer runs end-to-end on Apple Silicon: rollouts via `MLXRolloutGenerator`, scoring via the V1 verifier registry, group-relative advantages, single-cycle policy update. Multi-cycle GRPO + reference-model support are roadmap follow-ups.
 
 ---
 

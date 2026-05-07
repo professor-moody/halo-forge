@@ -745,6 +745,77 @@ def cmd_serve(args):
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
+def cmd_grpo_train(args):
+    """Run GRPO training (Track T2 / phase Q1).
+
+    Wraps trl.GRPOTrainer for the PyTorch path; MLX path uses an
+    in-house reference-free implementation. Verifier comes from the
+    plugin registry (V1) — `--verifier execution` (default), or any
+    registered short name (e.g. `llm_judge` from V2).
+    """
+    from halo_forge.grpo import GRPOConfig, get_grpo_trainer
+
+    print_banner()
+    print(f"{GREEN}GRPO Training{NC}")
+    print("=" * 60)
+
+    dataset = getattr(args, "dataset", None)
+    data = getattr(args, "data", None)
+    if not dataset and not data:
+        print(f"{RED}Error: Either --dataset or --data is required{NC}")
+        print()
+        print("Examples:")
+        print("  halo-forge grpo train --data prompts.jsonl --model Qwen/Qwen2.5-3B-Instruct --verifier execution")
+        print("  halo-forge grpo train --dataset gsm8k --verifier execution --num-generations 8")
+        sys.exit(1)
+
+    config = GRPOConfig(
+        model_name=args.model,
+        train_file=data,
+        dataset=dataset,
+        max_samples=getattr(args, "max_samples", None),
+        max_prompt_length=getattr(args, "max_prompt_length", 512),
+        max_completion_length=getattr(args, "max_completion_length", 512),
+        num_generations=getattr(args, "num_generations", 4),
+        beta=getattr(args, "beta", 0.04),
+        epsilon=getattr(args, "epsilon", 0.2),
+        temperature=getattr(args, "temperature", 0.9),
+        scale_rewards=not getattr(args, "no_scale_rewards", False),
+        reference_free=getattr(args, "reference_free", False),
+        verifier_name=getattr(args, "verifier", "execution"),
+        reward_threshold=getattr(args, "reward_threshold", 0.0),
+        output_dir=args.output,
+        num_epochs=getattr(args, "epochs", 1),
+        batch_size=getattr(args, "batch_size", 1),
+        gradient_accumulation_steps=getattr(args, "gradient_accumulation", 16),
+        learning_rate=getattr(args, "learning_rate", 1e-6),
+        warmup_ratio=getattr(args, "warmup_ratio", 0.1),
+        weight_decay=getattr(args, "weight_decay", 0.0),
+        max_grad_norm=getattr(args, "max_grad_norm", 1.0),
+        lora_r=getattr(args, "lora_rank", 16),
+        lora_alpha=getattr(args, "lora_alpha", 32),
+        lora_dropout=getattr(args, "lora_dropout", 0.05),
+        use_dora=getattr(args, "use_dora", False),
+        use_rslora=getattr(args, "use_rslora", False),
+        init_lora_weights=getattr(args, "init_lora_weights", "true"),
+        optim=getattr(args, "optim", "adamw_torch"),
+        load_in_4bit=getattr(args, "load_in_4bit", False),
+        rollout_engine=getattr(args, "rollout_engine", "auto"),
+        gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
+    )
+
+    if getattr(args, "dry_run", False):
+        print("Dry run: configuration validated. No training started.")
+        print(f"  model={config.model_name} dataset={config.dataset or '(local)'}")
+        print(f"  num_generations={config.num_generations} beta={config.beta}")
+        print(f"  verifier={config.verifier_name} reference_free={config.reference_free}")
+        return
+
+    trainer = get_grpo_trainer(config)
+    summary = trainer.train(resume_from_checkpoint=args.resume)
+    _print_completed_training_summary("grpo", config.output_dir, summary)
+
+
 def cmd_dpo_datasets(args):
     """List the canonical preference datasets halo-forge ships short names for."""
     from halo_forge.dpo.datasets import list_preference_datasets
@@ -4166,6 +4237,73 @@ def main():
         'datasets', help='List available preference datasets'
     )
 
+    # grpo command (Track T2 / phase Q1) — Group Relative Policy Optimization
+    grpo_parser = subparsers.add_parser('grpo', help='GRPO training (verifier-grounded RL)')
+    grpo_subparsers = grpo_parser.add_subparsers(dest='grpo_command', required=True)
+
+    grpo_train_parser = grpo_subparsers.add_parser('train', help='Run GRPO training')
+    grpo_train_parser.add_argument('--config', '-c', help='Config file path')
+    grpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
+                                   help='Base / SFT-tuned model')
+    grpo_train_parser.add_argument('--dataset', '-d',
+                                   help='HuggingFace dataset id (must have a "prompt" column)')
+    grpo_train_parser.add_argument('--data', help='Local JSONL with "prompt" rows')
+    grpo_train_parser.add_argument('--output', '-o', default='models/grpo', help='Output directory')
+    grpo_train_parser.add_argument('--resume', help='Resume from checkpoint')
+    grpo_train_parser.add_argument('--dry-run', action='store_true', help='Validate config without training')
+
+    # GRPO algorithm
+    grpo_train_parser.add_argument('--num-generations', type=int, default=4,
+                                   help='Group size: completions sampled per prompt (default: 4)')
+    grpo_train_parser.add_argument('--beta', type=float, default=0.04,
+                                   help='KL-regularization strength (default: 0.04, DeepSeek-R1)')
+    grpo_train_parser.add_argument('--epsilon', type=float, default=0.2,
+                                   help='PPO ratio clip (default: 0.2)')
+    grpo_train_parser.add_argument('--temperature', type=float, default=0.9,
+                                   help='Rollout temperature (default: 0.9 — diverse groups)')
+    grpo_train_parser.add_argument('--no-scale-rewards', action='store_true',
+                                   help='Skip dividing advantages by std(group); RLOO-flavored')
+    grpo_train_parser.add_argument('--reference-free', action='store_true',
+                                   help='Skip reference model (required on MLX backend)')
+    grpo_train_parser.add_argument('--verifier', default='execution',
+                                   help='Verifier short-name from the V1 plugin registry '
+                                        '(execution, llm_judge, ...). Run halo-forge sft datasets '
+                                        'to see registered verifiers.')
+    grpo_train_parser.add_argument('--reward-threshold', type=float, default=0.0,
+                                   help='Below this, advantage is forced to 0')
+
+    # Hyperparameters
+    grpo_train_parser.add_argument('--epochs', type=int, default=1)
+    grpo_train_parser.add_argument('--batch-size', type=int, default=1)
+    grpo_train_parser.add_argument('--learning-rate', type=float, default=1e-6,
+                                   help='GRPO LR (much smaller than SFT)')
+    grpo_train_parser.add_argument('--warmup-ratio', type=float, default=0.1)
+    grpo_train_parser.add_argument('--weight-decay', type=float, default=0.0)
+    grpo_train_parser.add_argument('--max-grad-norm', type=float, default=1.0)
+    grpo_train_parser.add_argument('--gradient-accumulation', type=int, default=16)
+
+    # LoRA
+    grpo_train_parser.add_argument('--lora-rank', type=int, default=16)
+    grpo_train_parser.add_argument('--lora-alpha', type=int, default=32)
+    grpo_train_parser.add_argument('--lora-dropout', type=float, default=0.05)
+    grpo_train_parser.add_argument('--load-in-4bit', action='store_true')
+    grpo_train_parser.add_argument('--use-dora', action='store_true')
+    grpo_train_parser.add_argument('--use-rslora', action='store_true')
+    grpo_train_parser.add_argument('--init-lora-weights', default='true')
+    grpo_train_parser.add_argument('--optim', default='adamw_torch')
+
+    # Data lengths
+    grpo_train_parser.add_argument('--max-samples', type=int)
+    grpo_train_parser.add_argument('--max-prompt-length', type=int, default=512)
+    grpo_train_parser.add_argument('--max-completion-length', type=int, default=512)
+
+    # Rollout engine (Track I6)
+    grpo_train_parser.add_argument('--rollout-engine', default='auto',
+                                   choices=['auto', 'torch', 'vllm', 'mlx'],
+                                   help='Generation backend for the rollout stage')
+
+    grpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
+
     # convert command (Track I5) — unified format conversion.
     convert_parser = subparsers.add_parser(
         'convert',
@@ -5291,6 +5429,7 @@ def _dispatch_commands(args):
         ('raft', 'train'): 'raft_train',
         ('sft', 'train'): 'sft_train',
         ('dpo', 'train'): 'dpo_train',
+        ('grpo', 'train'): 'grpo_train',
         ('vlm', 'train'): 'vlm_train',
         ('audio', 'train'): 'audio_train',
         ('reasoning', 'train'): 'reasoning_train',
@@ -5309,6 +5448,8 @@ def _dispatch_commands(args):
         subcommand = getattr(args, 'sft_command', None)
     elif args.command == 'dpo':
         subcommand = getattr(args, 'dpo_command', None)
+    elif args.command == 'grpo':
+        subcommand = getattr(args, 'grpo_command', None)
     elif args.command == 'vlm':
         subcommand = getattr(args, 'vlm_command', None)
     elif args.command == 'audio':
@@ -5348,6 +5489,9 @@ def _dispatch_commands(args):
             cmd_dpo_train(args)
         elif args.dpo_command == 'datasets':
             cmd_dpo_datasets(args)
+    elif args.command == 'grpo':
+        if args.grpo_command == 'train':
+            cmd_grpo_train(args)
     elif args.command == 'serve':
         cmd_serve(args)
     elif args.command == 'convert':
