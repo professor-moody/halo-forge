@@ -1061,6 +1061,73 @@ class PublicApiService:
             "best_per_task_higher_is_better": best_per_task_high,
         }
 
+    # ----- playground proxy (Track F-S) -------------------------------------
+
+    def playground_chat(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        model: Optional[str] = None,
+        max_tokens: int = 256,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        stop: Optional[List[str]] = None,
+        serve_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        timeout_s: float = 120.0,
+    ) -> Dict[str, Any]:
+        """Forward a chat request to a `halo-forge serve`-style endpoint.
+
+        Avoids CORS by routing through the public API; lets the frontend
+        chat UI hit any OpenAI-compatible endpoint (local serve, remote
+        host, hosted API) under one auth + origin model. Returns the
+        upstream response body verbatim so the UI gets the OpenAI shape
+        it expects.
+
+        Defaults the serve URL to `http://127.0.0.1:8001/v1` — exactly
+        what `halo-forge serve` exposes locally.
+        """
+        import os
+        import httpx
+
+        resolved_url = (
+            serve_url
+            or os.environ.get("HALOFORGE_PLAYGROUND_BASE_URL")
+            or "http://127.0.0.1:8001/v1"
+        )
+        resolved_key = (
+            api_key
+            or os.environ.get("HALOFORGE_PLAYGROUND_API_KEY")
+            or "EMPTY"
+        )
+
+        body: Dict[str, Any] = {
+            "model": model or "halo-forge",
+            "messages": messages,
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+        }
+        if stop:
+            body["stop"] = list(stop)
+
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.post(
+                f"{resolved_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {resolved_key}"},
+                json=body,
+            )
+            # Pass upstream errors through so the UI can render the
+            # actual problem (model not loaded, OOM, etc.) instead of
+            # a generic 500.
+            if resp.status_code >= 400:
+                try:
+                    detail = resp.json()
+                except Exception:
+                    detail = {"error": resp.text}
+                return {"upstream_error": True, "status": resp.status_code, "detail": detail}
+            return resp.json()
+
     # ----- model registry (Track F-J) ---------------------------------------
 
     def list_registry_entries(self) -> List[Dict[str, Any]]:

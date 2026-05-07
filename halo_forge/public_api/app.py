@@ -162,6 +162,35 @@ def create_app() -> "FastAPI":
             offset=offset,
         )
 
+    @router.post("/playground/chat")
+    async def playground_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Forward a chat request to a `halo-forge serve` endpoint (Track F-S).
+
+        Body:
+          ``{messages, model?, max_tokens?, temperature?, top_p?, stop?,
+             serve_url?, api_key?}``
+
+        Returns the upstream OpenAI-shaped response verbatim, or
+        ``{upstream_error: true, status, detail}`` when the serve
+        endpoint returns a non-2xx so the UI can render the actual
+        problem instead of a generic 500.
+        """
+        messages = payload.get("messages") or []
+        if not isinstance(messages, list) or not messages:
+            raise HTTPException(
+                status_code=400, detail="messages must be a non-empty list",
+            )
+        return service.playground_chat(
+            messages=messages,
+            model=payload.get("model"),
+            max_tokens=int(payload.get("max_tokens") or 256),
+            temperature=float(payload.get("temperature") or 0.7),
+            top_p=float(payload.get("top_p") or 1.0),
+            stop=payload.get("stop"),
+            serve_url=payload.get("serve_url"),
+            api_key=payload.get("api_key"),
+        )
+
     @router.get("/registry")
     async def list_registry() -> Dict[str, Any]:
         """List every model-registry entry (Track F-J).

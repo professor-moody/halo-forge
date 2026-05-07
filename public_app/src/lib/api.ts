@@ -247,6 +247,49 @@ export type RegistryEntryPatch = Partial<{
 }>;
 
 /**
+ * Playground chat (Track F-S). Forwarded to a `halo-forge serve`
+ * endpoint via the public API proxy.
+ */
+export type PlaygroundMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+export type PlaygroundChatRequest = {
+  messages: PlaygroundMessage[];
+  model?: string;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  stop?: string[];
+  serve_url?: string;
+  api_key?: string;
+};
+
+export type PlaygroundChatChoice = {
+  index: number;
+  message: PlaygroundMessage;
+  finish_reason?: string;
+};
+
+export type PlaygroundChatResponse = {
+  id?: string;
+  object?: string;
+  created?: number;
+  model?: string;
+  choices?: PlaygroundChatChoice[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  // Surfaces upstream errors so the UI can render them inline.
+  upstream_error?: boolean;
+  status?: number;
+  detail?: unknown;
+};
+
+/**
  * Per-cycle metric row exposed by /api/public/runs/{id}.details.cycle_metrics.
  * Mirrors `_project_cycles_for_charts` on the backend; every numeric field
  * is null-tolerant so older trainers / partial summaries chart cleanly.
@@ -490,6 +533,20 @@ export const api = {
   },
   runEval: (runId: string) =>
     request<RunEvalResponse>(`/runs/${encodeURIComponent(runId)}/eval`),
+
+  // ----- playground chat (Track F-S) -------------------------------------
+  /**
+   * Forward a chat request to a `halo-forge serve` endpoint via the
+   * public API proxy. Avoids CORS by routing through the same origin
+   * the rest of the app uses; lets the playground hit any
+   * OpenAI-compatible serve URL (local, remote, hosted) under one
+   * auth + origin model.
+   */
+  playgroundChat: (payload: PlaygroundChatRequest) =>
+    request<PlaygroundChatResponse>(`/playground/chat`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   // ----- model registry (Track F-J) -------------------------------------
   listRegistry: () =>

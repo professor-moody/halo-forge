@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   GitCompareArrows,
   LayoutDashboard,
+  MessageSquare,
   Play,
   type LucideIcon,
 } from "lucide-react";
@@ -45,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/train", label: "Training", icon: Play, kbd: "G T" },
   { to: "/runs", label: "Runs", icon: Activity, kbd: "G R" },
   { to: "/eval", label: "Eval", icon: BarChart3, kbd: "G E" },
+  { to: "/playground", label: "Playground", icon: MessageSquare, kbd: "G P" },
   { to: "/registry", label: "Registry", icon: Bookmark, kbd: "G B" },
   { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G S" },
   { to: "/docs", label: "Docs", icon: BookOpen, kbd: "G D" },
