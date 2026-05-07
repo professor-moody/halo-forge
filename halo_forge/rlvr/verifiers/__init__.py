@@ -43,6 +43,21 @@ from halo_forge.rlvr.verifiers.multi_language import MultiLanguageVerifier, Auto
 # decorator on LLMJudgeVerifier fires at package init and the registry
 # carries it without a separate plugin install.
 from halo_forge.rlvr.verifiers.llm_judge import LLMJudgeVerifier
+# Track V3 — schema verifiers (JSON-structure / JSON-schema / regex).
+# Track V4 — reference-metric verifiers (BLEU / ROUGE / chrF).
+# Both rely on the V1 plugin registry; importing the modules fires
+# the @register_verifier decorators so the short names are available
+# from list_registered_verifiers() at startup.
+from halo_forge.rlvr.verifiers.schema import (
+    JSONSchemaVerifier,
+    JSONStructureVerifier,
+    RegexFormatVerifier,
+)
+from halo_forge.rlvr.verifiers.metrics import (
+    BLEUVerifier,
+    ChrFVerifier,
+    ROUGEVerifier,
+)
 
 __all__ = [
     # Base
@@ -95,6 +110,14 @@ __all__ = [
     "list_registered_verifiers",
     # Track V2 — LLM-as-judge with rubric + pluggable judge callable.
     "LLMJudgeVerifier",
+    # Track V3 — schema verifiers.
+    "JSONStructureVerifier",
+    "JSONSchemaVerifier",
+    "RegexFormatVerifier",
+    # Track V4 — reference-metric verifiers.
+    "BLEUVerifier",
+    "ROUGEVerifier",
+    "ChrFVerifier",
 ]
 
 

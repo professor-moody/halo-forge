@@ -215,12 +215,22 @@ def _seed_builtin_registrations() -> None:
     )
     from halo_forge.rlvr.verifiers.go_verifier import GoVerifier
     from halo_forge.rlvr.verifiers.llm_judge import LLMJudgeVerifier
+    from halo_forge.rlvr.verifiers.metrics import (
+        BLEUVerifier,
+        ChrFVerifier,
+        ROUGEVerifier,
+    )
     from halo_forge.rlvr.verifiers.pytest_verifier import (
         HumanEvalVerifier,
         MBPPVerifier,
         RLVRPytestVerifier,
     )
     from halo_forge.rlvr.verifiers.rust_verifier import CargoVerifier, RustVerifier
+    from halo_forge.rlvr.verifiers.schema import (
+        JSONSchemaVerifier,
+        JSONStructureVerifier,
+        RegexFormatVerifier,
+    )
     from halo_forge.rlvr.verifiers.test_runner import PytestVerifier, UnittestVerifier
 
     builtins: Iterable[tuple[str, Type[Verifier]]] = (
@@ -248,6 +258,14 @@ def _seed_builtin_registrations() -> None:
         ("go", GoVerifier),
         # LLM-as-judge (Track V2)
         ("llm_judge", LLMJudgeVerifier),
+        # Schema verifiers (Track V3)
+        ("json_structure", JSONStructureVerifier),
+        ("json_schema", JSONSchemaVerifier),
+        ("regex_format", RegexFormatVerifier),
+        # Reference-metric verifiers (Track V4)
+        ("bleu", BLEUVerifier),
+        ("rouge", ROUGEVerifier),
+        ("chrf", ChrFVerifier),
     )
     for name, cls in builtins:
         if name not in _REGISTRY:
