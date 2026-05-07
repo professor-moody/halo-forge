@@ -3830,25 +3830,6 @@ def cmd_test(args):
     sys.exit(0 if success else 1)
 
 
-def cmd_ui(args):
-    """Launch the web UI."""
-    base_url = f"http://{args.host}:{args.port}"
-    print(f"{GREEN}halo-forge UI{NC} → {base_url}")
-    print("Routes:")
-    print(f"  {base_url}/")
-    print(f"  {base_url}/training")
-    print(f"  {base_url}/benchmark")
-    print(f"  {base_url}/inference")
-    
-    from ui.app import run
-    run(
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        open_browser=bool(getattr(args, "open_browser", False)),
-    )
-
-
 def cmd_inference_optimize(args):
     """Optimize model for inference."""
     from halo_forge.inference import (
@@ -5683,29 +5664,10 @@ def main():
         help='Execute bounded command probes (used with --level walkthroughs and profile=live-local)',
     )
     
-    # ui command - web interface
-    ui_parser = subparsers.add_parser('ui', help='Launch web UI')
-    ui_parser.add_argument('--host', default='127.0.0.1',
-                           help='Host to bind to (default: 127.0.0.1)')
-    ui_parser.add_argument('--port', '-p', type=int, default=8080,
-                           help='Port to listen on (default: 8080)')
-    ui_parser.add_argument('--reload', action='store_true',
-                           help='Enable hot reload for development')
-    ui_browser_group = ui_parser.add_mutually_exclusive_group()
-    ui_browser_group.add_argument(
-        '--open-browser',
-        action='store_true',
-        dest='open_browser',
-        help='Open browser automatically after startup',
-    )
-    ui_browser_group.add_argument(
-        '--no-browser',
-        action='store_false',
-        dest='open_browser',
-        help='Do not auto-open a browser (default, headless-safe)',
-    )
-    ui_parser.set_defaults(open_browser=False)
-    
+        # The legacy `halo-forge ui` command launched a NiceGUI web app —
+    # retired in favor of the Vite + React frontend at `public_app/`.
+    # If you got here from an old script: `cd public_app && npm run dev`.
+
     # Parse arguments and dispatch
     args = parser.parse_args()
 
@@ -6366,8 +6328,6 @@ def _dispatch_commands(args):
             cmd_plot_benchmarks(args)
     elif args.command == 'test':
         cmd_test(args)
-    elif args.command == 'ui':
-        cmd_ui(args)
 
 
 if __name__ == '__main__':

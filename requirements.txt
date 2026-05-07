@@ -22,7 +22,6 @@ tensorboard
 matplotlib
 pandas
 rich
-nicegui>=1.4.0
 fastapi>=0.115.0
 uvicorn>=0.34.0
 

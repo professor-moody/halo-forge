@@ -638,64 +638,46 @@ def _benchmark_module_readiness(output_dir: Path, *, require_artifacts: bool) ->
 
 
 def _ui_ops_module_readiness(repo_root: Path) -> OpsModuleReadiness:
+    """Validate that the load-bearing service layer + public-API
+    plumbing the GUI consumes is present.
+
+    The legacy contract greppped the NiceGUI page sources for route
+    registrations and feature-flag references; that GUI was retired
+    in favor of the Vite frontend at ``public_app/``, which calls the
+    same services through the ``public_api`` HTTP surface. The
+    meaningful readiness check now is "do the services + public-API
+    routes the GUI depends on exist?" — which the broader
+    public_api / training-service readiness paths already cover. We
+    keep a thin presence-check here so the qualification report has
+    an entry for the ui_ops module slot.
+    """
     errors: List[str] = []
     warnings: List[str] = []
     evidence: Dict[str, Any] = {"repo_root": str(repo_root)}
 
     required_files = {
-        "app": repo_root / "ui/app.py",
-        "sidebar": repo_root / "ui/components/sidebar.py",
+        "training_service": repo_root / "ui/services/training_service.py",
         "inference_service": repo_root / "ui/services/inference_service.py",
         "benchmark_service": repo_root / "ui/services/benchmark_service.py",
         "ops_readiness_service": repo_root / "ui/services/ops_readiness_service.py",
+        "results_service": repo_root / "ui/services/results_service.py",
+        "public_api_app": repo_root / "halo_forge/public_api/app.py",
+        "public_api_service": repo_root / "halo_forge/public_api/service.py",
+        "public_app_root": repo_root / "public_app/package.json",
     }
-
     for label, path in required_files.items():
         if not path.exists():
             errors.append(f"missing required ui ops file: {path}")
         evidence[f"file_{label}"] = str(path)
 
-    app_source = ""
-    sidebar_source = ""
-    if (repo_root / "ui/app.py").exists():
-        app_source = (repo_root / "ui/app.py").read_text(encoding="utf-8")
-    if (repo_root / "ui/components/sidebar.py").exists():
-        sidebar_source = (repo_root / "ui/components/sidebar.py").read_text(encoding="utf-8")
-
-    expected_routes = ("/inference", "/benchmark-advanced", "/research-hub")
-    missing_routes = [route for route in expected_routes if route not in app_source]
-    if missing_routes:
-        errors.append("missing route wiring: " + ", ".join(missing_routes))
-
-    expected_flags = (
-        "HALO_UI_ENABLE_INFERENCE_PAGE",
-        "HALO_UI_ENABLE_BENCHMARK_ADVANCED_PAGE",
-        "HALO_UI_ENABLE_RESEARCH_HUB_PAGE",
-    )
-    missing_flags = [
-        flag
-        for flag in expected_flags
-        if flag not in app_source and flag not in sidebar_source
-    ]
-    if missing_flags:
-        errors.append("missing feature flag wiring: " + ", ".join(missing_flags))
-
     checks = {
-        "routes_registered": ReadinessCheck(
-            name="routes_registered",
-            status="pass" if not missing_routes else "fail",
+        "service_layer_present": ReadinessCheck(
+            name="service_layer_present",
+            status="pass" if not errors else "fail",
             required=True,
-            message="feature routes present in ui/app.py"
-            if not missing_routes
-            else "missing route registration",
-        ),
-        "feature_flags": ReadinessCheck(
-            name="feature_flags",
-            status="pass" if not missing_flags else "fail",
-            required=True,
-            message="feature flags detected"
-            if not missing_flags
-            else "missing feature flag references",
+            message="service modules + public_api + public_app present"
+            if not errors
+            else "missing required ui ops files",
         ),
     }
     status = readiness_status_from_lists(errors, warnings)
