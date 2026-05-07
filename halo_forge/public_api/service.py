@@ -1061,6 +1061,50 @@ class PublicApiService:
             "best_per_task_higher_is_better": best_per_task_high,
         }
 
+    # ----- run stats (Track P3) -------------------------------------------
+
+    def get_run_stats(self) -> Dict[str, Any]:
+        """Aggregate counts for the Prometheus `/metrics` endpoint.
+
+        Cheap to compute — single SQLite scan + a dict over the
+        in-memory job table. Sub-millisecond on any reasonable run-DB
+        size.
+        """
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        by_modality: Dict[str, int] = {}
+        by_status: Dict[str, int] = {}
+        try:
+            cur = db._conn.execute(  # noqa: SLF001 — internal optimization, intentional
+                "SELECT modality, status, COUNT(*) AS c FROM runs GROUP BY modality, status"
+            )
+            for row in cur.fetchall():
+                modality = str(row["modality"] or "unknown")
+                status = str(row["status"] or "unknown")
+                count = int(row["c"])
+                by_modality[modality] = by_modality.get(modality, 0) + count
+                by_status[status] = by_status.get(status, 0) + count
+        except Exception:
+            # Empty DB / first call before any sync — leave dicts empty.
+            pass
+
+        total = sum(by_modality.values())
+
+        # Active runs come from the in-memory job table; the DB
+        # doesn't track runs that are still streaming.
+        active = sum(
+            1 for job in self.app_state.jobs.values()
+            if job.status in {"pending", "running"}
+        )
+
+        return {
+            "total_runs": total,
+            "by_modality": by_modality,
+            "by_status": by_status,
+            "active_runs": active,
+        }
+
     # ----- playground proxy (Track F-S) -------------------------------------
 
     def playground_chat(

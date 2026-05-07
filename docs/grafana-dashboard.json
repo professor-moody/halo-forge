@@ -1,0 +1,113 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["halo-forge"],
+  "time": {"from": "now-1h", "to": "now"},
+  "title": "halo-forge",
+  "timezone": "",
+  "uid": "halo-forge",
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Backend",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": []}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "/^backend$/", "values": false}, "textMode": "value"},
+      "targets": [{
+        "expr": "halo_forge_build_info",
+        "instant": true,
+        "format": "table"
+      }]
+    },
+    {
+      "type": "stat",
+      "title": "Total runs",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "halo_forge_runs_total"}]
+    },
+    {
+      "type": "stat",
+      "title": "Active runs",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "halo_forge_active_runs"}]
+    },
+    {
+      "type": "stat",
+      "title": "Power (W)",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [{"expr": "halo_forge_power_watts"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU utilization",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"expr": "halo_forge_gpu_utilization_percent", "legendFormat": "{{backend}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "VRAM used (GB)",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "fieldConfig": {"defaults": {"unit": "gbytes"}},
+      "targets": [
+        {"expr": "halo_forge_vram_used_gigabytes", "legendFormat": "used"},
+        {"expr": "halo_forge_vram_total_gigabytes", "legendFormat": "total"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Power draw (W)",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "fieldConfig": {"defaults": {"unit": "watt"}},
+      "targets": [{"expr": "halo_forge_power_watts"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Temperature (°C)",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "fieldConfig": {"defaults": {"unit": "celsius"}},
+      "targets": [{"expr": "halo_forge_temperature_celsius"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU utilization",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
+      "targets": [{"expr": "halo_forge_cpu_utilization_percent"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput (tokens/sec)",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "targets": [{"expr": "halo_forge_throughput_tokens_per_second"}]
+    },
+    {
+      "type": "barchart",
+      "title": "Runs by modality",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "targets": [{"expr": "halo_forge_runs_by_modality", "legendFormat": "{{modality}}"}]
+    },
+    {
+      "type": "barchart",
+      "title": "Runs by status",
+      "datasource": "${DS_PROMETHEUS}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "targets": [{"expr": "halo_forge_runs_by_status", "legendFormat": "{{status}}"}]
+    }
+  ]
+}

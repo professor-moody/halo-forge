@@ -350,6 +350,38 @@ def create_app() -> "FastAPI":
         return service.list_docs_capabilities()
 
     api.include_router(router)
+
+    # Track P3 — Prometheus exposition. Lives at the root (`/metrics`)
+    # because that's where scrapers look by convention. Auth bypass
+    # mirrors the public_api router's loopback rule: scraping from a
+    # remote Prometheus needs a token; scraping the local sidecar
+    # doesn't.
+    from fastapi.responses import PlainTextResponse
+
+    @api.get("/metrics", response_class=PlainTextResponse)
+    async def prometheus_metrics(request: Request) -> str:
+        require_token(request)  # honors the loopback bypass
+        from halo_forge.metrics import render_metrics
+
+        try:
+            telemetry = service.get_telemetry()
+        except Exception:
+            telemetry = None
+        try:
+            backend = service.get_backend_info()
+        except Exception:
+            backend = None
+        try:
+            run_stats = service.get_run_stats()
+        except Exception:
+            run_stats = None
+
+        return render_metrics(
+            telemetry=telemetry,
+            run_stats=run_stats,
+            backend_info=backend,
+        )
+
     return api
 
 
