@@ -819,6 +819,33 @@ def cmd_convert(args):
     if result.notes:
         print(f"  note: {result.notes}")
 
+    # Track I4 — opt-in round-trip verification right after conversion.
+    if getattr(args, 'verify', False):
+        from halo_forge.inference.verify_export import verify_export
+
+        print()
+        print(f"{GREEN}Verifying export round-trip{NC}")
+        try:
+            report = verify_export(
+                source_model=args.source,
+                exported_path=result.output_path,
+                target_format=args.format,
+            )
+        except NotImplementedError as exc:
+            print(f"{YELLOW}Verification skipped:{NC} {exc}")
+            return
+        print(f"  prompts:               {report.n_prompts}")
+        print(f"  exact match rate:      {report.exact_match_rate:.2%}")
+        print(f"  avg char overlap:      {report.avg_char_overlap:.3f}")
+        print(f"  first-token match:     {report.avg_first_token_match:.2%}")
+        print(f"  duration:              {report.duration_seconds:.1f}s")
+        if report.passed:
+            print(f"{GREEN}Round-trip verification passed.{NC}")
+        else:
+            print(f"{RED}Round-trip verification failed{NC} — exported model "
+                  f"diverges from source. Failures: {len(report.failures)}/"
+                  f"{report.n_prompts}")
+
 
 def cmd_serve(args):
     """Run an OpenAI-compatible serving endpoint (Track I1).
@@ -4480,6 +4507,10 @@ def main():
                                 help='Disable trust_remote_code (only set if you understand the source)')
     convert_parser.add_argument('--list', action='store_true',
                                 help='Print supported formats / quants and exit')
+    convert_parser.add_argument('--verify', action='store_true',
+                                help='Track I4: after conversion, run a fixed prompt set '
+                                     'through both source and exported and flag drift. '
+                                     'Adds ~30s; catches silently-broken exports.')
 
     # serve command (Track I1) — OpenAI-compatible serving endpoint.
     serve_parser = subparsers.add_parser(
