@@ -1209,6 +1209,61 @@ def cmd_serve(args):
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
+def cmd_rm_train(args):
+    """Train a Bradley-Terry reward model (Track T3)."""
+    from halo_forge.rm import RMConfig, get_rm_trainer
+
+    print_banner()
+    print(f"{GREEN}Reward-Model Training{NC}")
+    print("=" * 60)
+
+    dataset = getattr(args, "dataset", None)
+    data = getattr(args, "data", None)
+    if not dataset and not data:
+        print(f"{RED}Error: Either --dataset or --data is required{NC}")
+        print()
+        print("Examples:")
+        print("  halo-forge rm train --dataset ultrafeedback --model Qwen/Qwen2.5-3B-Instruct")
+        print("  halo-forge rm train --data my_pairs.jsonl --model Qwen/Qwen2.5-3B-Instruct")
+        sys.exit(1)
+
+    config = RMConfig(
+        model_name=args.model,
+        train_file=data,
+        dataset=dataset,
+        max_samples=getattr(args, "max_samples", None),
+        max_length=getattr(args, "max_length", 1024),
+        output_dir=args.output,
+        num_epochs=getattr(args, "epochs", 1),
+        batch_size=getattr(args, "batch_size", 4),
+        gradient_accumulation_steps=getattr(args, "gradient_accumulation", 4),
+        learning_rate=getattr(args, "learning_rate", 1e-5),
+        warmup_ratio=getattr(args, "warmup_ratio", 0.05),
+        weight_decay=getattr(args, "weight_decay", 0.0),
+        max_grad_norm=getattr(args, "max_grad_norm", 1.0),
+        lora_r=getattr(args, "lora_rank", 8),
+        lora_alpha=getattr(args, "lora_alpha", 16),
+        lora_dropout=getattr(args, "lora_dropout", 0.05),
+        use_dora=getattr(args, "use_dora", False),
+        use_rslora=getattr(args, "use_rslora", False),
+        init_lora_weights=getattr(args, "init_lora_weights", "true"),
+        optim=getattr(args, "optim", "adamw_torch"),
+        load_in_4bit=getattr(args, "load_in_4bit", False),
+        center_rewards_coefficient=getattr(args, "center_rewards_coefficient", 0.01),
+        gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
+    )
+
+    if getattr(args, "dry_run", False):
+        print("Dry run: configuration validated. No training started.")
+        print(f"  model={config.model_name} dataset={config.dataset or '(local)'}")
+        print(f"  lora_rank={config.lora_r} lr={config.learning_rate}")
+        return
+
+    trainer = get_rm_trainer(config)
+    summary = trainer.train(resume_from_checkpoint=args.resume)
+    _print_completed_training_summary("rm", config.output_dir, summary)
+
+
 def cmd_grpo_train(args):
     """Run GRPO training (Track T2 / phase Q1).
 
@@ -4765,6 +4820,44 @@ def main():
         'datasets', help='List available preference datasets'
     )
 
+    # rm command (Track T3) — Bradley-Terry reward model trainer.
+    rm_parser = subparsers.add_parser('rm', help='Reward model training (Bradley-Terry)')
+    rm_subparsers = rm_parser.add_subparsers(dest='rm_command', required=True)
+
+    rm_train_parser = rm_subparsers.add_parser('train', help='Run reward-model training')
+    rm_train_parser.add_argument('--config', '-c', help='Config file path')
+    rm_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
+                                 help='Base / SFT-tuned model')
+    rm_train_parser.add_argument('--dataset', '-d',
+                                 help='HF preference dataset id (ultrafeedback, orca_dpo, hh_rlhf, py_dpo)')
+    rm_train_parser.add_argument('--data',
+                                 help='Local JSONL with prompt/chosen/rejected rows')
+    rm_train_parser.add_argument('--output', '-o', default='models/rm', help='Output directory')
+    rm_train_parser.add_argument('--resume', help='Resume from checkpoint')
+    rm_train_parser.add_argument('--dry-run', action='store_true')
+
+    rm_train_parser.add_argument('--epochs', type=int, default=1)
+    rm_train_parser.add_argument('--batch-size', type=int, default=4)
+    rm_train_parser.add_argument('--learning-rate', type=float, default=1e-5)
+    rm_train_parser.add_argument('--warmup-ratio', type=float, default=0.05)
+    rm_train_parser.add_argument('--weight-decay', type=float, default=0.0)
+    rm_train_parser.add_argument('--max-grad-norm', type=float, default=1.0)
+    rm_train_parser.add_argument('--gradient-accumulation', type=int, default=4)
+    rm_train_parser.add_argument('--max-length', type=int, default=1024)
+    rm_train_parser.add_argument('--max-samples', type=int)
+    rm_train_parser.add_argument('--center-rewards-coefficient', type=float, default=0.01,
+                                 help='Centering regularizer (default 0.01; 0 disables)')
+
+    rm_train_parser.add_argument('--lora-rank', type=int, default=8)
+    rm_train_parser.add_argument('--lora-alpha', type=int, default=16)
+    rm_train_parser.add_argument('--lora-dropout', type=float, default=0.05)
+    rm_train_parser.add_argument('--load-in-4bit', action='store_true')
+    rm_train_parser.add_argument('--use-dora', action='store_true')
+    rm_train_parser.add_argument('--use-rslora', action='store_true')
+    rm_train_parser.add_argument('--init-lora-weights', default='true')
+    rm_train_parser.add_argument('--optim', default='adamw_torch')
+    rm_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
+
     # grpo command (Track T2 / phase Q1) — Group Relative Policy Optimization
     grpo_parser = subparsers.add_parser('grpo', help='GRPO training (verifier-grounded RL)')
     grpo_subparsers = grpo_parser.add_subparsers(dest='grpo_command', required=True)
@@ -6047,6 +6140,7 @@ def _dispatch_commands(args):
         ('sft', 'train'): 'sft_train',
         ('dpo', 'train'): 'dpo_train',
         ('grpo', 'train'): 'grpo_train',
+        ('rm', 'train'): 'rm_train',
         ('vlm', 'train'): 'vlm_train',
         ('audio', 'train'): 'audio_train',
         ('reasoning', 'train'): 'reasoning_train',
@@ -6067,6 +6161,8 @@ def _dispatch_commands(args):
         subcommand = getattr(args, 'dpo_command', None)
     elif args.command == 'grpo':
         subcommand = getattr(args, 'grpo_command', None)
+    elif args.command == 'rm':
+        subcommand = getattr(args, 'rm_command', None)
     elif args.command == 'vlm':
         subcommand = getattr(args, 'vlm_command', None)
     elif args.command == 'audio':
@@ -6115,6 +6211,9 @@ def _dispatch_commands(args):
     elif args.command == 'grpo':
         if args.grpo_command == 'train':
             cmd_grpo_train(args)
+    elif args.command == 'rm':
+        if args.rm_command == 'train':
+            cmd_rm_train(args)
     elif args.command == 'serve':
         cmd_serve(args)
     elif args.command == 'convert':
