@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from halo_forge.training_recovery import build_recovery_guidance
 from ui.services.ops_readiness_service import OpsReadinessService, get_ops_readiness_service
@@ -826,6 +826,125 @@ class PublicApiService:
             source_ui_page="/public/results",
         )
         return self.get_run_detail(job_id, include_research=True, include_internal=False)
+
+    def search_runs(
+        self,
+        *,
+        modalities: Optional[List[str]] = None,
+        statuses: Optional[List[str]] = None,
+        model_substring: Optional[str] = None,
+        since_iso: Optional[str] = None,
+        until_iso: Optional[str] = None,
+        has_eval: Optional[bool] = None,
+        weights_updated: Optional[bool] = None,
+        sort_by: str = "timestamp",
+        sort_dir: str = "desc",
+        limit: Optional[int] = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """DB-backed run search (Track F-G commit 2).
+
+        Lazily ensures the SQLite index is in sync with the filesystem,
+        then queries it with the supplied filters. The existing
+        ``list_runs`` surface keeps its filesystem-walk behavior so the
+        run-list page is untouched; this endpoint is what the cohort /
+        comparison / search-bar surfaces in the upcoming F-J / F-K
+        items will target.
+
+        Returns:
+            ``{"items": [...], "total": N, "filters": {...},
+              "facets": {"modalities": [...], "models": [...]}}``
+
+            ``items`` is the paginated row list, ``total`` is the
+            unpaginated match count, and ``facets`` is the distinct
+            modality / model values present in the index — useful for
+            the filter-chip UI without an extra round trip.
+        """
+        from halo_forge.run_db import RunFilter, get_database, sync_from_filesystem
+
+        db = get_database()
+        # Lazy sync. Cheap if the DB already mirrors the FS (incremental
+        # by mtime); the first call after a fresh install pays the full
+        # walk once.
+        try:
+            sync_from_filesystem(db)
+        except Exception as exc:  # pragma: no cover - logged at runtime
+            self._cached_backend_name = self._cached_backend_name  # touch attr to silence linters
+            # Soft failure: serve what's already indexed rather than 5xx.
+            # The sync is idempotent so the next call retries.
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "run_db sync failed; serving cached index: %s", exc
+            )
+
+        filt = RunFilter(
+            modalities=list(modalities) if modalities else None,
+            statuses=list(statuses) if statuses else None,
+            model_substring=model_substring,
+            since_iso=since_iso,
+            until_iso=until_iso,
+            has_eval=has_eval,
+            weights_updated=weights_updated,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            limit=limit,
+            offset=offset,
+        )
+
+        records = db.list_runs(filt)
+        total = db.count_runs(filt)
+
+        items = [self._db_record_to_list_item(record) for record in records]
+        return {
+            "items": items,
+            "total": total,
+            "filters": {
+                "modalities": filt.modalities,
+                "statuses": filt.statuses,
+                "model_substring": filt.model_substring,
+                "since_iso": filt.since_iso,
+                "until_iso": filt.until_iso,
+                "has_eval": filt.has_eval,
+                "weights_updated": filt.weights_updated,
+                "sort_by": filt.sort_by,
+                "sort_dir": filt.sort_dir,
+                "limit": filt.limit,
+                "offset": filt.offset,
+            },
+            "facets": {
+                "modalities": db.distinct_modalities(),
+                "models": db.distinct_models(),
+            },
+        }
+
+    def _db_record_to_list_item(self, record) -> Dict[str, Any]:
+        """Project a `RunRecord` to the list-item dict shape the
+        frontend already consumes from /runs.
+
+        Keeps the wire shape stable across the two endpoints so the
+        run-list components don't have to branch on which fetched them.
+        """
+        return {
+            "id": record.fs_id or record.run_id,
+            "run_id": record.run_id,
+            "modality": record.modality,
+            "model_name": record.model_name,
+            "status": record.status,
+            "timestamp": record.timestamp,
+            "cycles_executed": record.cycles_executed,
+            "weights_updated": record.weights_updated,
+            "final_train_loss": record.final_train_loss,
+            "effectiveness": (
+                {"verdict": record.effectiveness_verdict}
+                if record.effectiveness_verdict
+                else None
+            ),
+            "quality_status": record.quality_status,
+            "keep_rate": record.keep_rate,
+            "top_issue": record.dominant_rejection_reason,
+            "output_dir": record.output_dir,
+        }
 
     def list_runs(
         self,

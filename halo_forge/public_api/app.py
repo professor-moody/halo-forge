@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .service import PublicApiService
 
@@ -111,6 +111,43 @@ def create_app() -> "FastAPI":
             include_completed=include_completed,
             active_only=active_only,
             include_research=include_research,
+        )
+
+    @router.get("/runs/search")
+    async def search_runs(
+        modality: Optional[List[str]] = Query(None),
+        status: Optional[List[str]] = Query(None),
+        model: Optional[str] = Query(None),
+        since: Optional[str] = Query(None),
+        until: Optional[str] = Query(None),
+        has_eval: Optional[bool] = Query(None),
+        weights_updated: Optional[bool] = Query(None),
+        sort_by: str = Query("timestamp"),
+        sort_dir: str = Query("desc"),
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+    ) -> Dict[str, Any]:
+        """DB-backed run search (Track F-G commit 2).
+
+        Filter / sort / paginate the run index. Repeating ``modality=``
+        or ``status=`` ANDs an IN-list (e.g. ``?modality=sft&modality=dpo``
+        matches both). ``model=`` is a case-sensitive substring match
+        against ``model_name``. The response includes ``facets``: the
+        distinct modality and model values currently in the index, so
+        a filter-chip UI can render without a second round trip.
+        """
+        return service.search_runs(
+            modalities=modality,
+            statuses=status,
+            model_substring=model,
+            since_iso=since,
+            until_iso=until,
+            has_eval=has_eval,
+            weights_updated=weights_updated,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            limit=limit,
+            offset=offset,
         )
 
     @router.get("/runs/{run_id}")

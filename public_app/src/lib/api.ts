@@ -112,6 +112,33 @@ export type RunListItem = {
 };
 
 /**
+ * Filter / sort / paginate parameters for `/runs/search` (Track F-G).
+ */
+export type RunSearchParams = {
+  modality?: string[];
+  status?: string[];
+  model?: string;
+  since?: string;
+  until?: string;
+  hasEval?: boolean;
+  weightsUpdated?: boolean;
+  sortBy?: "timestamp" | "cycles_executed" | "final_train_loss" | "model_name" | string;
+  sortDir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+};
+
+export type RunSearchResponse = {
+  items: RunListItem[];
+  total: number;
+  filters: Record<string, unknown>;
+  facets: {
+    modalities: string[];
+    models: string[];
+  };
+};
+
+/**
  * Per-cycle metric row exposed by /api/public/runs/{id}.details.cycle_metrics.
  * Mirrors `_project_cycles_for_charts` on the backend; every numeric field
  * is null-tolerant so older trainers / partial summaries chart cleanly.
@@ -317,6 +344,30 @@ export const api = {
     if (params?.modality) search.set("modality", params.modality);
     const qs = search.toString();
     return request<{ items: RunListItem[] }>(`/runs${qs ? `?${qs}` : ""}`);
+  },
+  /**
+   * DB-backed run search (Track F-G commit 2). Filter / sort / paginate
+   * the SQLite-backed run index. Repeating `modality` or `status` in the
+   * params object becomes an IN-list. The response carries `facets` —
+   * the distinct values currently indexed — so filter-chip UIs can
+   * render their chip set without a second request.
+   */
+  searchRuns: (params?: RunSearchParams) => {
+    const search = new URLSearchParams();
+    for (const m of params?.modality ?? []) search.append("modality", m);
+    for (const s of params?.status ?? []) search.append("status", s);
+    if (params?.model) search.set("model", params.model);
+    if (params?.since) search.set("since", params.since);
+    if (params?.until) search.set("until", params.until);
+    if (params?.hasEval !== undefined) search.set("has_eval", String(params.hasEval));
+    if (params?.weightsUpdated !== undefined)
+      search.set("weights_updated", String(params.weightsUpdated));
+    if (params?.sortBy) search.set("sort_by", params.sortBy);
+    if (params?.sortDir) search.set("sort_dir", params.sortDir);
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return request<RunSearchResponse>(`/runs/search${qs ? `?${qs}` : ""}`);
   },
   runDetail: (runId: string) => request<RunDetail>(`/runs/${encodeURIComponent(runId)}`),
 };
