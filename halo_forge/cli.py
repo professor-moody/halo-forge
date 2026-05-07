@@ -243,6 +243,51 @@ def print_banner():
 """)
 
 
+def cmd_data_synthesize(args):
+    """Synthesize a training dataset (Track D1: teacher → verifier → filter)."""
+    from pathlib import Path
+
+    from halo_forge.data.synthesize import synthesize_dataset
+
+    print_banner()
+    print(f"{GREEN}halo-forge data synthesize{NC}")
+    print("=" * 60)
+    print(f"  seeds:    {args.seeds}")
+    print(f"  output:   {args.output}")
+    print(f"  teacher:  {args.teacher_model} ({args.base_url or 'default endpoint'})")
+    print(f"  verifier: {args.verifier}")
+    print(f"  shape:    {args.kind} (n={args.n_per_prompt})")
+    print(f"  threshold: {args.threshold}")
+    print()
+
+    try:
+        result = synthesize_dataset(
+            seeds=args.seeds,
+            output_path=Path(args.output),
+            teacher_model=args.teacher_model,
+            base_url=args.base_url,
+            api_key=args.api_key,
+            system_prompt=args.system_prompt,
+            verifier_name=args.verifier,
+            n_per_prompt=args.n_per_prompt,
+            reward_threshold=args.threshold,
+            output_kind=args.kind,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+        )
+    except Exception as exc:
+        print(f"{RED}Synthesis failed:{NC} {exc}")
+        sys.exit(1)
+
+    pct_kept = 100.0 * result.n_accepted / max(1, result.n_generated)
+    print(f"{GREEN}Done{NC} in {result.duration_seconds:.1f}s")
+    print(f"  seeds:     {result.n_seeds:>8,}")
+    print(f"  generated: {result.n_generated:>8,}")
+    print(f"  accepted:  {result.n_accepted:>8,}  ({pct_kept:.1f}%)")
+    print(f"  avg reward: {result.avg_reward:.3f}")
+    print(f"  output:    {result.output_path}")
+
+
 def cmd_data_score(args):
     """Score a JSONL dataset by quality and filter by threshold or top-K%
     (Track D3)."""
@@ -4449,6 +4494,38 @@ def main():
     validate_parser.add_argument('file', help='Path to JSONL file to validate')
     validate_parser.add_argument('--preview', '-p', action='store_true', help='Show preview of examples')
 
+    # data synthesize (Track D1) — teacher → verifier → filter pipeline.
+    synth_parser = data_subparsers.add_parser(
+        'synthesize',
+        help='Generate synthetic training data from prompts via a teacher model + verifier filter',
+    )
+    synth_parser.add_argument('--seeds', '-i', required=True,
+                              help='JSONL or text file of seed prompts (one per line)')
+    synth_parser.add_argument('--output', '-o', required=True,
+                              help='Output JSONL path')
+    synth_parser.add_argument('--teacher-model', default='default',
+                              help='Model name for the OpenAI-compatible teacher endpoint')
+    synth_parser.add_argument('--base-url',
+                              help='Teacher endpoint base URL (default: http://127.0.0.1:8001/v1 — '
+                                   'a local halo-forge serve process)')
+    synth_parser.add_argument('--api-key',
+                              help='Teacher endpoint API key (env: HALOFORGE_TEACHER_API_KEY)')
+    synth_parser.add_argument('--system-prompt',
+                              help='System message prepended to every teacher call')
+    synth_parser.add_argument('--verifier', default='json_structure',
+                              help='V1 verifier short name to score completions '
+                                   '(execution, llm_judge, bleu, json_schema, regex_format, ...)')
+    synth_parser.add_argument('--n-per-prompt', type=int, default=1,
+                              help='Completions sampled per prompt (>=2 required for --kind preference)')
+    synth_parser.add_argument('--threshold', type=float, default=0.5,
+                              help='Reward threshold for acceptance (default 0.5)')
+    synth_parser.add_argument('--kind', default='sft', choices=['sft', 'preference'],
+                              help='sft → {prompt, completion}; preference → {prompt, chosen, rejected}')
+    synth_parser.add_argument('--max-tokens', type=int, default=512,
+                              help='Teacher max_tokens per call (default 512)')
+    synth_parser.add_argument('--temperature', type=float, default=0.8,
+                              help='Teacher sampling temperature (default 0.8 for diverse generation)')
+
     # data score (Track D3) — heuristic quality scoring + filter.
     score_parser = data_subparsers.add_parser(
         'score',
@@ -5935,6 +6012,8 @@ def _dispatch_commands(args):
             cmd_data_dedup(args)
         elif args.data_command == 'score':
             cmd_data_score(args)
+        elif args.data_command == 'synthesize':
+            cmd_data_synthesize(args)
     elif args.command == 'sft':
         if args.sft_command == 'train':
             cmd_sft_train(args)

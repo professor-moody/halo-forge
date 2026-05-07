@@ -1,6 +1,67 @@
 # Data pipeline
 
-Two operations close the gap between "I have a JSONL" and "I have a training-ready dataset" — **dedup** (drop duplicates) and **score** (filter by quality). They compose: dedup → score → filter is the standard pre-finetune sequence per NeMo Curator and the FineWeb / Tülu pipelines.
+Three operations close the gap between "I have prompts" and "I have a training-ready dataset":
+
+- **synthesize** (D1) — generate completions from seed prompts via a teacher model; verify and filter.
+- **dedup** (D2) — drop literal + near-duplicates.
+- **score** (D3) — filter by quality threshold or top-K%.
+
+They compose: synthesize → dedup → score → filter is the full pre-finetune sequence (Distilabel + NeMo Curator + DEITA recipes folded into three commands).
+
+## Synthesize
+
+```bash
+# SFT data: 1 completion per seed, kept if reward >= threshold
+halo-forge data synthesize \
+  --seeds prompts.txt --output sft_raw.jsonl \
+  --teacher-model Qwen/Qwen2.5-3B-Instruct \
+  --verifier execution --threshold 0.5
+
+# Preference data: 4 completions per seed, best→chosen, worst→rejected
+halo-forge data synthesize \
+  --seeds prompts.jsonl --output pref_raw.jsonl \
+  --teacher-model Qwen/Qwen2.5-3B-Instruct \
+  --verifier llm_judge \
+  --n-per-prompt 4 --kind preference
+```
+
+**The teacher** defaults to an OpenAI-compatible HTTP client targeting `http://127.0.0.1:8001/v1` — exactly what `halo-forge serve` exposes. So the implicit zero-config recipe is:
+
+```bash
+# Terminal 1
+halo-forge serve --model Qwen/Qwen2.5-3B-Instruct
+
+# Terminal 2
+halo-forge data synthesize --seeds prompts.txt --output raw.jsonl --teacher-model X
+```
+
+Override the endpoint with `--base-url` and `--api-key` (or env vars `HALOFORGE_TEACHER_BASE_URL` / `HALOFORGE_TEACHER_API_KEY`) for hosted APIs or other local servers.
+
+**The verifier** is any short name from the V1 plugin registry — `execution`, `llm_judge`, `bleu`, `json_schema`, `regex_format`, or anything you've registered yourself. The completion is scored by the verifier; rows with `reward >= --threshold` are kept.
+
+**Output shape** depends on `--kind`:
+
+- `sft` — `{"prompt": ..., "completion": ...}` per surviving completion.
+- `preference` — `{"prompt": ..., "chosen": ..., "rejected": ..., "chosen_reward": ..., "rejected_reward": ...}` per group whose best completion clears the threshold AND beats the worst (no signal from tied groups). Requires `--n-per-prompt >= 2`.
+
+**Seeds** can be a JSONL file (looks for `prompt` / `text` / `question` / `instruction` keys), a plain text file (one prompt per line), or a Python list when calling programmatically.
+
+**Programmatic API.**
+```python
+from halo_forge.data.synthesize import synthesize_dataset
+
+result = synthesize_dataset(
+    seeds=["Explain X.", "Solve Y."],
+    output_path="raw.jsonl",
+    teacher=my_teacher_callable,    # any (prompt: str) -> str
+    verifier_name="execution",
+    n_per_prompt=4,
+    output_kind="preference",
+)
+print(result.n_accepted, "/", result.n_generated, "kept")
+```
+
+A teacher exception on one prompt doesn't crash the run — it gets logged and the row is recorded with `rejected_reason="teacher_error"`.
 
 ## Dedup
 
@@ -96,9 +157,28 @@ Halo-forge's data tools accept three record shapes:
 
 The dedup hash and quality scorer extract the appropriate field automatically (`text` → `completion` → `chosen` → `prompt` fallback chain).
 
+## Composing all three
+
+```bash
+# Step 0: get a teacher running (or skip to step 1 with --base-url pointing elsewhere)
+halo-forge serve --model Qwen/Qwen2.5-3B-Instruct &
+
+# Step 1: synthesize
+halo-forge data synthesize --seeds prompts.txt --output raw.jsonl \
+  --teacher-model Qwen/Qwen2.5-3B-Instruct --verifier execution --threshold 0.5
+
+# Step 2: dedup
+halo-forge data dedup --input raw.jsonl --output deduped.jsonl --method fuzzy
+
+# Step 3: filter to top 50% by heuristic quality
+halo-forge data score --input deduped.jsonl --output train.jsonl --top-k-pct 0.5
+
+# Step 4: train
+halo-forge sft train --data train.jsonl --model Qwen/Qwen2.5-Coder-3B
+```
+
 ## Roadmap
 
-- **D1 — synthetic data generation**: Distilabel-style teacher → student with rejection-sampled quality scoring (next).
 - **D4 — dataset versioning + lineage**: content-addressed datasets, runs link to the exact version trained on.
 - **D5 — web-source ingest helpers**: "pull 10k Python repos with permissive licenses", "the FineWeb-Edu subset for X".
 - **Semantic dedup (SemDeDup)**: sentence-embedding clustering for near-duplicates that fuzzy MinHash misses. Needs an embedding-model dep that deserves its own opt-in.
