@@ -665,6 +665,53 @@ def cmd_dpo_train(args):
     _print_completed_training_summary("dpo", config.output_dir, summary)
 
 
+def cmd_convert(args):
+    """Convert a model between formats (Track I5).
+
+    Wraps mlx_lm.convert / GGUFExporter / HF dtype-recast behind one
+    consistent CLI vocabulary. ``--quant q4`` means "4-bit affine
+    quantization with group size 64" regardless of which format you
+    target; the dispatch translates to the underlying tool's args.
+    """
+    from halo_forge.inference.convert import (
+        convert as run_convert,
+        list_supported_formats,
+        list_supported_quants,
+    )
+
+    print_banner()
+    print(f"{GREEN}halo-forge convert{NC}")
+    print("=" * 60)
+
+    if getattr(args, "list", False):
+        print(f"Supported formats: {', '.join(list_supported_formats())}")
+        print(f"Supported quants:  {', '.join(list_supported_quants())}")
+        return
+
+    print(f"  source: {args.source}")
+    print(f"  format: {args.format}")
+    print(f"  quant:  {args.quant}")
+    print(f"  output: {args.output}")
+    print()
+    try:
+        result = run_convert(
+            source=args.source,
+            output_path=args.output,
+            target_format=args.format,
+            quantization=args.quant,
+            trust_remote_code=not args.no_trust_remote_code,
+        )
+    except Exception as exc:
+        print(f"{RED}Conversion failed:{NC} {exc}")
+        sys.exit(1)
+
+    size_mb = (result.bytes_written or 0) / (1024 * 1024)
+    print(f"{GREEN}Converted{NC} -> {result.output_path}")
+    print(f"  size: {size_mb:.1f} MB")
+    if result.notes:
+        print(f"  note: {result.notes}")
+
+
 def cmd_serve(args):
     """Run an OpenAI-compatible serving endpoint (Track I1).
 
@@ -4095,6 +4142,25 @@ def main():
         'datasets', help='List available preference datasets'
     )
 
+    # convert command (Track I5) — unified format conversion.
+    convert_parser = subparsers.add_parser(
+        'convert',
+        help='Convert a model between formats (HF → MLX / GGUF / HF dtype recast)',
+    )
+    convert_parser.add_argument('--source', '-s',
+                                help='HuggingFace id, mlx-community id, or local path of source model')
+    convert_parser.add_argument('--output', '-o',
+                                help='Output path (file for GGUF, directory for MLX/HF)')
+    convert_parser.add_argument('--format', '-f', default='mlx',
+                                choices=['mlx', 'gguf', 'hf'],
+                                help='Target format (default: mlx)')
+    convert_parser.add_argument('--quant', '-q', default='q4',
+                                help='Normalized quant: q4, q8, fp16, bf16, fp32 (default: q4)')
+    convert_parser.add_argument('--no-trust-remote-code', action='store_true',
+                                help='Disable trust_remote_code (only set if you understand the source)')
+    convert_parser.add_argument('--list', action='store_true',
+                                help='Print supported formats / quants and exit')
+
     # serve command (Track I1) — OpenAI-compatible serving endpoint.
     serve_parser = subparsers.add_parser(
         'serve',
@@ -5248,6 +5314,8 @@ def _dispatch_commands(args):
             cmd_dpo_datasets(args)
     elif args.command == 'serve':
         cmd_serve(args)
+    elif args.command == 'convert':
+        cmd_convert(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
