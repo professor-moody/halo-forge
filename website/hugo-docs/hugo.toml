@@ -4,9 +4,9 @@ title = "halo forge"
 enableRobotsTXT = true
 
 [params]
-  description = "RLVR Training Framework for AMD Strix Halo"
+  description = "Cross-vendor local finetuning workstation — SFT, DPO, GRPO, RAFT, RM with verifier-grounded rewards on ROCm, CUDA, Apple MLX, Apple MPS."
   github = "https://github.com/professor-moody/halo-forge"
-  version = "1.3.0"
+  version = "1.4.0"
 
 [markup]
   [markup.highlight]

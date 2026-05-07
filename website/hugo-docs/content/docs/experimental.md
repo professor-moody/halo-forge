@@ -1,12 +1,14 @@
 ---
-title: "Experimental Features"
-description: "Features under active development: VLM, Audio, Reasoning, Agentic, Inference"
+title: "Modalities & experimental features"
+description: "Multi-modality training paths (VLM, Audio, Reasoning, Agentic) + features under active development."
 weight: 80
 ---
 
-This section contains features that extend halo-forge beyond code generation training into new domains.
+This section covers the **modality-specific** training paths (VLM, Audio, Reasoning, Agentic) and a small set of features still under active development.
 
-**Status**: These modalities support real training runs, but readiness is tracked by internal qualification tiers rather than broad "stable" claims.
+> **Note**: Most of what was historically labeled "experimental" — DPO, GRPO, RM, MLX-native trainers, OpenAI serving, eval, replay, sweeps, dedup, synthesis, cost rollup, the verifier ecosystem — is now **stable** and lives under its own section in the navigation. The "experimental" framing here applies only to the items still maturing: the modality-specific training paths below and the inference-optimization niche.
+
+**Status of modality paths**: real training runs work end-to-end; readiness is tracked by internal qualification tiers (`experimental` / `qualified` / `production_ready`).
 
 ## Modality Training Capability Matrix
 

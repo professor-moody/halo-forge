@@ -1,89 +1,119 @@
 ---
 title: "Documentation"
-description: "Complete documentation for halo forge RLVR training framework"
+description: "Cross-vendor local finetuning workstation — SFT, DPO, GRPO, RAFT, RM with verifier-grounded rewards on ROCm, CUDA, Apple MLX, Apple MPS."
 ---
 
-## What is halo forge?
+## What halo-forge is
 
-halo forge is an **RLVR (Reinforcement Learning from Verifiable Rewards)** framework that uses compiler feedback as reward signals for iterative model refinement.
+A workstation tool that takes a base model and turns it into a finetuned, evaluated, served artifact — without leaving the local machine.
 
-### The Problem
+The single thing that makes it different from every adjacent project (axolotl, llama-factory, unsloth, mlx-lm-lora, torchtune): **it runs natively on every modern accelerator**, not just CUDA.
 
-| Approach | Limitation |
-|----------|------------|
-| SFT only | Distribution mismatch — model outputs differ from training data |
-| RLHF | Expensive human labeling, inconsistent judgments |
-| Self-evaluation | Models hallucinate correctness, signals can be gamed |
+Pick a model. Pick an algorithm. Pick a verifier. Pick a backend. Train. Evaluate. Serve.
 
-### The Approach
+## Capabilities
 
-A compiler provides **deterministic feedback** — objective, reproducible results about code correctness.
+### Trainers
 
-## Architecture
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌───────────┐
-│   Data   │ ─► │   SFT    │ ─► │   RAFT   │ ─► │ Benchmark │
-└──────────┘    └──────────┘    └──────────┘    └───────────┘
-```
-
-1. **Data** — Gather training examples from public datasets or LLM generation
-2. **SFT** — Supervised fine-tuning to establish baseline capability  
-3. **RAFT** — Iterative verification loop: generate → verify → filter → train
-4. **Benchmark** — Evaluate with pass@k metrics
-
-## What to Expect
-
-RAFT training typically shows:
-
-| Cycle | What Happens |
-|-------|-------------|
-| 1-2 | Largest gains as model learns basic patterns |
-| 3-4 | Continued improvement at slower rate |
-| 5-6 | Diminishing returns; monitor for plateau |
-| 7+ | May see degradation; consider stopping earlier |
-
-Results vary significantly based on model, dataset, hardware, and domain. Run benchmarks to measure improvement on your specific use case.
-
-## Quick Navigation
-
-### Getting Started
-- [Quick Start](/docs/getting-started/quickstart/) — Get running in 30 minutes
-- [Toolbox Setup](/docs/getting-started/toolbox/) — Build the container environment
-- [Hardware Notes](/docs/getting-started/hardware/) — Strix Halo configuration
-
-### Training Pipeline
-- **[How to Train](/docs/training-pipeline/how-to-train/)** — Complete step-by-step guide (start here!)
-- [Full Pipeline](/docs/training-pipeline/full-pipeline/) — Complete training workflow
-- [Data Generation](/docs/training-pipeline/data-generation/) — Prepare training data
-- [SFT Training](/docs/training-pipeline/sft/) — Supervised fine-tuning
-- [RAFT Training](/docs/training-pipeline/raft/) — Reward-ranked fine-tuning
-- [Benchmarking](/docs/training-pipeline/benchmarking/) — Evaluate with pass@k
-- [Production Runs](/docs/training-pipeline/production-runs/) — Production training commands
+- **SFT** — supervised finetuning with QLoRA / LoRA / DoRA / rsLoRA / PiSSA. PyTorch on every torch backend; MLX-native on Apple Silicon.
+- **DPO** — preference optimization (sigmoid / IPO / hinge / KTO-pair / RPO / cDPO). PyTorch via TRL; MLX-native reference-free DPO.
+- **GRPO** — verifier-grounded policy gradient (DeepSeek-R1 / Tülu 3 family). PyTorch via TRL; MLX-native reference-free GRPO.
+- **RAFT** — rejection-sampling RLVR with curriculum + reward shaping. PyTorch + native MLX.
+- **Reward Model** — Bradley-Terry RM from preference pairs. Becomes a learned verifier for any other modality.
 
 ### Verifiers
-- [Verifier Overview](/docs/verifiers/) — Choose your verification strategy
-- [Compile Verifiers](/docs/verifiers/compile/) — GCC, Clang, MinGW, MSVC
-- [Test Verifiers](/docs/verifiers/test/) — pytest, unittest
-- [Execution Verifiers](/docs/verifiers/execution/) — Test case verification
-- [Multi-Language](/docs/verifiers/multi-language/) — Auto-detect language
-- [Custom Verifiers](/docs/verifiers/custom/) — Build your own
+
+Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@register_verifier`. Out of the box:
+
+- **Execution & compile**: `gcc`, `clang`, `mingw`, `execution`, `pytest`, `humaneval`, `mbpp`, `rust`, `cargo`, `go`, `custom`, `subprocess`
+- **Schema & format**: `json_structure`, `json_schema`, `regex_format`
+- **Reference metrics**: `bleu`, `rouge`, `chrf`
+- **LLM-as-judge**: `llm_judge` — rubric-graded with any local or hosted judge model
+
+### Data pipeline
+
+- **Synthesize** — generate completions from seed prompts via a teacher model + verifier filter.
+- **Dedup** — exact (SHA-256) + fuzzy (MinHash + LSH).
+- **Score** — heuristic quality scoring + threshold / top-K filter.
+- **Compose** — `synthesize → dedup → score → filter` is the four-command pre-finetune sequence.
+
+### Inference + serving
+
+- **OpenAI-compatible serving** — `halo-forge serve --model X` exposes `/v1/chat/completions`, `/v1/completions`, `/v1/models`.
+- **Unified convert** — `halo-forge convert --format mlx|gguf|hf --quant q4|q8|fp16|bf16|fp32`
+- **Round-trip verify** — `halo-forge convert --verify` catches silently-broken exports.
+- **vLLM rollout** — continuous-batched generation on CUDA/ROCm.
+- **MLX rollout** — Apple Silicon equivalent via `mlx_lm.generate`.
+
+### Evaluation
+
+- **lm-evaluation-harness** — `halo-forge eval --tasks core` runs MMLU / GSM8K / HumanEval / IFEval / ARC etc.
+- **Mid-training probe** — `halo-forge probe` runs a small held-out benchmark and diffs against a baseline; catches catastrophic forgetting in single-digit minutes.
+
+### Reproducibility
+
+- **Replay manifests** — `halo-forge replay <run_dir>` regenerates the exact launch command.
+- **Sweep infrastructure** — Optuna-style hyperparameter search with random / TPE / grid samplers.
+
+### Run management
+
+- **SQLite run database** — search / filter / sort / paginate runs.
+- **Multi-run comparison** — pin runs, overlay loss + reward curves, side-by-side config diff.
+- **Cohort eval dashboard** — runs × tasks grid; best-per-task highlighted.
+- **Cost rollup** — per-run kWh + $ from wall-clock × backend nominal power.
+- **Live telemetry strip** — SSE-streamed GPU util / VRAM / power / throughput.
+
+### Adapter merging
+
+- **Bake** — single LoRA into base, output is a standard HF checkpoint.
+- **Combine** — N adapters via `linear` / `ties` / `dare_linear` / `dare_ties` / `magnitude_prune`.
+
+### Auth + multi-user
+
+- **API tokens** — bearer-token auth, automatic when bound to non-loopback. Local-first stays zero-config.
+
+## Quick navigation
+
+### Getting started
+- [Quick Start](/docs/getting-started/quickstart/) — Install + first run
+- [Hardware Notes](/docs/getting-started/hardware/) — Per-backend recommendations + feature matrix
+
+### Trainers
+- [Overview](/docs/trainers/) — Choosing between SFT / DPO / GRPO / RAFT / RM
+
+### Verifiers
+- [Plugin registry + ecosystem](/docs/verifiers/)
+- [Execution + compile](/docs/verifiers/execution/)
+- [Schema + format](/docs/verifiers/schema/)
+- [Reference metrics](/docs/verifiers/metrics/)
+- [LLM-as-judge](/docs/verifiers/llm-judge/)
+- [Multi-language](/docs/verifiers/multi-language/)
+- [Custom verifiers](/docs/verifiers/custom/)
+
+### Data pipeline
+- [Overview](/docs/data/)
+
+### Evaluation
+- [lm-eval + mid-training probe](/docs/eval/)
+
+### Inference + serving
+- [Serve / convert / merge](/docs/serving/)
+
+### Reproducibility
+- [Replay manifests](/docs/replay/)
+- [Hyperparameter sweeps](/docs/sweep/)
 
 ### Reference
-- **[Command Index](/docs/reference/command-index/)** — Every command and flag
-- [Configuration](/docs/reference/configuration/) — Config file reference
-- [Web UI](/docs/reference/web-ui/) — Dashboard for training and monitoring
-- [Windows Setup](/docs/reference/windows-setup/) — MSVC build server
-- [Troubleshooting](/docs/reference/troubleshooting/) — Common issues
+- [Command Index](/docs/reference/command-index/)
+- [Auth + tokens](/docs/auth/)
+- [Configuration](/docs/reference/configuration/)
+- [Web UI](/docs/reference/web-ui/)
+- [Troubleshooting](/docs/reference/troubleshooting/)
 
 ### Background
-- [Theory & Research](/docs/background/theory/) — Research foundations
-- [Graduated Rewards](/docs/background/graduated-rewards/) — Partial credit system
-- [Learning Rate Strategies](/docs/background/learning-rates/) — LR recommendations
-
-### Experimental
-Features under active development and testing:
-- [Experimental Features](/docs/experimental/) — VLM, Audio, Reasoning, Agentic, Inference
+- [Theory & Research](/docs/background/theory/) — RLVR foundations
+- [Graduated Rewards](/docs/background/graduated-rewards/) — Partial credit
+- [Learning Rate Strategies](/docs/background/learning-rates/) — LR per algorithm
 
 ### Meta
 - [Changelog](/docs/changelog/) — Version history

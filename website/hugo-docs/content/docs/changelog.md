@@ -3,6 +3,74 @@ title: "Changelog"
 description: "All notable changes to halo forge"
 ---
 
+## [1.4.0] - 2026-05-07
+
+Major release. Halo-forge becomes a cross-vendor local finetuning workstation.
+
+### Added
+
+#### Trainers
+- **DPO** (`halo-forge dpo train`) — preference optimization via TRL on PyTorch backends; MLX-native reference-free DPO on Apple Silicon. Sigmoid / IPO / hinge / KTO-pair / RPO / cDPO loss types.
+- **GRPO** (`halo-forge grpo train`) — verifier-grounded policy gradient with group-relative advantages. PyTorch via TRL; MLX-native reference-free. DeepSeek-R1 / Tülu 3 family.
+- **Reward Model** (`halo-forge rm train`) — Bradley-Terry RM from preference pairs. Closes the RLHF loop for non-code modalities.
+- **MLX-native DPO + GRPO** — reference-free in v1; sigmoid loss; rollouts via `mlx_lm.generate`.
+
+#### PEFT + optimizers
+- **DoRA / rsLoRA / PiSSA / LoftQ / OLoRA** — `--use-dora`, `--use-rslora`, `--init-lora-weights pissa` etc. on every torch backend.
+- **bitsandbytes optimizers** — `--optim adamw_bnb_8bit`, `lion_8bit`, `paged_adamw_8bit`. CUDA / ROCm only.
+
+#### Verifiers
+- **Plugin registry** (V1) — `@register_verifier` decorator + `~/.halo-forge/verifiers/*.py` discovery + entry-point packages.
+- **LLM-as-judge** (V2) — rubric-graded with pluggable judge callable. Default targets a local `halo-forge serve` endpoint.
+- **Schema verifiers** (V3) — `json_structure`, `json_schema`, `regex_format`.
+- **Reference-metric verifiers** (V4) — `bleu`, `rouge`, `chrf`.
+
+#### Data pipeline
+- **Synthesize** (`halo-forge data synthesize`) — teacher → verifier → filter pipeline. SFT or preference data shape.
+- **Dedup** (`halo-forge data dedup`) — exact (SHA-256) + fuzzy (MinHash + LSH).
+- **Quality scoring** (`halo-forge data score`) — five-component heuristic + threshold / top-K filter.
+
+#### Inference + serving
+- **OpenAI-compatible serving** — `halo-forge serve --model X` exposes `/v1/chat/completions`, `/v1/completions`, `/v1/models`.
+- **Unified convert** — `halo-forge convert --format mlx|gguf|hf --quant q4|q8|fp16|bf16|fp32`.
+- **Round-trip verify** — `halo-forge convert --verify` catches silently-broken exports.
+- **vLLM rollout** — `--rollout-engine vllm` for CUDA / ROCm.
+- **MLX rollout** — `--rollout-engine mlx` for Apple Silicon parity.
+- **Adapter merge** — `halo-forge merge --mode bake|combine` (linear / ties / dare_linear / dare_ties / magnitude_prune).
+
+#### Evaluation
+- **lm-evaluation-harness** — `halo-forge eval --tasks core` with curated task groups (core / reasoning / code / instruction_following / knowledge).
+- **Mid-training probe** — `halo-forge probe --baseline ./baseline.json` runs a small held-out benchmark + reports deltas; exits 2 on regression.
+
+#### Reproducibility + management
+- **Replay manifests** — `halo-forge replay <run_dir>` regenerates the launch command. Captures seed bundle, dataset hash, env fingerprint, full config.
+- **Hyperparameter sweeps** — programmatic library with random / TPE / grid samplers, `Uniform` / `LogUniform` / `Choice` distributions, sweep-level early stopping.
+- **SQLite run database** — `/runs/search` endpoint with filter / sort / paginate / facet support.
+- **Cohort eval dashboard** — `/eval` route renders runs × tasks grid; best-per-task highlighted.
+- **Cost rollup** — per-run kWh + $ from wall-clock × backend nominal power. UI panel + `HALOFORGE_COST_PER_KWH` env var.
+- **API token auth** — bearer-token gate that turns on automatically when bound to non-loopback. `halo-forge token create / list / revoke`.
+
+#### Frontend
+- **Vite + React 19 + Tanstack Router** — replaces the retired NiceGUI surface.
+- **Live run view** — cycle-by-cycle loss + reward charts, scrubber, log tail, sample inspector, cancel button.
+- **Multi-run comparison** — pin up to 6 runs, overlay loss / reward, side-by-side config diff.
+- **Run search** — DB-backed filter chips for modality / status / model / has-eval.
+- **Cohort eval** — runs × tasks grid over pinned runs.
+- **Energy & spend card** — kWh + $ per run.
+
+### Removed
+
+- **NiceGUI web UI** — retired in favor of `public_app/`. The `ui/services/` and `ui/state.py` modules survive as the service layer the public_api consumes.
+- `halo-forge ui` CLI subcommand.
+- `nicegui` dependency.
+
+### Changed
+
+- **Documentation** — README rewritten; new feature-area docs (TRAINERS, DATA, EVAL, SERVING, REPLAY); per-backend feature × backend matrix in HARDWARE_NOTES.
+- **Backend matrix** — every shipped feature is documented with its actual backend support status (✅ / ⚠️ / ❌). Silent-failure paths for MLX-with-PEFT-flags now warn loudly at trainer init.
+
+---
+
 ## [1.3.0] - 2026-01-21
 
 ### Added

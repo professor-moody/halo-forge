@@ -19,15 +19,35 @@ halo-forge
 ├── data
 │   ├── prepare
 │   ├── generate
-│   └── validate
+│   ├── validate
+│   ├── synthesize       # generate completions via teacher + verifier filter
+│   ├── dedup            # exact + fuzzy MinHash dedup
+│   └── score            # heuristic quality scoring + threshold / top-K filter
 ├── sft
-│   ├── train
+│   ├── train            # supervised finetuning (LoRA / DoRA / rsLoRA / PiSSA / QLoRA)
 │   └── datasets
+├── dpo
+│   ├── train            # preference optimization
+│   └── datasets
+├── grpo
+│   └── train            # verifier-grounded RL (group-relative advantages)
+├── rm
+│   └── train            # Bradley-Terry reward model
 ├── raft
-│   └── train
+│   └── train            # rejection-sampling RLVR
 ├── benchmark
 │   ├── run
 │   └── full
+├── eval                 # lm-evaluation-harness (mmlu / gsm8k / humaneval / ifeval / ...)
+├── probe                # mid-training small-benchmark + baseline diff
+├── serve                # OpenAI-compatible /v1/chat/completions endpoint
+├── convert              # HF ↔ MLX ↔ GGUF with normalized quant vocabulary
+├── merge                # adapter bake / multi-adapter combine
+├── replay               # show or relaunch a captured run from replay.json
+├── token
+│   ├── create           # bearer token for non-loopback API access
+│   ├── list
+│   └── revoke
 ├── inference          [EXPERIMENTAL]
 │   ├── optimize
 │   ├── export

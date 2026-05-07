@@ -1,11 +1,57 @@
 ---
 title: "Verifiers"
-description: "Pluggable verification system for RLVR training"
+description: "Pluggable verification system for RLVR training. Plugin registry, programmatic + schema + reference-metric + LLM-as-judge verifiers."
 ---
 
 Verifiers are the heart of RLVR — they provide the reward signal that guides training.
 
-> **Important**: Verifiers are **training infrastructure**, not benchmarks. For benchmark reporting (comparing to papers), see [Benchmarking](/docs/training-pipeline/benchmarking/).
+> **Important**: Verifiers are **training infrastructure**, not benchmarks. For benchmark reporting (comparing to papers), see [Evaluation](/docs/eval/).
+
+## Plugin registry
+
+Halo-forge ships a plugin registry for verifiers. Three coexisting registration paths funnel into one dict:
+
+```python
+# 1. Decorator (programmatic)
+from halo_forge.rlvr.verifiers import register_verifier, Verifier, VerifyResult
+
+@register_verifier("my_check")
+class MyVerifier(Verifier):
+    def verify(self, code: str) -> VerifyResult:
+        ...
+
+# 2. Plugin directory
+#    ~/.halo-forge/verifiers/my_check.py
+#    Auto-discovered on first registry access. Override path with
+#    HALOFORGE_VERIFIERS_DIR.
+
+# 3. Entry-point packages (pip-installable plugins)
+#    [project.entry-points."halo_forge.verifiers"]
+#    my_check = "my_pkg.verifiers:MyVerifier"
+```
+
+The trainer / CLI / public-API consumers call `get_verifier(name)` instead of importing concrete classes:
+
+```python
+from halo_forge.rlvr.verifiers import get_verifier
+verifier_cls = get_verifier("my_check")
+verifier = verifier_cls(...)
+```
+
+Use `list_registered_verifiers()` to see every name in the registry.
+
+## Built-in short names
+
+Pass any of these as `--verifier <name>` to GRPO / RAFT / data synthesize:
+
+| Category | Names |
+|---|---|
+| Code execution + compile | `gcc`, `clang`, `mingw`, `execution`, `gcc_execution`, `mingw_execution`, `clang_execution`, `pytest`, `unittest`, `rlvr_pytest`, `humaneval`, `mbpp`, `rust`, `cargo`, `go`, `custom`, `subprocess` |
+| Schema + format | [`json_structure`, `json_schema`, `regex_format`](/docs/verifiers/schema/) |
+| Reference metrics | [`bleu`, `rouge`, `chrf`](/docs/verifiers/metrics/) |
+| LLM-as-judge | [`llm_judge`](/docs/verifiers/llm-judge/) |
+
+---
 
 ## Verifiers vs Benchmarks
 
