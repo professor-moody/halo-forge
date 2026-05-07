@@ -109,8 +109,48 @@ pip install lm-eval
 pip install lm-eval[vllm]
 ```
 
+## Mid-training probe (V9)
+
+The full eval is too slow to run during training. The **probe** (`halo-forge probe`) is a smaller, faster sibling that runs a held-out general-benchmark subset and reports deltas vs a baseline — the single biggest safeguard against catastrophic forgetting:
+
+```bash
+# After SFT, write a baseline of "general capability" we don't want to lose.
+halo-forge probe --model ./models/sft/final_model \
+  --baseline ./models/baseline.json --limit 100
+
+# After GRPO, check whether MMLU / GSM8K / ARC dropped.
+halo-forge probe --model ./models/grpo/final_model \
+  --baseline ./models/baseline.json --tolerance 0.05
+# Exits 2 (and lists regressed tasks) when any task drops by more than --tolerance.
+```
+
+Default probe set hits each capability axis once: `mmlu` (knowledge), `arc_challenge` (reasoning), `gsm8k` (math), `hellaswag` (commonsense). With `--limit 100` the probe completes in single-digit minutes on a 3B model — cheap enough to run after every recipe step.
+
+**Programmatic API** for trainer integration:
+
+```python
+from halo_forge.eval import MidTrainingProbe
+
+probe = MidTrainingProbe(
+    model_name=current_checkpoint,
+    baseline_path=baseline_path,
+    every_n_cycles=5,
+    regression_tolerance=0.05,
+)
+
+for cycle in range(num_cycles):
+    train_one_cycle()
+    if probe.should_run(cycle):
+        report = probe.run(cycle=cycle)
+        if report.has_regression:
+            log("Regression on:", report.regressed_tasks())
+            # halt / alert / branch as appropriate
+```
+
+Direct integration into the SFT / RAFT / DPO / GRPO trainer cycle loops is roadmap; the standalone CLI + library is what that integration consumes.
+
 ## Roadmap
 
 - **F-K cohort eval dashboard** — UI for "run this eval suite across N adapters, see a sortable table + per-task drill-down". Depends on this module being in place.
-- **V9 mid-training general-benchmark probe** — run a small held-out general benchmark every N cycles during training to catch catastrophic forgetting in real time.
 - **V7 judge reliability harness** — measure judge agreement vs human labels; flag judges that disagree with themselves on re-runs (calibration for V2 LLM-as-judge).
+- **Trainer probe integration** — auto-fire the probe every N cycles from inside SFT / RAFT / DPO / GRPO; halt-on-regression policy.

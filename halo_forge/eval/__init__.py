@@ -30,10 +30,28 @@ from halo_forge.eval.lm_harness import (
     list_curated_task_groups,
     run_lm_eval,
 )
+from halo_forge.eval.probe import (
+    DEFAULT_PROBE_LIMIT,
+    DEFAULT_PROBE_TASKS,
+    MidTrainingProbe,
+    ProbeReport,
+    ProbeTaskDelta,
+    load_baseline,
+    save_baseline,
+    values_from_eval_result,
+)
 
 __all__ = [
+    "DEFAULT_PROBE_LIMIT",
+    "DEFAULT_PROBE_TASKS",
     "EvalResult",
     "EvalTaskResult",
+    "MidTrainingProbe",
+    "ProbeReport",
+    "ProbeTaskDelta",
     "list_curated_task_groups",
+    "load_baseline",
     "run_lm_eval",
+    "save_baseline",
+    "values_from_eval_result",
 ]

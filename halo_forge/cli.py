@@ -860,6 +860,73 @@ def cmd_merge(args):
         print(f"  note: {result.notes}")
 
 
+def cmd_probe(args):
+    """Run a mid-training general-benchmark probe (Track V9)."""
+    from pathlib import Path
+
+    from halo_forge.eval import DEFAULT_PROBE_TASKS, MidTrainingProbe
+
+    print_banner()
+    print(f"{GREEN}halo-forge probe{NC} (mid-training general-benchmark probe)")
+    print("=" * 60)
+
+    tasks = (
+        [t.strip() for t in args.tasks.split(",") if t.strip()]
+        if args.tasks
+        else list(DEFAULT_PROBE_TASKS)
+    )
+    print(f"  model:    {args.model}")
+    print(f"  tasks:    {tasks}")
+    print(f"  limit:    {args.limit} samples per task")
+    print(f"  baseline: {args.baseline or '(no persistence)'}")
+    print(f"  tolerance: {args.tolerance}")
+    print()
+
+    probe = MidTrainingProbe(
+        model_name=args.model,
+        baseline_path=Path(args.baseline) if args.baseline else None,
+        tasks=tasks,
+        limit=args.limit,
+        every_n_cycles=1,  # CLI invocation is one-shot
+        regression_tolerance=args.tolerance,
+        backend=args.backend,
+    )
+
+    try:
+        report = probe.run(cycle=args.cycle, notes=args.notes)
+    except Exception as exc:
+        print(f"{RED}Probe failed:{NC} {exc}")
+        sys.exit(1)
+
+    print(f"{GREEN}Done{NC} in {report.duration_seconds:.1f}s")
+    if not report.has_baseline:
+        print(f"{YELLOW}No baseline yet — current values written as the baseline.{NC}")
+    print()
+    for d in report.task_deltas:
+        marker = (
+            f"{RED}REGRESS{NC}" if d.regression
+            else (f"{GREEN}    OK{NC}" if d.delta is not None and d.delta >= 0
+                  else "       ")
+        )
+        delta_str = (
+            f"  Δ={d.delta:+.4f}" if d.delta is not None else ""
+        )
+        print(
+            f"  {marker} {d.task:<22} "
+            f"{d.primary_metric:>22} = {d.value:>7.4f}{delta_str}"
+        )
+
+    if report.avg_delta is not None:
+        print(f"\n  avg delta vs baseline: {report.avg_delta:+.4f}")
+    if report.has_regression:
+        regressed = report.regressed_tasks()
+        print(
+            f"\n{RED}Regression on {len(regressed)} task(s):{NC} "
+            f"{', '.join(regressed)}"
+        )
+        sys.exit(2)
+
+
 def cmd_eval(args):
     """Run lm-evaluation-harness benchmarks (Track V8)."""
     from pathlib import Path
@@ -4765,6 +4832,27 @@ def main():
 
     grpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
 
+    # probe command (Track V9) — mid-training general-benchmark probe.
+    probe_parser = subparsers.add_parser(
+        'probe',
+        help='Run a small held-out benchmark + diff vs baseline (catastrophic-forgetting safeguard)',
+    )
+    probe_parser.add_argument('--model', '-m', required=True,
+                              help='Model id, mlx-community id, or local path')
+    probe_parser.add_argument('--tasks', '-t',
+                              help='Comma-separated task names (default: small probe set)')
+    probe_parser.add_argument('--limit', type=int, default=100,
+                              help='Samples per task (default 100; smaller = faster probe)')
+    probe_parser.add_argument('--baseline',
+                              help='Path to baseline.json. First run writes; subsequent runs diff.')
+    probe_parser.add_argument('--tolerance', type=float, default=0.05,
+                              help='Regression triggered when Δ < -tolerance (default 0.05)')
+    probe_parser.add_argument('--backend', default='hf', choices=['hf', 'vllm', 'mlx'])
+    probe_parser.add_argument('--cycle', type=int,
+                              help='Tag this probe with the cycle number it ran at')
+    probe_parser.add_argument('--notes',
+                              help='Free-form annotation for this probe (e.g. "after SFT")')
+
     # eval command (Track V8) — lm-evaluation-harness wrapper.
     eval_parser = subparsers.add_parser(
         'eval',
@@ -6037,6 +6125,8 @@ def _dispatch_commands(args):
         cmd_replay(args)
     elif args.command == 'eval':
         cmd_eval(args)
+    elif args.command == 'probe':
+        cmd_probe(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
