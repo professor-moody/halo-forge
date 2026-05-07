@@ -5,87 +5,201 @@
 <h1 align="center">halo forge</h1>
 
 <p align="center">
-  Multi-backend RLVR training framework for AMD ROCm, Apple Silicon (MPS / MLX), and CUDA.<br>
-  Train code generation models using compiler and test verification as reward signals.
+  Cross-vendor local finetuning workstation.<br>
+  SFT · DPO · GRPO · RAFT, with verifier-grounded rewards, on ROCm · CUDA · Apple MLX · Apple MPS.
 </p>
 
 <p align="center">
-  <a href="https://halo-forge.io/docs/getting-started/quickstart/"><img src="https://img.shields.io/badge/Get_Started-→-0A66C2?style=for-the-badge" alt="Get Started"></a>
-  <a href="https://halo-forge.io/docs"><img src="https://img.shields.io/badge/Documentation-halo--forge.io-0A192F?style=for-the-badge" alt="Docs"></a>
+  <a href="docs/HARDWARE_NOTES.md"><img src="https://img.shields.io/badge/Backend_matrix-✓-0A66C2?style=for-the-badge" alt="Backend matrix"></a>
+  <a href="docs/TRAINERS.md"><img src="https://img.shields.io/badge/Trainers-✓-0A192F?style=for-the-badge" alt="Trainers"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Apache_2.0-License-blue?style=for-the-badge" alt="License"></a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/AMD_Strix_Halo-Optimized-ED1C24?style=flat-square&logo=amd&logoColor=white" alt="Strix Halo">
-  <img src="https://img.shields.io/badge/Apple_Silicon-MPS_/_MLX-000000?style=flat-square&logo=apple&logoColor=white" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/Apple_Silicon-MPS_+_MLX_native-000000?style=flat-square&logo=apple&logoColor=white" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/CUDA-vLLM_+_TRL-76B900?style=flat-square&logo=nvidia&logoColor=white" alt="CUDA">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch">
-  <img src="https://img.shields.io/badge/ROCm-7.0+-663399?style=flat-square&logo=amd&logoColor=white" alt="ROCm">
-  <img src="https://img.shields.io/github/stars/professor-moody/halo-forge?style=flat-square&logo=github" alt="Stars">
 </p>
 
 ---
 
-## Documentation
+## What halo-forge is
 
-**[halo-forge.io/docs](https://halo-forge.io/docs)**
+A workstation tool that takes a base model and turns it into a finetuned, evaluated, served artifact — without leaving the local machine. The single thing that makes it different from every adjacent project (axolotl, llama-factory, unsloth, mlx-lm-lora, torchtune): **it runs natively on every modern accelerator**, not just CUDA.
+
+Pick a model. Pick an algorithm. Pick a verifier. Pick a backend. Train. Evaluate. Serve.
+
+```bash
+# Strix Halo / RTX 4090 / Apple M-series — same commands.
+halo-forge sft train   --dataset codealpaca --model Qwen/Qwen2.5-Coder-3B
+halo-forge dpo train   --dataset ultrafeedback --model Qwen/Qwen2.5-3B-Instruct
+halo-forge grpo train  --data prompts.jsonl --verifier execution --num-generations 8
+
+halo-forge eval        --model ./models/sft/final_model --tasks core
+halo-forge merge       --base Qwen/Qwen2.5-3B-Instruct --adapter ./my-lora --output ./shipped
+halo-forge convert     --source ./shipped --format gguf --quant q4 --output ./out.gguf --verify
+halo-forge serve       --model ./shipped
+```
+
+## Capabilities
+
+### Trainers
+- **SFT** — supervised finetuning with QLoRA / LoRA / DoRA / rsLoRA / PiSSA. PyTorch on every torch backend; MLX-native on Apple Silicon.
+- **DPO** — preference optimization (sigmoid / IPO / hinge / KTO-pair / RPO / cDPO). PyTorch via TRL; MLX-native reference-free DPO.
+- **GRPO** — verifier-grounded policy gradient (DeepSeek-R1 / Tülu 3 family). PyTorch via TRL; MLX-native reference-free GRPO.
+- **RAFT** — rejection-sampling RLVR with curriculum + reward shaping. PyTorch + native MLX.
+- **Optimizers**: AdamW (default), AdamW8bit, Lion, paged variants (bnb-backed where the platform supports it).
+
+### Verifiers
+Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@register_verifier` decoration. 18 short names ship out of the box:
+- **Execution & compile**: `gcc`, `clang`, `mingw`, `execution`, `gcc_execution`, `mingw_execution`, `clang_execution`, `pytest`, `unittest`, `rlvr_pytest`, `humaneval`, `mbpp`, `rust`, `cargo`, `go`, `custom`, `subprocess`
+- **Schema & format** (V3): `json_structure`, `json_schema`, `regex_format`
+- **Reference metrics** (V4): `bleu`, `rouge`, `chrf`
+- **LLM-as-judge** (V2): `llm_judge` — rubric-graded with any local or hosted judge model
+
+### Data pipeline
+- **Dedup** (D2): `halo-forge data dedup --method exact|fuzzy --threshold 0.85`
+- **Quality scoring** (D3): `halo-forge data score --threshold 0.5` or `--top-k-pct 0.5`
+- **Format converters + previewers**: see [`halo_forge/data/`](halo_forge/data/)
+- **Synthetic generation**: roadmap (D1)
+
+### Inference + serving
+- **OpenAI-compatible serving** (I1): `halo-forge serve --model X` — `/v1/chat/completions`, `/v1/completions`, `/v1/models`
+- **Unified convert** (I5): `halo-forge convert --format mlx|gguf|hf --quant q4|q8|fp16|bf16|fp32`
+- **Round-trip verify** (I4): `halo-forge convert --verify` — catches silently-broken exports
+- **vLLM rollout** (I6): `halo-forge raft train --rollout-engine vllm` — continuous-batched generation on CUDA/ROCm
+- **MLX rollout** (I6.1): `halo-forge raft train --rollout-engine mlx` — Apple Silicon equivalent
+
+### Evaluation
+- **lm-evaluation-harness** (V8): `halo-forge eval --tasks core` — MMLU, GSM8K, HumanEval, IFEval, ARC, …
+- Curated task groups: `core`, `reasoning`, `code`, `instruction_following`, `knowledge`
+
+### Reproducibility
+- **Replay manifests** (T15): `halo-forge replay <run_dir>` — capture every input (seed, dataset hash, env fingerprint, full config) at run launch, regenerate the launch command from any output directory.
+
+### Run management
+- **SQLite run database** (F-G) — search/filter/sort/paginate runs by modality, model, status, eval-presence, time
+- **Multi-run comparison** (F) — pin runs, overlay loss + reward curves, side-by-side config diff
+- **Cost rollup** (P2/F-R) — per-run kWh + $ estimate from wall-clock × backend nominal power
+- **Live telemetry strip** — SSE-streamed GPU util / VRAM / power / throughput
+- **Run cancellation** — graceful SIGTERM with checkpoint save
+
+### Adapter merging
+- **Bake** (T13): `halo-forge merge --mode bake --base X --adapter Y` — single LoRA into base
+- **Combine** (T12): `halo-forge merge --mode combine --adapters a,b,c --method dare_ties` — N adapters into one (linear / ties / dare_linear / dare_ties / magnitude_prune)
+
+## Backend matrix
+
+Authoritative coverage at [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md). High-level: every shipped feature works on every shipped backend, with these clearly-flagged exceptions:
+
+| | rocm_gfx1151 | cuda | mps | mlx | cpu |
+|---|---|---|---|---|---|
+| **Trainers** | ✅ all | ✅ all | ✅ all | ✅ SFT/RAFT/DPO/GRPO¹ | ✅ tiny only |
+| **vLLM rollout** | ⚠️ experimental | ✅ | ❌ typed err | ❌ typed err | ❌ typed err |
+| **MLX rollout** | ❌ | ❌ | ⚠️ unusual | ✅ | ❌ |
+| **QLoRA training** | ⚠️ bnb-rocm | ✅ | ❌ | ❌ | ❌ |
+| **DoRA / PiSSA** | ✅ | ✅ | ✅ | ❌² | ✅ |
+| **bnb optimizers** | ⚠️ bnb-rocm | ✅ | ❌ | ❌ | ❌ |
+| **OpenAI serve** | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+1. MLX DPO + GRPO are reference-free in v1; full reference-model variants are roadmap (T17). Other DPO loss types (IPO / hinge / kto_pair) require the reference model.
+2. PEFT additions (DoRA / rsLoRA / PiSSA) are peft-only; mlx-lm.tuner ships LoRA. Setting these flags on MLX prints a loud warning at trainer init.
+
+## Quick start
+
+```bash
+git clone https://github.com/professor-moody/halo-forge.git
+cd halo-forge
+pip install -e ".[dev]"
+
+# Minimal SFT smoke test
+halo-forge sft train \
+  --dataset codealpaca \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --max-samples 100 \
+  --epochs 1
+
+# DPO with the LLM-judge verifier
+halo-forge dpo train \
+  --dataset ultrafeedback \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --beta 0.1 --loss-type sigmoid
+
+# GRPO with code execution verifier + 8-generation groups
+halo-forge grpo train \
+  --data prompts.jsonl \
+  --model Qwen/Qwen2.5-Coder-3B \
+  --verifier execution --num-generations 8 \
+  --rollout-engine vllm   # or 'mlx' on Apple Silicon
+
+# Score + filter your dataset
+halo-forge data dedup --input raw.jsonl --output deduped.jsonl --method fuzzy
+halo-forge data score --input deduped.jsonl --output clean.jsonl --top-k-pct 0.5
+```
+
+## Installation profiles
+
+```bash
+pip install -e .                # core
+pip install -e ".[mlx]"         # Apple Silicon native
+pip install -e ".[inference]"   # quantization + GGUF export tooling
+pip install -e ".[dev]"         # tests + linting
+pip install -e ".[all]"         # everything
+```
+
+Optional dev integrations are lazy-imported — install only what you use:
+
+```bash
+pip install datasketch          # for fuzzy dedup
+pip install jsonschema          # for the json_schema verifier
+pip install sacrebleu rouge_score  # for BLEU/ROUGE/chrF verifiers
+pip install lm-eval             # for halo-forge eval
+pip install vllm                # for --rollout-engine vllm (CUDA/ROCm)
+```
+
+## Web UI
+
+A Vite + React 19 + Tanstack Router frontend lives in [`public_app/`](public_app/). Run with:
+
+```bash
+cd public_app && npm install && npm run dev
+```
+
+Connects to the FastAPI backend at `/api/public/*`. Surfaces:
+
+- **Telemetry strip** — live GPU util / VRAM / power / throughput across MPS / MLX / ROCm / CUDA
+- **Training launcher** — preset-driven SFT / RAFT configurator
+- **Live run view** — cycle-by-cycle loss + reward charts, scrubber, log tail, sample inspector, cancel button
+- **Multi-run comparison** — pin up to 6 runs, overlay loss/reward, side-by-side config diff
+- **Run search** — DB-backed filter chips for modality / status / model / has-eval
+- **Energy & spend card** — kWh + $/kWh per run
+
+## Documentation
 
 | | |
 |---|---|
-| [Quick Start](https://halo-forge.io/docs/getting-started/quickstart/) | Get running in 30 minutes |
-| [How to Train](https://halo-forge.io/docs/training-pipeline/how-to-train/) | Step-by-step training guide |
-| [Command Reference](https://halo-forge.io/docs/reference/command-index/) | All commands and flags |
-| [Verifiers](https://halo-forge.io/docs/verifiers/) | GCC, MinGW, pytest, and more |
-
----
-
-## Supported Hardware
-
-| Backend | Status | Notes |
-|---|---|---|
-| AMD ROCm (Strix Halo gfx1151) | First-class | Original target. ROCm 7.0+. Unified-memory tunings on by default. |
-| AMD ROCm (other gfx) | Should work | Trainer paths assume ROCm; gfx-specific env vars only applied when Strix Halo is detected. |
-| Apple Silicon (PyTorch MPS) | Mac primary | Inference and small-model SFT working. RLVR trainer supports MPS via the unified backend layer. |
-| Apple Silicon (MLX) | Roadmap | MLX inference + LoRA SFT + RAFT loops landing in subsequent phases. See [docs/HARDWARE_NOTES.md](docs/HARDWARE_NOTES.md). |
-| NVIDIA CUDA | Should work | Falls out of the ROCm code path; CUDA-specific tunings not yet plumbed. |
-| CPU only | Last-resort fallback | For tests and tiny models; not realistic for training. |
-
-## Installation Profiles
-
-Use `pyproject.toml` as the source of truth for installs:
-
-```bash
-pip install .
-```
-
-Optional modality/runtime profiles:
-
-```bash
-pip install ".[audio]"
-pip install ".[vlm]"
-pip install ".[reasoning]"
-pip install ".[benchmark]"
-pip install ".[inference]"
-pip install ".[dev]"
-```
-
-`requirements.txt` is maintained as a convenience mirror for environments that
-still use `pip install -r requirements.txt`.
-
----
+| [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md) | Per-backend recommendations + feature × backend matrix |
+| [`docs/TRAINERS.md`](docs/TRAINERS.md) | SFT / DPO / GRPO / RAFT — choosing, configuring, comparing |
+| [`docs/VERIFIERS.md`](docs/VERIFIERS.md) | Verifier ecosystem + plugin authoring |
+| [`docs/DATA.md`](docs/DATA.md) | Dedup, quality scoring, format conventions |
+| [`docs/EVAL.md`](docs/EVAL.md) | lm-eval integration, curated task groups |
+| [`docs/SERVING.md`](docs/SERVING.md) | OpenAI-compatible endpoint, conversion, round-trip verify |
+| [`docs/REPLAY.md`](docs/REPLAY.md) | Deterministic replay manifests |
+| [`docs/MLX.md`](docs/MLX.md) | Apple Silicon specifics |
+| [`docs/MODELS.md`](docs/MODELS.md) | Curated model recommendations per task |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Internal architecture |
 
 ## License
 
-Copyright 2025 Halo Forge Labs LLC
-
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
-
----
+Copyright 2025 Halo Forge Labs LLC. Licensed under Apache 2.0. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 
 - AMD for Strix Halo hardware
-- [kyuz0](https://github.com/kyuz0/amd-strix-halo-llm-finetuning) for the original fine-tuning toolbox
-- TheRock project for ROCm nightlies
-- The Strix Halo community for testing and feedback
-- RAFT paper authors for the foundational research
+- Apple for MLX
+- HuggingFace for `transformers` / `peft` / `trl` / `datasets`
+- EleutherAI for `lm-evaluation-harness`
+- The DeepSeek / Tülu / Open-R1 / RAFT authors for foundational RLVR recipes
+- [kyuz0](https://github.com/kyuz0/amd-strix-halo-llm-finetuning) for the original Strix Halo finetuning toolbox
+- TheRock for ROCm nightlies
