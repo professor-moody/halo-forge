@@ -22,6 +22,8 @@ export const queryKeys = {
   dashboard: ["dashboard"] as const,
   runs: (params?: { limit?: number; modality?: string }) =>
     ["runs", params] as const,
+  runSearch: (params?: Record<string, unknown>) =>
+    ["runs", "search", params] as const,
   runDetail: (runId: string) => ["runs", runId] as const,
   trainingDatasets: ["training", "datasets"] as const,
   trainingVerifiers: ["training", "verifiers"] as const,
@@ -140,5 +142,20 @@ export function useRuns(params?: { limit?: number; modality?: string }) {
     queryFn: () => api.listRuns(params),
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * DB-backed run search (Track F-G). Powers the filter UI on /runs.
+ * Uses a longer poll cadence than `useRuns` because it's the queryable
+ * surface — frequent re-fetch is wasteful when the user is filtering.
+ */
+export function useRunSearch(params?: import("@/lib/api").RunSearchParams) {
+  return useQuery<import("@/lib/api").RunSearchResponse>({
+    queryKey: queryKeys.runSearch(params as Record<string, unknown>),
+    queryFn: () => api.searchRuns(params),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 }
