@@ -243,6 +243,44 @@ def print_banner():
 """)
 
 
+def cmd_data_dedup(args):
+    """Deduplicate a JSONL dataset (Track D2)."""
+    from pathlib import Path
+
+    from halo_forge.data.dedup import dedup_file
+
+    print_banner()
+    print(f"{GREEN}halo-forge data dedup{NC}")
+    print("=" * 60)
+    print(f"  input:  {args.input}")
+    print(f"  output: {args.output}")
+    print(f"  method: {args.method}")
+    if args.method == "fuzzy":
+        print(f"  threshold: {args.threshold}")
+    print()
+
+    try:
+        result = dedup_file(
+            input_path=Path(args.input),
+            output_path=Path(args.output),
+            method=args.method,
+            threshold=args.threshold,
+            key=args.key,
+            case_sensitive=args.case_sensitive,
+        )
+    except Exception as exc:
+        print(f"{RED}Dedup failed:{NC} {exc}")
+        sys.exit(1)
+
+    pct_removed = (
+        100.0 * result.n_removed / max(1, result.n_input)
+    )
+    print(f"{GREEN}Done{NC} in {result.duration_seconds:.2f}s")
+    print(f"  input:    {result.n_input:>8,}")
+    print(f"  kept:     {result.n_output:>8,}")
+    print(f"  removed:  {result.n_removed:>8,}  ({pct_removed:.1f}%)")
+
+
 def cmd_data_validate(args):
     """Validate dataset format."""
     from halo_forge.data.validator import validate_dataset
@@ -4166,7 +4204,27 @@ def main():
     validate_parser = data_subparsers.add_parser('validate', help='Validate dataset format')
     validate_parser.add_argument('file', help='Path to JSONL file to validate')
     validate_parser.add_argument('--preview', '-p', action='store_true', help='Show preview of examples')
-    
+
+    # data dedup (Track D2)
+    dedup_parser = data_subparsers.add_parser(
+        'dedup',
+        help='Deduplicate a JSONL dataset (exact / fuzzy MinHash)',
+    )
+    dedup_parser.add_argument('--input', '-i', required=True, help='Input JSONL path')
+    dedup_parser.add_argument('--output', '-o', required=True, help='Output JSONL path (deduped)')
+    dedup_parser.add_argument('--method', default='exact', choices=['exact', 'fuzzy'],
+                              help='exact = SHA256 over normalized text; fuzzy = MinHash + LSH')
+    dedup_parser.add_argument('--threshold', type=float, default=0.85,
+                              help='[fuzzy] Jaccard similarity threshold (default 0.85)')
+    dedup_parser.add_argument('--key', default='text',
+                              help='Field name when records are dicts (default "text")')
+    dedup_parser.add_argument('--case-sensitive', action='store_true',
+                              help='Skip the lowercase-and-trim normalization step')
+    dedup_parser.add_argument('--num-perm', type=int, default=128,
+                              help='[fuzzy] MinHash permutations (default 128)')
+    dedup_parser.add_argument('--shingle-n', type=int, default=5,
+                              help='[fuzzy] Word n-gram shingle size (default 5)')
+
     # sft command
     sft_parser = subparsers.add_parser('sft', help='SFT training')
     sft_subparsers = sft_parser.add_subparsers(dest='sft_command', required=True)
@@ -5579,6 +5637,8 @@ def _dispatch_commands(args):
             cmd_data_generate(args)
         elif args.data_command == 'validate':
             cmd_data_validate(args)
+        elif args.data_command == 'dedup':
+            cmd_data_dedup(args)
     elif args.command == 'sft':
         if args.sft_command == 'train':
             cmd_sft_train(args)
