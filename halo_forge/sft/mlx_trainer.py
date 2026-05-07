@@ -100,6 +100,13 @@ class MLXSFTTrainer:
 
     def __init__(self, config: Optional[SFTConfig] = None) -> None:
         self.config = config or SFTConfig()
+        # Tracks T4/T5 silent-failure fix: warn loudly when the user
+        # opts into PEFT / optimizer features that MLX can't honor
+        # (DoRA/rsLoRA/PiSSA/bnb-optimizer). Without this, MLX runs
+        # quietly fall back to vanilla LoRA / mlx.optimizers.AdamW.
+        from halo_forge.utils.backend_config import warn_unsupported_for_mlx
+
+        warn_unsupported_for_mlx(self.config, trainer_label="MLX SFT")
         self.model: Any = None
         self.tokenizer: Any = None
         self.run_id: str = ""

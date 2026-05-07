@@ -96,6 +96,13 @@ class VLLMRolloutGenerator:
 
         self.backend_name = backend_name or self._detect_backend()
 
+        # Strix Halo vLLM support is community / experimental. Don't
+        # block — let users try on their own machine — but make the
+        # status loud so failures aren't mysterious.
+        from halo_forge.utils.backend_config import warn_experimental_vllm_backend
+
+        warn_experimental_vllm_backend(self.backend_name)
+
     # ------------------------------------------------------------------
     # Backend gating
     # ------------------------------------------------------------------

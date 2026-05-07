@@ -2,11 +2,64 @@
 
 Performance findings and per-backend recommendations.
 
+- [Feature × backend matrix](#feature--backend-matrix) — what works where, today
 - [AMD Strix Halo (gfx1151)](#amd-strix-halo-gfx1151) — first-class, original target
 - [Apple Silicon (PyTorch MPS)](#apple-silicon-pytorch-mps) — Mac primary; supported now
 - [Apple Silicon (MLX)](#apple-silicon-mlx) — roadmap; staged delivery
 - [NVIDIA CUDA](#nvidia-cuda) — falls out of the ROCm code path
 - [CPU only](#cpu-only) — last-resort fallback
+
+---
+
+## Feature × backend matrix
+
+Authoritative coverage map across the features halo-forge ships. The
+trainer / serving / convert / verifier / cost paths each go through a
+backend-aware dispatch; this table records what each dispatch actually
+honors.
+
+Legend: ✅ supported · ⚠️ supported with caveats (see footnotes) · ❌ not supported
+
+| Feature | rocm_gfx1151 | cuda | mps | mlx | cpu |
+|---|---|---|---|---|---|
+| **Trainers** ||||||
+| SFT (`halo-forge sft train`) | ✅ | ✅ | ✅¹ | ✅ | ✅² |
+| RAFT (`halo-forge raft train`) | ✅ | ✅ | ✅¹ | ✅ | ✅² |
+| DPO (`halo-forge dpo train`) | ✅ | ✅ | ✅ | ❌³ | ✅² |
+| **PEFT methods** ||||||
+| LoRA | ✅ | ✅ | ✅ | ✅ | ✅ |
+| QLoRA (4-bit base) | ⚠️⁴ | ✅ | ❌⁵ | ❌⁵ | ❌⁵ |
+| DoRA / rsLoRA / PiSSA / LoftQ | ✅ | ✅ | ✅ | ❌⁶ | ✅ |
+| **Optimizers** ||||||
+| `adamw_torch` (default) | ✅ | ✅ | ✅ | ✅ via mlx.optimizers | ✅ |
+| `adamw_bnb_8bit` / `lion_8bit` | ⚠️⁴ | ✅ | ❌ | ❌ | ❌ |
+| **Rollout engines** (`--rollout-engine`) ||||||
+| `torch` (HF generate) | ✅ | ✅ | ✅ | ❌⁷ | ✅ |
+| `vllm` (continuous batching) | ⚠️⁸ | ✅ | ❌ typed err | ❌ typed err | ❌ typed err |
+| `mlx` (mlx_lm.generate) | ❌ | ❌ | ⚠️⁹ | ✅ | ❌ |
+| **Verifiers** ||||||
+| Code execution (sandboxed) | ✅ bwrap | ✅ bwrap | ✅ sandbox-exec | ✅ sandbox-exec | ✅ |
+| Plugin registry / LLM-as-judge | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Inference + serving** ||||||
+| OpenAI-compatible serve (`halo-forge serve`) | ✅ via torch | ✅ via torch | ✅ via torch | ✅ via MLX | ✅ via torch |
+| Convert → MLX (`halo-forge convert -f mlx`) | requires mlx-lm | requires mlx-lm | requires mlx-lm | ✅ | requires mlx-lm |
+| Convert → GGUF | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Convert → HF dtype recast | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Cost & observability** ||||||
+| Run-cost rollup (energy + $/kWh) | ✅ 120W nominal | ✅ 350W nominal | ✅ 30W nominal | ✅ 30W nominal | ✅ 25W nominal |
+| Run database + filter UI | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+**Footnotes**
+
+1. **MPS** training works for 1B-3B models; 7B+ may hit dtype / memory edges (see MPS section).
+2. **CPU** training "works" for tiny models or smoke tests — production runs are infeasible.
+3. **MLX DPO** is stubbed: `halo-forge dpo train` raises `NotImplementedError` on the MLX backend, pointing at the [mlx-lm-lora community fork](https://github.com/Goekdeniz-Guelmez/mlx-lm-lora). Native MLX DPO is on the roadmap (Track T17).
+4. **QLoRA / bnb-optim on Strix Halo** depends on community-built bitsandbytes-rocm wheels. They exist but aren't always current; if a load fails, set `allow_quantization_fallback=True` to drop to bf16.
+5. **QLoRA on MPS / MLX / CPU**: bitsandbytes has no Apple Silicon kernels. The trainer warns and falls back to bf16 (or fails loudly if you set `allow_quantization_fallback=False`).
+6. **PEFT on MLX**: `mlx_lm.tuner` only ships LoRA. Setting `--use-dora`, `--use-rslora`, or `--init-lora-weights pissa` on the MLX backend now prints a loud warning at trainer init so you know the flag was ignored. PyTorch backends honor all four.
+7. **`--rollout-engine torch` on MLX** is a category error: the trainer is MLX-native, the rollout would have to round-trip through PyTorch on a different backend. Use `--rollout-engine mlx` (default for MLX) or run on a PyTorch backend.
+8. **vLLM on Strix Halo (gfx1151)** is experimental; community ROCm support targets MI300X / 7900 XTX class. Halo-forge prints an experimental-status warning at vLLM init and recommends `--rollout-engine torch` or `--rollout-engine mlx` if you hit issues.
+9. **`--rollout-engine mlx` on MPS** technically works (uses `mlx_lm.generate` which doesn't care that the host trainer is on MPS) but is unusual; prefer `--accelerator mlx` end-to-end for an MLX-native trainer.
 
 ---
 
