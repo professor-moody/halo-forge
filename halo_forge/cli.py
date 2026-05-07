@@ -815,6 +815,121 @@ def cmd_merge(args):
         print(f"  note: {result.notes}")
 
 
+def cmd_replay(args):
+    """Show or execute the replay command for a captured run (Track T15)."""
+    from pathlib import Path
+
+    from halo_forge.replay import (
+        EnvironmentFingerprint,
+        compare_environments,
+        load_manifest,
+    )
+
+    print_banner()
+    print(f"{GREEN}halo-forge replay{NC}")
+    print("=" * 60)
+
+    try:
+        manifest = load_manifest(Path(args.source))
+    except FileNotFoundError as exc:
+        print(f"{RED}Error:{NC} {exc}")
+        sys.exit(1)
+
+    print(f"  run_id:    {manifest.run_id}")
+    print(f"  modality:  {manifest.modality}")
+    print(f"  model:     {manifest.model_name}")
+    print(f"  seed:      {manifest.seed}")
+    print(f"  timestamp: {manifest.timestamp}")
+    print()
+
+    # Environment diff vs the active host.
+    current = EnvironmentFingerprint.capture().to_dict()
+    diff = compare_environments(manifest.environment, current)
+    if diff["matched"]:
+        print(f"{GREEN}Environment matches{NC} the captured run.")
+    else:
+        print(f"{YELLOW}Environment differs from the captured run:{NC}")
+        for d in diff["differences"][:20]:
+            print(f"  {d['key']:>26}: {d['captured']!r} -> {d['current']!r}")
+        if len(diff["differences"]) > 20:
+            print(f"  ... {len(diff['differences']) - 20} more")
+
+    # Reconstruct the launch command.
+    cmd = _reconstruct_launch_command(manifest)
+    print()
+    print(f"{GREEN}Reproducible launch command:{NC}")
+    print(f"  {' '.join(cmd)}")
+
+    if args.launch:
+        if not diff["matched"] and not args.force:
+            print()
+            print(
+                f"{RED}Refusing to launch{NC}: environment differs. "
+                "Pass --force to launch anyway."
+            )
+            sys.exit(2)
+        print()
+        print(f"{GREEN}Launching...{NC}")
+        # Replay invokes our own CLI re-entrantly so env vars + logging
+        # are wired the same way as a normal launch.
+        import subprocess
+
+        completed = subprocess.run(cmd, check=False)
+        sys.exit(completed.returncode)
+
+
+def _reconstruct_launch_command(manifest) -> list[str]:
+    """Translate a replay manifest back into a ``halo-forge`` CLI invocation.
+
+    Maps the modality + the captured config onto the right subcommand
+    and forwards the small set of fields the CLI exposes. Fields the
+    CLI doesn't accept stay in the manifest but aren't part of the
+    command — they're already represented by the seed + config keys
+    that *are* exposed.
+    """
+    cfg = manifest.config or {}
+    modality = (manifest.modality or "").lower()
+
+    # Map modality → subcommand. Each path picks a small set of keys
+    # to forward; the full config is already on disk in replay.json
+    # for anyone wanting the exhaustive picture.
+    if modality == "sft":
+        subcmd = ["sft", "train"]
+    elif modality == "raft":
+        subcmd = ["raft", "train"]
+    elif modality == "dpo":
+        subcmd = ["dpo", "train"]
+    elif modality.startswith("dpo_mlx"):
+        subcmd = ["dpo", "train"]
+    elif modality == "grpo":
+        subcmd = ["grpo", "train"]
+    elif modality.startswith("grpo_mlx"):
+        subcmd = ["grpo", "train"]
+    else:
+        # Unknown modality — show "halo-forge --help" and let the user
+        # reconstruct manually from the config they can see.
+        return ["halo-forge", "# unknown modality:", modality, "see replay.json"]
+
+    cmd = ["halo-forge", *subcmd]
+    if cfg.get("model_name"):
+        cmd += ["--model", str(cfg["model_name"])]
+    if cfg.get("dataset"):
+        cmd += ["--dataset", str(cfg["dataset"])]
+    elif cfg.get("train_file"):
+        cmd += ["--data", str(cfg["train_file"])]
+    if cfg.get("output_dir"):
+        cmd += ["--output", str(cfg["output_dir"])]
+    if cfg.get("num_epochs"):
+        cmd += ["--epochs", str(cfg["num_epochs"])]
+    if cfg.get("max_samples"):
+        cmd += ["--max-samples", str(cfg["max_samples"])]
+    if "seed" in cfg:
+        # CLI doesn't have a global --seed on every subcommand yet, but
+        # we capture it here so the user knows the exact value to use.
+        cmd += [f"# seed={cfg['seed']}"]
+    return cmd
+
+
 def cmd_convert(args):
     """Convert a model between formats (Track I5).
 
@@ -4513,6 +4628,18 @@ def main():
 
     grpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
 
+    # replay command (Track T15) — deterministic-replay manifest tools.
+    replay_parser = subparsers.add_parser(
+        'replay',
+        help='Show or relaunch a captured run from its replay.json manifest',
+    )
+    replay_parser.add_argument('source',
+                               help='Path to a run directory or replay.json file')
+    replay_parser.add_argument('--launch', action='store_true',
+                               help='Actually relaunch (subprocess) instead of just printing the command')
+    replay_parser.add_argument('--force', action='store_true',
+                               help='[--launch] Launch even if the env fingerprint differs')
+
     # merge command (Tracks T12 + T13) — adapter bake / multi-adapter combine.
     merge_parser = subparsers.add_parser(
         'merge',
@@ -5745,6 +5872,8 @@ def _dispatch_commands(args):
         cmd_convert(args)
     elif args.command == 'merge':
         cmd_merge(args)
+    elif args.command == 'replay':
+        cmd_replay(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
