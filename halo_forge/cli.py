@@ -1149,9 +1149,11 @@ def cmd_raft_train(args):
             )
             mlx_trainer.run(prompts, num_cycles=config.num_cycles)
     else:
-        # Track I6 — vLLM rollout. When the user requests it on a
-        # supported backend (CUDA / ROCm), swap in VLLMRolloutGenerator
-        # for the generate stage. Policy update stays on PyTorch.
+        # Track I6 — pluggable rollout engine. The torch fallback is the
+        # historical default; vllm is the CUDA/ROCm fast path; mlx is the
+        # Apple Silicon equivalent (vLLM doesn't run on MLX, but
+        # mlx_lm.generate is the same throughput story on Apple's
+        # unified-memory hardware).
         rollout_engine = getattr(args, 'rollout_engine', 'auto')
         if rollout_engine == 'vllm':
             from halo_forge.rlvr.vllm_rollout import VLLMRolloutGenerator
@@ -1160,6 +1162,15 @@ def cmd_raft_train(args):
                 verifier=verifier,
                 config=config,
                 rollout_generator=VLLMRolloutGenerator(args.model),
+            )
+        elif rollout_engine == 'mlx':
+            from halo_forge.rlvr.mlx_rollout import MLXRolloutGenerator
+            mlx_model = getattr(args, 'rollout_model', None) or args.model
+            print(f"[i6] Using MLX rollouts ({mlx_model}) — Apple Silicon fast path")
+            trainer = RAFTTrainer(
+                verifier=verifier,
+                config=config,
+                rollout_generator=MLXRolloutGenerator(mlx_model),
             )
         else:
             trainer = RAFTTrainer(verifier=verifier, config=config)
@@ -4221,10 +4232,12 @@ def main():
     raft_train_parser.add_argument(
         '--rollout-engine',
         default='auto',
-        choices=['auto', 'torch', 'vllm'],
+        choices=['auto', 'torch', 'vllm', 'mlx'],
         help='Generation engine for the rollout stage. "auto" picks torch '
-             'for HF generate (default). "vllm" uses continuous-batched '
-             'inference; CUDA / ROCm only.',
+             '(default; HF generate). "vllm" uses continuous-batched '
+             'inference (CUDA / ROCm only). "mlx" uses mlx_lm.generate '
+             '(Apple Silicon; equivalent throughput story to vllm on its '
+             'native hardware).',
     )
     raft_train_parser.add_argument('--checkpoint', help='SFT checkpoint path (optional)')
     raft_train_parser.add_argument('--prompts', '-p', help='Prompts file')

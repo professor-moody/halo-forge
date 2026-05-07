@@ -246,8 +246,8 @@ def test_protocol_compatibility_with_torch_generator():
 
 
 def test_cli_rollout_engine_choice_registers(monkeypatch, capsys):
-    """`halo-forge raft train --rollout-engine vllm --help` must list the
-    new choice."""
+    """`halo-forge raft train --help` must list every rollout-engine choice
+    so users discover the right backend without grepping the code."""
     import sys
     import halo_forge.cli as cli_mod
 
@@ -256,4 +256,9 @@ def test_cli_rollout_engine_choice_registers(monkeypatch, capsys):
         cli_mod.main()
     assert ei.value.code == 0
     out = capsys.readouterr().out
-    assert "rollout-engine" in out and "vllm" in out
+    assert "rollout-engine" in out
+    # All three engines surface in the help — torch (HF), vllm
+    # (CUDA / ROCm), mlx (Apple Silicon, the symmetric story since
+    # vLLM doesn't run on MLX).
+    for choice in ("torch", "vllm", "mlx"):
+        assert choice in out
