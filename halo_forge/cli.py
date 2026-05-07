@@ -1149,7 +1149,20 @@ def cmd_raft_train(args):
             )
             mlx_trainer.run(prompts, num_cycles=config.num_cycles)
     else:
-        trainer = RAFTTrainer(verifier=verifier, config=config)
+        # Track I6 — vLLM rollout. When the user requests it on a
+        # supported backend (CUDA / ROCm), swap in VLLMRolloutGenerator
+        # for the generate stage. Policy update stays on PyTorch.
+        rollout_engine = getattr(args, 'rollout_engine', 'auto')
+        if rollout_engine == 'vllm':
+            from halo_forge.rlvr.vllm_rollout import VLLMRolloutGenerator
+            print(f"[i6] Using vLLM rollouts for fast continuous-batched generation")
+            trainer = RAFTTrainer(
+                verifier=verifier,
+                config=config,
+                rollout_generator=VLLMRolloutGenerator(args.model),
+            )
+        else:
+            trainer = RAFTTrainer(verifier=verifier, config=config)
         trainer.run(prompts, num_cycles=config.num_cycles)
 
 
@@ -4202,6 +4215,16 @@ def main():
         action='store_true',
         help='[--accelerator mlx] Hybrid mode: MLX rollouts + PyTorch policy update. '
              'Without this, --accelerator mlx runs RAFT entirely on MLX.',
+    )
+    # Track I6 — vLLM rollouts for CUDA/ROCm. Largest single throughput
+    # win available for RAFT without changing the algorithm.
+    raft_train_parser.add_argument(
+        '--rollout-engine',
+        default='auto',
+        choices=['auto', 'torch', 'vllm'],
+        help='Generation engine for the rollout stage. "auto" picks torch '
+             'for HF generate (default). "vllm" uses continuous-batched '
+             'inference; CUDA / ROCm only.',
     )
     raft_train_parser.add_argument('--checkpoint', help='SFT checkpoint path (optional)')
     raft_train_parser.add_argument('--prompts', '-p', help='Prompts file')

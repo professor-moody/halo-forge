@@ -214,6 +214,7 @@ def _seed_builtin_registrations() -> None:
         MinGWExecutionVerifier,
     )
     from halo_forge.rlvr.verifiers.go_verifier import GoVerifier
+    from halo_forge.rlvr.verifiers.llm_judge import LLMJudgeVerifier
     from halo_forge.rlvr.verifiers.pytest_verifier import (
         HumanEvalVerifier,
         MBPPVerifier,
@@ -245,6 +246,8 @@ def _seed_builtin_registrations() -> None:
         ("rust", RustVerifier),
         ("cargo", CargoVerifier),
         ("go", GoVerifier),
+        # LLM-as-judge (Track V2)
+        ("llm_judge", LLMJudgeVerifier),
     )
     for name, cls in builtins:
         if name not in _REGISTRY:

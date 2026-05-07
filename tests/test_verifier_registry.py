@@ -14,6 +14,11 @@ def isolate_registry(monkeypatch, tmp_path):
 
     `reset_registry_for_tests` clears the dict; `HALOFORGE_VERIFIERS_DIR`
     redirects discovery away from the user's real `~/.halo-forge/verifiers`.
+
+    Teardown re-seeds the built-in verifier set. Without this, any test
+    file that runs after this module sees an empty registry — the
+    `__init__` seed only fires on first module import, which already
+    happened before the fixture cleared the dict.
     """
     from halo_forge.rlvr.verifiers import registry as reg
 
@@ -23,6 +28,7 @@ def isolate_registry(monkeypatch, tmp_path):
     monkeypatch.setenv("HALOFORGE_VERIFIERS_DIR", str(plugin_dir))
     yield plugin_dir
     reg.reset_registry_for_tests()
+    reg._seed_builtin_registrations()
 
 
 def test_decorator_registers_class():
