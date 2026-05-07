@@ -217,6 +217,36 @@ export type RunEvalResponse = {
 };
 
 /**
+ * Model registry entry (Track F-J). A named bundle of run_ids the
+ * user wants to compare / promote / share as a unit.
+ */
+export type RegistryEntry = {
+  id: number;
+  name: string;
+  description: string | null;
+  base_model: string | null;
+  run_ids: string[];
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type RegistryEntryCreate = {
+  name: string;
+  description?: string | null;
+  base_model?: string | null;
+  run_ids?: string[];
+  tags?: string[];
+};
+
+export type RegistryEntryPatch = Partial<{
+  description: string | null;
+  base_model: string | null;
+  run_ids: string[];
+  tags: string[];
+}>;
+
+/**
  * Per-cycle metric row exposed by /api/public/runs/{id}.details.cycle_metrics.
  * Mirrors `_project_cycles_for_charts` on the backend; every numeric field
  * is null-tolerant so older trainers / partial summaries chart cleanly.
@@ -460,4 +490,24 @@ export const api = {
   },
   runEval: (runId: string) =>
     request<RunEvalResponse>(`/runs/${encodeURIComponent(runId)}/eval`),
+
+  // ----- model registry (Track F-J) -------------------------------------
+  listRegistry: () =>
+    request<{ items: RegistryEntry[] }>(`/registry`),
+  getRegistryEntry: (id: number) =>
+    request<RegistryEntry>(`/registry/${id}`),
+  createRegistryEntry: (payload: RegistryEntryCreate) =>
+    request<RegistryEntry>(`/registry`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateRegistryEntry: (id: number, payload: RegistryEntryPatch) =>
+    request<RegistryEntry>(`/registry/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteRegistryEntry: (id: number) =>
+    request<{ deleted: boolean; id: number }>(`/registry/${id}`, {
+      method: "DELETE",
+    }),
 };

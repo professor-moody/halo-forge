@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BarChart3 } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowLeft, BarChart3, BookmarkPlus } from "lucide-react";
 import { useMemo } from "react";
 import { api, type EvalCohortResponse } from "@/lib/api";
 import { Topbar } from "@/components/shell";
@@ -31,6 +31,7 @@ export const Route = createFileRoute("/eval")({
 
 function EvalCohortRoute() {
   const pinned = usePinnedRuns();
+  const navigate = useNavigate();
 
   const { data, isLoading, isError, error } = useQuery<EvalCohortResponse>({
     queryKey: ["eval-cohort", pinned],
@@ -39,6 +40,26 @@ function EvalCohortRoute() {
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });
+
+  const saveMutation = useMutation({
+    mutationFn: api.createRegistryEntry,
+    onSuccess: () => {
+      navigate({ to: "/registry" });
+    },
+  });
+
+  function handleSave() {
+    const name = window.prompt(
+      "Bundle name? (e.g. 'prod-2026-q2')",
+      `cohort-${new Date().toISOString().slice(0, 10)}`,
+    );
+    if (!name) return;
+    saveMutation.mutate({
+      name: name.trim(),
+      run_ids: pinned,
+      tags: ["cohort"],
+    });
+  }
 
   return (
     <>
@@ -51,11 +72,25 @@ function EvalCohortRoute() {
             : `${pinned.length} runs · ${data?.tasks.length ?? 0} tasks`
         }
         actions={
-          <Button variant="ghost" size="icon" asChild aria-label="Back to runs">
-            <Link to="/runs">
-              <ArrowLeft />
-            </Link>
-          </Button>
+          <>
+            {pinned.length > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSave}
+                disabled={saveMutation.isPending}
+                title="Save these pinned runs as a named bundle"
+              >
+                <BookmarkPlus />
+                Save selection
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="icon" asChild aria-label="Back to runs">
+              <Link to="/runs">
+                <ArrowLeft />
+              </Link>
+            </Button>
+          </>
         }
       />
 
