@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useBackendInfo } from "@/lib/hooks";
 import { usePinnedRuns } from "@/lib/pinned-runs";
+import { ThemeToggle } from "./theme-toggle";
 
 /**
  * Left rail. Three vertical zones:
@@ -87,8 +88,10 @@ export function Sidebar() {
               <li key={item.to}>
                 <Link
                   to={item.to}
+                  aria-current={active ? "page" : undefined}
                   className={cn(
                     "relative flex h-7 items-center gap-2.5 rounded-sm px-2 text-[13px] transition-colors group",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg-subtle",
                     active
                       ? "bg-accent-bg text-accent font-medium"
                       : "text-fg-muted hover:bg-surface hover:text-fg",
@@ -126,6 +129,13 @@ export function Sidebar() {
           working set", not part of the static nav. */}
       <ComparisonTray />
 
+      {/* Appearance — sits above Compute because the chrome it controls
+          (whole-app theme) is more global than backend status. */}
+      <div className="border-t border-border-subtle px-2.5 py-2">
+        <SectionLabel>Appearance</SectionLabel>
+        <ThemeToggle />
+      </div>
+
       {/* Compute panel */}
       <ComputePanel />
     </aside>
@@ -143,8 +153,10 @@ function ComparisonTray() {
       <SectionLabel>Comparison</SectionLabel>
       <Link
         to="/runs/compare"
+        aria-current={active ? "page" : undefined}
         className={cn(
           "relative flex h-7 items-center gap-2.5 rounded-sm px-2 text-[13px] transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg-subtle",
           active
             ? "bg-accent-bg text-accent font-medium"
             : "text-fg-muted hover:bg-surface hover:text-fg",

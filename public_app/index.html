@@ -1,11 +1,36 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>halo-forge</title>
+    <!--
+      Theme bootstrap. Runs before React mounts so a user who picked
+      "light" doesn't get a dark→light flash on first paint. Mirrors the
+      logic in src/lib/theme.ts; keep them in sync.
+    -->
+    <script>
+      (function () {
+        try {
+          var v = localStorage.getItem("halo-forge:theme");
+          var mode = v === "light" || v === "dark" || v === "auto" ? v : "dark";
+          var scheme =
+            mode === "auto"
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+              : mode;
+          var root = document.documentElement;
+          root.dataset.theme = scheme;
+          root.classList.toggle("dark", scheme === "dark");
+          root.classList.toggle("light", scheme === "light");
+        } catch (_) {
+          /* localStorage unavailable — leave dark default in place. */
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

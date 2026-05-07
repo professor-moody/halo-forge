@@ -101,6 +101,49 @@
   --ease-quick: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* ----------------------------------------------------------------------
+ * Light theme overrides (Track F-N).
+ *
+ * Activated by `data-theme="light"` on <html> via the ThemeToggle. The
+ * dark scheme above stays the default — workstation aesthetic, copper
+ * on warm-neutral. Light mode flips surfaces to off-white and inverts
+ * the foreground tiers; copper accent stays the same hue but gets
+ * pulled darker so contrast holds against light surfaces.
+ * -------------------------------------------------------------------- */
+:root[data-theme="light"] {
+  --color-bg: oklch(98% 0.003 50);
+  --color-bg-subtle: oklch(96% 0.004 50);
+  --color-surface: oklch(99% 0.003 50);
+  --color-surface-hover: oklch(94% 0.005 50);
+  --color-surface-pressed: oklch(91% 0.006 50);
+  --color-elevated: oklch(100% 0 0);
+
+  --color-fg: oklch(20% 0.005 50);
+  --color-fg-muted: oklch(40% 0.005 50);
+  --color-fg-subtle: oklch(55% 0.005 50);
+  --color-fg-disabled: oklch(70% 0.005 50);
+
+  --color-border: oklch(86% 0.007 50);
+  --color-border-strong: oklch(72% 0.008 50);
+  --color-border-subtle: oklch(92% 0.005 50);
+
+  /* Copper darker for contrast against off-white. */
+  --color-accent: oklch(54% 0.18 48);
+  --color-accent-hover: oklch(48% 0.18 48);
+  --color-accent-pressed: oklch(44% 0.17 48);
+  --color-accent-fg: oklch(98% 0.005 50);
+  --color-accent-bg: oklch(95% 0.04 48);
+
+  --color-success: oklch(48% 0.13 150);
+  --color-success-bg: oklch(95% 0.04 150);
+  --color-warning: oklch(58% 0.16 80);
+  --color-warning-bg: oklch(95% 0.05 80);
+  --color-danger: oklch(50% 0.18 22);
+  --color-danger-bg: oklch(96% 0.05 22);
+  --color-info: oklch(50% 0.13 230);
+  --color-info-bg: oklch(95% 0.04 230);
+}
+
 /* Base layer */
 @layer base {
   *,
@@ -167,6 +210,27 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
+  }
+}
+
+/* Skip-to-content link — keyboard / screen-reader entry. Visually
+   hidden until focused; jumps past the sidebar nav to the main
+   content. (Track F-N.) */
+@utility skip-to-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 999;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-weight: 500;
+  font-size: 12px;
+  border-radius: 0 0 var(--radius-md) 0;
+  transform: translateY(-110%);
+  transition: transform 120ms var(--ease-quick);
+  &:focus-visible {
+    transform: translateY(0);
   }
 }
 
