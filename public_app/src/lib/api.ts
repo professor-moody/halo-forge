@@ -272,6 +272,30 @@ export type PlaygroundChatChoice = {
   finish_reason?: string;
 };
 
+/**
+ * Run lineage edge (Track F-Q). One row of the runs.run_lineage table
+ * tagged with depth from the queried run.
+ */
+export type LineageEdge = {
+  parent_run_id?: string;
+  child_run_id?: string;
+  forked_at_cycle: number | null;
+  notes: string | null;
+  depth: number;
+};
+
+export type RunLineage = {
+  run_id: string;
+  ancestors: LineageEdge[];
+  descendants: LineageEdge[];
+};
+
+export type RecordForkPayload = {
+  parent_run_id: string;
+  forked_at_cycle?: number | null;
+  notes?: string | null;
+};
+
 export type PlaygroundChatResponse = {
   id?: string;
   object?: string;
@@ -533,6 +557,28 @@ export const api = {
   },
   runEval: (runId: string) =>
     request<RunEvalResponse>(`/runs/${encodeURIComponent(runId)}/eval`),
+
+  // ----- run lineage (Track F-Q) -----------------------------------------
+  /**
+   * Walk the run lineage table BFS up + down for `runId`.
+   * Returns `{run_id, ancestors, descendants}` with depth-tagged edges.
+   */
+  getRunLineage: (runId: string) =>
+    request<RunLineage>(`/runs/${encodeURIComponent(runId)}/lineage`),
+  /**
+   * Record that `runId` (the child) forked from `parentRunId`.
+   * Idempotent on the (child, parent) pair.
+   */
+  recordRunFork: (runId: string, payload: RecordForkPayload) =>
+    request<RunLineage>(`/runs/${encodeURIComponent(runId)}/lineage`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  removeRunFork: (runId: string, parentRunId: string) =>
+    request<{ deleted: boolean }>(
+      `/runs/${encodeURIComponent(runId)}/lineage/${encodeURIComponent(parentRunId)}`,
+      { method: "DELETE" },
+    ),
 
   // ----- playground chat (Track F-S) -------------------------------------
   /**

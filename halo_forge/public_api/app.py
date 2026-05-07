@@ -162,6 +162,49 @@ def create_app() -> "FastAPI":
             offset=offset,
         )
 
+    @router.get("/runs/{run_id}/lineage")
+    async def get_run_lineage(run_id: str) -> Dict[str, Any]:
+        """Return ancestors + descendants for a run (Track F-Q).
+
+        Walks the lineage table BFS up + down. The response shape is
+        ``{run_id, ancestors: [...], descendants: [...]}`` where each
+        edge entry has the parent/child id, ``forked_at_cycle``, ``notes``,
+        and a ``depth`` indicating distance from the queried run.
+        """
+        return service.get_run_lineage(run_id)
+
+    @router.post("/runs/{run_id}/lineage")
+    async def record_run_fork(run_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Record that ``run_id`` (the child) forked from a parent run.
+
+        Body: ``{parent_run_id, forked_at_cycle?, notes?}``. Idempotent
+        on the (child, parent) pair — re-recording the same edge updates
+        the cycle/notes columns rather than failing.
+        """
+        parent = (payload.get("parent_run_id") or "").strip()
+        if not parent:
+            raise HTTPException(status_code=400, detail="parent_run_id is required")
+        try:
+            return service.record_run_fork(
+                child_run_id=run_id,
+                parent_run_id=parent,
+                forked_at_cycle=payload.get("forked_at_cycle"),
+                notes=payload.get("notes"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.delete("/runs/{run_id}/lineage/{parent_run_id}")
+    async def delete_run_fork(run_id: str, parent_run_id: str) -> Dict[str, Any]:
+        ok = service.remove_run_fork(
+            child_run_id=run_id, parent_run_id=parent_run_id,
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=404, detail="lineage edge not found"
+            )
+        return {"deleted": True, "child_run_id": run_id, "parent_run_id": parent_run_id}
+
     @router.post("/playground/chat")
     async def playground_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         """Forward a chat request to a `halo-forge serve` endpoint (Track F-S).

@@ -12,6 +12,7 @@ import {
   Square,
   Target,
   TrendingDown,
+  X,
   Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -213,6 +214,7 @@ function RunDetailRoute() {
             <div className="space-y-3">
               <RunSummaryCard data={data} />
               <CostCard cost={data.details?.cost} />
+              <LineageCard runId={runId} />
               <YieldCard yieldData={data.details?.yield_diagnostics} />
             </div>
           </div>
@@ -575,6 +577,194 @@ function CostRow({
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Lineage card — Track F-Q. Shows parents/children + a "Mark as fork"
+ * affordance so the operator can record relationships between runs
+ * (different LR, different dataset, different rank, etc.) without
+ * stepping outside the dashboard.
+ * ----------------------------------------------------------------------- */
+
+function LineageCard({ runId }: { runId: string }) {
+  const queryClient = useQueryClient();
+  const lineageQuery = useQuery({
+    queryKey: ["run-lineage", runId],
+    queryFn: () => api.getRunLineage(runId),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+  const recordMutation = useMutation({
+    mutationFn: (payload: { parent_run_id: string; forked_at_cycle?: number | null; notes?: string | null }) =>
+      api.recordRunFork(runId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["run-lineage", runId] });
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (parentId: string) => api.removeRunFork(runId, parentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["run-lineage", runId] });
+    },
+  });
+
+  function recordFork() {
+    const parent = window.prompt(
+      "Parent run_id (the run this one was forked from):",
+    );
+    if (!parent) return;
+    const cycleStr = window.prompt(
+      "Forked at cycle? (blank = unknown)",
+      "",
+    );
+    const cycleNum = cycleStr && cycleStr.trim() ? parseInt(cycleStr, 10) : null;
+    const notes = window.prompt(
+      "What changed? (e.g. 'lr 5e-6 → 1e-6')",
+      "",
+    );
+    recordMutation.mutate({
+      parent_run_id: parent.trim(),
+      forked_at_cycle: Number.isFinite(cycleNum as number) ? (cycleNum as number) : null,
+      notes: notes?.trim() || null,
+    });
+  }
+
+  const data = lineageQuery.data;
+  const hasAny = !!data && (data.ancestors.length > 0 || data.descendants.length > 0);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardEyebrow>LINEAGE</CardEyebrow>
+          <CardTitle>Forks</CardTitle>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={recordFork}
+          disabled={recordMutation.isPending}
+          title="Mark this run as forked from another"
+        >
+          Mark as fork
+        </Button>
+      </CardHeader>
+      <CardContent className="text-[12px]">
+        {lineageQuery.isLoading ? (
+          <div className="text-fg-muted text-[11px]">Loading lineage…</div>
+        ) : !hasAny ? (
+          <div className="text-fg-muted text-[11px] max-w-[44ch]">
+            No recorded lineage yet. Use{" "}
+            <span className="font-mono text-fg-subtle">Mark as fork</span>{" "}
+            to record this run's parent (e.g. "forked from prod-baseline at cycle 4 with lr halved").
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {data!.ancestors.length ? (
+              <LineageGroup
+                title="Parents"
+                edges={data!.ancestors.map((e) => ({
+                  ...e,
+                  related_id: e.parent_run_id ?? "",
+                  removable: e.depth === 1,
+                }))}
+                onRemove={(parentId) => removeMutation.mutate(parentId)}
+                removePending={removeMutation.isPending}
+              />
+            ) : null}
+            {data!.descendants.length ? (
+              <LineageGroup
+                title="Children"
+                edges={data!.descendants.map((e) => ({
+                  ...e,
+                  related_id: e.child_run_id ?? "",
+                  removable: false,
+                }))}
+              />
+            ) : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LineageGroup({
+  title,
+  edges,
+  onRemove,
+  removePending,
+}: {
+  title: string;
+  edges: Array<{
+    related_id: string;
+    forked_at_cycle: number | null;
+    notes: string | null;
+    depth: number;
+    removable: boolean;
+  }>;
+  onRemove?: (id: string) => void;
+  removePending?: boolean;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-[0.12em] text-fg-disabled mb-1">
+        {title}
+      </div>
+      <div className="space-y-1">
+        {edges
+          .slice()
+          .sort((a, b) => a.depth - b.depth)
+          .map((e) => (
+            <div
+              key={`${e.related_id}-${e.depth}`}
+              className="flex items-start justify-between gap-2 text-[11px]"
+            >
+              <div className="flex-1 min-w-0">
+                <Link
+                  to="/runs/$runId"
+                  params={{ runId: e.related_id }}
+                  className="font-mono text-accent hover:underline truncate inline-block max-w-[24ch]"
+                  title={e.related_id}
+                >
+                  {e.related_id.length > 24
+                    ? `${e.related_id.slice(0, 21)}…`
+                    : e.related_id}
+                </Link>
+                <span className="text-fg-disabled ml-1.5">depth {e.depth}</span>
+                {typeof e.forked_at_cycle === "number" ? (
+                  <span className="text-fg-muted ml-1.5">
+                    @ cycle {e.forked_at_cycle}
+                  </span>
+                ) : null}
+                {e.notes ? (
+                  <div className="text-fg-muted mt-0.5 truncate" title={e.notes}>
+                    {e.notes}
+                  </div>
+                ) : null}
+              </div>
+              {e.removable && onRemove ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Remove this lineage edge?")) {
+                      onRemove(e.related_id);
+                    }
+                  }}
+                  disabled={removePending}
+                  aria-label="Remove lineage"
+                  className="shrink-0 text-fg-disabled hover:text-fg p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : null}
+            </div>
+          ))}
+      </div>
     </div>
   );
 }

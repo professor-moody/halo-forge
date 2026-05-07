@@ -452,6 +452,131 @@ class RunDatabase:
             self._conn.commit()
         return self.get_registry_entry(entry_id)
 
+    # ----- run lineage (Track F-Q) -----------------------------------------
+
+    def record_fork(
+        self,
+        *,
+        child_run_id: str,
+        parent_run_id: str,
+        forked_at_cycle: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> None:
+        """Record that ``child_run_id`` forked from ``parent_run_id``.
+
+        Idempotent on the (child, parent) pair — re-recording the same
+        edge updates the cycle / notes columns rather than failing.
+        """
+        if not child_run_id or not parent_run_id:
+            raise ValueError("both child_run_id and parent_run_id are required")
+        if child_run_id == parent_run_id:
+            raise ValueError("a run cannot be its own parent")
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO run_lineage (child_run_id, parent_run_id, forked_at_cycle, notes)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(child_run_id, parent_run_id) DO UPDATE SET
+                    forked_at_cycle = excluded.forked_at_cycle,
+                    notes = excluded.notes
+                """,
+                (str(child_run_id), str(parent_run_id), forked_at_cycle, notes),
+            )
+            self._conn.commit()
+
+    def remove_fork(
+        self, *, child_run_id: str, parent_run_id: str,
+    ) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM run_lineage WHERE child_run_id = ? AND parent_run_id = ?",
+                (str(child_run_id), str(parent_run_id)),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def get_parents(self, child_run_id: str) -> List[Dict[str, Any]]:
+        cur = self._conn.execute(
+            "SELECT parent_run_id, forked_at_cycle, notes "
+            "FROM run_lineage WHERE child_run_id = ?",
+            (str(child_run_id),),
+        )
+        return [
+            {
+                "parent_run_id": row["parent_run_id"],
+                "forked_at_cycle": row["forked_at_cycle"],
+                "notes": row["notes"],
+            }
+            for row in cur.fetchall()
+        ]
+
+    def get_children(self, parent_run_id: str) -> List[Dict[str, Any]]:
+        cur = self._conn.execute(
+            "SELECT child_run_id, forked_at_cycle, notes "
+            "FROM run_lineage WHERE parent_run_id = ?",
+            (str(parent_run_id),),
+        )
+        return [
+            {
+                "child_run_id": row["child_run_id"],
+                "forked_at_cycle": row["forked_at_cycle"],
+                "notes": row["notes"],
+            }
+            for row in cur.fetchall()
+        ]
+
+    def get_lineage(
+        self,
+        run_id: str,
+        *,
+        max_depth: int = 8,
+    ) -> Dict[str, Any]:
+        """Return ancestors (transitive parents) + descendants (transitive
+        children) for ``run_id``.
+
+        ``max_depth`` caps the BFS to avoid pathological / cyclic
+        traversals; the lineage table doesn't enforce a DAG so a buggy
+        client could in principle insert a cycle.
+        """
+        ancestors: List[Dict[str, Any]] = []
+        descendants: List[Dict[str, Any]] = []
+        seen_ancestors: set[str] = {run_id}
+        seen_descendants: set[str] = {run_id}
+
+        # Walk up.
+        frontier = [(run_id, 0)]
+        while frontier:
+            current, depth = frontier.pop(0)
+            if depth >= max_depth:
+                continue
+            for entry in self.get_parents(current):
+                pid = entry["parent_run_id"]
+                if pid in seen_ancestors:
+                    continue
+                seen_ancestors.add(pid)
+                ancestors.append({**entry, "child_run_id": current, "depth": depth + 1})
+                frontier.append((pid, depth + 1))
+
+        # Walk down.
+        frontier = [(run_id, 0)]
+        while frontier:
+            current, depth = frontier.pop(0)
+            if depth >= max_depth:
+                continue
+            for entry in self.get_children(current):
+                cid = entry["child_run_id"]
+                if cid in seen_descendants:
+                    continue
+                seen_descendants.add(cid)
+                descendants.append({**entry, "parent_run_id": current, "depth": depth + 1})
+                frontier.append((cid, depth + 1))
+
+        return {
+            "run_id": run_id,
+            "ancestors": ancestors,
+            "descendants": descendants,
+        }
+
     def delete_registry_entry(self, entry_id: int) -> bool:
         with self._lock:
             cur = self._conn.execute(

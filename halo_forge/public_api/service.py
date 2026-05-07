@@ -1172,6 +1172,43 @@ class PublicApiService:
                 return {"upstream_error": True, "status": resp.status_code, "detail": detail}
             return resp.json()
 
+    # ----- run lineage (Track F-Q) -----------------------------------------
+
+    def get_run_lineage(self, run_id: str) -> Dict[str, Any]:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        return db.get_lineage(run_id)
+
+    def record_run_fork(
+        self,
+        *,
+        child_run_id: str,
+        parent_run_id: str,
+        forked_at_cycle: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        db.record_fork(
+            child_run_id=child_run_id,
+            parent_run_id=parent_run_id,
+            forked_at_cycle=forked_at_cycle,
+            notes=notes,
+        )
+        return db.get_lineage(child_run_id)
+
+    def remove_run_fork(
+        self, *, child_run_id: str, parent_run_id: str,
+    ) -> bool:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        return db.remove_fork(
+            child_run_id=child_run_id, parent_run_id=parent_run_id,
+        )
+
     # ----- model registry (Track F-J) ---------------------------------------
 
     def list_registry_entries(self) -> List[Dict[str, Any]]:
