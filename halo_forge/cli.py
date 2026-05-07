@@ -665,6 +665,76 @@ def cmd_dpo_train(args):
     _print_completed_training_summary("dpo", config.output_dir, summary)
 
 
+def cmd_merge(args):
+    """Merge LoRA adapters (Tracks T12 + T13).
+
+    Two operations:
+      bake     — merge a single LoRA adapter into its base. Output is a
+                 standard HF checkpoint, no LoRA infrastructure required.
+      combine  — combine N LoRA adapters into one (linear / ties / dare).
+                 Optionally bake the combined adapter into the base in
+                 the same step.
+    """
+    from halo_forge.inference.merge import (
+        list_supported_methods,
+        merge as run_merge,
+    )
+
+    print_banner()
+    print(f"{GREEN}halo-forge merge{NC}")
+    print("=" * 60)
+
+    if getattr(args, "list", False):
+        print("Operations: bake, combine")
+        print(f"Combine methods: {', '.join(list_supported_methods())}")
+        return
+
+    print(f"  mode:   {args.mode}")
+    print(f"  base:   {args.base}")
+    print(f"  output: {args.output}")
+    if args.mode == "bake":
+        print(f"  adapter: {args.adapter}")
+    else:
+        print(f"  adapters: {args.adapters}")
+        print(f"  weights:  {args.weights or '(uniform)'}")
+        print(f"  method:   {args.method}")
+        if args.bake_after_merge:
+            print(f"  + bake-after-merge")
+    print()
+
+    adapter_paths = (
+        [s.strip() for s in args.adapters.split(",") if s.strip()]
+        if args.mode == "combine"
+        else None
+    )
+    weights = None
+    if args.mode == "combine" and args.weights:
+        weights = [float(w) for w in args.weights.split(",")]
+
+    try:
+        result = run_merge(
+            operation=args.mode,
+            base_model=args.base,
+            output_path=args.output,
+            adapter_path=args.adapter if args.mode == "bake" else None,
+            adapter_paths=adapter_paths,
+            weights=weights,
+            method=args.method,
+            bake_after_merge=args.bake_after_merge,
+            trust_remote_code=not args.no_trust_remote_code,
+            svd_rank=args.svd_rank,
+        )
+    except Exception as exc:
+        print(f"{RED}Merge failed:{NC} {exc}")
+        sys.exit(1)
+
+    size_mb = (result.bytes_written or 0) / (1024 * 1024)
+    print(f"{GREEN}Merged{NC} → {result.output_path}")
+    print(f"  size: {size_mb:.1f} MB")
+    if result.notes:
+        print(f"  note: {result.notes}")
+
+
 def cmd_convert(args):
     """Convert a model between formats (Track I5).
 
@@ -4304,6 +4374,36 @@ def main():
 
     grpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
 
+    # merge command (Tracks T12 + T13) — adapter bake / multi-adapter combine.
+    merge_parser = subparsers.add_parser(
+        'merge',
+        help='Merge LoRA adapters (bake into base, or combine multiple via TIES/DARE)',
+    )
+    merge_parser.add_argument('--mode', '-m', choices=['bake', 'combine'], default='bake',
+                              help='bake = single adapter into base; combine = N adapters into one')
+    merge_parser.add_argument('--base', '-b',
+                              help='Base model (HF id or local path). Required.')
+    merge_parser.add_argument('--output', '-o',
+                              help='Output directory.')
+    # bake mode
+    merge_parser.add_argument('--adapter', '-a',
+                              help='[bake] Adapter directory to merge')
+    # combine mode
+    merge_parser.add_argument('--adapters',
+                              help='[combine] Comma-separated adapter paths')
+    merge_parser.add_argument('--weights',
+                              help='[combine] Comma-separated weights (e.g. "0.5,0.3,0.2"). Defaults to uniform.')
+    merge_parser.add_argument('--method',
+                              default='dare_ties',
+                              help='[combine] Merge method: linear / ties / dare_linear / dare_ties / magnitude_prune')
+    merge_parser.add_argument('--bake-after-merge', action='store_true',
+                              help='[combine] Also bake the combined adapter into the base; output is a merged checkpoint')
+    merge_parser.add_argument('--svd-rank', type=int,
+                              help='[combine] Override SVD rank for ties / dare_ties methods')
+    merge_parser.add_argument('--no-trust-remote-code', action='store_true')
+    merge_parser.add_argument('--list', action='store_true',
+                              help='Print supported operations / methods and exit')
+
     # convert command (Track I5) — unified format conversion.
     convert_parser = subparsers.add_parser(
         'convert',
@@ -5496,6 +5596,8 @@ def _dispatch_commands(args):
         cmd_serve(args)
     elif args.command == 'convert':
         cmd_convert(args)
+    elif args.command == 'merge':
+        cmd_merge(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
