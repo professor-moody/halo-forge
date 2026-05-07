@@ -119,6 +119,62 @@ def list_registered_verifiers() -> List[str]:
     return sorted(_REGISTRY)
 
 
+# Names registered by `_seed_builtin_registrations`. Populated lazily on
+# first call to `inventory()` so we can tell builtins apart from
+# user/entry-point plugins without re-running the seed.
+_BUILTIN_NAMES: set[str] = set()
+
+
+def _record_builtin_names(names: Iterable[str]) -> None:
+    """Internal — called from `_seed_builtin_registrations` so origin
+    tagging knows which entries are halo-forge built-ins."""
+    _BUILTIN_NAMES.update(names)
+
+
+def inventory() -> List[Dict[str, object]]:
+    """Return registry contents with origin + metadata tagging.
+
+    Each entry has:
+      - ``name``     — registry key (the canonical short name)
+      - ``cls``      — fully-qualified class path
+      - ``origin``   — one of ``"builtin"``, ``"user_plugin"``, ``"entry_point"``
+      - ``module``   — `__module__` of the implementation
+      - ``doc``      — first line of the class docstring (None if absent)
+      - ``base``     — `Verifier` subclass marker (always True; presence
+                       lets the UI distinguish if we ever loosen the type)
+
+    Origin heuristics:
+      - Builtin if the seed registered the name.
+      - User-plugin if the implementing module name starts with
+        ``halo_forge_user_verifier_`` (the prefix `_load_plugin_directory`
+        synthesizes when importing files from `~/.halo-forge/verifiers/`).
+      - Entry-point otherwise. We can't readily round-trip back to the
+        entry point object so we just say "external" in that case.
+    """
+    _ensure_discovered()
+    items: List[Dict[str, object]] = []
+    for name in sorted(_REGISTRY):
+        cls = _REGISTRY[name]
+        module = getattr(cls, "__module__", "") or ""
+        if name in _BUILTIN_NAMES:
+            origin = "builtin"
+        elif module.startswith("halo_forge_user_verifier_"):
+            origin = "user_plugin"
+        else:
+            origin = "entry_point"
+        doc = (cls.__doc__ or "").strip()
+        first_line = doc.splitlines()[0] if doc else None
+        items.append({
+            "name": name,
+            "cls": f"{module}.{cls.__name__}" if module else cls.__name__,
+            "origin": origin,
+            "module": module,
+            "doc": first_line,
+            "base": "Verifier",
+        })
+    return items
+
+
 def reset_registry_for_tests() -> None:
     """Clear the registry. Test-only — production code should never call this."""
     global _DISCOVERED
@@ -270,11 +326,13 @@ def _seed_builtin_registrations() -> None:
     for name, cls in builtins:
         if name not in _REGISTRY:
             _REGISTRY[name] = cls
+    _record_builtin_names(name for name, _ in builtins)
 
 
 __all__ = [
     "register_verifier",
     "get_verifier",
     "list_registered_verifiers",
+    "inventory",
     "reset_registry_for_tests",
 ]

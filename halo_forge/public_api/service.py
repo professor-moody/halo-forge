@@ -610,6 +610,30 @@ class PublicApiService:
             for k in RAFT_TRAIN_SUPPORTED_VERIFIERS
         ]
 
+    def list_verifier_catalog(self) -> dict[str, Any]:
+        """Inventory of every verifier the runtime can resolve (Track F-O).
+
+        Wraps `halo_forge.rlvr.verifiers.registry.inventory()` and adds
+        the plugin directory path so the UI can tell users *where* to
+        drop a new `.py` to register one.
+
+        Origin counts are also returned to keep the UI from filtering
+        the items list just to render headline metrics.
+        """
+        from halo_forge.rlvr.verifiers.registry import _plugin_dir, inventory
+
+        items = inventory()
+        counts = {"builtin": 0, "user_plugin": 0, "entry_point": 0}
+        for entry in items:
+            origin = str(entry.get("origin", "builtin"))
+            counts[origin] = counts.get(origin, 0) + 1
+        return {
+            "items": items,
+            "counts": counts,
+            "plugin_dir": str(_plugin_dir()),
+            "total": len(items),
+        }
+
     def list_suggested_models(self) -> list[dict[str, Any]]:
         """Backend-aware base-model suggestions.
 

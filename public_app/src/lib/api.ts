@@ -420,6 +420,22 @@ export type TrainingVerifier = {
   platforms: string[];
 };
 
+export type VerifierCatalogEntry = {
+  name: string;
+  cls: string;
+  origin: "builtin" | "user_plugin" | "entry_point";
+  module: string;
+  doc: string | null;
+  base: string;
+};
+
+export type VerifierCatalog = {
+  items: VerifierCatalogEntry[];
+  counts: Record<string, number>;
+  plugin_dir: string;
+  total: number;
+};
+
 export type SuggestedModel = {
   id: string;
   for_backend: string;
@@ -502,6 +518,7 @@ export const api = {
   trainingPresets: () => request<{ items: TrainingPreset[] }>("/train/presets"),
   trainingDatasets: () => request<{ items: TrainingDataset[] }>("/train/datasets"),
   trainingVerifiers: () => request<{ items: TrainingVerifier[] }>("/train/verifiers"),
+  verifierCatalog: () => request<VerifierCatalog>("/verifiers"),
   trainingModels: () => request<{ items: SuggestedModel[] }>("/train/models"),
   trainingPreflight: (payload: Record<string, unknown>) =>
     request<Record<string, unknown>>("/train/preflight", {

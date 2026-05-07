@@ -95,6 +95,14 @@ def create_app() -> "FastAPI":
     async def list_training_verifiers() -> Dict[str, Any]:
         return {"items": service.list_training_verifiers()}
 
+    @router.get("/verifiers")
+    async def list_verifier_catalog() -> Dict[str, Any]:
+        """Full registry inventory (Track F-O). Distinct from
+        `/train/verifiers` which is the curated code-execution catalog —
+        this surface includes LLM-judge / schema / metric / user-plugin
+        verifiers too."""
+        return service.list_verifier_catalog()
+
     @router.get("/train/models")
     async def list_suggested_models() -> Dict[str, Any]:
         return {"items": service.list_suggested_models()}
