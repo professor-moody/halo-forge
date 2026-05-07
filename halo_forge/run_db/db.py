@@ -346,12 +346,159 @@ class RunDatabase:
         )
         return [row["model_name"] for row in cur.fetchall() if row["model_name"]]
 
+    # ----- model registry (Track F-J) ---------------------------------------
+
+    def create_registry_entry(
+        self,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        base_model: Optional[str] = None,
+        run_ids: Optional[Iterable[str]] = None,
+        tags: Optional[Iterable[str]] = None,
+    ) -> "RegistryEntry":
+        """Insert a new registry entry. Name must be unique."""
+        if not name or not name.strip():
+            raise ValueError("registry entry name is required")
+        now = datetime.now(timezone.utc).isoformat()
+        run_ids_list = sorted(set(str(r) for r in (run_ids or []) if r))
+        tags_list = sorted(set(str(t) for t in (tags or []) if t))
+        with self._lock:
+            try:
+                cur = self._conn.execute(
+                    """
+                    INSERT INTO model_registry
+                        (name, description, base_model, run_ids, tags, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        name.strip(),
+                        description,
+                        base_model,
+                        json.dumps(run_ids_list),
+                        json.dumps(tags_list),
+                        now,
+                        now,
+                    ),
+                )
+                self._conn.commit()
+                rowid = cur.lastrowid
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(
+                    f"registry entry with name {name!r} already exists"
+                ) from exc
+        return self.get_registry_entry(rowid)  # type: ignore[arg-type]
+
+    def get_registry_entry(self, entry_id: int) -> Optional["RegistryEntry"]:
+        cur = self._conn.execute(
+            "SELECT * FROM model_registry WHERE id = ?", (int(entry_id),)
+        )
+        row = cur.fetchone()
+        return _row_to_registry_entry(row) if row else None
+
+    def get_registry_entry_by_name(self, name: str) -> Optional["RegistryEntry"]:
+        cur = self._conn.execute(
+            "SELECT * FROM model_registry WHERE name = ?", (name,)
+        )
+        row = cur.fetchone()
+        return _row_to_registry_entry(row) if row else None
+
+    def list_registry_entries(self) -> List["RegistryEntry"]:
+        cur = self._conn.execute(
+            "SELECT * FROM model_registry ORDER BY updated_at DESC"
+        )
+        return [_row_to_registry_entry(r) for r in cur.fetchall()]
+
+    def update_registry_entry(
+        self,
+        entry_id: int,
+        *,
+        description: Optional[str] = None,
+        base_model: Optional[str] = None,
+        run_ids: Optional[Iterable[str]] = None,
+        tags: Optional[Iterable[str]] = None,
+    ) -> Optional["RegistryEntry"]:
+        """Patch a registry entry. Only non-None fields are updated."""
+        existing = self.get_registry_entry(entry_id)
+        if existing is None:
+            return None
+
+        new_desc = description if description is not None else existing.description
+        new_base = base_model if base_model is not None else existing.base_model
+        new_runs = (
+            sorted(set(str(r) for r in run_ids if r))
+            if run_ids is not None
+            else existing.run_ids
+        )
+        new_tags = (
+            sorted(set(str(t) for t in tags if t))
+            if tags is not None
+            else existing.tags
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._conn.execute(
+                """
+                UPDATE model_registry
+                SET description = ?, base_model = ?, run_ids = ?, tags = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    new_desc, new_base,
+                    json.dumps(new_runs), json.dumps(new_tags),
+                    now, int(entry_id),
+                ),
+            )
+            self._conn.commit()
+        return self.get_registry_entry(entry_id)
+
+    def delete_registry_entry(self, entry_id: int) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM model_registry WHERE id = ?", (int(entry_id),)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
 
 
+@dataclass
+class RegistryEntry:
+    """A named bundle of run_ids the user wants to compare or promote
+    as a unit. The cohort eval dashboard reads these directly so a
+    saved entry is one click away from a runs × tasks grid."""
+
+    id: int
+    name: str
+    description: Optional[str]
+    base_model: Optional[str]
+    run_ids: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _row_to_registry_entry(row: sqlite3.Row) -> RegistryEntry:
+    return RegistryEntry(
+        id=int(row["id"]),
+        name=str(row["name"]),
+        description=row["description"],
+        base_model=row["base_model"],
+        run_ids=json.loads(row["run_ids"] or "[]"),
+        tags=json.loads(row["tags"] or "[]"),
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+    )
+
+
 __all__ = [
+    "RegistryEntry",
     "RunDatabase",
     "RunFilter",
     "RunRecord",

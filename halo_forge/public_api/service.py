@@ -1061,6 +1061,55 @@ class PublicApiService:
             "best_per_task_higher_is_better": best_per_task_high,
         }
 
+    # ----- model registry (Track F-J) ---------------------------------------
+
+    def list_registry_entries(self) -> List[Dict[str, Any]]:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        return [e.to_dict() for e in db.list_registry_entries()]
+
+    def get_registry_entry(self, entry_id: int) -> Optional[Dict[str, Any]]:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        entry = db.get_registry_entry(entry_id)
+        return entry.to_dict() if entry else None
+
+    def create_registry_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        entry = db.create_registry_entry(
+            name=str(payload.get("name") or "").strip(),
+            description=payload.get("description"),
+            base_model=payload.get("base_model"),
+            run_ids=payload.get("run_ids") or [],
+            tags=payload.get("tags") or [],
+        )
+        return entry.to_dict()
+
+    def update_registry_entry(
+        self, entry_id: int, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        # Only forward the keys the user actually sent so missing keys
+        # mean "leave alone", not "set to None".
+        kwargs: Dict[str, Any] = {}
+        for k in ("description", "base_model", "run_ids", "tags"):
+            if k in payload:
+                kwargs[k] = payload[k]
+        entry = db.update_registry_entry(entry_id, **kwargs)
+        return entry.to_dict() if entry else None
+
+    def delete_registry_entry(self, entry_id: int) -> bool:
+        from halo_forge.run_db import get_database
+
+        db = get_database()
+        return db.delete_registry_entry(entry_id)
+
     def _db_record_to_list_item(self, record) -> Dict[str, Any]:
         """Project a `RunRecord` to the list-item dict shape the
         frontend already consumes from /runs.

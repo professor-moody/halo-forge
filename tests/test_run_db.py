@@ -53,7 +53,11 @@ def test_schema_initializes_clean(db):
     cur = db._conn.execute(
         "SELECT value FROM schema_meta WHERE key = 'schema_version'"
     )
-    assert cur.fetchone()["value"] == "1"
+    # SCHEMA_VERSION is the source of truth; tests assert against it
+    # rather than a hard-coded number so adding a table (e.g. F-J's
+    # model_registry) doesn't require touching this test.
+    from halo_forge.run_db.schema import SCHEMA_VERSION
+    assert cur.fetchone()["value"] == str(SCHEMA_VERSION)
 
 
 def test_upsert_and_get(db):

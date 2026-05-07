@@ -1,9 +1,9 @@
-"""SQLite schema for the run database (Track F-G commit 1)."""
+"""SQLite schema for the run database (Track F-G commit 1; F-J commit 1)."""
 
 from __future__ import annotations
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # A single ``runs`` table with all the headline fields the UI filters /
@@ -69,6 +69,24 @@ CREATE TABLE IF NOT EXISTS run_lineage (
     notes TEXT,
     PRIMARY KEY (child_run_id, parent_run_id)
 );
+
+-- Track F-J — model registry. A registry entry is a named bundle of
+-- runs the user wants to compare / promote / share as a unit. Most
+-- payload fields are JSON blobs (run_ids, tags) to keep the schema
+-- simple — the cohort dashboard reads them flat.
+CREATE TABLE IF NOT EXISTS model_registry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    base_model TEXT,
+    run_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array of run_id strings
+    tags TEXT NOT NULL DEFAULT '[]',     -- JSON array of strings
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_registry_name ON model_registry (name);
+CREATE INDEX IF NOT EXISTS idx_registry_base_model ON model_registry (base_model);
 """
 
 

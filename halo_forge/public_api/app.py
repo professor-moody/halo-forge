@@ -162,6 +162,48 @@ def create_app() -> "FastAPI":
             offset=offset,
         )
 
+    @router.get("/registry")
+    async def list_registry() -> Dict[str, Any]:
+        """List every model-registry entry (Track F-J).
+
+        Each entry is a named bundle of run_ids the user wants to
+        compare / promote / share as a unit.
+        """
+        return {"items": service.list_registry_entries()}
+
+    @router.post("/registry")
+    async def create_registry_entry(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new registry entry. Required field: ``name``."""
+        try:
+            return service.create_registry_entry(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get("/registry/{entry_id}")
+    async def get_registry_entry(entry_id: int) -> Dict[str, Any]:
+        entry = service.get_registry_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="registry entry not found")
+        return entry
+
+    @router.patch("/registry/{entry_id}")
+    async def update_registry_entry(
+        entry_id: int, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Patch a registry entry. Missing keys leave their fields alone;
+        explicit nulls *replace* (so `description: null` clears it)."""
+        entry = service.update_registry_entry(entry_id, payload)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="registry entry not found")
+        return entry
+
+    @router.delete("/registry/{entry_id}")
+    async def delete_registry_entry(entry_id: int) -> Dict[str, Any]:
+        ok = service.delete_registry_entry(entry_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="registry entry not found")
+        return {"deleted": True, "id": entry_id}
+
     @router.get("/eval/cohort")
     async def eval_cohort(
         run_ids: List[str] = Query(..., min_length=1),

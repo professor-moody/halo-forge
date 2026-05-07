@@ -25,10 +25,17 @@ Design choices:
   - WAL journaling so live writes don't block reads.
 """
 
-from halo_forge.run_db.db import RunDatabase, RunFilter, RunRecord, get_database
+from halo_forge.run_db.db import (
+    RegistryEntry,
+    RunDatabase,
+    RunFilter,
+    RunRecord,
+    get_database,
+)
 from halo_forge.run_db.sync import sync_from_filesystem
 
 __all__ = [
+    "RegistryEntry",
     "RunDatabase",
     "RunFilter",
     "RunRecord",
