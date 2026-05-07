@@ -918,6 +918,149 @@ class PublicApiService:
             },
         }
 
+    def get_run_eval(self, run_identifier: str) -> Dict[str, Any]:
+        """Return the lm_eval_summary.json for a run if present.
+
+        Track F-K building block. Looks for `lm_eval_summary.json` inside
+        the run's output_dir; honest unavailable shape on miss so the
+        cohort dashboard can render a missing-eval column without 5xx.
+        """
+        try:
+            source = self._resolve_run_source(run_identifier)
+        except Exception as exc:
+            return {
+                "available": False,
+                "reason": f"Run not found: {exc}",
+                "tasks": [],
+            }
+
+        if source["kind"] == "summary":
+            output_dir = source["summary"].output_dir
+        else:
+            job = source["job"]
+            output_dir = Path(str(job.output_dir)) if job.output_dir else None
+
+        if output_dir is None:
+            return {
+                "available": False,
+                "reason": "Run has no output_dir to inspect",
+                "tasks": [],
+            }
+
+        eval_path = Path(output_dir) / "lm_eval_summary.json"
+        if not eval_path.exists():
+            return {
+                "available": False,
+                "reason": f"No eval summary at {eval_path.name} — run "
+                          f"`halo-forge eval --output {output_dir}` to populate.",
+                "tasks": [],
+            }
+
+        try:
+            data = json.loads(eval_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "available": False,
+                "reason": f"Eval summary unreadable: {exc}",
+                "tasks": [],
+            }
+
+        return {
+            "available": True,
+            "model_name": data.get("model_name"),
+            "tasks": [
+                {
+                    "task": tr.get("task"),
+                    "primary_metric": tr.get("primary_metric"),
+                    "value": tr.get("value"),
+                    "n_samples": tr.get("n_samples"),
+                    "error": tr.get("error"),
+                }
+                for tr in data.get("task_results", [])
+            ],
+            "n_tasks_completed": data.get("n_tasks_completed"),
+            "duration_seconds": data.get("duration_seconds"),
+            "backend": data.get("backend"),
+            "summary_path": str(eval_path),
+        }
+
+    def get_eval_cohort(
+        self,
+        run_ids: List[str],
+    ) -> Dict[str, Any]:
+        """Aggregate eval summaries across N runs into a cohort table.
+
+        Track F-K. Returns ``{"runs": [{run_id, ...}], "tasks": [task_name],
+        "cells": {run_id: {task: value}}}`` so the frontend can render
+        a sortable runs-×-tasks grid without per-task fetching.
+
+        Missing eval summaries surface as `available: False` on the run
+        entry; the cohort table renders those rows with em-dashes.
+        """
+        run_entries: List[Dict[str, Any]] = []
+        cells: Dict[str, Dict[str, Any]] = {}
+        all_tasks: List[str] = []
+        seen_tasks: set[str] = set()
+
+        for raw_id in run_ids:
+            run_id = str(raw_id or "").strip()
+            if not run_id:
+                continue
+            eval_data = self.get_run_eval(run_id)
+
+            entry = {
+                "run_id": run_id,
+                "available": eval_data.get("available", False),
+                "reason": eval_data.get("reason"),
+                "model_name": eval_data.get("model_name"),
+                "duration_seconds": eval_data.get("duration_seconds"),
+                "backend": eval_data.get("backend"),
+            }
+            run_entries.append(entry)
+
+            cells[run_id] = {}
+            for task in eval_data.get("tasks") or []:
+                name = task.get("task")
+                if not name:
+                    continue
+                if name not in seen_tasks:
+                    seen_tasks.add(name)
+                    all_tasks.append(name)
+                cells[run_id][name] = {
+                    "primary_metric": task.get("primary_metric"),
+                    "value": task.get("value"),
+                    "n_samples": task.get("n_samples"),
+                    "error": task.get("error"),
+                }
+
+        # Per-task best so the UI can highlight winners. Higher is
+        # better for accuracy-shaped metrics; lower is better for loss.
+        # We can't always tell, so we surface both and let the UI decide
+        # based on the metric name (acc / acc_norm / pass@1 / exact_match
+        # all higher-is-better; metrics ending in _stderr or _loss don't
+        # apply to this dashboard).
+        best_per_task_high: Dict[str, Optional[str]] = {}
+        for task in all_tasks:
+            best_run, best_val = None, None
+            for run_id in cells:
+                cell = cells[run_id].get(task)
+                if cell is None or cell.get("error"):
+                    continue
+                v = cell.get("value")
+                if not isinstance(v, (int, float)):
+                    continue
+                if best_val is None or v > best_val:
+                    best_val = v
+                    best_run = run_id
+            best_per_task_high[task] = best_run
+
+        return {
+            "runs": run_entries,
+            "tasks": all_tasks,
+            "cells": cells,
+            "best_per_task_higher_is_better": best_per_task_high,
+        }
+
     def _db_record_to_list_item(self, record) -> Dict[str, Any]:
         """Project a `RunRecord` to the list-item dict shape the
         frontend already consumes from /runs.

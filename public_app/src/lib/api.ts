@@ -139,6 +139,46 @@ export type RunSearchResponse = {
 };
 
 /**
+ * Per-task slice of an eval summary (F-K).
+ */
+export type EvalTaskCell = {
+  primary_metric?: string | null;
+  value?: number | null;
+  n_samples?: number | null;
+  error?: string | null;
+};
+
+/**
+ * Per-run header in the cohort grid (F-K).
+ */
+export type EvalCohortRun = {
+  run_id: string;
+  available: boolean;
+  reason?: string | null;
+  model_name?: string | null;
+  duration_seconds?: number | null;
+  backend?: string | null;
+};
+
+export type EvalCohortResponse = {
+  runs: EvalCohortRun[];
+  tasks: string[];
+  cells: Record<string, Record<string, EvalTaskCell>>;
+  best_per_task_higher_is_better: Record<string, string | null>;
+};
+
+export type RunEvalResponse = {
+  available: boolean;
+  reason?: string | null;
+  model_name?: string | null;
+  tasks: Array<EvalTaskCell & { task: string }>;
+  n_tasks_completed?: number | null;
+  duration_seconds?: number | null;
+  backend?: string | null;
+  summary_path?: string;
+};
+
+/**
  * Per-cycle metric row exposed by /api/public/runs/{id}.details.cycle_metrics.
  * Mirrors `_project_cycles_for_charts` on the backend; every numeric field
  * is null-tolerant so older trainers / partial summaries chart cleanly.
@@ -370,4 +410,16 @@ export const api = {
     return request<RunSearchResponse>(`/runs/search${qs ? `?${qs}` : ""}`);
   },
   runDetail: (runId: string) => request<RunDetail>(`/runs/${encodeURIComponent(runId)}`),
+  /**
+   * Cohort eval (F-K): runs × tasks grid pulled from each run's
+   * `lm_eval_summary.json`. Missing-eval runs return `available: false`
+   * so the dashboard renders em-dashes instead of failing.
+   */
+  evalCohort: (runIds: string[]) => {
+    const search = new URLSearchParams();
+    for (const id of runIds) search.append("run_ids", id);
+    return request<EvalCohortResponse>(`/eval/cohort?${search.toString()}`);
+  },
+  runEval: (runId: string) =>
+    request<RunEvalResponse>(`/runs/${encodeURIComponent(runId)}/eval`),
 };

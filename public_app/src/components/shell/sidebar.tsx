@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
+  BarChart3,
   BookOpen,
   CheckCircle2,
   GitCompareArrows,
@@ -42,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Overview", icon: LayoutDashboard, kbd: "G O" },
   { to: "/train", label: "Training", icon: Play, kbd: "G T" },
   { to: "/runs", label: "Runs", icon: Activity, kbd: "G R" },
+  { to: "/eval", label: "Eval", icon: BarChart3, kbd: "G E" },
   { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G S" },
   { to: "/docs", label: "Docs", icon: BookOpen, kbd: "G D" },
 ];

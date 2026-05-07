@@ -150,6 +150,25 @@ def create_app() -> "FastAPI":
             offset=offset,
         )
 
+    @router.get("/eval/cohort")
+    async def eval_cohort(
+        run_ids: List[str] = Query(..., min_length=1),
+    ) -> Dict[str, Any]:
+        """Cohort eval table across N runs (Track F-K).
+
+        Returns ``{runs, tasks, cells, best_per_task_higher_is_better}``
+        — the runs × tasks grid the dashboard renders. Missing eval
+        summaries surface as `available: False` on the run entry; the
+        UI shows em-dashes for those rows.
+        """
+        return service.get_eval_cohort(list(run_ids))
+
+    @router.get("/runs/{run_id}/eval")
+    async def get_run_eval(run_id: str) -> Dict[str, Any]:
+        """Per-run eval summary if `lm_eval_summary.json` exists in the
+        run's output_dir; honest unavailable shape on miss."""
+        return service.get_run_eval(run_id)
+
     @router.get("/runs/{run_id}")
     async def get_run_detail(
         run_id: str,
