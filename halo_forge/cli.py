@@ -815,6 +815,66 @@ def cmd_merge(args):
         print(f"  note: {result.notes}")
 
 
+def cmd_eval(args):
+    """Run lm-evaluation-harness benchmarks (Track V8)."""
+    from pathlib import Path
+
+    from halo_forge.eval import list_curated_task_groups, run_lm_eval
+
+    print_banner()
+    print(f"{GREEN}halo-forge eval{NC}")
+    print("=" * 60)
+
+    if getattr(args, "list_tasks", False):
+        groups = list_curated_task_groups()
+        print(f"Curated task groups (use any of these as --tasks <name>):")
+        for name, members in groups.items():
+            print(f"  {CYAN}{name:<22}{NC} {', '.join(members)}")
+        print()
+        print("Or pass any lm-eval task name directly (e.g. mmlu_pro_law).")
+        return
+
+    tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
+    print(f"  model:    {args.model}")
+    print(f"  backend:  {args.backend}")
+    print(f"  tasks:    {tasks}")
+    if args.limit:
+        print(f"  limit:    {args.limit} per task")
+    if args.output:
+        print(f"  output:   {args.output}")
+    print()
+
+    try:
+        result = run_lm_eval(
+            model_name=args.model,
+            tasks=tasks,
+            limit=args.limit,
+            batch_size=args.batch_size,
+            backend=args.backend,
+            output_dir=Path(args.output) if args.output else None,
+        )
+    except Exception as exc:
+        print(f"{RED}Eval failed:{NC} {exc}")
+        sys.exit(1)
+
+    print(f"{GREEN}Done{NC} in {result.duration_seconds:.1f}s")
+    print(f"  tasks completed: {result.n_tasks_completed}")
+    if result.n_tasks_failed:
+        print(f"  tasks failed:    {result.n_tasks_failed}")
+    print()
+    for task in result.task_results:
+        marker = f"{RED}✗{NC}" if task.error else f"{GREEN}✓{NC}"
+        print(
+            f"  {marker} {task.task:<24} "
+            f"{task.primary_metric:>22} = "
+            f"{task.value:>7.4f}"
+            + (f"  (n={task.n_samples})" if task.n_samples else "")
+        )
+    avg = result.average_score()
+    if avg is not None:
+        print(f"\n  {GREEN}average primary metric:{NC} {avg:.4f}")
+
+
 def cmd_replay(args):
     """Show or execute the replay command for a captured run (Track T15)."""
     from pathlib import Path
@@ -4628,6 +4688,28 @@ def main():
 
     grpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
 
+    # eval command (Track V8) — lm-evaluation-harness wrapper.
+    eval_parser = subparsers.add_parser(
+        'eval',
+        help='Run academic benchmarks via lm-evaluation-harness',
+    )
+    eval_parser.add_argument('--model', '-m',
+                             help='Model id, mlx-community id, or local path')
+    eval_parser.add_argument('--tasks', '-t', default='core',
+                             help='Comma-separated task names or curated group '
+                                  '(core, reasoning, code, instruction_following, knowledge)')
+    eval_parser.add_argument('--limit', type=int,
+                             help='Cap samples per task (smoke-test mode)')
+    eval_parser.add_argument('--batch-size', type=int,
+                             help='Per-step batch size (lm-eval default if omitted)')
+    eval_parser.add_argument('--backend', default='hf', choices=['hf', 'vllm', 'mlx'],
+                             help='lm-eval model adapter (hf works on every backend; '
+                                  'vllm faster on CUDA/ROCm; mlx for Apple Silicon)')
+    eval_parser.add_argument('--output', '-o',
+                             help='Directory to write lm_eval_summary.json + raw results')
+    eval_parser.add_argument('--list-tasks', action='store_true',
+                             help='Print curated task groups and exit')
+
     # replay command (Track T15) — deterministic-replay manifest tools.
     replay_parser = subparsers.add_parser(
         'replay',
@@ -5874,6 +5956,8 @@ def _dispatch_commands(args):
         cmd_merge(args)
     elif args.command == 'replay':
         cmd_replay(args)
+    elif args.command == 'eval':
+        cmd_eval(args)
     elif args.command == 'raft':
         if args.raft_command == 'train':
             cmd_raft_train(args)
