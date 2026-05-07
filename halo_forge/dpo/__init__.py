@@ -27,4 +27,8 @@ from halo_forge.dpo.config import DPOConfig
 from halo_forge.dpo._dispatch import get_dpo_trainer
 from halo_forge.dpo.datasets import load_preference_dataset
 
-__all__ = ["DPOConfig", "get_dpo_trainer", "load_preference_dataset"]
+__all__ = [
+    "DPOConfig",
+    "get_dpo_trainer",
+    "load_preference_dataset",
+]

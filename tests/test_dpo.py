@@ -109,20 +109,41 @@ def test_local_jsonl_normalization_round_trip(tmp_path: Path):
     assert train[0]["chosen"] == "4"
 
 
-def test_dispatch_mlx_path_raises_clean_error():
-    """Until T17 ships, MLX dispatch should raise a typed error pointing
-    at the upstream community fork — not a cryptic import / attribute error."""
+def test_dispatch_mlx_path_returns_mlx_trainer_when_reference_free():
+    """T17 v1: MLX dispatch returns MLXDPOTrainer when reference_free=True
+    is set on the config; otherwise raises NotImplementedError pointing
+    at the knob to flip. This replaces the old "always raise" stub."""
+    from halo_forge.dpo import DPOConfig
     from halo_forge.dpo._dispatch import get_dpo_trainer
 
     class _FakeMLXBackend:
         name = "mlx"
 
+    # Without reference_free: trainer construction raises.
+    cfg_default = DPOConfig()  # reference_free defaults to False
     with pytest.raises(NotImplementedError) as ei:
-        get_dpo_trainer(backend=_FakeMLXBackend())  # type: ignore[arg-type]
+        get_dpo_trainer(cfg_default, backend=_FakeMLXBackend())  # type: ignore[arg-type]
+    assert "reference-free" in str(ei.value).lower() or "reference_free" in str(ei.value)
 
-    msg = str(ei.value)
-    assert "MLX" in msg
-    assert "mlx-lm-lora" in msg
+    # With reference_free=True: trainer instantiates.
+    cfg_ref_free = DPOConfig(reference_free=True)
+    trainer = get_dpo_trainer(cfg_ref_free, backend=_FakeMLXBackend())  # type: ignore[arg-type]
+    assert trainer.__class__.__name__ == "MLXDPOTrainer"
+
+
+def test_mlx_dpo_rejects_non_sigmoid_loss():
+    """v1 only supports loss_type='sigmoid' — IPO / hinge / kto_pair
+    require the reference model."""
+    from halo_forge.dpo import DPOConfig
+    from halo_forge.dpo._dispatch import get_dpo_trainer
+
+    class _FakeMLXBackend:
+        name = "mlx"
+
+    cfg = DPOConfig(reference_free=True, loss_type="ipo")
+    with pytest.raises(NotImplementedError) as ei:
+        get_dpo_trainer(cfg, backend=_FakeMLXBackend())  # type: ignore[arg-type]
+    assert "ipo" in str(ei.value).lower() or "sigmoid" in str(ei.value).lower()
 
 
 @pytest.mark.requires_cuda

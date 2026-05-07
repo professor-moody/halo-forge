@@ -1,9 +1,11 @@
 """Backend-aware DPO trainer factory.
 
-Phase Q1 / Track T1 ships the PyTorch path. The MLX path is stubbed —
-when a user runs DPO with `--accelerator mlx` we surface a clean error
-pointing at the mlx-lm-lora fork until phase Q3 / T17 lands a native
-implementation.
+Phase Q1 / Track T1 ships the PyTorch path; T17 lands MLX-native.
+The MLX path supports reference-free DPO (loss_type='sigmoid') in
+v1; reference-model DPO and other loss types stay roadmap. Configs
+that the MLX trainer can't honor raise NotImplementedError with the
+exact knob to flip — the dispatcher itself doesn't pre-check beyond
+backend selection.
 """
 
 from __future__ import annotations
@@ -39,12 +41,9 @@ def get_dpo_trainer(
     backend = backend or get_backend(require_training=True)
 
     if backend.name == "mlx":
-        raise NotImplementedError(
-            "MLX-native DPO is on the roadmap (T17, phase Q3) but not yet "
-            "implemented. For now run DPO under --accelerator mps (PyTorch on "
-            "Apple Silicon) or use the community fork: "
-            "https://github.com/Goekdeniz-Guelmez/mlx-lm-lora"
-        )
+        from halo_forge.dpo.mlx_trainer import MLXDPOTrainer
+
+        return MLXDPOTrainer(config)
 
     from halo_forge.dpo.trainer import DPOTrainer
 
