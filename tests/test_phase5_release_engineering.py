@@ -7,44 +7,38 @@ from pathlib import Path
 
 
 def test_ci_workflow_exists_with_compile_and_core_regression_steps():
-    """Repository should include a CI workflow covering compile + core regression tests."""
+    """Repository should include a CI workflow covering compile + core regression tests.
+
+    The legacy NiceGUI-era per-phase test files were retired alongside
+    the GUI itself; what survives is the modality + contract test set
+    plus the nightly readiness workflows. CI must still reference
+    those, the compileall guard, and the readiness baselines.
+    """
     workflow = Path(".github/workflows/ci.yml")
     assert workflow.exists()
 
     content = workflow.read_text(encoding="utf-8")
     assert "python -m compileall -q halo_forge ui tests" in content
-    assert "tests/test_phase0_stabilization.py" in content
-    assert "tests/test_phase1_hardening.py" in content
-    assert "tests/test_phase2_consistency_cleanup.py" in content
+    # Surviving phase + contract tests CI must still run.
     assert "tests/test_phase3_truth_in_advertising.py" in content
-    assert "tests/test_phase4_ui_observability_consolidation.py" in content
+    assert "tests/test_phase5_release_engineering.py" in content
     assert "tests/test_benchmark_results_trust_matrix.py" in content
     assert "tests/test_training_pipeline_contracts.py" in content
     assert "tests/test_dependency_packaging_contracts.py" in content
-    assert "tests/test_runtime_surface_alignment.py" in content
     assert "tests/test_phase6_modality_graduation.py" in content
-    assert "tests/test_phase7_modality_reliability_gates.py" in content
-    assert "tests/test_phase7b_modality_e2e_surface.py" in content
     assert "tests/test_phase7c_modality_baseline_drift.py" in content
-    assert "tests/test_phase8_ui_ops_parity_relaunch.py" in content
     assert "tests/test_phase9_non_code_modality_research_matrix.py" in content
-    assert "tests/test_phase10_non_code_ui_readiness_gates.py" in content
-    assert "tests/test_phase11_ops_module_ui_expansion.py" in content
-    assert "tests/test_phase12_ops_e2e_launch_reliability.py" in content
-    assert "tests/test_phase13_ops_dataset_burnin_baselines.py" in content
-    assert "tests/test_phase14_all_module_parity.py" in content
-    assert "tests/test_phase16_all_module_ui_execution_parity.py" in content
-    assert "tests/test_phase17_ui_execution_truth_and_professional_hardening.py" in content
-    assert "tests/test_phase18_all_module_qualification_orchestration.py" in content
-    assert "tests/test_phase20_all_module_bootstrap_enablement.py" in content
-    assert "tests/test_phase21_all_module_live_execution_closure.py" in content
-    assert "tests/test_phase22_dashboard_ops_hub_and_discoverability.py" in content
-    assert "tests/test_phase23_training_first_ux_reset.py" in content
-    assert "tests/test_phase24k_first_run_reliability_closure.py" in content
-    assert "tests/test_phase25_quickstart_user_flow_and_launch_hub.py" in content
-    assert "tests/test_phase26_diagnostics_isolation_and_training_clarity.py" in content
-    assert "tests/test_phase27_training_onboarding_first_run_success.py" in content
-    assert "tests/test_phase28_monitor_truth_and_visual_finish.py" in content
+    # Modality tests still wired.
+    for modality_test in (
+        "tests/test_pipeline.py",
+        "tests/test_verifiers.py",
+        "tests/test_inference.py",
+        "tests/test_agentic.py",
+        "tests/test_audio.py",
+        "tests/test_reasoning.py",
+        "tests/test_vlm.py",
+    ):
+        assert modality_test in content
     assert "scripts/generate_modality_baseline.py" in content
     assert "scripts/run_ops_module_matrix.py" in content
     assert "scripts/run_ops_e2e_reliability.py" in content
