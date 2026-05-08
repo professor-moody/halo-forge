@@ -1258,6 +1258,29 @@ def cmd_serve(args):
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
+def cmd_serve_public(args):
+    """Run the dashboard FastAPI (Track F-* surface).
+
+    This is the API the public_app SPA talks to — runs/eval/registry/
+    playground/lineage/verifiers/metrics. Different process from the
+    OpenAI-compatible inference server (`halo-forge serve`); a typical
+    workstation runs both side by side on different ports.
+    """
+    import uvicorn
+
+    from halo_forge.public_api.app import create_app
+
+    print_banner()
+    print(f"{GREEN}halo-forge serve-public{NC} — dashboard API")
+    print("=" * 60)
+    print(f"  bind:    {args.host}:{args.port}")
+    print(f"  health:  http://{args.host}:{args.port}/api/public/health")
+    print()
+
+    app = create_app()
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
 def cmd_rm_train(args):
     """Train a Bradley-Terry reward model (Track T3)."""
     from halo_forge.rm import RMConfig, get_rm_trainer
@@ -5094,6 +5117,16 @@ def main():
                               help='Force a backend (mlx, mps, cuda, rocm_gfx1151, cpu); '
                                    'defaults to autodetect')
 
+    # serve-public — dashboard FastAPI (the API the public_app SPA talks to)
+    serve_public_parser = subparsers.add_parser(
+        'serve-public',
+        help='Run the dashboard FastAPI (the API the public_app SPA talks to)',
+    )
+    serve_public_parser.add_argument('--host', default='127.0.0.1',
+                                     help='Bind host (default: 127.0.0.1; loopback skips bearer auth)')
+    serve_public_parser.add_argument('--port', type=int, default=8000,
+                                     help='Bind port (default: 8000)')
+
     # raft command
     raft_parser = subparsers.add_parser('raft', help='RAFT training')
     raft_subparsers = raft_parser.add_subparsers(dest='raft_command', required=True)
@@ -6243,6 +6276,8 @@ def _dispatch_commands(args):
             cmd_rm_train(args)
     elif args.command == 'serve':
         cmd_serve(args)
+    elif args.command == 'serve-public':
+        cmd_serve_public(args)
     elif args.command == 'convert':
         cmd_convert(args)
     elif args.command == 'merge':

@@ -315,7 +315,10 @@ def _run_vlmevalkit_benchmark(
         from vlmeval.evaluate import Evaluator
     except ImportError:
         return {
-            'error': 'VLMEvalKit not installed. Install with: pip install vlmeval',
+            'error': (
+                'VLMEvalKit not installed. Install with: '
+                'pip install git+https://github.com/open-compass/VLMEvalKit.git'
+            ),
             'model': model,
             'benchmark': benchmark,
             'backend': 'vlmevalkit',

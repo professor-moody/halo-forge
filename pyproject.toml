@@ -11,7 +11,7 @@ license = {text = "Apache-2.0"}
 authors = [
     {name = "halo-forge contributors"}
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -69,13 +69,14 @@ llm-backends = [
     "anthropic>=0.18.0",
     "openai>=1.0.0",
 ]
-benchmark = [
-    "vlmeval>=0.2.0",
-]
+# vlmeval (open-compass/VLMEvalKit) is github-only — no PyPI release.
+# Users who want VLM benchmarking install it directly:
+#     pip install git+https://github.com/open-compass/VLMEvalKit.git
+# The benchmark module does a lazy import and surfaces a clear error if
+# missing, so leaving it out of the extra is safe.
+benchmark = []
 # Backward-compatible alias for existing docs/scripts.
-vlm-benchmark = [
-    "vlmeval>=0.2.0",
-]
+vlm-benchmark = []
 vlm = [
     "qwen-vl-utils",
     "ultralytics",
