@@ -436,6 +436,49 @@ export type VerifierCatalog = {
   total: number;
 };
 
+export type DiagnosticsLaunch = {
+  output_dir: string;
+  status: "completed" | "orphan";
+  has_summary: boolean;
+  launched_at: string | null;
+  command: string[] | null;
+  args: Record<string, unknown>;
+  log_files: string[];
+  summary_mtime: number | null;
+  launch_mtime: number | null;
+};
+
+export type DiagnosticsLogFile = {
+  name: string;
+  path: string;
+  size_bytes: number;
+  mtime: number;
+};
+
+export type DiagnosticsSummary = {
+  base_path: string;
+  launches: {
+    total: number;
+    orphan: number;
+    completed: number;
+    most_recent_orphan: DiagnosticsLaunch | null;
+  };
+  logs: {
+    total: number;
+    newest: DiagnosticsLogFile | null;
+  };
+};
+
+export type DiagnosticsLogTail = {
+  available: boolean;
+  lines: string[];
+  reason: string | null;
+  path: string;
+  tail: number;
+  truncated_head?: boolean;
+  size_bytes?: number;
+};
+
 export type SuggestedModel = {
   id: string;
   for_backend: string;
@@ -519,6 +562,14 @@ export const api = {
   trainingDatasets: () => request<{ items: TrainingDataset[] }>("/train/datasets"),
   trainingVerifiers: () => request<{ items: TrainingVerifier[] }>("/train/verifiers"),
   verifierCatalog: () => request<VerifierCatalog>("/verifiers"),
+  diagnosticsSummary: () => request<DiagnosticsSummary>("/diagnostics/summary"),
+  diagnosticsLaunches: () =>
+    request<{ items: DiagnosticsLaunch[] }>("/diagnostics/launches"),
+  diagnosticsLogs: () => request<{ items: DiagnosticsLogFile[] }>("/diagnostics/logs"),
+  diagnosticsLogTail: (path: string, tail = 200) => {
+    const qs = new URLSearchParams({ path, tail: String(tail) });
+    return request<DiagnosticsLogTail>(`/diagnostics/log?${qs.toString()}`);
+  },
   trainingModels: () => request<{ items: SuggestedModel[] }>("/train/models"),
   trainingPreflight: (payload: Record<string, unknown>) =>
     request<Record<string, unknown>>("/train/preflight", {

@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Play,
   ShieldCheck,
+  Stethoscope,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/playground", label: "Playground", icon: MessageSquare, kbd: "G P" },
   { to: "/registry", label: "Registry", icon: Bookmark, kbd: "G B" },
   { to: "/verifiers", label: "Verifiers", icon: ShieldCheck, kbd: "G V" },
+  { to: "/diagnostics", label: "Diagnostics", icon: Stethoscope, kbd: "G X" },
   { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G S" },
   { to: "/docs", label: "Docs", icon: BookOpen, kbd: "G D" },
 ];

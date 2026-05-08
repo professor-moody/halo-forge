@@ -400,6 +400,34 @@ def create_app() -> "FastAPI":
     async def list_docs() -> Dict[str, Any]:
         return service.list_docs_capabilities()
 
+    # Diagnostics — orphan launches + logs/ inventory. The /runs page
+    # only shows runs that produced training_summary.json; runs that
+    # aborted before that point were invisible. These endpoints back
+    # the /diagnostics route in public_app.
+    @router.get("/diagnostics/summary")
+    async def diagnostics_summary() -> Dict[str, Any]:
+        from halo_forge.public_api import diagnostics
+        return diagnostics.summary(service.base_path)
+
+    @router.get("/diagnostics/launches")
+    async def diagnostics_launches() -> Dict[str, Any]:
+        from halo_forge.public_api import diagnostics
+        return {"items": diagnostics.inventory_launches(service.base_path)}
+
+    @router.get("/diagnostics/logs")
+    async def diagnostics_logs() -> Dict[str, Any]:
+        from halo_forge.public_api import diagnostics
+        return {"items": diagnostics.inventory_logs(service.base_path)}
+
+    @router.get("/diagnostics/log")
+    async def diagnostics_log_tail(path: str, tail: int = 200) -> Dict[str, Any]:
+        from halo_forge.public_api import diagnostics
+        return diagnostics.tail_log(
+            base_path=service.base_path,
+            requested_path=path,
+            tail=int(tail),
+        )
+
     api.include_router(router)
 
     # Track P3 — Prometheus exposition. Lives at the root (`/metrics`)
