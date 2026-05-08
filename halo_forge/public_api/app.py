@@ -95,6 +95,30 @@ def create_app() -> "FastAPI":
     async def list_training_verifiers() -> Dict[str, Any]:
         return {"items": service.list_training_verifiers()}
 
+    @router.get("/train/templates")
+    async def list_training_templates() -> Dict[str, Any]:
+        """Intent-driven training templates (gallery surface).
+
+        Distinct from `/train/presets` (which is the mode-level
+        configurator pre-fill source) — templates are user-facing
+        starting points like "train Python coding" or "fine-tune
+        whisper for podcasts", and bind a modality + model + dataset
+        + verifier + hyperparams in a single object."""
+        from halo_forge.training import list_categories, list_templates
+        return {
+            "categories": list_categories(),
+            "items": list_templates(),
+        }
+
+    @router.get("/train/templates/{template_id}")
+    async def get_training_template(template_id: str) -> Dict[str, Any]:
+        from halo_forge.training import cli_invocation, get_template
+        tpl = get_template(template_id)
+        if tpl is None:
+            raise HTTPException(status_code=404, detail=f"Unknown template: {template_id}")
+        tpl["cli"] = cli_invocation(template_id)
+        return tpl
+
     @router.get("/verifiers")
     async def list_verifier_catalog() -> Dict[str, Any]:
         """Full registry inventory (Track F-O). Distinct from

@@ -1,4 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -42,6 +44,9 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/train")({
   component: TrainConfiguratorRoute,
+  validateSearch: (search): { template?: string } => ({
+    template: typeof search.template === "string" ? search.template : undefined,
+  }),
 });
 
 /* -------------------------------------------------------------------------
@@ -97,16 +102,57 @@ function TrainConfiguratorRoute() {
   const models = useTrainingModels();
   const preflight = useTrainingPreflight();
   const launch = useTrainingLaunch();
+  const { template: templateId } = Route.useSearch();
 
   const [config, setConfig] = useState<ConfigState>(defaultConfig);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [templateApplied, setTemplateApplied] = useState<string | null>(null);
+
+  // Pull the template if the user landed via /train?template=<id>.
+  // Only fetch on demand to keep the no-template path zero-cost.
+  const templateQuery = useQuery({
+    queryKey: ["training-template", templateId],
+    queryFn: () => api.trainingTemplate(templateId!),
+    enabled: Boolean(templateId),
+  });
+
+  // Apply template defaults the moment the data arrives. Only sft/raft
+  // are honored here — other modalities can't be launched from this
+  // form yet, so the gallery directs them to the CLI instead.
+  useEffect(() => {
+    if (!templateQuery.data || templateApplied === templateQuery.data.id) return;
+    const t = templateQuery.data;
+    if (t.modality !== "sft" && t.modality !== "raft") return;
+    const hp = t.hyperparams as Record<string, unknown>;
+    setConfig((prev) => ({
+      ...prev,
+      modality: t.modality as Modality,
+      model: t.model_hint || prev.model,
+      dataset: t.dataset_hint && t.dataset_hint !== "@custom"
+        ? t.dataset_hint
+        : prev.dataset,
+      verifier: typeof t.verifier === "string" ? t.verifier : prev.verifier,
+      epochs: typeof hp.epochs === "number" ? hp.epochs : prev.epochs,
+      batchSize: typeof hp.batch_size === "number" ? hp.batch_size : prev.batchSize,
+      learningRate: typeof hp.learning_rate === "number"
+        ? hp.learning_rate.toString()
+        : prev.learningRate,
+      loraRank: typeof hp.lora_rank === "number" ? hp.lora_rank : prev.loraRank,
+      cycles: typeof hp.cycles === "number" ? hp.cycles : prev.cycles,
+      samplesPerPrompt: typeof hp.samples_per_prompt === "number"
+        ? hp.samples_per_prompt
+        : prev.samplesPerPrompt,
+    }));
+    setTemplateApplied(t.id);
+  }, [templateQuery.data, templateApplied]);
 
   // Auto-populate the model field from the backend's first suggestion
-  // once the suggestion list arrives. Don't overwrite a user-typed value.
+  // once the suggestion list arrives. Don't overwrite a user-typed value
+  // and don't overwrite a template-supplied value.
   useEffect(() => {
-    if (config.model || !models.data?.items.length) return;
+    if (config.model || !models.data?.items.length || templateApplied) return;
     setConfig((prev) => ({ ...prev, model: models.data!.items[0].id }));
-  }, [models.data, config.model]);
+  }, [models.data, config.model, templateApplied]);
 
   // Live preflight: 400ms debounce on form changes. The mutation status
   // gives us loading / success / error states to render in the side panel.
@@ -135,6 +181,12 @@ function TrainConfiguratorRoute() {
         subtitle="Configure and launch RAFT or SFT runs."
         actions={
           <>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/train/templates">
+                <Sparkles />
+                Templates
+              </Link>
+            </Button>
             <Button
               variant="ghost"
               size="sm"

@@ -471,6 +471,36 @@ export type DiagnosticsSummary = {
   };
 };
 
+export type TrainingTemplate = {
+  id: string;
+  name: string;
+  category: string;
+  intent: string;
+  modality: string;
+  model_hint: string;
+  dataset_hint: string;
+  verifier: string | null;
+  hyperparams: Record<string, unknown>;
+  expected_runtime: string;
+  learn_more: string | null;
+  cli_hint: string | null;
+};
+
+export type TrainingTemplateCategory = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export type TrainingTemplateGallery = {
+  categories: TrainingTemplateCategory[];
+  items: TrainingTemplate[];
+};
+
+export type TrainingTemplateDetail = TrainingTemplate & {
+  cli: string;
+};
+
 export type DiagnosticsLogTail = {
   available: boolean;
   lines: string[];
@@ -563,6 +593,9 @@ export const api = {
   trainingPresets: () => request<{ items: TrainingPreset[] }>("/train/presets"),
   trainingDatasets: () => request<{ items: TrainingDataset[] }>("/train/datasets"),
   trainingVerifiers: () => request<{ items: TrainingVerifier[] }>("/train/verifiers"),
+  trainingTemplates: () => request<TrainingTemplateGallery>("/train/templates"),
+  trainingTemplate: (id: string) =>
+    request<TrainingTemplateDetail>(`/train/templates/${encodeURIComponent(id)}`),
   verifierCatalog: () => request<VerifierCatalog>("/verifiers"),
   diagnosticsSummary: () => request<DiagnosticsSummary>("/diagnostics/summary"),
   diagnosticsLaunches: () =>
