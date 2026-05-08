@@ -43,6 +43,7 @@ const CANONICAL_MODALITIES: ReadonlyArray<{ key: string; label: string; hint: st
   { key: "sft", label: "sft", hint: "Supervised fine-tune" },
   { key: "raft", label: "raft", hint: "RAFT (rejection sampling + SFT)" },
   { key: "dpo", label: "dpo", hint: "Direct Preference Optimization" },
+  { key: "orpo", label: "orpo", hint: "Odds-Ratio Preference Optimization (reference-free)" },
   { key: "grpo", label: "grpo", hint: "Group Relative Policy Optimization" },
   { key: "rm", label: "rm", hint: "Reward model (Bradley-Terry)" },
   { key: "vlm", label: "vlm", hint: "Vision-language" },

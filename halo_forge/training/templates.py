@@ -167,6 +167,18 @@ TEMPLATES: tuple[TrainingTemplate, ...] = (
         learn_more="docs/TRAINERS.md#dpo",
     ),
     TrainingTemplate(
+        id="pref-orpo-chat",
+        name="Chat refinement (ORPO)",
+        category="preference",
+        intent="Odds-Ratio Preference Optimization — same chosen/rejected pairs as DPO, half the wall-time, no reference model.",
+        modality="orpo",
+        model_hint="Qwen/Qwen2.5-3B-Instruct",
+        dataset_hint="ultrafeedback",
+        hyperparams={"beta": 0.1, "epochs": 1, "batch_size": 1, "learning_rate": 8e-6},
+        expected_runtime="30-60 min on Strix Halo",
+        learn_more="docs/TRAINERS.md#orpo",
+    ),
+    TrainingTemplate(
         id="pref-rm",
         name="Reward model (Bradley-Terry)",
         category="preference",

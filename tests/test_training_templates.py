@@ -17,7 +17,7 @@ def test_every_template_uses_a_canonical_modality():
     from halo_forge.training import TEMPLATES
 
     canonical = {
-        "sft", "raft", "dpo", "grpo", "rm",
+        "sft", "raft", "dpo", "orpo", "grpo", "rm",
         "vlm", "audio", "reasoning", "agentic",
     }
     for tpl in TEMPLATES:
@@ -144,7 +144,7 @@ def test_training_templates_endpoint(client):
     assert cat_ids == ["code", "reasoning", "vision", "audio", "preference", "agentic"]
     # All canonical trainer kinds should have at least one template.
     seen = {t["modality"] for t in body["items"]}
-    assert {"sft", "raft", "dpo", "grpo", "rm", "vlm", "audio", "reasoning", "agentic"}.issubset(seen)
+    assert {"sft", "raft", "dpo", "orpo", "grpo", "rm", "vlm", "audio", "reasoning", "agentic"}.issubset(seen)
 
 
 def test_training_template_detail_endpoint(client):

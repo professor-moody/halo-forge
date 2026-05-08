@@ -790,6 +790,75 @@ def cmd_dpo_train(args):
     _print_completed_training_summary("dpo", config.output_dir, summary)
 
 
+def cmd_orpo_train(args):
+    """Run ORPO training (Track T17b).
+
+    Reference-free preference optimization in a single pass — combines
+    NLL on the chosen response with a log-odds preference term against
+    the rejected. No reference model copy in memory, no separate RM/PPO,
+    competitive with DPO on chat refinement.
+    """
+    from halo_forge.orpo import ORPOConfig, get_orpo_trainer
+
+    print_banner()
+    print(f"{GREEN}ORPO Training{NC}")
+    print("=" * 60)
+
+    dataset = getattr(args, "dataset", None)
+    data = getattr(args, "data", None)
+    if not dataset and not data:
+        print(f"{RED}Error: Either --dataset or --data is required{NC}")
+        print()
+        print("Examples:")
+        print("  halo-forge orpo train --dataset ultrafeedback --model Qwen/Qwen2.5-3B-Instruct")
+        print("  halo-forge orpo train --data my_pairs.jsonl --model meta-llama/Llama-3.2-3B")
+        print()
+        print("ORPO consumes the same prompt/chosen/rejected layout as DPO —")
+        print("  ultrafeedback, orca_dpo, hh_rlhf, py_dpo all work.")
+        sys.exit(1)
+
+    config = ORPOConfig(
+        model_name=args.model,
+        train_file=data,
+        dataset=dataset,
+        max_samples=getattr(args, "max_samples", None),
+        validation_split=getattr(args, "validation_split", 0.05),
+        max_seq_length=getattr(args, "max_seq_length", 1024),
+        max_prompt_length=getattr(args, "max_prompt_length", 512),
+        beta=getattr(args, "beta", 0.1),
+        output_dir=args.output,
+        num_epochs=getattr(args, "epochs", 1),
+        batch_size=getattr(args, "batch_size", 1),
+        gradient_accumulation_steps=getattr(args, "gradient_accumulation", 16),
+        learning_rate=getattr(args, "learning_rate", 8e-6),
+        warmup_ratio=getattr(args, "warmup_ratio", 0.1),
+        weight_decay=getattr(args, "weight_decay", 0.0),
+        max_grad_norm=getattr(args, "max_grad_norm", 1.0),
+        lora_r=getattr(args, "lora_rank", 16),
+        lora_alpha=getattr(args, "lora_alpha", 32),
+        lora_dropout=getattr(args, "lora_dropout", 0.05),
+        use_dora=getattr(args, "use_dora", False),
+        use_rslora=getattr(args, "use_rslora", False),
+        init_lora_weights=getattr(args, "init_lora_weights", "true"),
+        optim=getattr(args, "optim", "adamw_torch"),
+        save_steps=getattr(args, "save_steps", 200),
+        eval_steps=getattr(args, "eval_steps", 100),
+        save_total_limit=getattr(args, "save_total_limit", 3),
+        load_in_4bit=getattr(args, "load_in_4bit", False),
+        gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
+    )
+
+    if getattr(args, "dry_run", False):
+        print("Dry run: configuration validated. No training started.")
+        print(f"  model={config.model_name} dataset={config.dataset or '(local)'}")
+        print(f"  beta={config.beta}")
+        return
+
+    trainer = get_orpo_trainer(config)
+    summary = trainer.train(resume_from_checkpoint=args.resume)
+    _print_completed_training_summary("orpo", config.output_dir, summary)
+
+
 def cmd_merge(args):
     """Merge LoRA adapters (Tracks T12 + T13).
 
@@ -4873,6 +4942,56 @@ def main():
         'datasets', help='List available preference datasets'
     )
 
+    # orpo command (Track T17b) — Odds-Ratio Preference Optimization.
+    # Same input shape as DPO (prompt/chosen/rejected); reference-free,
+    # single-pass — typically half the wall-time of DPO at similar quality.
+    orpo_parser = subparsers.add_parser('orpo', help='ORPO (Odds-Ratio Preference Optimization) training')
+    orpo_subparsers = orpo_parser.add_subparsers(dest='orpo_command', required=True)
+
+    orpo_train_parser = orpo_subparsers.add_parser('train', help='Run ORPO training')
+    orpo_train_parser.add_argument('--config', '-c', help='Config file path')
+    orpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
+                                   help='Base / SFT-tuned model to align')
+    orpo_train_parser.add_argument('--dataset', '-d',
+                                   help='HuggingFace dataset id or short name (ultrafeedback, orca_dpo, hh_rlhf, py_dpo)')
+    orpo_train_parser.add_argument('--data',
+                                   help='Local JSONL with prompt/chosen/rejected rows')
+    orpo_train_parser.add_argument('--output', '-o', default='models/orpo', help='Output directory')
+    orpo_train_parser.add_argument('--resume', help='Resume from checkpoint')
+    orpo_train_parser.add_argument('--dry-run', action='store_true', help='Validate config without training')
+
+    orpo_train_parser.add_argument('--beta', type=float, default=0.1,
+                                   help='Relative weight of preference (log-odds) term vs NLL (default: 0.1)')
+
+    orpo_train_parser.add_argument('--epochs', type=int, default=1)
+    orpo_train_parser.add_argument('--batch-size', type=int, default=1,
+                                   help='Per-device batch size (ORPO sees chosen+rejected per row)')
+    orpo_train_parser.add_argument('--learning-rate', type=float, default=8e-6,
+                                   help='Learning rate (default: 8e-6 — between SFT and DPO)')
+    orpo_train_parser.add_argument('--warmup-ratio', type=float, default=0.1)
+    orpo_train_parser.add_argument('--weight-decay', type=float, default=0.0)
+    orpo_train_parser.add_argument('--max-grad-norm', type=float, default=1.0)
+    orpo_train_parser.add_argument('--gradient-accumulation', type=int, default=16)
+
+    orpo_train_parser.add_argument('--lora-rank', type=int, default=16)
+    orpo_train_parser.add_argument('--lora-alpha', type=int, default=32)
+    orpo_train_parser.add_argument('--lora-dropout', type=float, default=0.05)
+    orpo_train_parser.add_argument('--load-in-4bit', action='store_true',
+                                   help='QLoRA: load base model in 4-bit (CUDA/ROCm only)')
+    orpo_train_parser.add_argument('--use-dora', action='store_true')
+    orpo_train_parser.add_argument('--use-rslora', action='store_true')
+    orpo_train_parser.add_argument('--init-lora-weights', default='true')
+    orpo_train_parser.add_argument('--optim', default='adamw_torch')
+
+    orpo_train_parser.add_argument('--save-steps', type=int, default=200)
+    orpo_train_parser.add_argument('--eval-steps', type=int, default=100)
+    orpo_train_parser.add_argument('--save-total-limit', type=int, default=3)
+    orpo_train_parser.add_argument('--max-samples', type=int)
+    orpo_train_parser.add_argument('--validation-split', type=float, default=0.05)
+    orpo_train_parser.add_argument('--max-seq-length', type=int, default=1024)
+    orpo_train_parser.add_argument('--max-prompt-length', type=int, default=512)
+    orpo_train_parser.add_argument('--no-gradient-checkpointing', action='store_true')
+
     # rm command (Track T3) — Bradley-Terry reward model trainer.
     rm_parser = subparsers.add_parser('rm', help='Reward model training (Bradley-Terry)')
     rm_subparsers = rm_parser.add_subparsers(dest='rm_command', required=True)
@@ -6199,6 +6318,7 @@ def _dispatch_commands(args):
         ('raft', 'train'): 'raft_train',
         ('sft', 'train'): 'sft_train',
         ('dpo', 'train'): 'dpo_train',
+        ('orpo', 'train'): 'orpo_train',
         ('grpo', 'train'): 'grpo_train',
         ('rm', 'train'): 'rm_train',
         ('vlm', 'train'): 'vlm_train',
@@ -6219,6 +6339,8 @@ def _dispatch_commands(args):
         subcommand = getattr(args, 'sft_command', None)
     elif args.command == 'dpo':
         subcommand = getattr(args, 'dpo_command', None)
+    elif args.command == 'orpo':
+        subcommand = getattr(args, 'orpo_command', None)
     elif args.command == 'grpo':
         subcommand = getattr(args, 'grpo_command', None)
     elif args.command == 'rm':
@@ -6268,6 +6390,9 @@ def _dispatch_commands(args):
             cmd_dpo_train(args)
         elif args.dpo_command == 'datasets':
             cmd_dpo_datasets(args)
+    elif args.command == 'orpo':
+        if args.orpo_command == 'train':
+            cmd_orpo_train(args)
     elif args.command == 'grpo':
         if args.grpo_command == 'train':
             cmd_grpo_train(args)
