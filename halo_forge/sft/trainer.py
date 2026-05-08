@@ -43,8 +43,11 @@ from halo_forge.training_contracts import (
 )
 from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.utils.accelerator import (
+    detect_gpu_kind,
     empty_accelerator_cache,
     get_device_map,
+    get_torch_device,
+    is_accelerator_available,
     recommended_attn_impl,
     recommended_dtype,
     supports_4bit_quantization,
@@ -107,32 +110,52 @@ class SFTTrainer:
         self.dataset_representative_examples: list[dict[str, Any]] = []
     
     def check_environment(self):
-        """Verify ROCm/PyTorch environment."""
+        """Verify the active accelerator and surface what we'll run on.
+
+        Cross-backend (Phase 1 multi-backend port). The trainer used to
+        hard-exit when ``torch.cuda.is_available()`` was False, which
+        was wrong on Apple Silicon (MPS) and any other non-CUDA host
+        the rest of halo-forge supports. We now accept any accelerator
+        the kernel/torch combo reports — including CPU as a loud-warning
+        fallback so a misconfigured CUDA box still surfaces what it's
+        about to do."""
         print("=" * 70)
         print("ENVIRONMENT CHECK")
         print("=" * 70)
         print()
-        
+
+        kind = detect_gpu_kind()
         print(f"PyTorch version: {torch.__version__}")
+        print(f"Accelerator: {kind}")
         print(f"CUDA available: {torch.cuda.is_available()}")
-        
-        if not torch.cuda.is_available():
-            print("\nERROR: CUDA/ROCm not available!")
-            print("Make sure you're inside the halo-forge toolbox.")
-            sys.exit(1)
-        
-        device_name = torch.cuda.get_device_name(0)
-        total_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        
-        print(f"Device: {device_name}")
-        print(f"Total memory: {total_memory_gb:.1f} GB")
-        
-        if total_memory_gb < 25:
-            print(f"\nWARNING: Only {total_memory_gb:.1f} GB detected!")
-            print("Expected: ~128GB for Strix Halo")
+        print(f"MPS available: {torch.backends.mps.is_available() if hasattr(torch.backends, 'mps') else False}")
+
+        if not is_accelerator_available():
+            print()
+            print("WARNING: no GPU accelerator detected — falling back to CPU.")
+            print("Training will be very slow on anything beyond a tiny model.")
+            print()
+            return
+
+        if kind == "cuda":
+            device_name = torch.cuda.get_device_name(0)
+            total_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+            print(f"Device: {device_name}")
+            print(f"Total memory: {total_memory_gb:.1f} GB")
+            if total_memory_gb < 25:
+                print(f"\nWARNING: Only {total_memory_gb:.1f} GB detected!")
+                print("Expected: ~128GB for Strix Halo")
+            else:
+                print("Memory check passed")
+        elif kind in ("mps", "mlx"):
+            # Apple Silicon — torch can't directly query free VRAM, so
+            # we just report the device handle and trust the user's
+            # box is sized for the model they picked.
+            print(f"Device: {get_torch_device()}")
+            print("(Apple Silicon / MPS — VRAM is unified system memory)")
         else:
-            print("Memory check passed")
-        
+            print(f"Device: {get_torch_device()}")
+
         print()
     
     def load_dataset(self, file_path: Optional[str] = None, dataset_name: Optional[str] = None) -> tuple:
