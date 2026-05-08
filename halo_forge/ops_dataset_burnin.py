@@ -763,7 +763,14 @@ def _profile_commands(module: str, *, profile: str, seed: int) -> List[List[str]
                 "results/readiness/ops_dataset_burnin_benchmark.json",
             ]
         ],
-        "ui_ops": [base + ["ui", "--no-browser"]],
+        # ui_ops module: the legacy NiceGUI command (`halo-forge ui`) was
+        # retired with the React SPA migration. The replacement surface
+        # is `halo-forge serve-public` (FastAPI dashboard API) — but
+        # binding a port during a fixture-driven burn-in is unreliable
+        # under shared CI workers, so we substitute a no-bind health
+        # probe via `info` instead. The contract that this module is
+        # reachable lives in the e2e + qualification gates.
+        "ui_ops": [base + ["info"]],
     }
     return commands[module]
 

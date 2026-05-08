@@ -180,7 +180,7 @@
         "ui_service_contract": true
       },
       "commands": [
-        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli ui --no-browser"
+        "/opt/homebrew/opt/python@3.14/bin/python3.14 -m halo_forge.cli info"
       ],
       "contract_checks": {
         "launch_ok": true,

@@ -167,7 +167,9 @@ def _module_base_command(module: str, seed: int) -> List[str]:
         "audio": ["halo-forge", "audio", "train", "--dry-run", "--dataset", "librispeech", "--seed", str(seed)],
         "reasoning": ["halo-forge", "reasoning", "train", "--dry-run", "--dataset", "gsm8k", "--seed", str(seed)],
         "agentic": ["halo-forge", "agentic", "train", "--dry-run", "--dataset", "xlam", "--seed", str(seed)],
-        "ui_ops": ["halo-forge", "ui", "--no-browser"],
+        # NiceGUI `halo-forge ui` was retired with the SPA migration.
+        # `halo-forge info` is the equivalent no-bind reachability probe.
+        "ui_ops": ["halo-forge", "info"],
     }
     return commands[module]
 
@@ -226,7 +228,11 @@ def _module_ui_route(module: str) -> str:
         "audio": "/training",
         "reasoning": "/training",
         "agentic": "/training",
-        "ui_ops": "/monitor",
+        # The NiceGUI `/monitor` page was retired; the SPA's runs detail
+        # (per-run-id) is the live equivalent. The walkthrough strings
+        # are descriptive, not navigational, so this just needs to point
+        # at the surface that fulfills the contract today.
+        "ui_ops": "/runs",
     }
     return route_map[module]
 
@@ -266,7 +272,13 @@ def _module_evidence_paths(module: str) -> List[str]:
             "{output_dir}/launch_context.json",
             "{output_dir}/latest_checkpoint.json",
         ],
-        "ui_ops": ["{repo_root}/ui/app.py", "{repo_root}/ui/components/sidebar.py"],
+        # SPA + FastAPI replaced the NiceGUI `ui/app.py` + `ui/components/`.
+        # The walkthrough evidence is now the FastAPI surface and the
+        # SPA entrypoint that exercises it.
+        "ui_ops": [
+            "{repo_root}/halo_forge/public_api/app.py",
+            "{repo_root}/public_app/src/main.tsx",
+        ],
     }
     return evidence_map[module]
 

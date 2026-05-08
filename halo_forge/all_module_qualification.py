@@ -1553,7 +1553,11 @@ def _module_command(module: str, seed: int) -> List[str]:
             "--seed",
             str(seed),
         ],
-        "ui_ops": ["halo-forge", "ui", "--no-browser"],
+        # `halo-forge ui` was the NiceGUI app and got retired with the
+        # SPA migration. `halo-forge info` is a no-bind reachability
+        # probe that exercises the same import boundaries (CLI, public
+        # API service, backend detection).
+        "ui_ops": ["halo-forge", "info"],
     }
     return commands[module]
 

@@ -666,12 +666,23 @@ def _run_probe_command(command: List[str], *, timeout_seconds: int) -> Dict[str,
 
 
 def _probe_ui_ops_contracts() -> tuple[List[str], List[str]]:
+    """Validate the UI surface as it exists today.
+
+    The NiceGUI app under `ui/` was retired in favor of the React SPA
+    under `public_app/` + FastAPI under `halo_forge/public_api/`. The
+    surviving piece of the legacy `ui/` package is `ui/services/`,
+    which the FastAPI service consumes for ops readiness; everything
+    else (pages, components, app.py) is gone. Probe the *current*
+    surface — getting wrong answers from the right files is worse than
+    getting honest "missing" answers from yesterday's files.
+    """
     errors: List[str] = []
     warnings: List[str] = []
     required_files = [
-        Path("ui/app.py"),
-        Path("ui/pages/dashboard.py"),
-        Path("ui/pages/research_hub.py"),
+        Path("halo_forge/public_api/app.py"),
+        Path("halo_forge/public_api/service.py"),
+        Path("public_app/src/main.tsx"),
+        Path("public_app/src/routes/__root.tsx"),
         Path("ui/services/ops_readiness_service.py"),
     ]
     missing = [str(path) for path in required_files if not path.exists()]

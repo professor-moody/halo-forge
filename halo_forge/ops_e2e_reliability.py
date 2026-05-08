@@ -509,25 +509,49 @@ def _validate_benchmark_module(output_dir: Path) -> OpsE2EModuleResult:
 
 
 def _validate_ui_ops_module(repo_root: Path) -> OpsE2EModuleResult:
+    """Validate the UI surface.
+
+    halo-forge's UI is now the React SPA in `public_app/` talking to
+    the FastAPI dashboard at `halo_forge.public_api.app`. This used to
+    grep `ui/app.py` for NiceGUI routes; that file was retired with
+    NiceGUI. We now verify the live surface: the FastAPI app module
+    exists, the SPA entrypoint exists, and the `serve-public` CLI
+    subcommand still wires them together.
+    """
     errors: List[str] = []
     warnings: List[str] = []
     evidence: Dict[str, Any] = {"repo_root": str(repo_root)}
 
-    app_path = repo_root / "ui/app.py"
+    api_path = repo_root / "halo_forge/public_api/app.py"
+    service_path = repo_root / "halo_forge/public_api/service.py"
+    spa_entry = repo_root / "public_app/src/main.tsx"
     cli_path = repo_root / "halo_forge/cli.py"
-    required_paths = (app_path, cli_path)
+    required_paths = (api_path, service_path, spa_entry, cli_path)
     for path in required_paths:
         if not path.exists():
             errors.append(f"missing ui ops contract file: {path}")
-    if app_path.exists():
-        app_source = app_path.read_text(encoding="utf-8")
-        for route in ("/", "/inference", "/benchmark-advanced", "/research-hub"):
-            if route not in app_source:
-                errors.append(f"missing route in ui/app.py: {route}")
+
+    if api_path.exists():
+        api_source = api_path.read_text(encoding="utf-8")
+        # The frontend depends on these endpoints existing on the public
+        # API surface. If any disappears the SPA's hooks break silently
+        # at runtime — surface it as a contract failure here instead.
+        for endpoint in (
+            "/health",
+            "/backend",
+            "/runs",
+            "/runs/search",
+            "/diagnostics/summary",
+            "/train/templates",
+            "/verifiers",
+        ):
+            if endpoint not in api_source:
+                errors.append(f"missing endpoint in public_api/app.py: {endpoint}")
+
     if cli_path.exists():
         cli_source = cli_path.read_text(encoding="utf-8")
-        if "ui_parser = subparsers.add_parser('ui'" not in cli_source:
-            errors.append("missing ui parser command in halo_forge/cli.py")
+        if "'serve-public'" not in cli_source:
+            errors.append("missing serve-public parser command in halo_forge/cli.py")
 
     status = _status(errors, warnings)
     launch_ok = not errors

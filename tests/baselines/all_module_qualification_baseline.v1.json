@@ -679,7 +679,7 @@
       "readiness_tier": "",
       "relaunch_ok": true,
       "rerun_commands": [
-        "halo-forge ui --no-browser"
+        "halo-forge info"
       ],
       "results_ingestion_ok": true,
       "resume_latest_ok": false,
