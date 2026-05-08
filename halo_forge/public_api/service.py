@@ -938,6 +938,7 @@ class PublicApiService:
             },
             "facets": {
                 "modalities": db.distinct_modalities(),
+                "modality_counts": db.modality_counts(),
                 "models": db.distinct_models(),
             },
         }

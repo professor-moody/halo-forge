@@ -172,6 +172,8 @@ export type RunSearchResponse = {
   filters: Record<string, unknown>;
   facets: {
     modalities: string[];
+    /** Per-modality run counts. Modalities with zero runs are omitted. */
+    modality_counts?: Record<string, number>;
     models: string[];
   };
 };

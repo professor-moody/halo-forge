@@ -183,6 +183,19 @@ def test_distinct_helpers(db):
     assert db.distinct_models() == ["Qwen/A", "meta/B"]
 
 
+def test_modality_counts(db):
+    db.upsert_run(_make_record(run_id="a", modality="sft"))
+    db.upsert_run(_make_record(run_id="b", modality="sft"))
+    db.upsert_run(_make_record(run_id="c", modality="dpo"))
+    db.upsert_run(_make_record(run_id="d", modality="grpo"))
+    counts = db.modality_counts()
+    assert counts == {"sft": 2, "dpo": 1, "grpo": 1}
+
+
+def test_modality_counts_empty(db):
+    assert db.modality_counts() == {}
+
+
 def test_get_database_caches_per_path(tmp_path, monkeypatch):
     monkeypatch.setenv("HALOFORGE_RUN_DB_PATH", str(tmp_path / "runs.db"))
     from halo_forge.run_db import get_database

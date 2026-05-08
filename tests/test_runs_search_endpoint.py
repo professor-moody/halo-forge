@@ -110,8 +110,9 @@ def test_search_default_returns_all(search_client):
     ids = [item["run_id"] for item in body["items"]]
     # Default sort is timestamp desc.
     assert ids == ["r_dpo_llama", "r_sft_qwen", "r_raft_qwen"]
-    # Facets surface distinct modalities + models.
+    # Facets surface distinct modalities + models + per-modality counts.
     assert set(body["facets"]["modalities"]) == {"sft", "dpo", "raft"}
+    assert body["facets"]["modality_counts"] == {"sft": 1, "dpo": 1, "raft": 1}
     assert "Qwen/Qwen2.5-3B" in body["facets"]["models"]
 
 

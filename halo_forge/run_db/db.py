@@ -340,6 +340,18 @@ class RunDatabase:
         )
         return [row["modality"] for row in cur.fetchall()]
 
+    def modality_counts(self) -> dict[str, int]:
+        """Count of indexed runs per modality.
+
+        Used by the /runs filter UI so chips for kinds with rows show
+        their tally and chips for kinds with zero runs render dim
+        (rather than disappearing — discoverability for trainers the
+        user hasn't tried yet)."""
+        cur = self._conn.execute(
+            "SELECT modality, COUNT(*) AS c FROM runs GROUP BY modality"
+        )
+        return {row["modality"]: int(row["c"]) for row in cur.fetchall()}
+
     def distinct_models(self) -> List[str]:
         cur = self._conn.execute(
             "SELECT DISTINCT model_name FROM runs ORDER BY model_name"

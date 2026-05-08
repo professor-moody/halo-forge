@@ -29,6 +29,28 @@ export const Route = createFileRoute("/runs/")({
 type StatusKey = "completed" | "running" | "failed" | "pending";
 const STATUS_OPTIONS: StatusKey[] = ["completed", "running", "failed", "pending"];
 
+/**
+ * Canonical training kinds halo-forge can produce. Render them all so
+ * users see what's available even before they've used a given trainer.
+ * Order: training algorithms first (sft/raft/dpo/grpo/rm), then
+ * modality-specific paths (vlm/audio/reasoning/agentic).
+ *
+ * Keep in sync with the trainer modules under halo_forge/. If a new
+ * trainer is added, append it here too — chips with zero runs render
+ * dim instead of disappearing.
+ */
+const CANONICAL_MODALITIES: ReadonlyArray<{ key: string; label: string; hint: string }> = [
+  { key: "sft", label: "sft", hint: "Supervised fine-tune" },
+  { key: "raft", label: "raft", hint: "RAFT (rejection sampling + SFT)" },
+  { key: "dpo", label: "dpo", hint: "Direct Preference Optimization" },
+  { key: "grpo", label: "grpo", hint: "Group Relative Policy Optimization" },
+  { key: "rm", label: "rm", hint: "Reward model (Bradley-Terry)" },
+  { key: "vlm", label: "vlm", hint: "Vision-language" },
+  { key: "audio", label: "audio", hint: "Speech / audio" },
+  { key: "reasoning", label: "reasoning", hint: "Reasoning / chain-of-thought" },
+  { key: "agentic", label: "agentic", hint: "Agentic / tool-use" },
+];
+
 function RunsListRoute() {
   const [modalities, setModalities] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<StatusKey[]>([]);
@@ -86,21 +108,35 @@ function RunsListRoute() {
         {/* Filter rail */}
         <Card>
           <CardContent className="p-3 space-y-2.5">
-            {/* Modality chips */}
+            {/* Modality chips — canonical full set, with counts when
+                populated. Kinds with zero runs render dim so the user
+                sees what's available before they've tried it (otherwise
+                only sft/raft would ever appear in a fresh install). */}
             <ChipRow label="Modality">
-              {facets.modalities.length === 0 ? (
-                <span className="text-[11px] text-fg-disabled">indexing…</span>
-              ) : (
-                facets.modalities.map((m) => (
-                  <Chip
-                    key={m}
-                    active={modalities.includes(m)}
-                    onClick={() => setModalities((prev) => toggle(prev, m))}
-                  >
-                    {m}
-                  </Chip>
-                ))
-              )}
+              {(() => {
+                const counts = facets.modality_counts ?? {};
+                const known = new Set(CANONICAL_MODALITIES.map((m) => m.key));
+                const extras = facets.modalities.filter((m) => !known.has(m));
+                const all = [
+                  ...CANONICAL_MODALITIES,
+                  ...extras.map((k) => ({ key: k, label: k, hint: "" })),
+                ];
+                return all.map(({ key, label, hint }) => {
+                  const count = counts[key] ?? 0;
+                  return (
+                    <Chip
+                      key={key}
+                      active={modalities.includes(key)}
+                      empty={count === 0}
+                      onClick={() => setModalities((prev) => toggle(prev, key))}
+                      title={hint || undefined}
+                      count={count}
+                    >
+                      {label}
+                    </Chip>
+                  );
+                });
+              })()}
             </ChipRow>
 
             <ChipRow label="Status">
@@ -265,11 +301,17 @@ function ChipRow({
 
 function Chip({
   active,
+  empty = false,
   onClick,
+  count,
+  title,
   children,
 }: {
   active: boolean;
+  empty?: boolean;
   onClick: () => void;
+  count?: number;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -277,14 +319,30 @@ function Chip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       className={cn(
-        "h-6 px-2 rounded-md border text-[11px] capitalize tracking-tight transition-colors",
+        "h-6 px-2 rounded-md border text-[11px] capitalize tracking-tight transition-colors inline-flex items-center gap-1",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         active
           ? "border-accent bg-accent-bg text-accent font-medium"
-          : "border-border-subtle text-fg-muted hover:text-fg hover:border-border",
+          : empty
+            // Dim look for kinds with zero runs — still clickable so
+            // users can pre-select a filter, but visibly secondary.
+            ? "border-border-subtle/60 text-fg-disabled hover:text-fg-muted hover:border-border-subtle"
+            : "border-border-subtle text-fg-muted hover:text-fg hover:border-border",
       )}
     >
       {children}
+      {typeof count === "number" && count > 0 ? (
+        <span
+          className={cn(
+            "font-mono text-[10px] tabular-nums px-1 rounded-sm normal-case tracking-normal",
+            active ? "bg-accent/15 text-accent" : "bg-surface text-fg-disabled",
+          )}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }
