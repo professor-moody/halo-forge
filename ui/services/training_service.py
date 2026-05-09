@@ -1124,7 +1124,12 @@ class TrainingService:
         ))
         
         # Launch subprocess
-        await self._launch_process(job.id, cmd, on_log, no_caffeinate=no_caffeinate)
+        await self._launch_process_with_runtime_options(
+            job.id,
+            cmd,
+            on_log,
+            no_caffeinate=no_caffeinate,
+        )
         
         return job.id
     
@@ -1335,7 +1340,12 @@ class TrainingService:
         ))
         
         # Launch subprocess
-        await self._launch_process(job.id, cmd, on_log, no_caffeinate=no_caffeinate)
+        await self._launch_process_with_runtime_options(
+            job.id,
+            cmd,
+            on_log,
+            no_caffeinate=no_caffeinate,
+        )
         
         return job.id
 
@@ -1502,7 +1512,12 @@ class TrainingService:
             ),
         ))
 
-        await self._launch_process(job.id, cmd, on_log, no_caffeinate=no_caffeinate)
+        await self._launch_process_with_runtime_options(
+            job.id,
+            cmd,
+            on_log,
+            no_caffeinate=no_caffeinate,
+        )
         return job.id
 
     async def relaunch_from_context(
@@ -1587,6 +1602,20 @@ class TrainingService:
 
         raise ValueError(f"Unsupported training relaunch job_type: {job_type}")
     
+    async def _launch_process_with_runtime_options(
+        self,
+        job_id: str,
+        cmd: list[str],
+        on_log: Optional[Callable[[str], None]] = None,
+        *,
+        no_caffeinate: bool = False,
+    ):
+        """Launch with optional runtime wrappers while preserving the default call contract."""
+        if no_caffeinate:
+            await self._launch_process(job_id, cmd, on_log, no_caffeinate=True)
+            return
+        await self._launch_process(job_id, cmd, on_log)
+
     async def _launch_process(
         self,
         job_id: str,
