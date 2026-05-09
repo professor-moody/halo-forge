@@ -2335,6 +2335,63 @@ def cmd_info(args):
             print(line)
 
 
+def cmd_models(args):
+    """List and inspect curated upstream/base models."""
+    from halo_forge.models.catalog import CATALOG_VERSION, get_model, list_models
+
+    if args.models_command == "show":
+        item = get_model(args.model_id)
+        if item is None:
+            print(f"Unknown model: {args.model_id}", file=sys.stderr)
+            sys.exit(1)
+        if getattr(args, "json", False):
+            print(json.dumps(item, indent=2, sort_keys=True))
+            return
+        print(f"{item['id']}")
+        print(f"  label: {item['label']}")
+        print(f"  provider: {item['provider']}")
+        print(f"  family: {item['family']} ({item['parameter_count']})")
+        print(f"  status: {item['status']}")
+        print(f"  memory: {item['memory_tier']}")
+        print(f"  modalities: {', '.join(item['modalities'])}")
+        print(f"  trainers: {', '.join(item['trainer_support'])}")
+        print(f"  backends: {', '.join(item['backend_support'])}")
+        if item.get("mlx_variant"):
+            print(f"  mlx_variant: {item['mlx_variant']}")
+        print(f"  use: {item['recommended_use']}")
+        caveats = item.get("known_caveats") or []
+        if caveats:
+            print("  caveats:")
+            for caveat in caveats:
+                print(f"    - {caveat}")
+        return
+
+    filters = {
+        "mode": getattr(args, "mode", None),
+        "backend": getattr(args, "backend", None),
+        "modality": getattr(args, "modality", None),
+        "provider": getattr(args, "provider", None),
+        "status": getattr(args, "status", None),
+        "memory_tier": getattr(args, "memory_tier", None),
+    }
+    items = list_models({k: v for k, v in filters.items() if v})
+    if getattr(args, "json", False):
+        print(json.dumps({"catalog_version": CATALOG_VERSION, "items": items}, indent=2, sort_keys=True))
+        return
+    print(f"halo-forge model catalog {CATALOG_VERSION} ({len(items)} models)")
+    print()
+    print(f"{'MODEL':<42} {'STATUS':<12} {'MEM':<7} {'TRAINERS':<22} USE")
+    print("-" * 110)
+    for item in items:
+        trainers = ",".join(item["trainer_support"][:4])
+        if len(item["trainer_support"]) > 4:
+            trainers += ",..."
+        print(
+            f"{item['id']:<42.42} {item['status']:<12} {item['memory_tier']:<7} "
+            f"{trainers:<22.22} {item['recommended_use']}"
+        )
+
+
 # =============================================================================
 # Test Command
 # =============================================================================
@@ -5826,6 +5883,21 @@ def main():
     
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
+
+    # models command
+    models_parser = subparsers.add_parser('models', help='Browse curated base-model catalog')
+    models_subparsers = models_parser.add_subparsers(dest='models_command', required=True)
+    models_list_parser = models_subparsers.add_parser('list', help='List recommended and compatible models')
+    models_list_parser.add_argument('--mode', help='Filter by trainer/mode (sft, raft, dpo, grpo, vlm, audio, ...)')
+    models_list_parser.add_argument('--backend', help='Filter by backend (cuda, rocm, mps, mlx, cpu)')
+    models_list_parser.add_argument('--modality', help='Filter by modality (text, code, vision, audio)')
+    models_list_parser.add_argument('--provider', help='Filter by provider (Qwen, Liquid AI, Meta, ...)')
+    models_list_parser.add_argument('--status', help='Filter by status (recommended, compatible, experimental)')
+    models_list_parser.add_argument('--memory-tier', help='Filter by memory tier (tiny, small, medium, large)')
+    models_list_parser.add_argument('--json', action='store_true', help='Emit JSON')
+    models_show_parser = models_subparsers.add_parser('show', help='Show one model catalog entry')
+    models_show_parser.add_argument('model_id', help='Model id, e.g. Qwen/Qwen2.5-Coder-3B')
+    models_show_parser.add_argument('--json', action='store_true', help='Emit JSON')
     
     # plot command - visualization tools
     plot_parser = subparsers.add_parser('plot', help='Generate training/benchmark visualizations')
@@ -6610,6 +6682,8 @@ def _dispatch_commands(args):
             cmd_agentic_sft(args)
     elif args.command == 'info':
         cmd_info(args)
+    elif args.command == 'models':
+        cmd_models(args)
     elif args.command == 'plot':
         if not hasattr(args, 'plot_command') or not args.plot_command:
             print("Usage: halo-forge plot {training|benchmarks} ...")

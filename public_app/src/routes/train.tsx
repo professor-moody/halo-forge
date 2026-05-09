@@ -44,8 +44,10 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/train")({
   component: TrainConfiguratorRoute,
-  validateSearch: (search): { template?: string } => ({
+  validateSearch: (search): { template?: string; model?: string; mode?: string } => ({
     template: typeof search.template === "string" ? search.template : undefined,
+    model: typeof search.model === "string" ? search.model : undefined,
+    mode: typeof search.mode === "string" ? search.mode : undefined,
   }),
 });
 
@@ -99,14 +101,23 @@ function TrainConfiguratorRoute() {
   const backend = useBackendInfo();
   const datasets = useTrainingDatasets();
   const verifiers = useTrainingVerifiers();
-  const models = useTrainingModels();
   const preflight = useTrainingPreflight();
   const launch = useTrainingLaunch();
-  const { template: templateId } = Route.useSearch();
+  const { template: templateId, model: modelId, mode } = Route.useSearch();
 
   const [config, setConfig] = useState<ConfigState>(defaultConfig);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [templateApplied, setTemplateApplied] = useState<string | null>(null);
+  const models = useTrainingModels({ mode: config.modality });
+
+  useEffect(() => {
+    if (!modelId) return;
+    setConfig((prev) => ({
+      ...prev,
+      model: modelId,
+      modality: mode === "raft" || mode === "sft" ? mode : prev.modality,
+    }));
+  }, [modelId, mode]);
 
   // Pull the template if the user landed via /train?template=<id>.
   // Only fetch on demand to keep the no-template path zero-cost.
@@ -150,9 +161,9 @@ function TrainConfiguratorRoute() {
   // once the suggestion list arrives. Don't overwrite a user-typed value
   // and don't overwrite a template-supplied value.
   useEffect(() => {
-    if (config.model || !models.data?.items.length || templateApplied) return;
+    if (modelId || config.model || !models.data?.items.length || templateApplied) return;
     setConfig((prev) => ({ ...prev, model: models.data!.items[0].id }));
-  }, [models.data, config.model, templateApplied]);
+  }, [models.data, config.model, templateApplied, modelId]);
 
   // Live preflight: 400ms debounce on form changes. The mutation status
   // gives us loading / success / error states to render in the side panel.
@@ -303,7 +314,13 @@ function ModelSection({
 }: {
   config: ConfigState;
   setConfig: SetConfig;
-  models: { id: string; for_backend: string }[];
+  models: {
+    id: string;
+    label: string;
+    status: string;
+    recommended_use: string;
+    known_caveats: string[];
+  }[];
 }) {
   return (
     <Card>
@@ -332,6 +349,7 @@ function ModelSection({
                 key={m.id}
                 type="button"
                 onClick={() => setConfig((c) => ({ ...c, model: m.id }))}
+                title={m.known_caveats.length ? m.known_caveats.join(" ") : m.recommended_use}
                 className={cn(
                   "px-2 py-0.5 rounded-sm border text-[11px] font-mono transition-colors",
                   m.id === config.model

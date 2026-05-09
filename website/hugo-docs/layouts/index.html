@@ -2,15 +2,16 @@
 <section class="hero">
     <div class="hero-content">
         <img src="/images/halo-forge.png" alt="halo-forge" class="hero-logo">
-        <h1>Verification-Guided <span class="accent">Code Generation</span> Training</h1>
-        <p class="subtitle">An RLVR framework using compiler feedback as reward signals for iterative model refinement. Built for AMD Strix Halo.</p>
+        <h1>Local <span class="accent">Model Training</span> Workstation</h1>
+        <p class="subtitle">SFT, DPO, ORPO, GRPO, RAFT, eval, serving, and export across ROCm, CUDA, Apple MPS, and Apple MLX.</p>
         <div class="hero-meta">
             <span class="meta-item"><span class="label">Version</span> {{ .Site.Params.version }}</span>
-            <span class="meta-item"><span class="label">Hardware</span> AMD gfx1151</span>
+            <span class="meta-item"><span class="label">Hardware</span> ROCm · CUDA · Apple</span>
             <span class="meta-item"><span class="label">License</span> Apache 2.0</span>
         </div>
         <div class="hero-actions">
             <a href="/docs/getting-started/quickstart/" class="btn btn-primary">Get Started</a>
+            <a href="/docs/getting-started/choose-a-model/" class="btn btn-secondary">Choose a Model</a>
             <a href="{{ .Site.Params.github }}" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
         </div>
     </div>
@@ -18,26 +19,26 @@
 
 <section class="section">
     <div class="container">
-        <h2>Why This Exists</h2>
-        <p class="section-intro">An open-source experiment in local model training on AMD's new unified memory architecture.</p>
+        <h2>Start By Intent</h2>
+        <p class="section-intro">Pick the path that matches your first hour.</p>
         
         <div class="card-grid">
             <div class="card">
-                <h3>128GB Unified Memory</h3>
-                <p>AMD Strix Halo can fit 7B+ models entirely in memory — no quantization needed</p>
+                <h3>First Local Run</h3>
+                <p>Use the beginner quickstart to install, check hardware, train a tiny model, evaluate, and serve.</p>
             </div>
             <div class="card">
-                <h3>Compiler as Teacher</h3>
-                <p>Use GCC/pytest as a free, deterministic reward signal — no human labeling required</p>
+                <h3>Choose a Model</h3>
+                <p>Browse the curated model catalog: Qwen, Llama, Mistral, Gemma, DeepSeek, Whisper, MLX, and Liquid AI.</p>
             </div>
             <div class="card">
-                <h3>Iterate Locally</h3>
-                <p>Run full RLVR training cycles on your own hardware, no cloud dependencies</p>
+                <h3>Run a Scenario</h3>
+                <p>Follow goal-based recipes for code, preference tuning, reasoning, VLM, audio, agentic, and export.</p>
             </div>
         </div>
 
         <div class="callout">
-            <strong>The experiment:</strong> Can we meaningfully improve code generation models using only local compute and compiler feedback? Early results suggest yes.
+            <strong>The workflow:</strong> choose a catalog model, train with an appropriate algorithm, verify/evaluate the result, then serve or export the artifact.
         </div>
     </div>
 </section>
@@ -120,20 +121,22 @@
                 <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                 <span class="code-lang">bash</span>
             </div>
-            <pre><code><span class="comment"># Build the toolbox (ROCm 7 + PyTorch nightly)</span>
+            <pre><code><span class="comment"># Clone and install</span>
 git clone https://github.com/professor-moody/halo-forge.git
-cd halo-forge/toolbox && ./build.sh
-
-<span class="comment"># Create and enter the container</span>
-toolbox create halo-forge --image localhost/halo-forge:latest
-toolbox enter halo-forge
+cd halo-forge
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
 
 <span class="comment"># Validate installation</span>
 halo-forge test --level smoke      <span class="comment"># Quick check, no GPU</span>
-halo-forge test --level standard   <span class="comment"># Full validation</span>
+halo-forge info                    <span class="comment"># Backend and hardware</span>
 
-<span class="comment"># Run demo benchmark</span>
-halo-forge benchmark full --model Qwen/Qwen2.5-Coder-0.5B --cycles <span class="number">2</span></code></pre>
+<span class="comment"># Browse model choices</span>
+halo-forge models list --mode sft
+
+<span class="comment"># First useful training run</span>
+halo-forge sft train --dataset codealpaca --model Qwen/Qwen2.5-Coder-1.5B --epochs <span class="number">1</span></code></pre>
         </div>
 
         <div class="cta-row">
@@ -168,7 +171,17 @@ halo-forge benchmark full --model Qwen/Qwen2.5-Coder-0.5B --cycles <span class="
             <a href="/docs/getting-started/quickstart/" class="doc-card">
                 <div class="doc-icon">→</div>
                 <h3>Quick Start</h3>
-                <p>Get running in under 30 minutes</p>
+                <p>Beginner, evaluator, and power-user paths</p>
+            </a>
+            <a href="/docs/getting-started/choose-a-model/" class="doc-card">
+                <div class="doc-icon">M</div>
+                <h3>Choose a Model</h3>
+                <p>Catalog guidance and Liquid AI caveats</p>
+            </a>
+            <a href="/docs/getting-started/scenarios/" class="doc-card">
+                <div class="doc-icon">$</div>
+                <h3>Usage Scenarios</h3>
+                <p>Runnable recipes by goal</p>
             </a>
             <a href="/docs/training-pipeline/full-pipeline/" class="doc-card">
                 <div class="doc-icon">//</div>

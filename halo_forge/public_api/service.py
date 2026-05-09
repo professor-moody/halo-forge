@@ -649,43 +649,52 @@ class PublicApiService:
             "total": len(items),
         }
 
-    def list_suggested_models(self) -> list[dict[str, Any]]:
+    def list_model_catalog(
+        self,
+        *,
+        mode: Optional[str] = None,
+        backend: Optional[str] = None,
+        modality: Optional[str] = None,
+        provider: Optional[str] = None,
+        status: Optional[str] = None,
+        memory_tier: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Curated upstream/base-model catalog for docs, UI, and CLI parity."""
+        from halo_forge.models.catalog import CATALOG_VERSION, catalog_facets, list_models
+
+        filters = {
+            "mode": mode,
+            "backend": backend,
+            "modality": modality,
+            "provider": provider,
+            "status": status,
+            "memory_tier": memory_tier,
+        }
+        items = list_models({k: v for k, v in filters.items() if v})
+        return {
+            "catalog_version": CATALOG_VERSION,
+            "items": items,
+            "total": len(items),
+            "facets": catalog_facets(items),
+            "filters": {k: v for k, v in filters.items() if v},
+        }
+
+    def list_suggested_models(
+        self,
+        *,
+        mode: Optional[str] = None,
+        modality: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
         """Backend-aware base-model suggestions.
 
-        On torch backends we surface the HF ids the CLI uses by default;
-        on MLX we list a few `mlx-community/...` variants known to load
-        cleanly. The frontend renders this as a quick-pick list inside
-        the model dropdown so users don't have to remember the canonical
-        repo names.
+        Sourced from the curated catalog so training quick-picks, docs,
+        and CLI recommendations stay aligned.
         """
         from halo_forge.backend import get_backend
+        from halo_forge.models.catalog import recommended_models
 
-        backend = get_backend()
-        backend_name = backend.name
-
-        if backend_name == "mlx":
-            suggestions = [
-                "mlx-community/Qwen2.5-0.5B-Instruct-bf16",
-                "mlx-community/Qwen2.5-3B-Instruct-bf16",
-                "mlx-community/Qwen2.5-7B-Instruct-bf16",
-                "mlx-community/Llama-3.2-3B-Instruct-4bit",
-            ]
-        else:
-            suggestions = [
-                "Qwen/Qwen2.5-Coder-0.5B",
-                "Qwen/Qwen2.5-Coder-3B",
-                "Qwen/Qwen2.5-Coder-7B",
-                "Qwen/Qwen2.5-3B-Instruct",
-                "Qwen/Qwen2.5-7B-Instruct",
-            ]
-
-        return [
-            {
-                "id": m,
-                "for_backend": backend_name,
-            }
-            for m in suggestions
-        ]
+        backend_name = get_backend().name
+        return recommended_models(mode=mode, backend=backend_name, modality=modality)
 
     def list_training_presets(self) -> list[dict[str, Any]]:
         """Return public-safe quickstart presets for training."""

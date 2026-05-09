@@ -9,7 +9,14 @@ SFT · DPO · GRPO · RAFT, with verifier-grounded rewards, on ROCm · CUDA · A
 
 The single thing that makes halo-forge different from every adjacent project (axolotl, llama-factory, unsloth, mlx-lm-lora, torchtune): **it runs natively on every modern accelerator**, not just CUDA.
 
-Pick a model. Pick an algorithm. Pick a verifier. Pick a backend. Train. Evaluate. Serve.
+Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train. Evaluate. Serve.
+
+Start fast:
+
+- [I want my first local training run](/docs/getting-started/quickstart/)
+- [I want to choose a model](/docs/getting-started/choose-a-model/)
+- [I want runnable scenarios](/docs/getting-started/scenarios/)
+- [I want to serve or export](/docs/serving/)
 
 ```bash
 # Strix Halo / RTX 4090 / Apple M-series — same commands.

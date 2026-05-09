@@ -28,7 +28,7 @@ export const Route = createFileRoute("/registry")({
 });
 
 /**
- * Model registry (Track F-J).
+ * Run bundle registry (Track F-J).
  *
  * Lists every saved registry entry — named bundles of runs the user
  * wants to compare/promote as a unit. Two affordances:
@@ -118,10 +118,10 @@ function RegistryRoute() {
     <>
       <Topbar
         eyebrow="Workspace"
-        title="Registry"
+        title="Run Bundles"
         subtitle={
           items.length === 0
-            ? "Save named bundles of runs for cohort eval and side-by-side comparison."
+            ? "Save named bundles of trained runs for cohort eval and side-by-side comparison."
             : `${items.length} saved bundle${items.length === 1 ? "" : "s"}`
         }
         actions={

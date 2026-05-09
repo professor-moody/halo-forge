@@ -3,6 +3,7 @@ import {
   api,
   type BackendInfo,
   type DashboardSummary,
+  type ModelCatalogResponse,
   type RunListItem,
   type SuggestedModel,
   type TelemetrySample,
@@ -27,7 +28,10 @@ export const queryKeys = {
   runDetail: (runId: string) => ["runs", runId] as const,
   trainingDatasets: ["training", "datasets"] as const,
   trainingVerifiers: ["training", "verifiers"] as const,
-  trainingModels: ["training", "models"] as const,
+  trainingModels: (params?: { mode?: string; modality?: string }) =>
+    ["training", "models", params] as const,
+  modelCatalog: (params?: Record<string, string | undefined>) =>
+    ["models", params] as const,
 };
 
 /**
@@ -107,10 +111,18 @@ export function useTrainingVerifiers() {
   });
 }
 
-export function useTrainingModels() {
+export function useTrainingModels(params: { mode?: string; modality?: string } = {}) {
   return useQuery<{ items: SuggestedModel[] }>({
-    queryKey: queryKeys.trainingModels,
-    queryFn: api.trainingModels,
+    queryKey: queryKeys.trainingModels(params),
+    queryFn: () => api.trainingModels(params),
+    ...TRAINING_STATIC_OPTS,
+  });
+}
+
+export function useModelCatalog(params: Record<string, string | undefined> = {}) {
+  return useQuery<ModelCatalogResponse>({
+    queryKey: queryKeys.modelCatalog(params),
+    queryFn: () => api.modelCatalog(params),
     ...TRAINING_STATIC_OPTS,
   });
 }

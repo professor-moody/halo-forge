@@ -9,7 +9,17 @@ A workstation tool that takes a base model and turns it into a finetuned, evalua
 
 The single thing that makes it different from every adjacent project (axolotl, llama-factory, unsloth, mlx-lm-lora, torchtune): **it runs natively on every modern accelerator**, not just CUDA.
 
-Pick a model. Pick an algorithm. Pick a verifier. Pick a backend. Train. Evaluate. Serve.
+Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train, evaluate, serve, and save the run into a bundle when it is worth comparing.
+
+## Start By Intent
+
+| I want to... | Start here |
+|---|---|
+| Train my first local model | [Quick Start](/docs/getting-started/quickstart/) |
+| Pick the right base model | [Choose a Model](/docs/getting-started/choose-a-model/) |
+| See runnable examples | [Usage Scenarios](/docs/getting-started/scenarios/) |
+| Run on Apple Silicon | [Hardware Notes](/docs/getting-started/hardware/) and [MLX notes](/docs/serving/) |
+| Serve or export a trained artifact | [Serve / convert / merge](/docs/serving/) |
 
 ## Capabilities
 
@@ -76,6 +86,8 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 
 ### Getting started
 - [Quick Start](/docs/getting-started/quickstart/) — Install + first run
+- [Choose a Model](/docs/getting-started/choose-a-model/) — Model catalog, Liquid AI caveats, and first picks
+- [Usage Scenarios](/docs/getting-started/scenarios/) — Code, preference, reasoning, VLM, audio, agentic, serve/export
 - [Hardware Notes](/docs/getting-started/hardware/) — Per-backend recommendations + feature matrix
 
 ### Trainers

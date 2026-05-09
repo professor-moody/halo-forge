@@ -1,111 +1,105 @@
 ---
-title: "Model Support"
-description: "Supported models for halo-forge training"
+title: "Model Catalog Reference"
+description: "Catalog schema, model family status, and compatibility guidance"
 weight: 6
 ---
 
-halo forge supports various causal language models for code generation training.
+Halo Forge has two different model concepts:
 
-## Recommended Models
+- **Model catalog**: curated upstream/base models you can train, evaluate, serve, or use as starting points.
+- **Run bundles**: saved groups of your trained runs in the dashboard, used for comparison and cohort eval.
 
-### Qwen2.5-Coder Series (Default)
-
-| Model | VRAM Usage | Notes |
-|-------|------------|-------|
-| `Qwen/Qwen2.5-Coder-0.5B` | ~2 GB | Fast iteration, testing |
-| `Qwen/Qwen2.5-Coder-1.5B` | ~4 GB | Good balance |
-| `Qwen/Qwen2.5-Coder-3B` | ~8 GB | Recommended for quality |
-| `Qwen/Qwen2.5-Coder-7B` | ~14 GB | Best quality, slower |
-
-**Qwen2.5-Coder is the default and best-tested model family.**
+Use the catalog from CLI, API, or dashboard:
 
 ```bash
-# 3B model (recommended starting point)
-halo-forge raft train --model Qwen/Qwen2.5-Coder-3B --prompts data/prompts.jsonl
-
-# 7B model (higher quality)
-halo-forge raft train --model Qwen/Qwen2.5-Coder-7B --prompts data/prompts.jsonl
+halo-forge models list
+halo-forge models list --mode raft --backend rocm
+halo-forge models show LiquidAI/LFM2.5-350M
 ```
-
-### Other Tested Models
-
-| Family | Models | Notes |
-|--------|--------|-------|
-| DeepSeek-Coder | 1.3B, 6.7B, 33B | Strong code generation |
-| CodeLlama | 7B, 13B, 34B | Meta's code models |
-| StarCoder2 | 3B, 7B, 15B | BigCode, multi-language |
-
-## Model Selection
-
-### By Use Case
-
-| Use Case | Recommended |
-|----------|-------------|
-| Quick testing | Qwen2.5-Coder-0.5B |
-| Development | Qwen2.5-Coder-3B |
-| Production | Qwen2.5-Coder-7B |
-| Low VRAM (<8GB) | Qwen2.5-Coder-1.5B |
-
-### By Available VRAM
-
-| VRAM | Recommended Models |
-|------|-------------------|
-| 8 GB | 0.5B - 3B |
-| 16 GB | Up to 7B |
-| 24 GB+ | 7B with larger batches |
-| 48 GB+ | 13B - 15B |
-| 80 GB+ | 33B+ |
-
-## Unified Memory (AMD APUs)
-
-On AMD APUs like Strix Halo with unified memory:
-
-| System RAM | Usable for GPU | Recommended |
-|------------|----------------|-------------|
-| 32 GB | ~16 GB | 7B (tight) |
-| 64 GB | ~32 GB | 7B with headroom |
-| 128 GB | ~80 GB | 13B-33B |
-
-## LoRA Configuration
-
-Default LoRA target modules:
-
-```python
-target_modules = [
-    "q_proj", "k_proj", "v_proj", "o_proj",  # Attention
-    "gate_proj", "up_proj", "down_proj"       # MLP
-]
-```
-
-These work for Qwen and Llama-style models. Adjust for other architectures.
-
-## Adding New Models
-
-1. Ensure it's a HuggingFace causal LM (`AutoModelForCausalLM`)
-2. Check `trust_remote_code=True` support if needed
-3. Verify LoRA target modules match the architecture
-4. Test with a small prompt set:
 
 ```bash
-halo-forge raft train \
-    --model YOUR_MODEL \
-    --prompts data/test_prompts.jsonl \
-    --cycles 1 \
-    --output models/test
+curl http://127.0.0.1:8000/api/public/models | jq
+curl "http://127.0.0.1:8000/api/public/models?mode=vlm&status=experimental" | jq
 ```
 
-## Known Issues
+## Catalog Fields
 
-- **DeepSeek-Coder V2**: May require specific transformers version
-- **CodeLlama-34B**: Needs multi-GPU or very large VRAM
-- **Phi models**: Different architecture, may need config adjustments
+Each entry includes:
 
-## LiquidAI LFM Models
+| Field | Meaning |
+|---|---|
+| `id` | Hugging Face, MLX, or local-compatible model identifier |
+| `provider`, `family` | Human grouping for browsing and filtering |
+| `modalities` | `text`, `code`, `vision`, `audio` |
+| `tasks` | Practical uses such as `raft`, `preference`, `asr`, `agentic` |
+| `trainer_support` | Halo Forge trainers expected to work |
+| `backend_support` | `cuda`, `rocm`, `mps`, `mlx`, `cpu` compatibility hints |
+| `memory_tier` | Tiny, small, medium, or large |
+| `status` | `recommended`, `compatible`, `experimental`, or `deprecated` |
+| `known_caveats` | Warnings that should affect operator choice |
+| `mlx_variant` | MLX-format sibling when known |
 
-| Model | Status | Notes |
-|-------|--------|-------|
-| LFM2-1.2B, LFM2.5-1.2B-Base | Supported | Standard CausalLM |
-| LFM2.5-VL-1.6B | Unsupported | Custom architecture |
-| LFM2.5-Audio-1.5B | Unsupported | Non-standard processor |
+## Status Definitions
 
-For LFM text models, use standard loading. For VLM/Audio benchmarks, use Qwen2-VL or Whisper instead.
+| Status | Use it when |
+|---|---|
+| `recommended` | It is a good default for at least one Halo Forge workflow |
+| `compatible` | It should work, but is not the first pick |
+| `experimental` | Interesting but not fully proven in Halo Forge |
+| `deprecated` | Kept for migration context only |
+
+## Family Guidance
+
+### Qwen and Qwen Coder
+
+Qwen is the safest first choice. Use Qwen Coder for code SFT/RAFT, Qwen Instruct for preference tuning, and Qwen-VL for current VLM workflows.
+
+### Llama, Mistral, Gemma
+
+Good general-purpose baselines. Watch license gates and chat-template differences.
+
+### DeepSeek, StarCoder2, CodeLlama
+
+Useful code alternatives. Test a short verifier-backed run before long jobs because tokenizer and dependency behavior can differ by release.
+
+### Whisper
+
+Current audio training defaults are Whisper-compatible. Start with `openai/whisper-tiny` for smoke tests and `openai/whisper-small` for useful ASR adaptation.
+
+### MLX Community
+
+Use MLX-format repos on Apple Silicon when selecting the MLX backend. Quantization is baked into the artifact; it is not bitsandbytes runtime quantization.
+
+### Liquid AI LFM
+
+Liquid LFM2.5 models are small, edge-oriented, and interesting for structured output, tool use, extraction, reasoning, and on-device deployment. Halo Forge lists them with `experimental` status until each path is tested end-to-end.
+
+Recommended first Liquid experiments:
+
+| Model | Use | Caveat |
+|---|---|---|
+| `LiquidAI/LFM2.5-350M` | Tiny structured output and tool-use experiments | Liquid’s model card says it is not recommended for knowledge-heavy tasks or programming |
+| `LiquidAI/LFM2.5-1.2B-Instruct` | Small chat/tool-use experiments | Verify trainer behavior before long runs |
+| `LiquidAI/LFM2.5-1.2B-Thinking` | Reasoning experiments | Treat as experimental until benchmarked locally |
+| `LiquidAI/LFM2.5-VL-450M` / `LFM2.5-VL-1.6B` | Visual extraction experiments | Halo Forge VLM adapters need validation |
+| `LiquidAI/LFM2.5-Audio-1.5B` | ASR/TTS experiments | Halo Forge audio path is currently Whisper-oriented |
+
+Primary references:
+
+- [Liquid model overview](https://www.liquid.ai/models)
+- [LFM2.5 announcement](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai)
+- [Liquid text models](https://docs.liquid.ai/lfm/models/text-models)
+- [Liquid audio models](https://docs.liquid.ai/lfm/models/audio-models)
+- [LiquidAI/LFM2.5-350M on Hugging Face](https://huggingface.co/LiquidAI/LFM2.5-350M)
+
+## Compatibility Is A Starting Point
+
+The catalog answers “what should I try first?” It does not replace a smoke run. Before committing hours to a model:
+
+```bash
+halo-forge test --level smoke
+halo-forge models show MODEL_ID
+halo-forge sft train --model MODEL_ID --dataset codealpaca --epochs 1 --max-samples 50 --output models/smoke
+```
+
+Then evaluate the artifact before scaling samples, model size, or cycles.

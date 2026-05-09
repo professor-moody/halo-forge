@@ -127,9 +127,30 @@ def create_app() -> "FastAPI":
         verifiers too."""
         return service.list_verifier_catalog()
 
+    @router.get("/models")
+    async def list_model_catalog(
+        mode: Optional[str] = Query(None),
+        backend: Optional[str] = Query(None),
+        modality: Optional[str] = Query(None),
+        provider: Optional[str] = Query(None),
+        status: Optional[str] = Query(None),
+        memory_tier: Optional[str] = Query(None),
+    ) -> Dict[str, Any]:
+        return service.list_model_catalog(
+            mode=mode,
+            backend=backend,
+            modality=modality,
+            provider=provider,
+            status=status,
+            memory_tier=memory_tier,
+        )
+
     @router.get("/train/models")
-    async def list_suggested_models() -> Dict[str, Any]:
-        return {"items": service.list_suggested_models()}
+    async def list_suggested_models(
+        mode: Optional[str] = Query(None),
+        modality: Optional[str] = Query(None),
+    ) -> Dict[str, Any]:
+        return {"items": service.list_suggested_models(mode=mode, modality=modality)}
 
     @router.post("/train/preflight")
     async def preflight_training(payload: Dict[str, Any]) -> Dict[str, Any]:

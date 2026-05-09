@@ -1,123 +1,122 @@
 ---
 title: "Quick Start"
-description: "Get halo forge running in under 30 minutes"
+description: "Three practical paths from install to first useful Halo Forge run"
 weight: 1
 ---
 
-## Prerequisites
+Halo Forge is easiest to learn by choosing the path that matches your first hour.
 
-- AMD Strix Halo hardware (gfx1151) with 128GB unified memory
-- Fedora 42+ with podman/toolbox
-- Kernel 6.16+ recommended for gfx1151 support
+## Path 1: Local Beginner
 
-## 1. Build the Toolbox
+Use this when you have one workstation and want a first successful training run.
+
+### 1. Install
 
 ```bash
 git clone https://github.com/professor-moody/halo-forge.git
-cd halo-forge/toolbox
-./build.sh
-
-# Create the toolbox container
-toolbox create halo-forge --image localhost/halo-forge:latest
-
-# Enter the toolbox
-toolbox enter halo-forge
+cd halo-forge
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
-## 2. Verify Setup
+Apple Silicon users who want MLX inference and MLX-native trainers:
 
 ```bash
-# Quick validation (5 seconds, no GPU needed)
-halo-forge test --level smoke
+pip install -e '.[mlx]'
+```
 
-# Full validation with model loading (2-3 minutes)
-halo-forge test --level standard
+### 2. Check the machine
 
-# Check hardware info
+```bash
 halo-forge info
+halo-forge test --level smoke
 ```
 
-Expected test output:
+If `info` reports CPU only, training still works for tiny smoke tests, but use a GPU or Apple Silicon backend for real runs.
 
-```
-============================================================
-halo-forge Standard Test
-Model: Qwen/Qwen2.5-Coder-0.5B
-============================================================
+### 3. Pick a small model
 
-  [OK] Import modules (0.0s)
-  [OK] Compiler available (0.0s)
-  [OK] GPU available (0.0s)
-  [OK] Model loading (1.2s)
-  [OK] Code generation (21.6s)
-  [OK] Code verification (0.3s)
+Start with one of these:
 
-============================================================
-Test Results: 6/6 passed
-============================================================
-```
+| Goal | Model |
+|---|---|
+| Code SFT or RAFT | `Qwen/Qwen2.5-Coder-1.5B` |
+| Chat or preference tuning | `Qwen/Qwen2.5-3B-Instruct` |
+| Reasoning smoke | `Qwen/Qwen2.5-1.5B-Instruct` |
+| Apple MLX inference | `mlx-community/Qwen2.5-3B-Instruct-bf16` |
+| Liquid tiny structured output experiment | `LiquidAI/LFM2.5-350M` |
 
-## 3. Prepare Training Data
+See [Choose a Model](/docs/getting-started/choose-a-model/) for the full catalog guidance.
+
+### 4. Run SFT
 
 ```bash
-# Download CodeForces C++ examples
-halo-forge data prepare --dataset codeforces_cpp --output data/train.jsonl
-
-# Check what was downloaded
-head -1 data/train.jsonl | python -m json.tool
-```
-
-## 4. Run SFT Training
-
-```bash
-# Quick test (5 minutes)
 halo-forge sft train \
-  --data data/train.jsonl \
-  --output models/sft_test \
-  --epochs 1
-
-# Full training (1-2 hours)
-halo-forge sft train \
-  --data data/train.jsonl \
-  --output models/sft \
-  --epochs 3
+  --dataset codealpaca \
+  --model Qwen/Qwen2.5-Coder-1.5B \
+  --output models/sft-codealpaca-smoke \
+  --epochs 1 \
+  --max-samples 200
 ```
 
-## 5. Run RAFT Training
-
-After SFT, improve the model with verification:
+### 5. Evaluate and serve
 
 ```bash
-# Create prompts file
-echo '{"prompt": "Write a C++ function to sort a vector"}' > data/prompts.jsonl
+halo-forge eval --model models/sft-codealpaca-smoke/final_model --tasks core
+halo-forge serve --model models/sft-codealpaca-smoke/final_model
+```
 
-# Run RAFT with GCC verification
+## Path 2: Evaluator Demo
+
+Use this when you want to prove the workflow quickly without tuning every knob.
+
+```bash
+halo-forge models list --mode sft --backend mps
+halo-forge sft train \
+  --dataset codealpaca \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --output models/demo-sft \
+  --epochs 1 \
+  --max-samples 50
+
+halo-forge benchmark full \
+  --model Qwen/Qwen2.5-Coder-0.5B \
+  --cycles 1
+```
+
+Open the dashboard:
+
+```bash
+halo-forge serve-public
+```
+
+Then visit the dashboard, open **Models** for the curated catalog, **Training templates** for intent-first recipes, and **Run Bundles** to save groups of trained runs for comparison.
+
+## Path 3: Power User
+
+Use this when you already know your target model, dataset, and backend.
+
+```bash
+halo-forge models list --mode raft --provider Qwen
 halo-forge raft train \
-  --checkpoint models/sft/final_model \
-  --prompts data/prompts.jsonl \
-  --verifier gcc \
-  --cycles 3
+  --model Qwen/Qwen2.5-Coder-3B \
+  --prompts data/rlvr/humaneval_prompts.jsonl \
+  --verifier execution \
+  --cycles 3 \
+  --samples-per-prompt 8 \
+  --reward-threshold 0.5 \
+  --output models/raft-code
+
+halo-forge eval --model models/raft-code/cycle_3_final --tasks core
+halo-forge convert --source models/raft-code/cycle_3_final --format gguf --quant q4 --output models/raft-code.gguf
 ```
 
-## 6. Benchmark
+For Apple Silicon, use `--accelerator mlx` for MLX-native inference paths and MLX-format models. For PyTorch training on Apple Silicon, use MPS defaults unless a trainer explicitly supports MLX.
 
-```bash
-halo-forge benchmark run \
-  --model models/raft/cycle_3_final \
-  --prompts data/test.jsonl \
-  --verifier gcc
-```
+## What To Read Next
 
-## Test Levels
-
-| Level | Time | GPU | What It Tests |
-|-------|------|-----|---------------|
-| `smoke` | 5s | No | Imports, compiler, verifier logic |
-| `standard` | 2-3 min | Yes | Model loading, generation, verification |
-| `full` | 5 min | Yes | Complete mini-RAFT cycle |
-
-## Next Steps
-
-- [Full Pipeline](/docs/training-pipeline/full-pipeline/) — Complete workflow
-- [Hardware Notes](/docs/getting-started/hardware/) — Strix Halo configuration
-- [Verifiers](/docs/verifiers/) — Choose the right verifier
+- [Choose a Model](/docs/getting-started/choose-a-model/) - model family and backend guidance.
+- [Usage Scenarios](/docs/getting-started/scenarios/) - complete recipes by goal.
+- [Hardware Notes](/docs/getting-started/hardware/) - backend-specific setup.
+- [Command Index](/docs/reference/command-index/) - full CLI reference.

@@ -523,7 +523,32 @@ export type DiagnosticsLogTail = {
 
 export type SuggestedModel = {
   id: string;
-  for_backend: string;
+  label: string;
+  provider: string;
+  family: string;
+  parameter_count: string;
+  modalities: string[];
+  tasks: string[];
+  trainer_support: string[];
+  backend_support: string[];
+  memory_tier: string;
+  recommended_use: string;
+  known_caveats: string[];
+  trust_remote_code_required: boolean;
+  mlx_variant: string | null;
+  status: string;
+  last_verified: string;
+  catalog_version: string;
+};
+
+export type ModelCatalogEntry = SuggestedModel;
+
+export type ModelCatalogResponse = {
+  catalog_version: string;
+  items: ModelCatalogEntry[];
+  total: number;
+  facets: Record<string, string[]>;
+  filters: Record<string, string>;
 };
 
 export type TrainingPreset = {
@@ -606,6 +631,14 @@ export const api = {
   trainingTemplates: () => request<TrainingTemplateGallery>("/train/templates"),
   trainingTemplate: (id: string) =>
     request<TrainingTemplateDetail>(`/train/templates/${encodeURIComponent(id)}`),
+  modelCatalog: (params: Record<string, string | undefined> = {}) => {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) search.set(key, value);
+    });
+    const qs = search.toString();
+    return request<ModelCatalogResponse>(`/models${qs ? `?${qs}` : ""}`);
+  },
   verifierCatalog: () => request<VerifierCatalog>("/verifiers"),
   diagnosticsSummary: () => request<DiagnosticsSummary>("/diagnostics/summary"),
   diagnosticsLaunches: () =>
@@ -615,7 +648,13 @@ export const api = {
     const qs = new URLSearchParams({ path, tail: String(tail) });
     return request<DiagnosticsLogTail>(`/diagnostics/log?${qs.toString()}`);
   },
-  trainingModels: () => request<{ items: SuggestedModel[] }>("/train/models"),
+  trainingModels: (params: { mode?: string; modality?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.mode) search.set("mode", params.mode);
+    if (params.modality) search.set("modality", params.modality);
+    const qs = search.toString();
+    return request<{ items: SuggestedModel[] }>(`/train/models${qs ? `?${qs}` : ""}`);
+  },
   trainingPreflight: (payload: Record<string, unknown>) =>
     request<Record<string, unknown>>("/train/preflight", {
       method: "POST",
