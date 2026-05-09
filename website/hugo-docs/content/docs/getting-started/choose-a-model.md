@@ -14,6 +14,16 @@ halo-forge models show Qwen/Qwen2.5-Coder-3B
 
 In the dashboard, open **Models**. The older **Run Bundles** page is different: it saves groups of your trained runs for comparison.
 
+The dashboard catalog is designed as a decision surface, not just a list. Use the intent filters at the top when you already know the job:
+
+- **First run**: small recommended models for smoke tests.
+- **Code RAFT**: code models that fit verifier-ranked training.
+- **Apple Silicon**: MLX-native or Apple-friendly models.
+- **VLM** and **Audio**: modality-specific starting points.
+- **Liquid AI**: experimental LFM entries with caveats surfaced before training.
+
+From any catalog row, choose **Use in Training** to prefill the training configurator. The configurator then shows backend support, memory tier, known caveats, MLX variants, preflight status, and a launch summary before the run starts.
+
 ## First Picks
 
 | Goal | Start with | Why |

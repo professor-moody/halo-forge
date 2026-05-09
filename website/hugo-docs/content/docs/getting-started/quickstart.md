@@ -93,6 +93,18 @@ halo-forge serve-public
 
 Then visit the dashboard, open **Models** for the curated catalog, **Training templates** for intent-first recipes, and **Run Bundles** to save groups of trained runs for comparison.
 
+## Dashboard First Run
+
+The dashboard is the easiest way to avoid a bad first launch:
+
+1. Open **Training**.
+2. Use **Safe SFT** for a conservative first run, or **Code RAFT** once SFT preflight is clean.
+3. Check **Base model** for the catalog recommendation, backend support, memory tier, MLX variant, and caveats.
+4. Watch **Preflight** before launching. It distinguishes missing inputs, backend detection, and server-side launch checks.
+5. Read **Launch summary** before pressing **Launch run**. It shows the mode, model, dataset, memory tier, verifier/cycles for RAFT, and output path.
+
+For model exploration, open **Models** first and use the intent filters: **First run**, **Code RAFT**, **Apple Silicon**, **VLM**, **Audio**, and **Liquid AI**.
+
 ## Path 3: Power User
 
 Use this when you already know your target model, dataset, and backend.

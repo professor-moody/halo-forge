@@ -1,5 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Boxes, ChevronRight, Loader2, Search } from "lucide-react";
+import {
+  AudioLines,
+  Boxes,
+  ChevronRight,
+  Code2,
+  Cpu,
+  FlaskConical,
+  Loader2,
+  Search,
+  Sparkles,
+  ScanEye,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +37,57 @@ const STATUS_TONE: Record<string, "success" | "warning" | "neutral" | "info"> = 
   experimental: "warning",
   deprecated: "neutral",
 };
+
+type IntentPreset = {
+  label: string;
+  description: string;
+  icon: typeof Sparkles;
+  query?: string;
+  provider?: string;
+  status?: string;
+  modality?: string;
+};
+
+const INTENT_PRESETS: IntentPreset[] = [
+  {
+    label: "First run",
+    description: "Small, proven catalog picks for smoke tests.",
+    icon: Sparkles,
+    query: "quickstart",
+    status: "recommended",
+  },
+  {
+    label: "Code RAFT",
+    description: "Coder models that fit verifier-ranked training.",
+    icon: Code2,
+    query: "code",
+    status: "recommended",
+  },
+  {
+    label: "Apple Silicon",
+    description: "MLX-native or Apple-friendly local models.",
+    icon: Cpu,
+    query: "mlx",
+  },
+  {
+    label: "VLM",
+    description: "Vision-language candidates and caveats.",
+    icon: ScanEye,
+    modality: "vision",
+  },
+  {
+    label: "Audio",
+    description: "ASR/audio training starting points.",
+    icon: AudioLines,
+    modality: "audio",
+  },
+  {
+    label: "Liquid AI",
+    description: "Interesting LFM entries, marked experimental.",
+    icon: FlaskConical,
+    provider: "Liquid AI",
+  },
+];
 
 function ModelsRoute() {
   const { data, isLoading, isError } = useModelCatalog();
@@ -69,15 +131,40 @@ function ModelsRoute() {
         }
       />
       <div className="px-5 py-5 space-y-4">
+        <IntentBar
+          presets={INTENT_PRESETS}
+          onSelect={(preset) => {
+            setQuery(preset.query ?? "");
+            setProvider(preset.provider ?? "all");
+            setStatus(preset.status ?? "all");
+            setModality(preset.modality ?? "all");
+          }}
+        />
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <CardEyebrow>CATALOG</CardEyebrow>
               <CardTitle>Model Browser</CardTitle>
             </div>
-            <span className="text-[11px] text-fg-subtle">
-              {data?.catalog_version ? `v${data.catalog_version}` : ""}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-fg-subtle">
+                {filtered.length}/{items.length} models
+                {data?.catalog_version ? ` · v${data.catalog_version}` : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setProvider("all");
+                  setStatus("all");
+                  setModality("all");
+                }}
+                className="text-[11px] text-fg-subtle hover:text-fg"
+              >
+                Clear
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
@@ -132,6 +219,38 @@ function ModelsRoute() {
         )}
       </div>
     </>
+  );
+}
+
+function IntentBar({
+  presets,
+  onSelect,
+}: {
+  presets: IntentPreset[];
+  onSelect: (preset: IntentPreset) => void;
+}) {
+  return (
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+      {presets.map((preset) => (
+        <button
+          key={preset.label}
+          type="button"
+          onClick={() => onSelect(preset)}
+          className={cn(
+            "group rounded-lg border border-border bg-surface px-3 py-2.5 text-left transition-colors",
+            "hover:border-border-strong hover:bg-surface-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <preset.icon className="h-3.5 w-3.5 text-accent" />
+            <span className="text-[12.5px] font-medium text-fg">{preset.label}</span>
+          </div>
+          <p className="mt-1 text-[11.5px] leading-snug text-fg-subtle">
+            {preset.description}
+          </p>
+        </button>
+      ))}
+    </div>
   );
 }
 

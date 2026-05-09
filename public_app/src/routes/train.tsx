@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   ChevronRight,
   CircleDashed,
+  ClipboardList,
   FileQuestion,
   Loader2,
   Play,
@@ -40,6 +42,7 @@ import {
   useTrainingPreflight,
   useTrainingVerifiers,
 } from "@/lib/hooks";
+import type { ModelCatalogEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/train")({
@@ -109,6 +112,10 @@ function TrainConfiguratorRoute() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [templateApplied, setTemplateApplied] = useState<string | null>(null);
   const models = useTrainingModels({ mode: config.modality });
+  const selectedModel = useMemo(
+    () => models.data?.items.find((item) => item.id === config.model) ?? null,
+    [config.model, models.data?.items],
+  );
 
   useEffect(() => {
     if (!modelId) return;
@@ -222,53 +229,145 @@ function TrainConfiguratorRoute() {
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 px-5 py-5">
-        {/* LEFT: form */}
-        <div className="space-y-4">
-          <ModalitySection config={config} setConfig={setConfig} />
-          <ModelSection config={config} setConfig={setConfig} models={models.data?.items ?? []} />
-          <DatasetSection
-            config={config}
-            setConfig={setConfig}
-            datasets={datasets.data?.items ?? []}
-          />
-          {config.modality === "raft" ? (
-            <VerifierSection
+      <div className="px-5 py-5 space-y-4">
+        <FirstRunPanel
+          backendName={backend.data?.name}
+          onApply={(next) => setConfig((prev) => ({ ...prev, ...next }))}
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+          {/* LEFT: form */}
+          <div className="space-y-4">
+            <ModalitySection config={config} setConfig={setConfig} />
+            <ModelSection
               config={config}
               setConfig={setConfig}
-              verifiers={verifiers.data?.items ?? []}
+              models={models.data?.items ?? []}
+              selectedModel={selectedModel}
             />
-          ) : null}
-          <AdvancedSection
-            config={config}
-            setConfig={setConfig}
-            open={advancedOpen}
-            onOpenChange={setAdvancedOpen}
-          />
-        </div>
+            <DatasetSection
+              config={config}
+              setConfig={setConfig}
+              datasets={datasets.data?.items ?? []}
+            />
+            {config.modality === "raft" ? (
+              <VerifierSection
+                config={config}
+                setConfig={setConfig}
+                verifiers={verifiers.data?.items ?? []}
+              />
+            ) : null}
+            <AdvancedSection
+              config={config}
+              setConfig={setConfig}
+              open={advancedOpen}
+              onOpenChange={setAdvancedOpen}
+            />
+          </div>
 
-        {/* RIGHT: preflight + launch (sticky) */}
-        <div className="lg:sticky lg:top-4 self-start space-y-3">
-          <PreflightPanel
-            preflightStatus={preflightStatus(preflight, config)}
-            checks={buildPreflightChecks(config, preflight, backend.data?.name)}
-          />
-          <LaunchPanel
-            disabled={!canLaunch(config) || launch.isPending}
-            launching={launch.isPending}
-            onLaunch={() => launch.mutate(buildLaunchPayload(config))}
-            launchedRunId={launch.data?.run_id as string | undefined}
-            error={(launch.error as Error | null)?.message ?? undefined}
-          />
+          {/* RIGHT: preflight + launch (sticky) */}
+          <div className="lg:sticky lg:top-4 self-start space-y-3">
+            <PreflightPanel
+              preflightStatus={preflightStatus(preflight, config)}
+              checks={buildPreflightChecks(config, preflight, backend.data?.name)}
+            />
+            <LaunchPanel
+              config={config}
+              selectedModel={selectedModel}
+              disabled={!canLaunch(config) || launch.isPending}
+              launching={launch.isPending}
+              onLaunch={() => launch.mutate(buildLaunchPayload(config))}
+              launchedRunId={launch.data?.run_id as string | undefined}
+              error={(launch.error as Error | null)?.message ?? undefined}
+            />
+          </div>
         </div>
       </div>
-    </>
+      </>
   );
 }
 
 /* -------------------------------------------------------------------------
  * Sections
  * ----------------------------------------------------------------------- */
+
+function FirstRunPanel({
+  backendName,
+  onApply,
+}: {
+  backendName?: string;
+  onApply: (partial: Partial<ConfigState>) => void;
+}) {
+  const appleMlx = backendName === "mlx";
+  const appleTorch = backendName === "mps";
+  const firstModel = appleMlx
+    ? "mlx-community/Qwen2.5-3B-Instruct-bf16"
+    : "Qwen/Qwen2.5-Coder-1.5B";
+
+  return (
+    <div className="rounded-lg border border-border bg-surface px-4 py-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
+              First successful run
+            </span>
+            <span className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-fg-disabled">
+              {backendName ? `backend:${backendName}` : "detecting backend"}
+            </span>
+          </div>
+          <p className="mt-1 text-[13px] text-fg-muted">
+            Start with a small catalog model, a known dataset, and conservative defaults.
+            Switch to RAFT once SFT and preflight are clean.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              onApply({
+                modality: "sft",
+                model: firstModel,
+                dataset: "codealpaca",
+                epochs: 1,
+                batchSize: appleMlx || appleTorch ? 1 : 2,
+              })
+            }
+          >
+            <CheckCircle2 />
+            Safe SFT
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              onApply({
+                modality: "raft",
+                model: "Qwen/Qwen2.5-Coder-1.5B",
+                dataset: "codealpaca",
+                verifier: "gcc",
+                cycles: 2,
+                samplesPerPrompt: 4,
+              })
+            }
+          >
+            <ClipboardList />
+            Code RAFT
+          </Button>
+          <Button asChild size="sm" variant="ghost">
+            <Link to="/models">
+              <BookOpen />
+              Catalog
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ModalitySection({
   config,
@@ -311,16 +410,12 @@ function ModelSection({
   config,
   setConfig,
   models,
+  selectedModel,
 }: {
   config: ConfigState;
   setConfig: SetConfig;
-  models: {
-    id: string;
-    label: string;
-    status: string;
-    recommended_use: string;
-    known_caveats: string[];
-  }[];
+  models: ModelCatalogEntry[];
+  selectedModel: ModelCatalogEntry | null;
 }) {
   return (
     <Card>
@@ -362,8 +457,50 @@ function ModelSection({
             ))}
           </div>
         ) : null}
+        {selectedModel ? <SelectedModelInsight model={selectedModel} /> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function SelectedModelInsight({ model }: { model: ModelCatalogEntry }) {
+  const caveats = [
+    ...model.known_caveats,
+    ...(model.trust_remote_code_required ? ["Requires explicit trust_remote_code opt-in."] : []),
+  ];
+
+  return (
+    <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-medium text-[12px] text-fg">{model.label}</span>
+        <span className="font-mono text-[10px] text-fg-disabled">{model.parameter_count}</span>
+        <span className="font-mono text-[10px] text-fg-disabled">{model.memory_tier}</span>
+        <span className="font-mono text-[10px] text-fg-disabled">{model.status}</span>
+      </div>
+      <p className="mt-1 text-[12px] text-fg-muted">{model.recommended_use}</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {model.backend_support.map((backend) => (
+          <span
+            key={backend}
+            className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+          >
+            {backend}
+          </span>
+        ))}
+      </div>
+      {model.mlx_variant ? (
+        <div className="mt-2 font-mono text-[10.5px] text-fg-subtle">
+          MLX variant: {model.mlx_variant}
+        </div>
+      ) : null}
+      {caveats.length ? (
+        <div className="mt-2 space-y-1 text-[11px] text-warning">
+          {caveats.map((caveat) => (
+            <div key={caveat}>{caveat}</div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -737,12 +874,16 @@ function CheckIcon({ status }: { status: PreflightCheck["status"] }) {
 }
 
 function LaunchPanel({
+  config,
+  selectedModel,
   disabled,
   launching,
   onLaunch,
   launchedRunId,
   error,
 }: {
+  config: ConfigState;
+  selectedModel: ModelCatalogEntry | null;
   disabled: boolean;
   launching: boolean;
   onLaunch: () => void;
@@ -788,8 +929,53 @@ function LaunchPanel({
           <FileQuestion className="h-3 w-3 inline mr-1 -mt-0.5 text-fg-disabled" />
           Cost + duration estimates land in phase D once live runs are wired.
         </div>
+        <RunSummary config={config} selectedModel={selectedModel} />
       </CardContent>
     </Card>
+  );
+}
+
+function RunSummary({
+  config,
+  selectedModel,
+}: {
+  config: ConfigState;
+  selectedModel: ModelCatalogEntry | null;
+}) {
+  const rows = [
+    ["Mode", config.modality.toUpperCase()],
+    ["Model", config.model || "not set"],
+    ["Dataset", config.dataset === "__custom__" ? config.customDatasetFile || "custom path needed" : config.dataset],
+    ["Memory", selectedModel?.memory_tier ?? "unknown"],
+    ["Output", `models/${config.modality}-${slug(config.model || "model")}`],
+  ];
+
+  if (config.modality === "raft") {
+    rows.splice(
+      3,
+      0,
+      ["Verifier", config.verifier],
+      ["Cycles", String(config.cycles)],
+      ["Samples", `${config.samplesPerPrompt}/prompt`],
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle/50">
+      <div className="border-b border-border-subtle px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-fg-disabled">
+        Launch summary
+      </div>
+      <dl className="divide-y divide-border-subtle">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[72px_1fr] gap-2 px-3 py-1.5">
+            <dt className="text-[10.5px] uppercase tracking-wider text-fg-disabled">{label}</dt>
+            <dd className="truncate font-mono text-[11px] text-fg-subtle" title={value}>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
