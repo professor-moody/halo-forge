@@ -63,6 +63,7 @@ class ConvertResult:
     output_path: str
     target_format: str
     quantization: str
+    actual_quantization: Optional[str] = None
     bytes_written: Optional[int] = None
     notes: Optional[str] = None
 
@@ -72,6 +73,7 @@ class ConvertResult:
             "output_path": self.output_path,
             "target_format": self.target_format,
             "quantization": self.quantization,
+            "actual_quantization": self.actual_quantization or self.quantization,
             "bytes_written": self.bytes_written,
             "notes": self.notes,
         }
@@ -115,7 +117,7 @@ def convert_to_mlx(
     source: str,
     output_path: str,
     quantization: str = "q4",
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
 ) -> ConvertResult:
     """Convert a HuggingFace model to MLX format (Apple Silicon)."""
     try:
@@ -153,7 +155,8 @@ def convert_to_gguf(
     source: str,
     output_path: str,
     quantization: str = "q4",
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
+    allow_unquantized_fallback: bool = False,
 ) -> ConvertResult:
     """Convert a HuggingFace model to GGUF format (llama.cpp / Ollama).
 
@@ -165,6 +168,8 @@ def convert_to_gguf(
     from halo_forge.inference.export import GGUFExporter
 
     args = _resolve_quant(quantization, "gguf")
+    if "quantization" in args:
+        args["quantization"] = str(args["quantization"]).upper()
 
     logger.info(
         "Loading source model on CPU for GGUF export: %s (quant=%s)", source, quantization
@@ -176,7 +181,11 @@ def convert_to_gguf(
 
     exporter = GGUFExporter()
     out_file = exporter.export(
-        model, output_path, tokenizer=tokenizer, **args
+        model,
+        output_path,
+        tokenizer=tokenizer,
+        allow_unquantized_fallback=allow_unquantized_fallback,
+        **args,
     )
 
     return ConvertResult(
@@ -193,21 +202,21 @@ def convert_to_hf(
     source: str,
     output_path: str,
     quantization: str = "bf16",
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
 ) -> ConvertResult:
     """Pass-through HF re-export, optionally re-cast to a different dtype.
 
     Useful for "I have a fp32 checkpoint; give me a bf16 one I can serve".
     """
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
     canonical = quantization.strip().lower()
     if canonical not in {"bf16", "fp16", "fp32"}:
         raise ValueError(
             f"HF re-export only supports dtype changes; got quantization={quantization!r}. "
             f"Use --format mlx or --format gguf for true quantization."
         )
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[canonical]
 
     logger.info("Re-saving HF model %s as %s -> %s", source, canonical, output_path)
@@ -236,7 +245,8 @@ def convert(
     output_path: str,
     target_format: str,
     quantization: str = "q4",
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
+    allow_unquantized_fallback: bool = False,
 ) -> ConvertResult:
     """Dispatch entry point — picks the right converter for ``target_format``."""
     target_format = target_format.strip().lower()
@@ -253,6 +263,7 @@ def convert(
             output_path=output_path,
             quantization=quantization,
             trust_remote_code=trust_remote_code,
+            allow_unquantized_fallback=allow_unquantized_fallback,
         )
     if target_format == "hf":
         return convert_to_hf(

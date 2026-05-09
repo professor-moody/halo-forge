@@ -161,7 +161,16 @@ class PowerShellVerifier(Verifier):
                         }
                     )
             else:
-                validation_used = "skipped"
+                return VerifyResult(
+                    success=False,
+                    reward=RewardLevel.FAILURE.value,
+                    details="PowerShell syntax validation unavailable",
+                    error="validation_mode resolved to none; install pwsh, configure remote validation, or choose an unsafe explicit mode",
+                    metadata={
+                        "language": "powershell",
+                        "validation_mode": self.validation_mode,
+                    },
+                )
             
             # Cache script if configured
             cached_path = None
@@ -184,14 +193,14 @@ class PowerShellVerifier(Verifier):
             )
             
         except FileNotFoundError:
-            # pwsh not available - return success with warning
             return VerifyResult(
-                success=True,
-                reward=RewardLevel.COMPILE_CLEAN.value,
-                details="PowerShell script extracted (syntax check skipped)",
+                success=False,
+                reward=RewardLevel.FAILURE.value,
+                details="PowerShell syntax validation unavailable",
+                error="pwsh not available for local syntax check",
                 metadata={
                     "language": "powershell",
-                    "warning": "pwsh not available for local syntax check"
+                    "validation_mode": self.validation_mode,
                 }
             )
         

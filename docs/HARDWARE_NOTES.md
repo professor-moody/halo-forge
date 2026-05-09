@@ -40,7 +40,7 @@ Legend: ✅ supported · ⚠️ supported with caveats (see footnotes) · ❌ no
 | `vllm` (continuous batching) | ⚠️⁸ | ✅ | ❌ typed err | ❌ typed err | ❌ typed err |
 | `mlx` (mlx_lm.generate) | ❌ | ❌ | ⚠️⁹ | ✅ | ❌ |
 | **Verifiers** ||||||
-| Code execution (sandboxed) | ✅ bwrap | ✅ bwrap | ✅ sandbox-exec | ✅ sandbox-exec | ✅ |
+| Code execution (sandboxed where `VerifierExecutionRunner` is used) | ✅ bwrap | ✅ bwrap | ✅ sandbox-exec | ✅ sandbox-exec | ✅ |
 | Plugin registry / LLM-as-judge | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Inference + serving** ||||||
 | OpenAI-compatible serve (`halo-forge serve`) | ✅ via torch | ✅ via torch | ✅ via torch | ✅ via MLX | ✅ via torch |
@@ -321,4 +321,3 @@ The halo-forge toolbox uses:
 - kyuz0 for the original fine-tuning toolbox
 - TheRock project for ROCm nightlies
 - The Strix Halo community for testing and feedback
-

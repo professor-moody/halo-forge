@@ -94,13 +94,13 @@ class InferenceOptimizationVerifier(Verifier):
             print(f"Loading baseline model: {self.baseline_model_name}")
             self._tokenizer = AutoTokenizer.from_pretrained(
                 self.baseline_model_name,
-                trust_remote_code=True
+                trust_remote_code=False
             )
             self.baseline_model = AutoModelForCausalLM.from_pretrained(
                 self.baseline_model_name,
                 dtype=recommended_dtype(),
                 device_map=get_device_map(),
-                trust_remote_code=True
+                trust_remote_code=False
             )
             self._baseline_loaded = True
     
@@ -253,7 +253,7 @@ class InferenceOptimizationVerifier(Verifier):
                 from transformers import AutoTokenizer
                 tokenizer = AutoTokenizer.from_pretrained(
                     self.baseline_model_name or "Qwen/Qwen2.5-Coder-0.5B",
-                    trust_remote_code=True
+                    trust_remote_code=False
                 )
         
         # Measure latency

@@ -140,7 +140,7 @@ class ONNXExporter(ModelExporter):
                     device="cpu",  # Export on CPU for compatibility
                     fp16=False,
                     optimize=optimize and "O2" or None,
-                    trust_remote_code=True
+                    trust_remote_code=False
                 )
             
             return True

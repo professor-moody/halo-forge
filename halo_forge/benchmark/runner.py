@@ -342,7 +342,7 @@ class BenchmarkRunner:
         
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
-            trust_remote_code=True,
+            trust_remote_code=False,
             padding_side='left'
         )
         if self.tokenizer.pad_token is None:
@@ -353,7 +353,7 @@ class BenchmarkRunner:
             self.model_name,
             dtype=recommended_dtype(),
             device_map=get_device_map(),
-            trust_remote_code=True,
+            trust_remote_code=False,
             attn_implementation=recommended_attn_impl(),
         )
         
@@ -413,7 +413,7 @@ class BenchmarkRunner:
             # Load tokenizer from base model
             self.tokenizer = AutoTokenizer.from_pretrained(
                 base_model_name,
-                trust_remote_code=True,
+                trust_remote_code=False,
                 padding_side='left'
             )
             if self.tokenizer.pad_token is None:
@@ -425,7 +425,7 @@ class BenchmarkRunner:
                 dtype=recommended_dtype(),
                 device_map=get_device_map(),
                 attn_implementation=recommended_attn_impl(),
-                trust_remote_code=True
+                trust_remote_code=False
             )
             
             # Load trained adapters (no new LoRA layers!)
@@ -435,7 +435,7 @@ class BenchmarkRunner:
             self.log("Loading as full model...")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
-                trust_remote_code=True,
+                trust_remote_code=False,
                 padding_side='left'
             )
             if self.tokenizer.pad_token is None:
@@ -446,7 +446,7 @@ class BenchmarkRunner:
                 dtype=recommended_dtype(),
                 device_map=get_device_map(),
                 attn_implementation=recommended_attn_impl(),
-                trust_remote_code=True
+                trust_remote_code=False
             )
 
         self.model.eval()

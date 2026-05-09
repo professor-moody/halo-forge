@@ -1,40 +1,13 @@
-"""
-Agentic / Tool Calling Module
+"""Agentic / tool-calling training module.
 
-Train language models for reliable function/tool calling using RLVR.
-
-This module provides:
-- ToolCallingVerifier: Verify tool call correctness with graduated rewards
-- AgenticRAFTTrainer: RAFT training loop for tool calling
-- Dataset loaders: xLAM, Glaive, ToolBench
-- Hermes format conversion
-
-Example:
-    from halo_forge.agentic import ToolCallingVerifier, AgenticRAFTTrainer
-    from halo_forge.agentic.data import XLAMLoader
-    
-    # Load dataset
-    loader = XLAMLoader()
-    samples = loader.load(limit=1000)
-    
-    # Create verifier
-    verifier = ToolCallingVerifier()
-    
-    # Verify a tool call
-    result = verifier.verify(
-        output='<tool_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</tool_call>',
-        expected_calls=[{"name": "get_weather", "arguments": {"location": "Paris"}}]
-    )
+Verifier and data helpers are cheap to import; trainer classes are resolved
+lazy so importing ``halo_forge.agentic`` does not require torch.
 """
 
 from halo_forge.agentic.verifiers import (
     ToolCallingVerifier,
     ToolCallVerifyResult,
     ToolCallingVerifyConfig,
-)
-from halo_forge.agentic.trainer import (
-    AgenticRAFTTrainer,
-    AgenticRAFTConfig,
 )
 from halo_forge.agentic.data import (
     ToolCallSample,
@@ -44,16 +17,21 @@ from halo_forge.agentic.data import (
 )
 
 __all__ = [
-    # Verifiers
     "ToolCallingVerifier",
     "ToolCallVerifyResult",
     "ToolCallingVerifyConfig",
-    # Trainer
     "AgenticRAFTTrainer",
     "AgenticRAFTConfig",
-    # Data
     "ToolCallSample",
     "XLAMLoader",
     "GlaiveLoader",
     "list_agentic_datasets",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"AgenticRAFTTrainer", "AgenticRAFTConfig"}:
+        from halo_forge.agentic import trainer
+
+        return getattr(trainer, name)
+    raise AttributeError(name)

@@ -151,6 +151,7 @@ def create_serving_app(
     *,
     model_name: str,
     backend_name: Optional[str] = None,
+    trust_remote_code: bool = False,
     adapter: Optional[ServingAdapter] = None,
 ) -> FastAPI:
     """Build a FastAPI app serving ``model_name`` on the OpenAI v1 surface.
@@ -170,7 +171,9 @@ def create_serving_app(
     def _get_adapter() -> ServingAdapter:
         if state["adapter"] is None:
             state["adapter"] = build_serving_adapter(
-                model_name, backend_name=backend_name
+                model_name,
+                backend_name=backend_name,
+                trust_remote_code=trust_remote_code,
             )
         return state["adapter"]
 
@@ -194,9 +197,9 @@ def create_serving_app(
         prompt = _build_chat_prompt(adapter, req.messages)
         text = adapter.generate(
             prompt,
-            max_tokens=req.max_tokens or 256,
-            temperature=req.temperature or 0.7,
-            top_p=req.top_p or 1.0,
+            max_tokens=256 if req.max_tokens is None else req.max_tokens,
+            temperature=0.7 if req.temperature is None else req.temperature,
+            top_p=1.0 if req.top_p is None else req.top_p,
             stop=req.stop,
         )
         if req.stop:
@@ -231,9 +234,9 @@ def create_serving_app(
         adapter = _get_adapter()
         text = adapter.generate(
             req.prompt,
-            max_tokens=req.max_tokens or 256,
-            temperature=req.temperature or 0.7,
-            top_p=req.top_p or 1.0,
+            max_tokens=256 if req.max_tokens is None else req.max_tokens,
+            temperature=0.7 if req.temperature is None else req.temperature,
+            top_p=1.0 if req.top_p is None else req.top_p,
             stop=req.stop,
         )
         if req.stop:

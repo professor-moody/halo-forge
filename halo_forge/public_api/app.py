@@ -258,9 +258,9 @@ def create_app() -> "FastAPI":
         return service.playground_chat(
             messages=messages,
             model=payload.get("model"),
-            max_tokens=int(payload.get("max_tokens") or 256),
-            temperature=float(payload.get("temperature") or 0.7),
-            top_p=float(payload.get("top_p") or 1.0),
+            max_tokens=int(256 if payload.get("max_tokens") is None else payload.get("max_tokens")),
+            temperature=float(0.7 if payload.get("temperature") is None else payload.get("temperature")),
+            top_p=float(1.0 if payload.get("top_p") is None else payload.get("top_p")),
             stop=payload.get("stop"),
             serve_url=payload.get("serve_url"),
             api_key=payload.get("api_key"),

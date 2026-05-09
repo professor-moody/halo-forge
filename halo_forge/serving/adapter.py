@@ -41,7 +41,7 @@ class ServingAdapter:
 class _MLXServingAdapter(ServingAdapter):
     """Routes generation through ``halo_forge.backend.mlx.MLXInferenceAdapter``."""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, *, trust_remote_code: bool = False):
         super().__init__(model_name=model_name, backend_name="mlx")
         from halo_forge.backend.mlx import MLXInferenceAdapter
 
@@ -87,7 +87,7 @@ class _TorchServingAdapter(ServingAdapter):
         )
 
         self._tokenizer = AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True
+            model_name, trust_remote_code=trust_remote_code
         )
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
@@ -95,7 +95,7 @@ class _TorchServingAdapter(ServingAdapter):
             model_name,
             dtype=recommended_dtype(),
             device_map=get_device_map(),
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code,
             attn_implementation=recommended_attn_impl(),
         )
         self._model.eval()
@@ -144,7 +144,12 @@ def _truncate_at_stop(text: str, stops: list[str]) -> str:
     return text[:cut]
 
 
-def build_serving_adapter(model_name: str, *, backend_name: Optional[str] = None) -> ServingAdapter:
+def build_serving_adapter(
+    model_name: str,
+    *,
+    backend_name: Optional[str] = None,
+    trust_remote_code: bool = False,
+) -> ServingAdapter:
     """Construct a ``ServingAdapter`` matching the active or requested backend.
 
     Args:
@@ -169,7 +174,7 @@ def build_serving_adapter(model_name: str, *, backend_name: Optional[str] = None
 
     if backend_name == "mlx":
         return _MLXServingAdapter(model_name)
-    return _TorchServingAdapter(model_name)
+    return _TorchServingAdapter(model_name, trust_remote_code=trust_remote_code)
 
 
 __all__ = ["ServingAdapter", "build_serving_adapter"]

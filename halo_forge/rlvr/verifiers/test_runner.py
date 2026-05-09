@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import Optional, List
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
+from halo_forge.rlvr.verifiers.execution_runner import (
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 
 class PytestVerifier(Verifier):
@@ -31,7 +35,8 @@ class PytestVerifier(Verifier):
         test_file: Optional[str] = None,
         extra_args: Optional[List[str]] = None,
         timeout: int = 60,
-        max_workers: int = 4
+        max_workers: int = 4,
+        execution_policy: str = "sandbox",
     ):
         """
         Initialize pytest verifier.
@@ -46,6 +51,8 @@ class PytestVerifier(Verifier):
         self.test_file = test_file
         self.extra_args = extra_args or ['-v', '--tb=short']
         self.timeout = timeout
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(execution_policy=execution_policy)
     
     def verify(self, code: str) -> VerifyResult:
         """
@@ -77,10 +84,8 @@ class PytestVerifier(Verifier):
             cmd = ['pytest', test_target] + self.extra_args
             
             try:
-                result = subprocess.run(
+                result = self._execution_runner.run(
                     cmd,
-                    capture_output=True,
-                    text=True,
                     timeout=self.timeout,
                     cwd=tmpdir,
                     env={**os.environ, 'PYTHONPATH': tmpdir}
@@ -122,6 +127,14 @@ class PytestVerifier(Verifier):
                     details="pytest not found",
                     error="pytest is not installed"
                 )
+            except SandboxUnavailableError as e:
+                return VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Sandbox unavailable",
+                    error=str(e),
+                    metadata={"execution_policy": self.execution_policy},
+                )
             except Exception as e:
                 return VerifyResult(
                     success=False,
@@ -158,10 +171,13 @@ class UnittestVerifier(Verifier):
     def __init__(
         self,
         timeout: int = 60,
-        max_workers: int = 4
+        max_workers: int = 4,
+        execution_policy: str = "sandbox",
     ):
         super().__init__(max_workers=max_workers)
         self.timeout = timeout
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(execution_policy=execution_policy)
     
     def verify(self, code: str) -> VerifyResult:
         """Verify Python code by running unittest."""
@@ -174,11 +190,10 @@ class UnittestVerifier(Verifier):
             cmd = [sys.executable, '-m', 'unittest', 'discover', '-s', tmpdir, '-v']
             
             try:
-                result = subprocess.run(
+                result = self._execution_runner.run(
                     cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout
+                    timeout=self.timeout,
+                    cwd=tmpdir,
                 )
                 
                 if result.returncode == 0:
@@ -201,6 +216,14 @@ class UnittestVerifier(Verifier):
                     reward=0.0,
                     details="Test timeout",
                     error=f"Tests exceeded {self.timeout}s"
+                )
+            except SandboxUnavailableError as e:
+                return VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Sandbox unavailable",
+                    error=str(e),
+                    metadata={"execution_policy": self.execution_policy},
                 )
             except Exception as e:
                 return VerifyResult(

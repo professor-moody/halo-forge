@@ -114,6 +114,7 @@ class GGUFExporter(ModelExporter):
         output_path: str,
         tokenizer: Any = None,
         quantization: str = "Q4_K_M",
+        allow_unquantized_fallback: bool = False,
         **kwargs
     ) -> str:
         """
@@ -156,7 +157,7 @@ class GGUFExporter(ModelExporter):
             # Method 1: Use llama.cpp convert script
             if self._check_requirements() and self._convert_script:
                 success = self._convert_via_script(
-                    hf_path, output_path, quantization
+                    hf_path, output_path, quantization, allow_unquantized_fallback
                 )
             
             # Method 2: Use transformers' GGUF support (if available)
@@ -178,7 +179,8 @@ class GGUFExporter(ModelExporter):
         self,
         hf_path: Path,
         output_path: Path,
-        quantization: str
+        quantization: str,
+        allow_unquantized_fallback: bool = False,
     ) -> bool:
         """Convert using llama.cpp scripts."""
         try:
@@ -225,9 +227,11 @@ class GGUFExporter(ModelExporter):
                     # Remove intermediate FP16 file
                     fp16_path.unlink(missing_ok=True)
                 else:
-                    # Just rename FP16 to final output
+                    if not allow_unquantized_fallback:
+                        print("Quantization error: llama-quantize not found")
+                        return False
                     shutil.move(str(fp16_path), str(output_path))
-                    print("Note: Quantization skipped (llama-quantize not found)")
+                    print("Note: Quantization skipped by explicit fallback allowance")
             else:
                 shutil.move(str(fp16_path), str(output_path))
             

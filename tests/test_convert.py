@@ -116,7 +116,7 @@ def test_convert_dispatches_to_mlx(monkeypatch, tmp_path):
     )
     assert captured["source"] == "hf-id"
     assert captured["quantization"] == "q4"
-    assert captured["trust_remote_code"] is True
+    assert captured["trust_remote_code"] is False
     assert out.target_format == "mlx"
 
 
@@ -125,12 +125,20 @@ def test_convert_dispatches_to_gguf(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_gguf_convert(*, source, output_path, quantization, trust_remote_code):
+    def fake_gguf_convert(
+        *,
+        source,
+        output_path,
+        quantization,
+        trust_remote_code,
+        allow_unquantized_fallback,
+    ):
         captured.update(
             source=source,
             output_path=output_path,
             quantization=quantization,
             trust_remote_code=trust_remote_code,
+            allow_unquantized_fallback=allow_unquantized_fallback,
         )
         return SimpleNamespace(
             source=source,
@@ -156,6 +164,8 @@ def test_cli_convert_help_registers(monkeypatch, capsys):
     blowing up imports."""
     import sys
     import halo_forge.cli as cli_mod
+    if sys.version_info >= (3, 14):
+        pytest.skip("halo-forge CLI supports Python <3.14")
 
     monkeypatch.setattr(sys, "argv", ["halo-forge", "convert", "--help"])
     with pytest.raises(SystemExit) as ei:
@@ -169,6 +179,8 @@ def test_cli_convert_list_prints_supported(monkeypatch, capsys):
     """`halo-forge convert --list` short-circuits without requiring source."""
     import sys
     import halo_forge.cli as cli_mod
+    if sys.version_info >= (3, 14):
+        pytest.skip("halo-forge CLI supports Python <3.14")
 
     monkeypatch.setattr(sys, "argv", ["halo-forge", "convert", "--list"])
     cli_mod.main()

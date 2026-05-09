@@ -915,7 +915,7 @@ def cmd_merge(args):
             weights=weights,
             method=args.method,
             bake_after_merge=args.bake_after_merge,
-            trust_remote_code=not args.no_trust_remote_code,
+            trust_remote_code=args.trust_remote_code,
             svd_rank=args.svd_rank,
         )
     except Exception as exc:
@@ -1054,6 +1054,9 @@ def cmd_eval(args):
     avg = result.average_score()
     if avg is not None:
         print(f"\n  {GREEN}average primary metric:{NC} {avg:.4f}")
+    if result.n_tasks_completed == 0:
+        print(f"\n{RED}No eval tasks completed successfully; results are not trustworthy.{NC}")
+        sys.exit(1)
 
 
 def cmd_token(args):
@@ -1113,6 +1116,7 @@ def cmd_replay(args):
         EnvironmentFingerprint,
         compare_environments,
         load_manifest,
+        hash_dataset_file,
     )
 
     print_banner()
@@ -1144,6 +1148,21 @@ def cmd_replay(args):
         if len(diff["differences"]) > 20:
             print(f"  ... {len(diff['differences']) - 20} more")
 
+    dataset_mismatch = False
+    dataset_info = manifest.dataset or {}
+    if dataset_info.get("kind") == "local_file" and dataset_info.get("sha256"):
+        dataset_path = Path(str(dataset_info.get("path") or ""))
+        if not dataset_path.exists():
+            dataset_mismatch = True
+            print(f"{RED}Dataset missing:{NC} {dataset_path}")
+        else:
+            current_sha = hash_dataset_file(dataset_path)
+            if current_sha != dataset_info.get("sha256"):
+                dataset_mismatch = True
+                print(f"{RED}Dataset hash mismatch:{NC} {dataset_path}")
+                print(f"  captured: {dataset_info.get('sha256')}")
+                print(f"  current:  {current_sha}")
+
     # Reconstruct the launch command.
     cmd = _reconstruct_launch_command(manifest)
     print()
@@ -1156,6 +1175,13 @@ def cmd_replay(args):
             print(
                 f"{RED}Refusing to launch{NC}: environment differs. "
                 "Pass --force to launch anyway."
+            )
+            sys.exit(2)
+        if dataset_mismatch and not args.allow_dataset_drift:
+            print()
+            print(
+                f"{RED}Refusing to launch{NC}: dataset content differs from replay manifest. "
+                "Pass --allow-dataset-drift to launch anyway."
             )
             sys.exit(2)
         print()
@@ -1254,7 +1280,8 @@ def cmd_convert(args):
             output_path=args.output,
             target_format=args.format,
             quantization=args.quant,
-            trust_remote_code=not args.no_trust_remote_code,
+            trust_remote_code=args.trust_remote_code,
+            allow_unquantized_fallback=getattr(args, "allow_unquantized_fallback", False),
         )
     except Exception as exc:
         print(f"{RED}Conversion failed:{NC} {exc}")
@@ -1279,8 +1306,8 @@ def cmd_convert(args):
                 target_format=args.format,
             )
         except NotImplementedError as exc:
-            print(f"{YELLOW}Verification skipped:{NC} {exc}")
-            return
+            print(f"{RED}Verification unsupported:{NC} {exc}")
+            sys.exit(1)
         print(f"  prompts:               {report.n_prompts}")
         print(f"  exact match rate:      {report.exact_match_rate:.2%}")
         print(f"  avg char overlap:      {report.avg_char_overlap:.3f}")
@@ -1323,7 +1350,11 @@ def cmd_serve(args):
     )
     print()
 
-    app = create_serving_app(model_name=args.model, backend_name=args.backend)
+    app = create_serving_app(
+        model_name=args.model,
+        backend_name=args.backend,
+        trust_remote_code=args.trust_remote_code,
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
@@ -1616,11 +1647,14 @@ def cmd_raft_train(args):
     
     # Setup verifier
     verifier_type = args.verifier or cfg_dict.get('verifier', {}).get('type', 'gcc')
+    verifier_policy = "unsafe_host" if getattr(args, "unsafe_verifier_execution", False) else "sandbox"
+    if verifier_policy == "unsafe_host":
+        print("WARNING: --unsafe-verifier-execution runs generated-code verifiers on the host.")
     
     if verifier_type == 'gcc':
-        verifier = GCCVerifier()
+        verifier = GCCVerifier(execution_policy=verifier_policy)
     elif verifier_type == 'mingw':
-        verifier = MinGWVerifier()
+        verifier = MinGWVerifier(execution_policy=verifier_policy)
     elif verifier_type == 'msvc':
         # CLI args take precedence over config file
         msvc_host = getattr(args, 'host', None) or cfg_dict.get('verifier', {}).get('host')
@@ -1650,25 +1684,26 @@ def cmd_raft_train(args):
         )
     elif verifier_type == 'humaneval':
         dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/humaneval_full.jsonl')
-        verifier = HumanEvalVerifier(dataset_path)
+        verifier = HumanEvalVerifier(dataset_path, execution_policy=verifier_policy)
     elif verifier_type == 'mbpp':
         dataset_path = cfg_dict.get('verifier', {}).get('dataset', 'data/rlvr/mbpp_train_full.jsonl')
-        verifier = MBPPVerifier(dataset_path)
+        verifier = MBPPVerifier(dataset_path, execution_policy=verifier_policy)
     elif verifier_type == 'rust' or verifier_type == 'cargo':
         from halo_forge.rlvr.verifiers import RustVerifier
         run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
-        verifier = RustVerifier(run_after_compile=run_after)
+        verifier = RustVerifier(run_after_compile=run_after, execution_policy=verifier_policy)
     elif verifier_type == 'go':
         from halo_forge.rlvr.verifiers import GoVerifier
         run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
-        verifier = GoVerifier(run_after_compile=run_after)
+        verifier = GoVerifier(run_after_compile=run_after, execution_policy=verifier_policy)
     elif verifier_type == 'auto':
         from halo_forge.rlvr.verifiers import MultiLanguageVerifier
         run_after = cfg_dict.get('verifier', {}).get('run_after_compile', False)
         binary_cache = cfg_dict.get('verifier', {}).get('binary_cache_dir')
         verifier = MultiLanguageVerifier(
             run_after_compile=run_after,
-            binary_cache_dir=binary_cache
+            binary_cache_dir=binary_cache,
+            execution_policy=verifier_policy,
         )
     elif verifier_type == 'execution':
         from halo_forge.rlvr.verifiers import ExecutionVerifier
@@ -1676,7 +1711,8 @@ def cmd_raft_train(args):
         match_mode = cfg_dict.get('verifier', {}).get('match_mode', 'exact')
         verifier = ExecutionVerifier(
             test_cases=test_cases,
-            match_mode=match_mode
+            match_mode=match_mode,
+            execution_policy=verifier_policy,
         )
     else:
         print(f"Unknown verifier: {verifier_type}")
@@ -1811,6 +1847,7 @@ def cmd_raft_train(args):
         num_cycles=num_cycles,
         keep_top_percent=keep_percent,
         reward_threshold=reward_threshold,
+        allow_compile_only_training=getattr(args, 'allow_compile_only_training', False),
         curriculum_strategy=curriculum,
         curriculum_stats_path=curriculum_stats,
         curriculum_progressive_start=curriculum_start,
@@ -1924,31 +1961,35 @@ def cmd_benchmark(args):
     )
     
     # Setup verifier
+    verifier_policy = "unsafe_host" if getattr(args, "unsafe_verifier_execution", False) else "sandbox"
+    if verifier_policy == "unsafe_host":
+        print("WARNING: --unsafe-verifier-execution runs generated-code verifiers on the host.")
     if args.verifier == 'gcc':
-        verifier = GCCVerifier()
+        verifier = GCCVerifier(execution_policy=verifier_policy)
     elif args.verifier == 'mingw':
-        verifier = MinGWVerifier()
+        verifier = MinGWVerifier(execution_policy=verifier_policy)
     elif args.verifier == 'rust':
-        verifier = RustVerifier(cross_compile=getattr(args, 'cross_compile', False))
+        verifier = RustVerifier(cross_compile=getattr(args, 'cross_compile', False), execution_policy=verifier_policy)
     elif args.verifier == 'go':
-        verifier = GoVerifier(cross_compile=getattr(args, 'cross_compile', False))
+        verifier = GoVerifier(cross_compile=getattr(args, 'cross_compile', False), execution_policy=verifier_policy)
     elif args.verifier == 'dotnet':
-        verifier = DotNetVerifier()
+        verifier = DotNetVerifier(execution_policy=verifier_policy)
     elif args.verifier == 'powershell':
         verifier = PowerShellVerifier()
     elif args.verifier in ('auto', 'multi'):
         # Auto-detect language from code
         verifier = MultiLanguageVerifier(
-            run_after_compile=getattr(args, 'run_after_compile', False)
+            run_after_compile=getattr(args, 'run_after_compile', False),
+            execution_policy=verifier_policy,
         )
     elif args.verifier in ('humaneval', 'python'):
         from halo_forge.rlvr.verifiers import HumanEvalVerifier
         dataset_path = getattr(args, 'dataset', None) or 'data/rlvr/humaneval_full.jsonl'
-        verifier = HumanEvalVerifier(dataset_path)
+        verifier = HumanEvalVerifier(dataset_path, execution_policy=verifier_policy)
     elif args.verifier == 'mbpp':
         from halo_forge.rlvr.verifiers import MBPPVerifier
         dataset_path = getattr(args, 'dataset', None) or 'data/rlvr/mbpp_train_full.jsonl'
-        verifier = MBPPVerifier(dataset_path)
+        verifier = MBPPVerifier(dataset_path, execution_policy=verifier_policy)
     elif args.verifier == 'msvc':
         # Validate required MSVC parameters
         missing = []
@@ -4678,6 +4719,14 @@ def cmd_audio_train(args):
 
 
 def main():
+    if sys.version_info >= (3, 14):
+        print(
+            "halo-forge supports Python >=3.10,<3.14. "
+            f"Current interpreter is {sys.version.split()[0]}. "
+            "Create a Python 3.10-3.13 environment and rerun the command.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     parser = argparse.ArgumentParser(
         prog='halo-forge',
         description='Multi-backend RLVR training framework for AMD ROCm, Apple Silicon, and CUDA'
@@ -5167,6 +5216,8 @@ def main():
                                help='Actually relaunch (subprocess) instead of just printing the command')
     replay_parser.add_argument('--force', action='store_true',
                                help='[--launch] Launch even if the env fingerprint differs')
+    replay_parser.add_argument('--allow-dataset-drift', action='store_true',
+                               help='[--launch] Launch even if a captured local dataset hash differs')
 
     # merge command (Tracks T12 + T13) — adapter bake / multi-adapter combine.
     merge_parser = subparsers.add_parser(
@@ -5194,7 +5245,8 @@ def main():
                               help='[combine] Also bake the combined adapter into the base; output is a merged checkpoint')
     merge_parser.add_argument('--svd-rank', type=int,
                               help='[combine] Override SVD rank for ties / dare_ties methods')
-    merge_parser.add_argument('--no-trust-remote-code', action='store_true')
+    merge_parser.add_argument('--trust-remote-code', action='store_true',
+                              help='Opt into executing remote model code while loading merge inputs')
     merge_parser.add_argument('--list', action='store_true',
                               help='Print supported operations / methods and exit')
 
@@ -5212,8 +5264,10 @@ def main():
                                 help='Target format (default: mlx)')
     convert_parser.add_argument('--quant', '-q', default='q4',
                                 help='Normalized quant: q4, q8, fp16, bf16, fp32 (default: q4)')
-    convert_parser.add_argument('--no-trust-remote-code', action='store_true',
-                                help='Disable trust_remote_code (only set if you understand the source)')
+    convert_parser.add_argument('--trust-remote-code', action='store_true',
+                                help='Opt into executing remote model code while loading/converting')
+    convert_parser.add_argument('--allow-unquantized-fallback', action='store_true',
+                                help='For GGUF only: allow FP16 output if requested quantization cannot run')
     convert_parser.add_argument('--list', action='store_true',
                                 help='Print supported formats / quants and exit')
     convert_parser.add_argument('--verify', action='store_true',
@@ -5235,6 +5289,8 @@ def main():
     serve_parser.add_argument('--backend',
                               help='Force a backend (mlx, mps, cuda, rocm_gfx1151, cpu); '
                                    'defaults to autodetect')
+    serve_parser.add_argument('--trust-remote-code', action='store_true',
+                              help='Opt into executing remote model code while loading the served model')
 
     # serve-public — dashboard FastAPI (the API the public_app SPA talks to)
     serve_public_parser = subparsers.add_parser(
@@ -5296,6 +5352,16 @@ def main():
                                    help='Keep top X%% of passing samples (0.0-1.0, default: 0.5 = 50%%)')
     raft_train_parser.add_argument('--reward-threshold', type=float, default=0.5,
                                    help='Minimum reward to consider sample passing (default: 0.5)')
+    raft_train_parser.add_argument(
+        '--allow-compile-only-training',
+        action='store_true',
+        help='Allow compile-only verifier results to train RAFT samples. Disabled by default.',
+    )
+    raft_train_parser.add_argument(
+        '--unsafe-verifier-execution',
+        action='store_true',
+        help='Run generated-code verifiers directly on the host instead of the sandbox. Dangerous; disabled by default.',
+    )
     raft_train_parser.add_argument('--curriculum', default='none',
                                    choices=['none', 'complexity', 'progressive', 'adaptive', 'historical'],
                                    help='Curriculum learning strategy (default: none)')
@@ -5367,6 +5433,8 @@ def main():
     bench_run_parser.add_argument('--ssh-key', help='MSVC SSH key')
     bench_run_parser.add_argument('--cross-compile', action='store_true', help='Enable Windows cross-compilation for rust/go')
     bench_run_parser.add_argument('--run-after-compile', action='store_true', help='Run compiled code after compile')
+    bench_run_parser.add_argument('--unsafe-verifier-execution', action='store_true',
+                                  help='Run generated-code verifiers directly on the host instead of the sandbox. Dangerous; disabled by default.')
     bench_run_parser.add_argument('--experimental-attention', action='store_true',
                                   help='Enable experimental ROCm attention (needed for LFM2.5, etc.)')
     

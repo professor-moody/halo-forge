@@ -166,7 +166,12 @@ class TestRustGraduatedRewards:
     @pytest.fixture
     def verifier(self):
         """Rust verifier with run enabled."""
-        return RustVerifier(run_after_compile=True, timeout=30, run_timeout=5)
+        return RustVerifier(
+            run_after_compile=True,
+            timeout=30,
+            run_timeout=5,
+            execution_policy="unsafe_host",
+        )
     
     def test_syntax_error_returns_0(self, verifier):
         """Rust syntax error should return 0.0."""
@@ -192,7 +197,12 @@ class TestGoGraduatedRewards:
     @pytest.fixture
     def verifier(self):
         """Go verifier with run enabled."""
-        return GoVerifier(run_after_compile=True, timeout=30, run_timeout=5)
+        return GoVerifier(
+            run_after_compile=True,
+            timeout=30,
+            run_timeout=5,
+            execution_policy="unsafe_host",
+        )
     
     def test_syntax_error_returns_0(self, verifier):
         """Go syntax error should return 0.0."""

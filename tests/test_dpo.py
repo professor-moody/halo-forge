@@ -16,6 +16,7 @@ common failure modes:
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,8 +24,13 @@ from types import SimpleNamespace
 import pytest
 
 
+def _require_datasets():
+    pytest.importorskip("datasets")
+
+
 def test_dpo_module_imports():
     """The top-level `halo_forge.dpo` import must succeed without torch."""
+    _require_datasets()
     from halo_forge.dpo import DPOConfig, get_dpo_trainer, load_preference_dataset
 
     assert callable(get_dpo_trainer)
@@ -52,6 +58,7 @@ def test_dpo_config_defaults_are_dpo_shaped():
 
 
 def test_preference_registry_short_names_resolve():
+    _require_datasets()
     from halo_forge.dpo.datasets import PREFERENCE_DATASETS, list_preference_datasets
 
     items = list_preference_datasets()
@@ -66,6 +73,7 @@ def test_preference_registry_short_names_resolve():
 def test_local_jsonl_normalization_round_trip(tmp_path: Path):
     """A local JSONL file with mixed string / messages columns normalizes
     into the prompt/chosen/rejected schema TRL expects."""
+    _require_datasets()
     from halo_forge.dpo.datasets import load_preference_dataset
 
     rows = [
@@ -109,11 +117,25 @@ def test_local_jsonl_normalization_round_trip(tmp_path: Path):
     assert train[0]["chosen"] == "4"
 
 
+def test_preference_loader_rejects_null_pairs(tmp_path: Path):
+    _require_datasets()
+    from halo_forge.dpo.datasets import load_preference_dataset
+
+    path = tmp_path / "pairs.jsonl"
+    path.write_text(
+        json.dumps({"prompt": "p", "chosen": None, "rejected": "bad"}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid rows"):
+        load_preference_dataset(train_file=str(path), validation_split=0.0)
+
+
 def test_dispatch_mlx_path_returns_mlx_trainer_when_reference_free():
     """T17 v1: MLX dispatch returns MLXDPOTrainer when reference_free=True
     is set on the config; otherwise raises NotImplementedError pointing
     at the knob to flip. This replaces the old "always raise" stub."""
-    from halo_forge.dpo import DPOConfig
+    from halo_forge.dpo.config import DPOConfig
     from halo_forge.dpo._dispatch import get_dpo_trainer
 
     class _FakeMLXBackend:
@@ -134,7 +156,7 @@ def test_dispatch_mlx_path_returns_mlx_trainer_when_reference_free():
 def test_mlx_dpo_rejects_non_sigmoid_loss():
     """v1 only supports loss_type='sigmoid' — IPO / hinge / kto_pair
     require the reference model."""
-    from halo_forge.dpo import DPOConfig
+    from halo_forge.dpo.config import DPOConfig
     from halo_forge.dpo._dispatch import get_dpo_trainer
 
     class _FakeMLXBackend:
@@ -149,6 +171,7 @@ def test_mlx_dpo_rejects_non_sigmoid_loss():
 @pytest.mark.requires_cuda
 def test_dispatch_returns_pytorch_trainer_on_cuda():
     """On a CUDA host the dispatcher returns the PyTorch trainer class."""
+    _require_datasets()
     from halo_forge.dpo import DPOConfig, get_dpo_trainer
 
     trainer = get_dpo_trainer(DPOConfig())
@@ -160,7 +183,8 @@ def test_cli_help_includes_dpo_subcommand(monkeypatch):
     subparser. We exercise argparse by feeding sys.argv and catching the
     SystemExit argparse raises after printing help.
     """
-    import sys
+    if sys.version_info >= (3, 14):
+        pytest.skip("halo-forge CLI intentionally rejects Python >=3.14")
     import halo_forge.cli as cli_mod
 
     monkeypatch.setattr(sys, "argv", ["halo-forge", "dpo", "train", "--help"])
@@ -173,7 +197,8 @@ def test_cli_help_includes_dpo_subcommand(monkeypatch):
 def test_cli_dpo_train_routes_without_args(monkeypatch, capsys):
     """`halo-forge dpo train` with no dataset/data should hint and exit 1,
     not blow up importing the module. Catches dispatch + handler wiring."""
-    import sys
+    if sys.version_info >= (3, 14):
+        pytest.skip("halo-forge CLI intentionally rejects Python >=3.14")
     import halo_forge.cli as cli_mod
 
     monkeypatch.setattr(sys, "argv", ["halo-forge", "dpo", "train"])

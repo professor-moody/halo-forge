@@ -176,7 +176,7 @@ class Benchmark:
             # Load tokenizer from base model
             self.tokenizer = AutoTokenizer.from_pretrained(
                 base_model,
-                trust_remote_code=True,
+                trust_remote_code=False,
                 padding_side='left'
             )
             if self.tokenizer.pad_token is None:
@@ -188,7 +188,7 @@ class Benchmark:
                 dtype=recommended_dtype(),
                 device_map=get_device_map(),
                 attn_implementation=recommended_attn_impl(),
-                trust_remote_code=True
+                trust_remote_code=False
             )
             self.model = PeftModel.from_pretrained(base, str(model_path))
         else:
@@ -196,7 +196,7 @@ class Benchmark:
             print("Loading as full model...")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_path,
-                trust_remote_code=True,
+                trust_remote_code=False,
                 padding_side='left'
             )
             if self.tokenizer.pad_token is None:
@@ -207,7 +207,7 @@ class Benchmark:
                 dtype=recommended_dtype(),
                 device_map=get_device_map(),
                 attn_implementation=recommended_attn_impl(),
-                trust_remote_code=True
+                trust_remote_code=False
             )
         
         self.model.eval()

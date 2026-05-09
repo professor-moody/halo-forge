@@ -1,47 +1,51 @@
-"""
-Inference Optimization Module
+"""Inference Optimization Module.
 
-Tools for optimizing trained models for deployment:
-- Quantization-aware training (QAT)
-- Model export (GGUF, ONNX, MLX)
-- Inference benchmarking
+Exports are resolved lazily so lightweight commands can import
+``halo_forge.inference`` without importing torch/transformers-heavy modules.
 """
-
-from halo_forge.inference.verifier import InferenceOptimizationVerifier
-from halo_forge.inference.optimizer import (
-    InferenceOptimizer,
-    OptimizationConfig,
-    # Error classes
-    InferenceError,
-    DependencyError,
-    ValidationError,
-    ModelNotLoadedError,
-    # Utility functions
-    check_dependencies,
-    validate_config,
-)
-from halo_forge.inference.quantization import QATTrainer, prepare_qat, convert_to_quantized
-from halo_forge.inference.calibration import CalibrationDataset, CalibrationConfig
 
 __all__ = [
-    # Verifier
     "InferenceOptimizationVerifier",
-    # Optimizer
     "InferenceOptimizer",
     "OptimizationConfig",
-    # Error classes
     "InferenceError",
     "DependencyError",
     "ValidationError",
     "ModelNotLoadedError",
-    # Utility functions
     "check_dependencies",
     "validate_config",
-    # Quantization
     "QATTrainer",
     "prepare_qat",
     "convert_to_quantized",
-    # Calibration
     "CalibrationDataset",
     "CalibrationConfig",
 ]
+
+
+def __getattr__(name: str):
+    if name == "InferenceOptimizationVerifier":
+        from halo_forge.inference.verifier import InferenceOptimizationVerifier
+
+        return InferenceOptimizationVerifier
+    if name in {
+        "InferenceOptimizer",
+        "OptimizationConfig",
+        "InferenceError",
+        "DependencyError",
+        "ValidationError",
+        "ModelNotLoadedError",
+        "check_dependencies",
+        "validate_config",
+    }:
+        from halo_forge.inference import optimizer
+
+        return getattr(optimizer, name)
+    if name in {"QATTrainer", "prepare_qat", "convert_to_quantized"}:
+        from halo_forge.inference import quantization
+
+        return getattr(quantization, name)
+    if name in {"CalibrationDataset", "CalibrationConfig"}:
+        from halo_forge.inference import calibration
+
+        return getattr(calibration, name)
+    raise AttributeError(name)

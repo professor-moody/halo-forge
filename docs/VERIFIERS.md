@@ -615,9 +615,10 @@ Verifiers execute model-generated code. Treat verifier runs as untrusted executi
 
 ### Current Safety Characteristics
 
-- `SubprocessVerifier` executes argv with `shell=False` (no shell interpolation).
-- Python verifiers (`PytestVerifier`, `RLVRPytestVerifier`) execute code without OS-level resource limits.
-- C/C++ execution applies `setrlimit` for CPU and memory in `CompileVerifier`.
+- Verifiers backed by `VerifierExecutionRunner` use `sandbox-exec` on macOS or `bwrap` on Linux by default.
+- `SubprocessVerifier`, `PytestVerifier`, `UnittestVerifier`, `RLVRPytestVerifier`, C/C++, Go, Rust, and DotNet compile/execution paths use the shared sandbox runner unless explicitly configured otherwise.
+- If no local sandbox backend is available, verification fails closed instead of silently running generated code on the host.
+- CLI training/benchmark commands require the explicit `--unsafe-verifier-execution` opt-in to run generated-code verifiers directly on the host.
 
 ### Operational Guardrails (Recommended)
 

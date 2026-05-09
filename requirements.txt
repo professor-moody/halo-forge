@@ -33,7 +33,8 @@ protobuf
 einops
 
 # Benchmark extras (`.[benchmark]`)
-vlmeval>=0.2.0
+# VLMEvalKit is GitHub-only; install with:
+# pip install git+https://github.com/open-compass/VLMEvalKit.git
 
 # VLM extras (`.[vlm]`)
 qwen-vl-utils

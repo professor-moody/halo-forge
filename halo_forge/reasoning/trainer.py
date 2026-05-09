@@ -25,6 +25,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_eligibility import is_training_eligible
 from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
@@ -68,6 +69,7 @@ class ReasoningRAFTConfig:
     # Verification
     tolerance: float = 1e-6
     partial_credit: bool = True
+    reward_threshold: float = 0.0
     
     # Output
     output_dir: str = "models/reasoning_raft"
@@ -260,15 +262,17 @@ class ReasoningRAFTTrainer:
         Returns:
             Filtered completions
         """
+        eligible = [
+            c for c in completions
+            if is_training_eligible(c.result, self.config.reward_threshold)
+        ]
+
         # Sort by reward descending
-        sorted_comps = sorted(completions, key=lambda c: c.reward, reverse=True)
+        sorted_comps = sorted(eligible, key=lambda c: c.reward, reverse=True)
         
         # Keep top percent
         keep_count = max(1, int(len(sorted_comps) * self.config.keep_top_percent))
         filtered = sorted_comps[:keep_count]
-        
-        # Only keep those with positive reward
-        filtered = [c for c in filtered if c.reward > 0]
         
         logger.info(
             f"Filtered: {len(filtered)}/{len(completions)} "

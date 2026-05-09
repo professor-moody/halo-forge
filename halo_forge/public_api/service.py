@@ -748,11 +748,11 @@ class PublicApiService:
                 model=str(payload.get("model") or ""),
                 dataset=str(payload.get("dataset") or ""),
                 output_dir=str(payload.get("output_dir") or ""),
-                epochs=int(payload.get("epochs") or 1),
-                batch_size=int(payload.get("batch_size") or 2),
-                gradient_accumulation_steps=int(payload.get("gradient_accumulation_steps") or 4),
+                epochs=int(self._value_or_default(payload.get("epochs"), 1)),
+                batch_size=int(self._value_or_default(payload.get("batch_size"), 2)),
+                gradient_accumulation_steps=int(self._value_or_default(payload.get("gradient_accumulation_steps"), 4)),
                 max_samples=self._optional_int(payload.get("max_samples")),
-                learning_rate=float(payload.get("learning_rate") or 2e-4),
+                learning_rate=float(self._value_or_default(payload.get("learning_rate"), 2e-4)),
                 source_ui_page="/public/train",
             )
         elif mode == "raft":
@@ -761,13 +761,13 @@ class PublicApiService:
                 prompts=str(payload.get("prompts") or ""),
                 output_dir=str(payload.get("output_dir") or ""),
                 verifier=str(payload.get("verifier") or "humaneval"),
-                cycles=int(payload.get("cycles") or 1),
-                samples_per_prompt=int(payload.get("samples_per_prompt") or 4),
-                temperature=float(payload.get("temperature") or 0.7),
-                keep_percent=float(payload.get("keep_percent") or 0.5),
-                reward_threshold=float(payload.get("reward_threshold") or 0.5),
-                min_samples=int(payload.get("min_samples") or 1),
-                max_new_tokens=int(payload.get("max_new_tokens") or 512),
+                cycles=int(self._value_or_default(payload.get("cycles"), 1)),
+                samples_per_prompt=int(self._value_or_default(payload.get("samples_per_prompt"), 4)),
+                temperature=float(self._value_or_default(payload.get("temperature"), 0.7)),
+                keep_percent=float(self._value_or_default(payload.get("keep_percent"), 0.5)),
+                reward_threshold=float(self._value_or_default(payload.get("reward_threshold"), 0.5)),
+                min_samples=int(self._value_or_default(payload.get("min_samples"), 1)),
+                max_new_tokens=int(self._value_or_default(payload.get("max_new_tokens"), 512)),
                 source_ui_page="/public/train",
             )
         elif mode in {"vlm", "audio", "reasoning", "agentic"}:
@@ -2257,6 +2257,12 @@ class PublicApiService:
         if value in (None, ""):
             return None
         return float(value)
+
+    @staticmethod
+    def _value_or_default(value: Any, default: Any) -> Any:
+        if value in (None, ""):
+            return default
+        return value
 
     @staticmethod
     def _optional_str(value: Any) -> Optional[str]:

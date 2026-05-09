@@ -178,6 +178,7 @@ class OptimizationConfig:
     calibration_samples: int = 512
     export_format: Optional[str] = None  # gguf, onnx, mlx
     output_dir: str = "models/optimized"
+    trust_remote_code: bool = False
     
     def __post_init__(self):
         """Validate configuration on creation."""
@@ -285,14 +286,14 @@ class InferenceOptimizer:
         
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
-            trust_remote_code=True
+            trust_remote_code=self.config.trust_remote_code,
         )
         
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             dtype=recommended_dtype(),
             device_map=get_device_map(),
-            trust_remote_code=True
+            trust_remote_code=self.config.trust_remote_code,
         )
         
         # Track model identities:

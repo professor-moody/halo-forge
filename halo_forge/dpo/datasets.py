@@ -72,7 +72,7 @@ def list_preference_datasets() -> list[PreferenceDatasetSpec]:
     return list(PREFERENCE_DATASETS.values())
 
 
-def _normalize_messages(value) -> str:
+def _normalize_messages(value, *, field_name: str) -> str:
     """Collapse a chat-style messages list into a single string.
 
     UltraFeedback and similar datasets ship `chosen` / `rejected` as a
@@ -81,21 +81,31 @@ def _normalize_messages(value) -> str:
     canonicalization into the trainer so all our datasets look the same.
     """
     if isinstance(value, str):
-        return value
+        return value.strip()
     if isinstance(value, list):
         chunks = []
         for msg in value:
             if isinstance(msg, dict):
                 role = msg.get("role", "")
                 content = msg.get("content", "")
+                if content is None:
+                    raise ValueError(f"{field_name} message content cannot be null")
+                if not isinstance(content, str):
+                    raise ValueError(f"{field_name} message content must be a string")
                 if role:
                     chunks.append(f"{role}: {content}")
                 else:
-                    chunks.append(str(content))
+                    chunks.append(content)
             else:
-                chunks.append(str(msg))
-        return "\n".join(chunks)
-    return str(value)
+                if msg is None:
+                    raise ValueError(f"{field_name} message cannot be null")
+                if not isinstance(msg, str):
+                    raise ValueError(f"{field_name} message must be a string")
+                chunks.append(msg)
+        return "\n".join(chunks).strip()
+    if value is None:
+        raise ValueError(f"{field_name} cannot be null")
+    raise ValueError(f"{field_name} must be a string or chat-message list")
 
 
 def _normalize_row(row: dict, spec: Optional[PreferenceDatasetSpec]) -> dict:
@@ -108,9 +118,9 @@ def _normalize_row(row: dict, spec: Optional[PreferenceDatasetSpec]) -> dict:
     if prompt is None and "instruction" in row:
         prompt = row["instruction"]
     return {
-        "prompt": _normalize_messages(prompt or ""),
-        "chosen": _normalize_messages(row.get(chosen_col, "")),
-        "rejected": _normalize_messages(row.get(rejected_col, "")),
+        "prompt": _normalize_messages(prompt, field_name="prompt"),
+        "chosen": _normalize_messages(row.get(chosen_col), field_name="chosen"),
+        "rejected": _normalize_messages(row.get(rejected_col), field_name="rejected"),
     }
 
 
@@ -144,8 +154,16 @@ def load_preference_dataset(
         ds = load_dataset(hf_id, split=hf_split)
         if max_samples:
             ds = ds.select(range(min(max_samples, len(ds))))
+        def _normalize_or_mark(row):
+            try:
+                normalized = _normalize_row(row, spec)
+            except ValueError as exc:
+                return {"prompt": "", "chosen": "", "rejected": "", "_halo_invalid": str(exc)}
+            normalized["_halo_invalid"] = ""
+            return normalized
+
         ds = ds.map(
-            lambda row: _normalize_row(row, spec),
+            _normalize_or_mark,
             remove_columns=[
                 c for c in ds.column_names if c not in ("prompt", "chosen", "rejected")
             ],
@@ -166,13 +184,42 @@ def load_preference_dataset(
                 line = line.strip()
                 if not line:
                     continue
-                normalized_rows.append(_normalize_row(json.loads(line), spec))
+                row = json.loads(line)
+                try:
+                    normalized_rows.append(_normalize_row(row, spec))
+                except ValueError as exc:
+                    normalized_rows.append({
+                        "prompt": "",
+                        "chosen": "",
+                        "rejected": "",
+                        "_halo_invalid": str(exc),
+                    })
         if max_samples:
             normalized_rows = normalized_rows[:max_samples]
         ds = Dataset.from_list(normalized_rows)
 
+    before_filter = len(ds)
+    if before_filter == 0:
+        raise ValueError("Preference dataset has no rows")
+    invalid_count = 0
+    if "_halo_invalid" in ds.column_names:
+        invalid_count = sum(1 for r in ds if r.get("_halo_invalid"))
+
     # Drop empty rows defensively. Some upstream datasets sneak in blanks.
     ds = ds.filter(lambda r: bool(r["prompt"]) and bool(r["chosen"]) and bool(r["rejected"]))
+    empty_count = before_filter - invalid_count - len(ds)
+    if "_halo_invalid" in ds.column_names:
+        ds = ds.remove_columns(["_halo_invalid"])
+    if len(ds) == 0:
+        raise ValueError(
+            "Preference dataset has no valid rows after validation "
+            f"(invalid={invalid_count}, empty={max(0, empty_count)}, total={before_filter})"
+        )
+    if invalid_count:
+        raise ValueError(
+            "Preference dataset contains invalid rows "
+            f"(invalid={invalid_count}, empty={max(0, empty_count)}, valid={len(ds)})"
+        )
 
     if validation_split <= 0 or len(ds) < 10:
         return ds, ds.select(range(min(2, len(ds))))

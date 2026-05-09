@@ -24,6 +24,11 @@ from typing import Optional, List
 import re
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult, RewardLevel
+from halo_forge.rlvr.verifiers.execution_runner import (
+    ExecutionPolicy,
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 
 class GoVerifier(Verifier):
@@ -66,7 +71,8 @@ class GoVerifier(Verifier):
         stdin_input: Optional[str] = None,
         memory_limit_mb: int = 256,
         cross_compile: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize Go verifier.
@@ -81,6 +87,7 @@ class GoVerifier(Verifier):
             memory_limit_mb: Memory limit for execution
             cross_compile: If True, compile for Windows (GOOS=windows GOARCH=amd64)
             binary_cache_dir: Directory to cache compiled binaries
+            execution_policy: Sandbox policy for generated-code subprocesses
         """
         super().__init__(max_workers=max_workers)
         self.timeout = timeout
@@ -91,6 +98,11 @@ class GoVerifier(Verifier):
         self.memory_limit_mb = memory_limit_mb
         self.cross_compile = cross_compile
         self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(
+            execution_policy=execution_policy,
+            workspace_root=Path.cwd(),
+        )
         
         # Create cache directory if needed
         if self.binary_cache_dir:
@@ -225,6 +237,14 @@ class GoVerifier(Verifier):
                 details="Timeout",
                 error=f"Exceeded {self.timeout}s timeout"
             )
+        except SandboxUnavailableError as e:
+            return VerifyResult(
+                success=False,
+                reward=RewardLevel.FAILURE.value,
+                details="Sandbox unavailable",
+                error=str(e),
+                metadata={"execution_policy": self.execution_policy}
+            )
         except FileNotFoundError:
             return VerifyResult(
                 success=False,
@@ -245,11 +265,9 @@ class GoVerifier(Verifier):
     
     def _init_module(self, project_dir: str):
         """Initialize a Go module in the project directory."""
-        result = subprocess.run(
+        result = self._execution_runner.run(
             ["go", "mod", "init", "verify_code"],
             cwd=project_dir,
-            capture_output=True,
-            text=True,
             timeout=10
         )
         if result.returncode != 0:
@@ -272,11 +290,9 @@ class GoVerifier(Verifier):
             env["GOOS"] = "windows"
             env["GOARCH"] = "amd64"
         
-        result = subprocess.run(
+        result = self._execution_runner.run(
             cmd,
             cwd=project_dir,
-            capture_output=True,
-            text=True,
             timeout=self.timeout,
             env=env
         )
@@ -305,11 +321,10 @@ class GoVerifier(Verifier):
             resource.setrlimit(resource.RLIMIT_CPU, (self.run_timeout, self.run_timeout))
         
         try:
-            result = subprocess.run(
+            result = self._execution_runner.run(
                 [executable],
-                input=self.stdin_input,
-                capture_output=True,
-                text=True,
+                input_text=self.stdin_input,
+                cwd=Path(executable).parent,
                 timeout=self.run_timeout,
                 preexec_fn=set_limits
             )
@@ -382,4 +397,3 @@ class GoVerifier(Verifier):
         
         # Return as-is
         return text.strip()
-

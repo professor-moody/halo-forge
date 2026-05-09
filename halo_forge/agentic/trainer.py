@@ -29,6 +29,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_eligibility import is_training_eligible
 from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
@@ -443,10 +444,8 @@ class AgenticRAFTTrainer:
         avg_reward = sum(c.reward for c in all_completions) / max(total_samples, 1)
         success_rate = successful / max(total_samples, 1)
         above_threshold_count = sum(
-            1 for c in all_completions if float(c.reward) >= self.config.reward_threshold
-        )
-        above_threshold_count = sum(
-            1 for c in all_completions if float(c.reward) >= self.config.reward_threshold
+            1 for c in all_completions
+            if is_training_eligible(c.result, self.config.reward_threshold)
         )
         
         # Log sample-level rewards to MetricsTracker
@@ -652,7 +651,7 @@ class AgenticRAFTTrainer:
         # Filter by threshold
         above_threshold = [
             c for c in completions
-            if c.reward >= self.config.reward_threshold
+            if is_training_eligible(c.result, self.config.reward_threshold)
         ]
         
         # Sort by reward

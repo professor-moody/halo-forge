@@ -72,7 +72,7 @@ Three drift signals:
 - **Avg char overlap** — character-level Jaccard, robust to small numerical-precision drift.
 - **First-token match rate** — single best signal for "exported model immediately disagrees".
 
-GGUF round-trip verification is a typed `NotImplementedError` in v1 because halo-forge's serving adapter doesn't load GGUF directly yet. Use llama.cpp or Ollama as the GGUF-side loader and the `compare_generation` programmatic API as the bring-your-own-callable surface.
+GGUF round-trip verification is a typed `NotImplementedError` in v1 because halo-forge's serving adapter doesn't load GGUF directly yet. `halo-forge convert --verify --format gguf` exits non-zero rather than treating the skipped check as success. Use llama.cpp or Ollama as the GGUF-side loader and the `compare_generation` programmatic API as the bring-your-own-callable surface.
 
 ## Merge
 

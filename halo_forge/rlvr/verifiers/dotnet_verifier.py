@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Optional
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult, RewardLevel
+from halo_forge.rlvr.verifiers.execution_runner import (
+    ExecutionPolicy,
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 
 class DotNetVerifier(Verifier):
@@ -53,7 +58,8 @@ class DotNetVerifier(Verifier):
         target_framework: str = "net8.0",
         self_contained: bool = False,
         single_file: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize .NET verifier.
@@ -65,6 +71,7 @@ class DotNetVerifier(Verifier):
             self_contained: If True, bundle .NET runtime (larger, portable)
             single_file: If True, produce single executable
             binary_cache_dir: Directory to cache compiled binaries
+            execution_policy: Sandbox policy for generated-code subprocesses
         """
         super().__init__(max_workers=max_workers)
         self.timeout = timeout
@@ -72,6 +79,11 @@ class DotNetVerifier(Verifier):
         self.self_contained = self_contained
         self.single_file = single_file
         self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(
+            execution_policy=execution_policy,
+            workspace_root=Path.cwd(),
+        )
         
         # Create cache directory if needed
         if self.binary_cache_dir:
@@ -153,6 +165,14 @@ class DotNetVerifier(Verifier):
                 details="Timeout",
                 error=f"Compilation exceeded {self.timeout}s timeout"
             )
+        except SandboxUnavailableError as e:
+            return VerifyResult(
+                success=False,
+                reward=RewardLevel.FAILURE.value,
+                details="Sandbox unavailable",
+                error=str(e),
+                metadata={"execution_policy": self.execution_policy}
+            )
         
         except FileNotFoundError:
             return VerifyResult(
@@ -196,11 +216,9 @@ class DotNetVerifier(Verifier):
         if self.single_file:
             cmd.extend(["-p:PublishSingleFile=true"])
         
-        result = subprocess.run(
+        result = self._execution_runner.run(
             cmd,
             cwd=project_dir,
-            capture_output=True,
-            text=True,
             timeout=self.timeout
         )
         

@@ -248,6 +248,11 @@ class SFTTrainer:
                         continue
                     text = obj.get("text")
                     if not isinstance(text, str):
+                        prompt = obj.get("prompt")
+                        response = obj.get("response")
+                        if isinstance(prompt, str) and isinstance(response, str):
+                            text = f"{prompt.strip()}\n{response.strip()}".strip()
+                    if not isinstance(text, str):
                         missing_text += 1
                         if len(self.dataset_representative_examples) < 3:
                             self.dataset_representative_examples.append(

@@ -32,6 +32,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_eligibility import is_training_eligible
 from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
@@ -393,7 +394,7 @@ class AudioRAFTTrainer:
         rewards = [v["reward"] for v in verified]
         successful = sum(1 for v in verified if v.get("success"))
         above_threshold = sum(
-            1 for v in verified if float(v.get("reward", 0.0)) >= self.config.reward_threshold
+            1 for v in verified if is_training_eligible(v, self.config.reward_threshold)
         )
         if not self.representative_examples:
             failed = [
@@ -561,15 +562,17 @@ class AudioRAFTTrainer:
         verified: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """Filter samples by reward threshold."""
+        eligible = [
+            s for s in verified
+            if is_training_eligible(s, self.config.reward_threshold)
+        ]
+
         # Sort by reward
-        sorted_samples = sorted(verified, key=lambda x: x["reward"], reverse=True)
+        sorted_samples = sorted(eligible, key=lambda x: x["reward"], reverse=True)
         
         # Keep top percent
         keep_count = int(len(sorted_samples) * self.config.keep_top_percent)
         kept = sorted_samples[:keep_count]
-        
-        # Also filter by threshold
-        kept = [s for s in kept if s["reward"] >= self.config.reward_threshold]
         
         return kept
 

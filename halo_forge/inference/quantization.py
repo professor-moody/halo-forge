@@ -298,10 +298,10 @@ def quantize_model_simple(
         model_path,
         quantization_config=quant_config,
         device_map=get_device_map(),
-        trust_remote_code=True
+        trust_remote_code=False
     )
     
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=False)
     
     # Run calibration if data provided
     if calibration_data:

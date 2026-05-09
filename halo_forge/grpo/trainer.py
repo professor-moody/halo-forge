@@ -50,7 +50,7 @@ from halo_forge.utils.accelerator import (
 logger = logging.getLogger(__name__)
 
 
-def _build_reward_func(verifier_name: str):
+def _build_reward_func(verifier_name: str, reward_threshold: float):
     """Resolve a halo-forge verifier and adapt it to TRL's reward API.
 
     TRL expects ``reward_func(prompts, completions, **kwargs) -> List[float]``.
@@ -65,12 +65,30 @@ def _build_reward_func(verifier_name: str):
 
     def reward_func(prompts: List[str], completions: List[str], **kwargs) -> List[float]:
         rewards = []
-        for completion in completions:
+        try:
+            if hasattr(verifier, "verify_batch"):
+                results = verifier.verify_batch(completions, prompts)
+            else:
+                results = []
+                for prompt, completion in zip(prompts, completions):
+                    if hasattr(verifier, "verify_with_prompt"):
+                        try:
+                            results.append(verifier.verify_with_prompt(completion, prompt=prompt))
+                        except TypeError:
+                            results.append(verifier.verify_with_prompt(completion, prompt))
+                    else:
+                        results.append(verifier.verify(completion))
+        except Exception as exc:
+            logger.warning("Verifier %s raised during batch scoring: %s", verifier_name, exc)
+            return [0.0 for _ in completions]
+
+        for result in results:
             try:
-                result = verifier.verify(completion)
-                rewards.append(float(result.reward))
+                reward = float(getattr(result, "reward", 0.0) or 0.0)
+                success = bool(getattr(result, "success", False))
+                rewards.append(reward if success and reward >= reward_threshold else 0.0)
             except Exception as exc:
-                logger.warning("Verifier %s raised on completion: %s", verifier_name, exc)
+                logger.warning("Verifier %s returned an invalid result: %s", verifier_name, exc)
                 rewards.append(0.0)
         return rewards
 
@@ -214,7 +232,7 @@ class GRPOTrainer:
 
         self.setup_model()
 
-        reward_func = _build_reward_func(cfg.verifier_name)
+        reward_func = _build_reward_func(cfg.verifier_name, cfg.reward_threshold)
 
         trl_args = _TRLGRPOConfig(
             output_dir=cfg.output_dir,

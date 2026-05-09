@@ -258,7 +258,7 @@ class TestPytestVerifier:
     
     def test_passing_tests(self):
         """All passing tests should get full reward."""
-        verifier = PytestVerifier(timeout=30)
+        verifier = PytestVerifier(timeout=30, execution_policy="unsafe_host")
         result = verifier.verify(VALID_PYTHON_TESTS)
         
         assert result.success is True
@@ -266,7 +266,7 @@ class TestPytestVerifier:
     
     def test_failing_tests(self):
         """Failing tests should get partial reward."""
-        verifier = PytestVerifier(timeout=30)
+        verifier = PytestVerifier(timeout=30, execution_policy="unsafe_host")
         result = verifier.verify(FAILING_PYTHON_TESTS)
         
         assert result.success is False

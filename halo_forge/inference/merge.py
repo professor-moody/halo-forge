@@ -87,7 +87,7 @@ def bake_adapter(
     base_model: str,
     adapter_path: str,
     output_path: str,
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
 ) -> MergeResult:
     """Merge a single LoRA adapter into its base model and save the
     full merged checkpoint (Track T13).
@@ -146,7 +146,7 @@ def combine_adapters(
     method: str = "dare_ties",
     output_path: str,
     bake_after_merge: bool = False,
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
     svd_rank: Optional[int] = None,
 ) -> MergeResult:
     """Combine multiple LoRA adapters into one (Track T12).
@@ -258,7 +258,7 @@ def merge(
     weights: Optional[Sequence[float]] = None,
     method: str = "dare_ties",
     bake_after_merge: bool = False,
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
     svd_rank: Optional[int] = None,
 ) -> MergeResult:
     """Dispatch entry point — picks the right merger for ``operation``."""

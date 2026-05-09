@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/AMD_Strix_Halo-Optimized-ED1C24?style=flat-square&logo=amd&logoColor=white" alt="Strix Halo">
   <img src="https://img.shields.io/badge/Apple_Silicon-MPS_+_MLX_native-000000?style=flat-square&logo=apple&logoColor=white" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/CUDA-vLLM_+_TRL-76B900?style=flat-square&logo=nvidia&logoColor=white" alt="CUDA">
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.10--3.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
 </p>
 
 ---

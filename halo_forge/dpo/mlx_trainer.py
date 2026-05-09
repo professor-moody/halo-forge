@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from halo_forge.dpo.config import DPOConfig
-from halo_forge.dpo.datasets import load_preference_dataset
 from halo_forge.runtime_determinism import build_run_id, set_global_seed
 from halo_forge.training_contracts import (
     attach_effectiveness_contract,
@@ -171,6 +170,8 @@ class MLXDPOTrainer:
         dataset: Optional[str] = None,
         resume_from_checkpoint: Optional[str] = None,
     ) -> Dict[str, Any]:
+        from halo_forge.dpo.datasets import load_preference_dataset
+
         deps = _require_mlx_lm()
         mx = deps["mx"]
         nn = deps["nn"]

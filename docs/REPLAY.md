@@ -76,7 +76,7 @@ Environment differs from the captured run:
        packages.trl: '0.29.1' -> '0.31.0'
 ```
 
-Drift doesn't refuse the replay (sometimes re-running on a different host is the point — comparing reproducibility across MLX vs CUDA, or validating that a torch upgrade didn't change behavior). It does loud-warn so you have the information to interpret divergence.
+Environment drift refuses `--launch` unless `--force` is provided (sometimes re-running on a different host is the point — comparing reproducibility across MLX vs CUDA, or validating that a torch upgrade didn't change behavior). The warning gives you the information to interpret divergence.
 
 `--launch --force` skips the env-match gate.
 
@@ -87,7 +87,7 @@ The classic reproducibility failure: a training run completes, six months pass, 
 - Local-file datasets: SHA-256 over the file. Change one byte → hash differs.
 - HF datasets: id + revision (when set). Newer revision → mismatch.
 
-A `dataset.sha256` mismatch at replay is the single most informative signal for "this isn't actually a replay."
+A `dataset.sha256` mismatch at replay is the single most informative signal for "this isn't actually a replay." Local-file hash mismatches refuse `--launch` unless `--allow-dataset-drift` is provided.
 
 ## Programmatic API
 

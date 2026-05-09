@@ -92,13 +92,13 @@ python validate_dataset.py windows_systems_full_rlvr.jsonl
 
 ### For SFT
 ```bash
-halo-forge sft train --data datasets/windows_curriculum/windows_systems_full_sft.jsonl
+halo-forge sft train --data examples/datasets/windows_curriculum/windows_systems_full_sft.jsonl
 ```
 
 ### For RLVR/RAFT
 ```bash
 halo-forge raft train \
-  --prompts datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
+  --prompts examples/datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
   --verifier msvc
 ```
 
@@ -124,4 +124,3 @@ Use the `curriculum_order_full.json` file to programmatically access tier-based 
 ## License
 
 This dataset is provided for research and educational purposes.
-

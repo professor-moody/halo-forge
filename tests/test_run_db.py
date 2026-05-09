@@ -175,6 +175,18 @@ def test_count_runs_with_and_without_filter(db):
     assert db.count_runs(RunFilter(modalities=["sft"])) == 2
 
 
+def test_count_runs_applies_eval_and_update_filters(db):
+    db.upsert_run(_make_record(run_id="eval-updated", final_train_loss=0.5, weights_updated=True))
+    db.upsert_run(_make_record(run_id="eval-not-updated", final_train_loss=0.7, weights_updated=False))
+    db.upsert_run(_make_record(run_id="no-eval", final_train_loss=None, weights_updated=True))
+    from halo_forge.run_db import RunFilter
+
+    assert db.count_runs(RunFilter(has_eval=True)) == 2
+    assert db.count_runs(RunFilter(has_eval=False)) == 1
+    assert db.count_runs(RunFilter(weights_updated=True)) == 2
+    assert db.count_runs(RunFilter(weights_updated=False)) == 1
+
+
 def test_distinct_helpers(db):
     db.upsert_run(_make_record(run_id="a", modality="sft", model_name="Qwen/A"))
     db.upsert_run(_make_record(run_id="b", modality="raft", model_name="Qwen/A"))

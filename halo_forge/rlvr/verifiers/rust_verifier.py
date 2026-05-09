@@ -24,6 +24,11 @@ from typing import Optional, List
 import re
 
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult, RewardLevel
+from halo_forge.rlvr.verifiers.execution_runner import (
+    ExecutionPolicy,
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 
 class RustVerifier(Verifier):
@@ -75,7 +80,8 @@ class RustVerifier(Verifier):
         warn_as_error: bool = False,
         edition: str = "2021",
         cross_compile: bool = False,
-        binary_cache_dir: Optional[str] = None
+        binary_cache_dir: Optional[str] = None,
+        execution_policy: ExecutionPolicy = "sandbox",
     ):
         """
         Initialize Rust verifier.
@@ -92,6 +98,7 @@ class RustVerifier(Verifier):
             edition: Rust edition (2018, 2021)
             cross_compile: If True, compile for Windows (x86_64-pc-windows-gnu)
             binary_cache_dir: Directory to cache compiled binaries
+            execution_policy: Sandbox policy for generated-code subprocesses
         """
         super().__init__(max_workers=max_workers)
         self.timeout = timeout
@@ -104,6 +111,11 @@ class RustVerifier(Verifier):
         self.edition = edition
         self.cross_compile = cross_compile
         self.binary_cache_dir = Path(binary_cache_dir) if binary_cache_dir else None
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(
+            execution_policy=execution_policy,
+            workspace_root=Path.cwd(),
+        )
         
         # Create cache directory if needed
         if self.binary_cache_dir:
@@ -263,6 +275,14 @@ opt-level = 2
                 details="Timeout",
                 error=f"Exceeded {self.timeout}s timeout"
             )
+        except SandboxUnavailableError as e:
+            return VerifyResult(
+                success=False,
+                reward=RewardLevel.FAILURE.value,
+                details="Sandbox unavailable",
+                error=str(e),
+                metadata={"execution_policy": self.execution_policy}
+            )
         except FileNotFoundError:
             return VerifyResult(
                 success=False,
@@ -298,11 +318,9 @@ opt-level = 2
         env = os.environ.copy()
         env["CARGO_TERM_COLOR"] = "never"
         
-        result = subprocess.run(
+        result = self._execution_runner.run(
             cmd,
             cwd=project_dir,
-            capture_output=True,
-            text=True,
             timeout=self.timeout,
             env=env
         )
@@ -344,11 +362,10 @@ opt-level = 2
             resource.setrlimit(resource.RLIMIT_CPU, (self.run_timeout, self.run_timeout))
         
         try:
-            result = subprocess.run(
+            result = self._execution_runner.run(
                 [executable],
-                input=self.stdin_input,
-                capture_output=True,
-                text=True,
+                input_text=self.stdin_input,
+                cwd=Path(executable).parent,
                 timeout=self.run_timeout,
                 preexec_fn=set_limits
             )
@@ -433,4 +450,3 @@ opt-level = 2
 
 # Alias for clarity
 CargoVerifier = RustVerifier
-

@@ -330,6 +330,14 @@ class RunDatabase:
         if f.until_iso:
             clauses.append("timestamp <= ?")
             params.append(f.until_iso)
+        if f.has_eval is True:
+            clauses.append("final_train_loss IS NOT NULL")
+        elif f.has_eval is False:
+            clauses.append("final_train_loss IS NULL")
+        if f.weights_updated is True:
+            clauses.append("weights_updated = 1")
+        elif f.weights_updated is False:
+            clauses.append("weights_updated = 0")
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         cur = self._conn.execute(f"SELECT COUNT(*) FROM runs {where}", params)
         return int(cur.fetchone()[0])

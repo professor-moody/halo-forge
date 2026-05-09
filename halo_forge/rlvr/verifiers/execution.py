@@ -231,8 +231,9 @@ class ExecutionVerifier(CompileVerifier):
             else:
                 reward = 1.0 if passed == total else 0.5
             
-            # Success if more than half pass
-            success = pass_rate >= 0.5
+            # Success means the required runtime contract fully passed.
+            # Partial pass rates are still exposed through reward/metadata.
+            success = total > 0 and passed == total
             
             return VerifyResult(
                 success=success,

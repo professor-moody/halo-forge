@@ -185,7 +185,7 @@ Complete workflow from training to deployment:
 ```bash
 # 1. Train your model
 halo-forge raft train \
-  --prompts datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
+  --prompts examples/datasets/windows_curriculum/windows_systems_full_rlvr.jsonl \
   --model Qwen/Qwen2.5-Coder-1.5B \
   --verifier mingw \
   --cycles 6 \

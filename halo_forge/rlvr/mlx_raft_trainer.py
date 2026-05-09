@@ -185,6 +185,7 @@ class MLXRAFTTrainer:
                 reward_threshold=getattr(cfg, "reward_threshold", 0.5),
                 keep_top_percent=getattr(cfg, "keep_top_percent", 0.5),
                 min_samples_per_cycle=getattr(cfg, "min_samples_per_cycle", None),
+                allow_compile_only_training=getattr(cfg, "allow_compile_only_training", False),
                 progress_logger=self._log,
             )
             print_filtering_summary(stats)

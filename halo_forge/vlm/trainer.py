@@ -36,6 +36,7 @@ from halo_forge.training_contracts import (
     normalize_update_metrics,
     write_json_atomic,
 )
+from halo_forge.training_eligibility import is_training_eligible
 from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.modality_artifacts import (
     persist_cycle_artifacts,
@@ -248,14 +249,15 @@ class VLMRAFTTrainer:
         Returns:
             Filtered samples above threshold
         """
-        # Filter by threshold
-        above_threshold = [s for s in samples if s.reward >= self.config.reward_threshold]
+        # Filter by verifier success and threshold
+        above_threshold = [
+            s for s in samples
+            if is_training_eligible(s, self.config.reward_threshold)
+        ]
         
         if not above_threshold:
-            self._log("No samples above threshold, keeping top 10%", "warn")
-            sorted_samples = sorted(samples, key=lambda x: x.reward, reverse=True)
-            n_keep = max(1, len(samples) // 10)
-            return sorted_samples[:n_keep]
+            self._log("No verified samples above threshold; skipping training for this cycle", "warn")
+            return []
         
         # Keep top percentage
         sorted_samples = sorted(above_threshold, key=lambda x: x.reward, reverse=True)
@@ -517,7 +519,7 @@ class VLMRAFTTrainer:
         successes = sum(1 for s in samples if s.success)
         sample_count = len(samples)
         above_threshold_count = sum(
-            1 for s in samples if float(s.reward) >= self.config.reward_threshold
+            1 for s in samples if is_training_eligible(s, self.config.reward_threshold)
         )
         
         success_rate = (successes / sample_count) if sample_count else 0.0

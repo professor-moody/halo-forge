@@ -7,6 +7,10 @@ Copy this file and modify for your specific verification needs.
 
 from typing import Optional, List
 from halo_forge.rlvr.verifiers.base import Verifier, VerifyResult
+from halo_forge.rlvr.verifiers.execution_runner import (
+    SandboxUnavailableError,
+    VerifierExecutionRunner,
+)
 
 
 class CustomVerifier(Verifier):
@@ -131,7 +135,8 @@ class SubprocessVerifier(Verifier):
         require_placeholder: bool = True,
         file_extension: str = ".txt",
         timeout: int = 60,
-        max_workers: int = 4
+        max_workers: int = 4,
+        execution_policy: str = "sandbox",
     ):
         """
         Initialize subprocess verifier.
@@ -169,6 +174,8 @@ class SubprocessVerifier(Verifier):
         self.require_placeholder = require_placeholder
         self.file_extension = file_extension
         self.timeout = timeout
+        self.execution_policy = execution_policy
+        self._execution_runner = VerifierExecutionRunner(execution_policy=execution_policy)
     
     def verify(self, code: str) -> VerifyResult:
         """Run command on code and check result."""
@@ -189,11 +196,8 @@ class SubprocessVerifier(Verifier):
             ]
             
             try:
-                result = subprocess.run(
+                result = self._execution_runner.run(
                     cmd,
-                    shell=False,
-                    capture_output=True,
-                    text=True,
                     timeout=self.timeout,
                     cwd=tmpdir,
                 )
@@ -204,6 +208,14 @@ class SubprocessVerifier(Verifier):
                     details="Command timeout",
                     error=f"Exceeded {self.timeout}s",
                     metadata={"command_args": cmd}
+                )
+            except SandboxUnavailableError as e:
+                return VerifyResult(
+                    success=False,
+                    reward=0.0,
+                    details="Sandbox unavailable",
+                    error=str(e),
+                    metadata={"command_args": cmd, "execution_policy": self.execution_policy},
                 )
             except Exception as e:
                 return VerifyResult(

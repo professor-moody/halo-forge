@@ -26,6 +26,8 @@ import gc
 import time
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 
+from halo_forge.training_eligibility import is_training_eligible
+
 
 class _VerifierLike(Protocol):
     """Minimum surface a verifier must expose for this module."""
@@ -42,6 +44,7 @@ def verify_and_filter_samples(
     reward_threshold: float,
     keep_top_percent: float,
     min_samples_per_cycle: Optional[int] = None,
+    allow_compile_only_training: bool = False,
     progress_logger: Optional[Callable[[str, str], None]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     """Verify completions, sort by reward, and filter.
@@ -105,12 +108,20 @@ def verify_and_filter_samples(
             "reward": result.reward,
             "success": result.success,
             "details": result.details,
+            "metadata": getattr(result, "metadata", {}) or {},
         })
     all_data.sort(key=lambda x: x["reward"], reverse=True)
 
     # Filter
     effective_threshold = reward_threshold
-    above_threshold = [d for d in all_data if d["reward"] >= effective_threshold]
+    above_threshold = [
+        d for d in all_data
+        if is_training_eligible(
+            d,
+            effective_threshold,
+            allow_compile_only=allow_compile_only_training,
+        )
+    ]
     keep_count = max(1, int(len(above_threshold) * keep_top_percent))
     filtered = above_threshold[:keep_count]
 
@@ -120,8 +131,16 @@ def verify_and_filter_samples(
             f"Only {len(filtered)} samples kept, below minimum {min_samples_per_cycle}",
             "warning",
         )
-        if len(all_data) >= min_samples_per_cycle:
-            filtered = all_data[:min_samples_per_cycle]
+        eligible_data = [
+            d for d in all_data
+            if is_training_eligible(
+                d,
+                0.0,
+                allow_compile_only=allow_compile_only_training,
+            )
+        ]
+        if len(eligible_data) >= min_samples_per_cycle:
+            filtered = eligible_data[:min_samples_per_cycle]
             new_threshold = filtered[-1]["reward"]
             log(
                 f"Auto-adjusted: taking top {min_samples_per_cycle} samples "
@@ -131,9 +150,12 @@ def verify_and_filter_samples(
             effective_threshold = new_threshold
             above_threshold = filtered
             threshold_adjusted = True
+        elif eligible_data:
+            filtered = eligible_data
+            log(f"Not enough verified samples, using all {len(eligible_data)}", "warning")
         else:
-            filtered = all_data
-            log(f"Not enough samples, using all {len(all_data)}", "warning")
+            filtered = []
+            log("No verified samples are eligible for training", "warning")
 
     stats = {
         "total_samples": len(samples),
@@ -154,6 +176,7 @@ def verify_and_filter_samples(
         },
         "threshold_adjusted": threshold_adjusted,
         "effective_threshold": effective_threshold,
+        "training_eligible_count": len(filtered),
     }
 
     representative_examples = _build_representative_examples(
