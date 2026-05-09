@@ -106,8 +106,8 @@ inference = [
 # Apple MLX backend. Inference-only in Phase 3; Phase 4-5 add LoRA SFT and RAFT.
 # Apple Silicon only (mlx wheels are arm64 macOS).
 mlx = [
-    "mlx>=0.18.0",
-    "mlx-lm>=0.20.0",
+    "mlx>=0.18.0,<0.30.0",
+    "mlx-lm>=0.20.0,<0.30.0",
 ]
 all = [
     "halo-forge[dev,llm-backends,benchmark,vlm-benchmark,vlm,audio,reasoning,agentic,inference]",

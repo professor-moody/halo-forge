@@ -106,12 +106,21 @@ export type TelemetrySample = {
   sys_mem_total_gb: number | null;
   throughput_tokens_per_sec: number | null;
   active_run_id: string | null;
+  mps_to_cpu_fallbacks_60s: number | null;
+  chip: {
+    generation: number;
+    variant: "base" | "Pro" | "Max" | "Ultra" | null;
+    gpu_cores: number | null;
+    nominal_memory_bandwidth_gbps: number | null;
+    brand: string;
+  } | null;
   note: string | null;
 };
 
 export type BackendInfo = {
   name: string;
   device: string;
+  chip: TelemetrySample["chip"];
   capabilities: {
     name: string;
     supports_bf16: boolean;
@@ -123,6 +132,7 @@ export type BackendInfo = {
     preferred_attn_impl: string;
     supports_training: boolean;
     supports_peft: boolean;
+    supports_neural_accelerators: boolean;
   };
   training_defaults: Record<string, unknown>;
   inference_defaults: Record<string, unknown>;

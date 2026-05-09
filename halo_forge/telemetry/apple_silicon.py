@@ -26,10 +26,89 @@ swap begins and throughput collapses.
 from __future__ import annotations
 
 import platform
+import re
+import threading
+import time
+import warnings
+from collections import deque
 from typing import Optional, Tuple
 
 from halo_forge.telemetry._psutil_helpers import cpu_util_percent, sys_memory_gb
 from halo_forge.telemetry.base import TelemetryProvider, TelemetrySample
+from halo_forge.utils.apple_chip import (
+    ChipInfo,
+    detect_apple_gpu_cores,
+    parse_chip_brand,
+    with_gpu_cores,
+)
+
+
+class MPSFallbackCounter:
+    """Warning/log based rolling counter for MPS-to-CPU fallbacks."""
+
+    _PATTERNS = (
+        re.compile(r"will fall back to run on the CPU", re.IGNORECASE),
+        re.compile(r"MPSFallback\.mm", re.IGNORECASE),
+        re.compile(r"PYTORCH_ENABLE_MPS_FALLBACK", re.IGNORECASE),
+    )
+
+    def __init__(self, *, clock=time.time) -> None:
+        self._clock = clock
+        self._events: deque[float] = deque()
+        self._lock = threading.Lock()
+        self._installed = False
+        self._original_showwarning = None
+
+    def record_warning_line(self, line: str) -> bool:
+        if not line or not any(pattern.search(line) for pattern in self._PATTERNS):
+            return False
+        with self._lock:
+            now = float(self._clock())
+            self._events.append(now)
+            self._prune_locked(now)
+        return True
+
+    def count_last_60s(self) -> int:
+        with self._lock:
+            now = float(self._clock())
+            self._prune_locked(now)
+            return len(self._events)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._events.clear()
+
+    def install_warning_hook(self) -> None:
+        if self._installed:
+            return
+        original = warnings.showwarning
+
+        def _showwarning(
+            message: Warning | str,
+            category: type[Warning],
+            filename: str,
+            lineno: int,
+            file=None,
+            line: str | None = None,
+        ) -> None:
+            self.record_warning_line(str(message))
+            original(message, category, filename, lineno, file=file, line=line)
+
+        self._original_showwarning = original
+        warnings.showwarning = _showwarning
+        self._installed = True
+
+    def _prune_locked(self, now: float) -> None:
+        cutoff = now - 60.0
+        while self._events and self._events[0] < cutoff:
+            self._events.popleft()
+
+
+_MPS_FALLBACK_COUNTER = MPSFallbackCounter()
+
+
+def get_mps_fallback_counter() -> MPSFallbackCounter:
+    return _MPS_FALLBACK_COUNTER
 
 
 class AppleSiliconTelemetry(TelemetryProvider):
@@ -44,9 +123,13 @@ class AppleSiliconTelemetry(TelemetryProvider):
         # sidebar.
         self._backend_name = backend_name
         self._device_name = self._detect_device_name()
+        self._chip = self._detect_chip_info(self._device_name)
+        get_mps_fallback_counter().install_warning_hook()
 
     def sample(self) -> TelemetrySample:
         s = TelemetrySample.now(backend=self._backend_name, device_name=self._device_name)
+        s.chip = self._chip.to_dict() if self._chip else None
+        s.mps_to_cpu_fallbacks_60s = get_mps_fallback_counter().count_last_60s()
 
         # System
         s.cpu_util_percent = cpu_util_percent()
@@ -92,6 +175,10 @@ class AppleSiliconTelemetry(TelemetryProvider):
         # Fallback to platform.processor() — typically "arm" on Apple Silicon
         # which isn't useful, but better than crashing.
         return platform.processor() or None
+
+    @staticmethod
+    def _detect_chip_info(device_name: Optional[str]) -> ChipInfo | None:
+        return with_gpu_cores(parse_chip_brand(device_name), detect_apple_gpu_cores())
 
     # ------------------------------------------------------------------
     # Memory probes — both return (used_gb, total_gb).

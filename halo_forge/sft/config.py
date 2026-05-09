@@ -24,6 +24,9 @@ class SFTConfig:
     # None -> backend default (eager on ROCm/CPU, sdpa on CUDA/MPS).
     # Pass an explicit string to override.
     attn_implementation: Optional[str] = None
+    # Apple M5+ Neural Accelerator surfacing. Experimental annotation only;
+    # kernels are unchanged and unsupported backends fail at trainer init.
+    enable_neural_accelerators: bool = False
 
     # Data - supports both local files and HuggingFace datasets
     train_file: Optional[str] = None  # Local JSONL file

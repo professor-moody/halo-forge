@@ -50,6 +50,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "batch_size",
         "gradient_accumulation_steps",
         "learning_rate",
+        "no_caffeinate",
     },
     "raft": {
         "mode",
@@ -61,6 +62,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "reward_threshold",
         "temperature",
+        "no_caffeinate",
     },
     "vlm": {
         "mode",
@@ -73,6 +75,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "reward_threshold",
         "temperature",
+        "no_caffeinate",
     },
     "audio": {
         "mode",
@@ -85,6 +88,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "reward_threshold",
         "temperature",
         "task",
+        "no_caffeinate",
     },
     "reasoning": {
         "mode",
@@ -96,6 +100,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "temperature",
         "learning_rate",
+        "no_caffeinate",
     },
     "agentic": {
         "mode",
@@ -107,6 +112,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "temperature",
         "learning_rate",
+        "no_caffeinate",
     },
 }
 
@@ -203,9 +209,18 @@ class PublicApiService:
         from dataclasses import asdict
 
         backend = get_backend()
+        chip = None
+        try:
+            from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
+
+            provider = AppleSiliconTelemetry(backend_name=backend.name)
+            chip = provider.sample().chip
+        except Exception:
+            chip = None
         return {
             "name": backend.name,
             "device": backend.device(),
+            "chip": chip,
             "capabilities": asdict(backend.capabilities),
             "training_defaults": backend.training_defaults(),
             "inference_defaults": backend.inference_defaults(),
@@ -753,6 +768,7 @@ class PublicApiService:
                 gradient_accumulation_steps=int(self._value_or_default(payload.get("gradient_accumulation_steps"), 4)),
                 max_samples=self._optional_int(payload.get("max_samples")),
                 learning_rate=float(self._value_or_default(payload.get("learning_rate"), 2e-4)),
+                no_caffeinate=bool(payload.get("no_caffeinate", False)),
                 source_ui_page="/public/train",
             )
         elif mode == "raft":
@@ -768,6 +784,7 @@ class PublicApiService:
                 reward_threshold=float(self._value_or_default(payload.get("reward_threshold"), 0.5)),
                 min_samples=int(self._value_or_default(payload.get("min_samples"), 1)),
                 max_new_tokens=int(self._value_or_default(payload.get("max_new_tokens"), 512)),
+                no_caffeinate=bool(payload.get("no_caffeinate", False)),
                 source_ui_page="/public/train",
             )
         elif mode in {"vlm", "audio", "reasoning", "agentic"}:
@@ -788,6 +805,7 @@ class PublicApiService:
                 resume_from_cycle=int(payload.get("resume_from_cycle") or 0),
                 seed=int(payload.get("seed") or 42),
                 allow_prototype_train=bool(payload.get("allow_prototype_train", False)),
+                no_caffeinate=bool(payload.get("no_caffeinate", False)),
                 source_ui_page="/public/train",
             )
         else:

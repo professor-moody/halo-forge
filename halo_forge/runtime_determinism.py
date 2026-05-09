@@ -57,6 +57,17 @@ def set_global_seed(seed: Optional[int]) -> int:
     except Exception:
         pass
 
+    # MLX has an independent RNG. Seed it through the backend abstraction so
+    # runtime_determinism does not import optional MLX packages directly.
+    try:
+        from halo_forge.backend import get_backend
+
+        backend = get_backend()
+        if backend.name == "mlx":
+            backend.seed_all(normalized)
+    except Exception:
+        pass
+
     return normalized
 
 

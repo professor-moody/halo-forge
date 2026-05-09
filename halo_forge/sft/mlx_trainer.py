@@ -105,8 +105,10 @@ class MLXSFTTrainer:
         # (DoRA/rsLoRA/PiSSA/bnb-optimizer). Without this, MLX runs
         # quietly fall back to vanilla LoRA / mlx.optimizers.AdamW.
         from halo_forge.utils.backend_config import warn_unsupported_for_mlx
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
 
         warn_unsupported_for_mlx(self.config, trainer_label="MLX SFT")
+        validate_neural_accelerator_opt_in(self.config, label="MLX SFT")
         self.model: Any = None
         self.tokenizer: Any = None
         self.run_id: str = ""

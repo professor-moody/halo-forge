@@ -11,6 +11,7 @@ Notable differences from CUDA/ROCm:
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
 from halo_forge.backend._torch_common import _TorchBackendBase
@@ -37,6 +38,18 @@ _CAPABILITIES = BackendCapabilities(
 class MPSBackend(_TorchBackendBase):
     def __init__(self) -> None:
         super().__init__(name="mps", capabilities=_CAPABILITIES)
+
+    def setup_environment(self) -> Dict[str, str]:
+        applied: Dict[str, str] = {}
+        defaults = {
+            "PYTORCH_MPS_HIGH_WATERMARK_RATIO": "0.0",
+            "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+        }
+        for key, value in defaults.items():
+            if key not in os.environ:
+                os.environ[key] = value
+                applied[key] = value
+        return applied
 
     def device(self) -> str:
         return "mps"

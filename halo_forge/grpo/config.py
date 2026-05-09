@@ -22,6 +22,8 @@ class GRPOConfig:
     model_name: str = "Qwen/Qwen2.5-3B-Instruct"
     trust_remote_code: bool = True
     attn_implementation: Optional[str] = None
+    # Apple M5+ Neural Accelerator surfacing. Experimental annotation only.
+    enable_neural_accelerators: bool = False
 
     # Data — prompts only; GRPO generates the completions.
     train_file: Optional[str] = None  # Local prompts JSONL

@@ -219,6 +219,11 @@ function ComputePanel() {
               <span className="font-mono text-[11px] text-fg">
                 {prettyBackendName(data.name)}
               </span>
+              {data.chip ? (
+                <span className="truncate font-mono text-[10px] text-fg-subtle">
+                  {data.chip.brand}
+                </span>
+              ) : null}
               <span
                 aria-label="Online"
                 className="status-dot"
@@ -235,7 +240,11 @@ function ComputePanel() {
             {/* Bottom row: dtype + attention */}
             <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-fg-subtle uppercase tracking-wider">
               <span>{data.capabilities.preferred_dtype_str}</span>
-              <span>{data.capabilities.preferred_attn_impl}</span>
+              <span>
+                {data.capabilities.supports_neural_accelerators
+                  ? "NA ready"
+                  : data.capabilities.preferred_attn_impl}
+              </span>
             </div>
           </div>
         )}

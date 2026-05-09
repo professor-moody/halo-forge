@@ -27,6 +27,8 @@ class DPOConfig:
     # None -> backend default. Pass an explicit string ("eager", "sdpa",
     # "flash_attention_2") to override.
     attn_implementation: Optional[str] = None
+    # Apple M5+ Neural Accelerator surfacing. Experimental annotation only.
+    enable_neural_accelerators: bool = False
 
     # Data
     train_file: Optional[str] = None  # Local JSONL with prompt/chosen/rejected

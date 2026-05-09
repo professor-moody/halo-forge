@@ -102,6 +102,9 @@ class MLXGRPOTrainer:
     def __init__(self, config: Optional[GRPOConfig] = None):
         self.config = config or GRPOConfig()
         warn_unsupported_for_mlx(self.config, trainer_label="MLX GRPO")
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, logger=logger, label="MLX GRPO")
 
         if not self.config.reference_free:
             raise NotImplementedError(

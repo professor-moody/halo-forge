@@ -59,6 +59,9 @@ class DPOTrainer:
 
     def __init__(self, config: Optional[DPOConfig] = None):
         self.config = config or DPOConfig()
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, label="DPO")
         self.model = None
         self.tokenizer = None
         self.training_summary: Dict[str, Union[str, int, float, dict, list, None]] = {}

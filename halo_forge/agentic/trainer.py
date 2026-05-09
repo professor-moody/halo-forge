@@ -90,6 +90,7 @@ class AgenticRAFTConfig:
     # AMD Strix Halo requirements
     bf16: bool = True
     gradient_checkpointing: bool = True
+    enable_neural_accelerators: bool = False
     seed: int = DEFAULT_TRAINING_SEED
     
     def __post_init__(self):
@@ -152,6 +153,9 @@ class AgenticRAFTTrainer:
             config: Training configuration.
         """
         self.config = config
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, logger=logger, label="Agentic RAFT")
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         

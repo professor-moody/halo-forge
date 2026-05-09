@@ -1,4 +1,4 @@
-import { Activity, Cpu, Gauge, Info, Thermometer, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Cpu, Gauge, Info, Thermometer, Zap } from "lucide-react";
 import type { TelemetrySample } from "@/lib/api";
 import { useEventSource } from "@/lib/event-source";
 import { cn } from "@/lib/utils";
@@ -79,6 +79,7 @@ export function TelemetryStrip() {
           }
           loading={isLoading}
         />
+        <MPSFallbackChip count={data?.mps_to_cpu_fallbacks_60s ?? 0} />
 
         {/* Note icon — only when the backend populated `note` (typical:
             "GPU util / power / temp require sudo on macOS"). Rendered
@@ -86,6 +87,26 @@ export function TelemetryStrip() {
             another column to the divide-x rhythm. */}
         {data?.note ? <NoteIcon note={data.note} /> : null}
       </div>
+    </div>
+  );
+}
+
+function MPSFallbackChip({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <div className="flex items-center px-3 py-2.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="inline-flex items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-warning">
+            <AlertTriangle className="h-3 w-3" />
+            MPS FALLBACK
+            <span className="tabular-nums">{count}</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="end" className="max-w-[30ch] text-[11px]">
+          PyTorch moved one or more MPS operations to CPU in the last minute. Training will still run, but throughput may drop sharply.
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }

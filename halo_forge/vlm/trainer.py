@@ -84,6 +84,7 @@ class VLMRAFTConfig:
     # Hardware
     bf16: bool = True
     gradient_checkpointing: bool = True
+    enable_neural_accelerators: bool = False
     seed: int = DEFAULT_TRAINING_SEED
 
 
@@ -127,6 +128,9 @@ class VLMRAFTTrainer:
             config: Training configuration
         """
         self.config = config
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, label="VLM RAFT")
         
         # Initialize components
         self.adapter: Optional[VLMAdapter] = None

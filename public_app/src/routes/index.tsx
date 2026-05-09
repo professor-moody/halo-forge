@@ -358,8 +358,23 @@ function SystemCard() {
           <>
             <SysRow label="Backend" value={data.name} mono />
             <SysRow label="Device" value={data.device} mono />
+            {data.chip ? (
+              <SysRow
+                label="Apple chip"
+                value={
+                  data.chip.gpu_cores != null
+                    ? `${data.chip.brand}, ${data.chip.gpu_cores} GPU cores`
+                    : data.chip.brand
+                }
+              />
+            ) : null}
             <SysRow label="Default dtype" value={data.capabilities.preferred_dtype_str} mono />
             <SysRow label="Attention" value={data.capabilities.preferred_attn_impl} mono />
+            <SysRow
+              label="Neural Accelerators"
+              tone={data.capabilities.supports_neural_accelerators ? "success" : "neutral"}
+              value={data.capabilities.supports_neural_accelerators ? "available" : "unavailable"}
+            />
             <SysRow
               label="4-bit quant"
               tone={data.capabilities.supports_4bit ? "success" : "neutral"}

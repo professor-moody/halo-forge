@@ -55,6 +55,9 @@ class ORPOTrainer:
 
     def __init__(self, config: Optional[ORPOConfig] = None):
         self.config = config or ORPOConfig()
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, label="ORPO")
         self.model = None
         self.tokenizer = None
         self.training_summary: Dict[str, Union[str, int, float, dict, list, None]] = {}

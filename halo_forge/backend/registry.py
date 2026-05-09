@@ -126,7 +126,14 @@ def get_backend(
 
     canonical = _ALIASES.get(resolved, resolved)
     if canonical not in _INSTANCES:
-        _INSTANCES[canonical] = BACKENDS[canonical]()
+        backend = BACKENDS[canonical]()
+        try:
+            backend.setup_environment()
+        except Exception:
+            # Environment setup should improve backend behavior, not make
+            # simple backend discovery fail on partially configured hosts.
+            pass
+        _INSTANCES[canonical] = backend
     backend = _INSTANCES[canonical]
 
     if require_training and not backend.capabilities.supports_training:

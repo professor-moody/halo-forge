@@ -20,7 +20,7 @@ For training on Apple Silicon today, use `--backend mps` (PyTorch MPS) — it wo
 pip install -e '.[mlx]'
 ```
 
-This pulls `mlx>=0.18.0` and `mlx-lm>=0.20.0`. Wheels exist only for arm64 macOS — Intel Macs and Linux will fail at install time, which is correct (MLX is Apple Silicon only).
+This pulls `mlx>=0.18.0,<0.30.0` and `mlx-lm>=0.20.0,<0.30.0`. Wheels exist only for arm64 macOS — Intel Macs and Linux will fail at install time, which is correct (MLX is Apple Silicon only). The upper bound is intentional: MLX compile/cache behavior has moved quickly across minor releases, so halo-forge keeps the MLX extra inside the tested minor range and bumps it deliberately.
 
 Verify:
 
@@ -92,6 +92,18 @@ The public API exposes `GET /api/public/backend` which returns the active backen
 ```bash
 curl localhost:8000/api/public/backend | jq
 ```
+
+On Apple Silicon, telemetry and backend responses also include parsed chip metadata when the host exposes it, for example `M3 Max` plus the system-reported GPU core count. Halo-forge surfaces this information only; it does not auto-tune batch sizes, LoRA ranks, or memory settings from the chip tier.
+
+## Experimental M5 Neural Accelerator flag
+
+`supports_neural_accelerators` is reported only when the active MLX backend sees an Apple M5-generation chip on macOS 26.2 or newer. Trainer configs expose `enable_neural_accelerators=False` as an explicit opt-in and validate it at trainer initialization.
+
+This is claim-tracking only in this pass. The flag records intent and catches unsupported hosts, but it does not route kernels, alter Metal TensorOps behavior, or promise a speedup yet.
+
+## MPS CPU fallback visibility
+
+PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTORCH_ENABLE_MPS_FALLBACK=1`. Dashboard-launched training now preserves that permissive default and counts fallback warning lines in the public telemetry stream. If the frontend shows the amber `MPS FALLBACK` chip, training is still running, but throughput may be much lower than expected.
 
 ## Roadmap reminders
 

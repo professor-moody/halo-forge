@@ -50,14 +50,23 @@ class EnvironmentFingerprint:
     python: str
     platform: str
     backend: str
+    chip_name: Optional[str] = None
+    chip_brand: Optional[str] = None
+    macos_version: Optional[str] = None
+    metal_version: Optional[str] = None
     packages: Dict[str, Optional[str]] = field(default_factory=dict)
 
     @classmethod
     def capture(cls) -> "EnvironmentFingerprint":
+        apple = _capture_apple_environment()
         return cls(
             python=sys.version.split()[0],
             platform=f"{platform.system()} {platform.machine()}",
             backend=_detect_backend_name_safe(),
+            chip_name=apple.get("chip_name"),
+            chip_brand=apple.get("chip_brand"),
+            macos_version=apple.get("macos_version"),
+            metal_version=apple.get("metal_version"),
             packages={name: _get_pkg_version(name) for name in _TRACKED_PACKAGES},
         )
 
@@ -72,6 +81,30 @@ def _detect_backend_name_safe() -> str:
         return get_backend().name
     except Exception:
         return "unknown"
+
+
+def _capture_apple_environment() -> Dict[str, Optional[str]]:
+    if sys.platform != "darwin":
+        return {}
+    data: Dict[str, Optional[str]] = {
+        "macos_version": platform.mac_ver()[0] or None,
+    }
+    try:
+        from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
+        from halo_forge.utils.apple_chip import detect_metal_version, parse_chip_brand
+
+        chip_name = AppleSiliconTelemetry._detect_device_name()
+        chip = parse_chip_brand(chip_name)
+        data.update({
+            "chip_name": chip_name,
+            "chip_brand": chip.brand if chip else None,
+            "metal_version": detect_metal_version(),
+        })
+    except Exception:
+        data.setdefault("chip_name", None)
+        data.setdefault("chip_brand", None)
+        data.setdefault("metal_version", None)
+    return data
 
 
 def _get_pkg_version(name: str) -> Optional[str]:

@@ -88,6 +88,7 @@ class AudioRAFTConfig:
     
     # Device
     device: Optional[str] = None
+    enable_neural_accelerators: bool = False
     seed: int = DEFAULT_TRAINING_SEED
 
     def __post_init__(self):
@@ -128,6 +129,9 @@ class AudioRAFTTrainer:
             config: Training configuration
         """
         self.config = config
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, logger=logger, label="Audio RAFT")
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         

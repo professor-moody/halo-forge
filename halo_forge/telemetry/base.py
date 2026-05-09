@@ -61,6 +61,10 @@ class TelemetrySample:
     throughput_tokens_per_sec: Optional[float] = None
     active_run_id: Optional[str] = None
 
+    # Apple Silicon-specific visibility. Other providers leave these as None.
+    mps_to_cpu_fallbacks_60s: Optional[int] = None
+    chip: Optional[Dict[str, Any]] = None
+
     # Free-form notes the provider wants to surface (e.g. "rocm-smi exit
     # code 1 — falling back to torch.cuda probe"). Frontend shows these
     # in a tooltip so debugging telemetry doesn't require a server log.

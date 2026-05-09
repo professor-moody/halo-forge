@@ -74,6 +74,9 @@ class RewardModelTrainer:
 
     def __init__(self, config: Optional[RMConfig] = None):
         self.config = config or RMConfig()
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, logger=logger, label="Reward Model")
         self.model = None
         self.tokenizer = None
         self.training_summary: Dict[str, Union[str, int, float, dict, list, None]] = {}

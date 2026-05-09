@@ -64,6 +64,8 @@ class BackendCapabilities:
     supports_training: bool
     # PEFT (HF peft library) — only PyTorch backends. MLX has its own LoRA path.
     supports_peft: bool
+    # Apple M5+ experimental capability flag. Surfacing only; no auto-tuning.
+    supports_neural_accelerators: bool = False
 
 
 @dataclass

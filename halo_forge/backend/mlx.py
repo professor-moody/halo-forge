@@ -15,6 +15,8 @@ For other models, use `python -m mlx_lm.convert` — see docs/MLX.md.
 
 from __future__ import annotations
 
+import platform
+from dataclasses import replace
 from typing import Any, Dict, Optional
 
 from halo_forge.backend.base import (
@@ -53,7 +55,7 @@ class MLXBackend(BackendStrategy):
 
     def __init__(self) -> None:
         self.name = "mlx"
-        self.capabilities = _CAPABILITIES
+        self.capabilities = _mlx_capabilities()
 
     def device(self) -> str:
         return "mlx"
@@ -198,6 +200,32 @@ class MLXBackend(BackendStrategy):
             # its own kwargs (`max_tokens`, `temp`, etc.) that callers pass
             # through `MLXInferenceAdapter.generate` directly.
         }
+
+
+def _mlx_capabilities() -> BackendCapabilities:
+    try:
+        from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
+        from halo_forge.utils.apple_chip import parse_chip_brand
+
+        chip = parse_chip_brand(AppleSiliconTelemetry._detect_device_name())
+        macos_ok = _macos_version_tuple() >= (26, 2)
+        supports_na = bool(chip and chip.generation >= 5 and macos_ok)
+    except Exception:
+        supports_na = False
+    return replace(_CAPABILITIES, supports_neural_accelerators=supports_na)
+
+
+def _macos_version_tuple() -> tuple[int, int]:
+    version = platform.mac_ver()[0]
+    parts: list[int] = []
+    for item in version.split(".")[:2]:
+        try:
+            parts.append(int(item))
+        except ValueError:
+            parts.append(0)
+    while len(parts) < 2:
+        parts.append(0)
+    return parts[0], parts[1]
 
 
 class MLXInferenceAdapter:

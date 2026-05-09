@@ -57,6 +57,7 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "eval_steps",
         "early_stopping_patience",
         "gradient_checkpointing",
+        "no_caffeinate",
     ),
     "raft": (
         "model",
@@ -80,6 +81,7 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "reward_shaping",
         "system_prompt",
         "experimental_attention",
+        "no_caffeinate",
     ),
     "vlm": (
         "model",
@@ -95,6 +97,7 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "resume_from_cycle",
         "seed",
         "allow_prototype_train",
+        "no_caffeinate",
     ),
     "audio": (
         "model",
@@ -111,6 +114,7 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "resume_from_cycle",
         "seed",
         "allow_prototype_train",
+        "no_caffeinate",
     ),
     "reasoning": (
         "model",
@@ -123,6 +127,7 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "resume_from_cycle",
         "seed",
         "allow_prototype_train",
+        "no_caffeinate",
     ),
     "agentic": (
         "model",
@@ -135,6 +140,7 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
         "resume_from_cycle",
         "seed",
         "allow_prototype_train",
+        "no_caffeinate",
     ),
     "benchmark": (
         "model",

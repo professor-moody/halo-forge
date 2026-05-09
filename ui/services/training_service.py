@@ -36,6 +36,7 @@ from .launch_context import (
     read_launch_context,
 )
 from halo_forge.capabilities import check_modality_train_capability
+from halo_forge.utils.macos_runtime import caffeinate_command
 
 # Import notification helpers (only used when UI is running)
 try:
@@ -298,6 +299,41 @@ class TrainingService:
         if guided_recovery:
             metadata["guided_recovery"] = dict(guided_recovery)
         return metadata
+
+    def _build_launch_context_metadata(
+        self,
+        guided_recovery: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {"guided_recovery": dict(guided_recovery or {})}
+        system_info = self._system_info_metadata()
+        if system_info:
+            metadata["system_info"] = system_info
+        return metadata
+
+    @staticmethod
+    def _system_info_metadata() -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        try:
+            from halo_forge.backend import get_backend
+
+            backend = get_backend()
+            data["backend"] = backend.name
+            data["supports_neural_accelerators"] = bool(
+                getattr(backend.capabilities, "supports_neural_accelerators", False)
+            )
+        except Exception:
+            pass
+        try:
+            from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
+
+            chip = AppleSiliconTelemetry._detect_chip_info(
+                AppleSiliconTelemetry._detect_device_name()
+            )
+            if chip is not None:
+                data["chip"] = chip.to_dict()
+        except Exception:
+            pass
+        return data
 
     def _apply_launch_overrides(
         self,
@@ -904,6 +940,7 @@ class TrainingService:
         relaunch: bool = False,
         resume_strategy: Optional[str] = None,
         guided_recovery: Optional[dict[str, Any]] = None,
+        no_caffeinate: bool = False,
         **kwargs
     ) -> str:
         """
@@ -1000,6 +1037,8 @@ class TrainingService:
         # Hardware options
         if not gradient_checkpointing:
             cmd.append("--no-gradient-checkpointing")
+        if no_caffeinate:
+            cmd.append("--no-caffeinate")
         
         # Add any extra arguments
         for key, value in kwargs.items():
@@ -1028,6 +1067,7 @@ class TrainingService:
             "eval_steps": eval_steps,
             "early_stopping_patience": early_stopping_patience,
             "gradient_checkpointing": gradient_checkpointing,
+            "no_caffeinate": no_caffeinate,
         }
         launch_args.update({k: v for k, v in kwargs.items() if v is not None})
         launch_context_file = None
@@ -1044,7 +1084,7 @@ class TrainingService:
                     "can_clone": True,
                     "can_resume_latest": False,
                 },
-                metadata={"guided_recovery": dict(guided_recovery or {})},
+                metadata=self._build_launch_context_metadata(guided_recovery),
             )
         except Exception as e:
             print(f"[TrainingService] Failed to persist launch context: {e}")
@@ -1084,7 +1124,7 @@ class TrainingService:
         ))
         
         # Launch subprocess
-        await self._launch_process(job.id, cmd, on_log)
+        await self._launch_process(job.id, cmd, on_log, no_caffeinate=no_caffeinate)
         
         return job.id
     
@@ -1117,6 +1157,7 @@ class TrainingService:
         relaunch: bool = False,
         resume_strategy: Optional[str] = None,
         guided_recovery: Optional[dict[str, Any]] = None,
+        no_caffeinate: bool = False,
         **kwargs
     ) -> str:
         """
@@ -1207,6 +1248,8 @@ class TrainingService:
         # Experimental attention flag
         if experimental_attention:
             cmd.append("--experimental-attention")
+        if no_caffeinate:
+            cmd.append("--no-caffeinate")
         
         # Add any extra arguments
         for key, value in kwargs.items():
@@ -1235,6 +1278,7 @@ class TrainingService:
             "reward_shaping": reward_shaping,
             "system_prompt": system_prompt,
             "experimental_attention": experimental_attention,
+            "no_caffeinate": no_caffeinate,
         }
         launch_args.update({k: v for k, v in kwargs.items() if v is not None})
         launch_context_file = None
@@ -1251,7 +1295,7 @@ class TrainingService:
                     "can_clone": True,
                     "can_resume_latest": True,
                 },
-                metadata={"guided_recovery": dict(guided_recovery or {})},
+                metadata=self._build_launch_context_metadata(guided_recovery),
             )
         except Exception as e:
             print(f"[TrainingService] Failed to persist launch context: {e}")
@@ -1291,7 +1335,7 @@ class TrainingService:
         ))
         
         # Launch subprocess
-        await self._launch_process(job.id, cmd, on_log)
+        await self._launch_process(job.id, cmd, on_log, no_caffeinate=no_caffeinate)
         
         return job.id
 
@@ -1320,6 +1364,7 @@ class TrainingService:
         relaunch: bool = False,
         resume_strategy: Optional[str] = None,
         guided_recovery: Optional[dict[str, Any]] = None,
+        no_caffeinate: bool = False,
     ) -> str:
         """Launch modality-specific train command (vlm/audio/reasoning/agentic)."""
         if modality not in MODALITY_TRAIN_LAUNCH_CONTRACTS:
@@ -1382,6 +1427,8 @@ class TrainingService:
             cmd.extend(["--limit", str(limit)])
         if capability.capability.status == "prototype" and allow_prototype_train:
             cmd.append("--allow-prototype-train")
+        if no_caffeinate:
+            cmd.append("--no-caffeinate")
 
         launch_args = {
             "model": model,
@@ -1401,6 +1448,7 @@ class TrainingService:
             "allow_prototype_train": (
                 capability.capability.status == "prototype" and allow_prototype_train
             ),
+            "no_caffeinate": no_caffeinate,
         }
         launch_context_file = None
         try:
@@ -1416,7 +1464,7 @@ class TrainingService:
                     "can_clone": True,
                     "can_resume_latest": modality in CYCLE_BASED_TRAINING_JOB_TYPES,
                 },
-                metadata={"guided_recovery": dict(guided_recovery or {})},
+                metadata=self._build_launch_context_metadata(guided_recovery),
             )
         except Exception as e:
             print(f"[TrainingService] Failed to persist launch context: {e}")
@@ -1454,7 +1502,7 @@ class TrainingService:
             ),
         ))
 
-        await self._launch_process(job.id, cmd, on_log)
+        await self._launch_process(job.id, cmd, on_log, no_caffeinate=no_caffeinate)
         return job.id
 
     async def relaunch_from_context(
@@ -1544,6 +1592,8 @@ class TrainingService:
         job_id: str,
         cmd: list[str],
         on_log: Optional[Callable[[str], None]] = None,
+        *,
+        no_caffeinate: bool = False,
     ):
         """Launch subprocess and start log streaming."""
         job = self.state.get_job(job_id)
@@ -1562,9 +1612,11 @@ class TrainingService:
         # Get optimized environment
         env = self._get_strix_halo_env()
         
+        exec_cmd = caffeinate_command(cmd, enabled=not no_caffeinate)
+
         # Launch subprocess
         process = await asyncio.create_subprocess_exec(
-            *cmd,
+            *exec_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=env,
@@ -1580,7 +1632,11 @@ class TrainingService:
             reason="process_started",
             metadata=self._merge_transition_metadata(
                 job,
-                {"command": cmd},
+                {
+                    "command": cmd,
+                    "executed_command": exec_cmd,
+                    "caffeinate": exec_cmd != cmd,
+                },
             ),
         )
 
@@ -1634,6 +1690,12 @@ class TrainingService:
                         continue
 
                     timestamp = datetime.now().isoformat()
+                    try:
+                        from halo_forge.telemetry.apple_silicon import get_mps_fallback_counter
+
+                        get_mps_fallback_counter().record_warning_line(line)
+                    except Exception:
+                        pass
 
                     # Store log line in memory buffer
                     log_buffer.append({

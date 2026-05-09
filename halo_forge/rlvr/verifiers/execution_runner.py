@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import multiprocessing
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,19 @@ from typing import Callable, Literal, Optional
 
 
 ExecutionPolicy = Literal["sandbox", "unsafe_host"]
+
+
+def _prefer_spawn_on_darwin() -> None:
+    if sys.platform != "darwin":
+        return
+    try:
+        if multiprocessing.get_start_method(allow_none=True) == "fork":
+            multiprocessing.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass
+
+
+_prefer_spawn_on_darwin()
 
 
 class SandboxUnavailableError(RuntimeError):

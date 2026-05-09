@@ -642,6 +642,7 @@ def cmd_sft_train(args):
         config.use_rslora = use_rslora
         config.init_lora_weights = init_lora_weights
         config.optim = optim
+        config.enable_neural_accelerators = getattr(args, "enable_neural_accelerators", False)
         if no_gradient_checkpointing:
             config.gradient_checkpointing = False
     else:
@@ -672,6 +673,7 @@ def cmd_sft_train(args):
             use_rslora=use_rslora,
             init_lora_weights=init_lora_weights,
             optim=optim,
+            enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         )
     
     # Disable LoRA if requested (full fine-tuning)
@@ -776,6 +778,7 @@ def cmd_dpo_train(args):
         eval_steps=getattr(args, "eval_steps", 100),
         save_total_limit=getattr(args, "save_total_limit", 3),
         load_in_4bit=getattr(args, "load_in_4bit", False),
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
     )
 
@@ -845,6 +848,7 @@ def cmd_orpo_train(args):
         eval_steps=getattr(args, "eval_steps", 100),
         save_total_limit=getattr(args, "save_total_limit", 3),
         load_in_4bit=getattr(args, "load_in_4bit", False),
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
     )
 
@@ -1421,6 +1425,7 @@ def cmd_rm_train(args):
         init_lora_weights=getattr(args, "init_lora_weights", "true"),
         optim=getattr(args, "optim", "adamw_torch"),
         load_in_4bit=getattr(args, "load_in_4bit", False),
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         center_rewards_coefficient=getattr(args, "center_rewards_coefficient", 0.01),
         gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
     )
@@ -1492,6 +1497,7 @@ def cmd_grpo_train(args):
         optim=getattr(args, "optim", "adamw_torch"),
         load_in_4bit=getattr(args, "load_in_4bit", False),
         rollout_engine=getattr(args, "rollout_engine", "auto"),
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         gradient_checkpointing=not getattr(args, "no_gradient_checkpointing", False),
     )
 
@@ -2263,6 +2269,35 @@ def cmd_plot_benchmarks(args):
 
 def cmd_info(args):
     """Show hardware info."""
+    def _apple_lines() -> list[str]:
+        try:
+            from halo_forge.backend import get_backend
+            from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
+
+            backend = get_backend()
+            sample = AppleSiliconTelemetry(backend_name=backend.name).sample()
+            lines: list[str] = []
+            if sample.chip:
+                chip = sample.chip
+                gpu = (
+                    f", gpu_cores={chip['gpu_cores']}"
+                    if chip.get("gpu_cores") is not None
+                    else ""
+                )
+                lines.append(
+                    f"Chip: {chip['brand']} (gen={chip['generation']}, "
+                    f"variant={chip.get('variant') or 'base'}{gpu})"
+                )
+            na_status = (
+                "available"
+                if backend.capabilities.supports_neural_accelerators
+                else "unavailable"
+            )
+            lines.append(f"Neural Accelerators: {na_status}")
+            return lines
+        except Exception:
+            return []
+
     try:
         from halo_forge import ui
         import torch
@@ -2290,10 +2325,14 @@ def cmd_info(args):
         else:
             ui.print_warning("No GPU detected")
             ui.print_info("PyTorch CUDA/ROCm not available")
+        for line in _apple_lines():
+            ui.print_info(line)
     except ImportError:
         # Fallback if rich not installed
         from halo_forge.utils.hardware import print_hardware_info
         print_hardware_info()
+        for line in _apple_lines():
+            print(line)
 
 
 # =============================================================================
@@ -4296,6 +4335,7 @@ def cmd_vlm_train(args):
         output_weight=args.output_weight,
         lr_decay_per_cycle=args.lr_decay,
         temperature=args.temperature,
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         seed=args.seed,
     )
     
@@ -4686,6 +4726,7 @@ def cmd_audio_train(args):
         learning_rate=args.lr,
         lr_decay_per_cycle=args.lr_decay,
         output_dir=args.output,
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         seed=args.seed,
     )
     
@@ -4747,6 +4788,19 @@ def main():
              'pass "mlx" explicitly to use Apple MLX for inference. '
              'Sets HALOFORGE_BACKEND for downstream code.'
     )
+
+    def add_apple_runtime_flags(train_parser, *, neural_accelerators: bool = True):
+        train_parser.add_argument(
+            '--no-caffeinate',
+            action='store_true',
+            help='Dashboard round-trip flag: opt out of macOS caffeinate wrapping for launched training jobs',
+        )
+        if neural_accelerators:
+            train_parser.add_argument(
+                '--enable-neural-accelerators',
+                action='store_true',
+                help='Annotate and validate experimental Apple M5+ Neural Accelerator opt-in (no kernel routing yet)',
+            )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
     
@@ -4857,6 +4911,7 @@ def main():
     
     # sft train
     sft_train_parser = sft_subparsers.add_parser('train', help='Run SFT training')
+    add_apple_runtime_flags(sft_train_parser)
     sft_train_parser.add_argument('--config', '-c', help='Config file path')
     sft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-7B', help='Base model')
     sft_train_parser.add_argument('--dataset', '-d', help='HuggingFace dataset ID or short name (e.g., codealpaca, metamath)')
@@ -4918,6 +4973,7 @@ def main():
 
     # dpo train
     dpo_train_parser = dpo_subparsers.add_parser('train', help='Run DPO training')
+    add_apple_runtime_flags(dpo_train_parser)
     dpo_train_parser.add_argument('--config', '-c', help='Config file path')
     dpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
                                   help='Base / SFT-tuned model to align')
@@ -4998,6 +5054,7 @@ def main():
     orpo_subparsers = orpo_parser.add_subparsers(dest='orpo_command', required=True)
 
     orpo_train_parser = orpo_subparsers.add_parser('train', help='Run ORPO training')
+    add_apple_runtime_flags(orpo_train_parser)
     orpo_train_parser.add_argument('--config', '-c', help='Config file path')
     orpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
                                    help='Base / SFT-tuned model to align')
@@ -5046,6 +5103,7 @@ def main():
     rm_subparsers = rm_parser.add_subparsers(dest='rm_command', required=True)
 
     rm_train_parser = rm_subparsers.add_parser('train', help='Run reward-model training')
+    add_apple_runtime_flags(rm_train_parser)
     rm_train_parser.add_argument('--config', '-c', help='Config file path')
     rm_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
                                  help='Base / SFT-tuned model')
@@ -5084,6 +5142,7 @@ def main():
     grpo_subparsers = grpo_parser.add_subparsers(dest='grpo_command', required=True)
 
     grpo_train_parser = grpo_subparsers.add_parser('train', help='Run GRPO training')
+    add_apple_runtime_flags(grpo_train_parser)
     grpo_train_parser.add_argument('--config', '-c', help='Config file path')
     grpo_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-3B-Instruct',
                                    help='Base / SFT-tuned model')
@@ -5308,6 +5367,7 @@ def main():
     
     # raft train
     raft_train_parser = raft_subparsers.add_parser('train', help='Run RAFT training')
+    add_apple_runtime_flags(raft_train_parser, neural_accelerators=False)
     raft_train_parser.add_argument('--config', '-c', help='Config file path')
     raft_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-Coder-3B', help='Base model')
     # Phase 5a: when --accelerator mlx is set, rollouts run on MLX while
@@ -5508,6 +5568,7 @@ def main():
     
     # vlm train
     vlm_train_parser = vlm_subparsers.add_parser('train', help='Train VLM with RAFT')
+    add_apple_runtime_flags(vlm_train_parser)
     vlm_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2-VL-7B-Instruct',
                                   help='VLM model name')
     vlm_train_parser.add_argument('--dataset', '-d', required=True,
@@ -5590,6 +5651,7 @@ def main():
     
     # audio train
     audio_train_parser = audio_subparsers.add_parser('train', help='Train audio model with RAFT')
+    add_apple_runtime_flags(audio_train_parser)
     audio_train_parser.add_argument('--model', '-m', default='openai/whisper-small',
                                     help='Audio model (default: openai/whisper-small)')
     audio_train_parser.add_argument('--dataset', '-d', default='librispeech',
@@ -5657,6 +5719,7 @@ def main():
     
     # reasoning train
     reasoning_train_parser = reasoning_subparsers.add_parser('train', help='Train with RAFT')
+    add_apple_runtime_flags(reasoning_train_parser)
     reasoning_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
                                         help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
     reasoning_train_parser.add_argument('--dataset', '-d', default='gsm8k',
@@ -5718,6 +5781,7 @@ def main():
     
     # agentic train
     agentic_train_parser = agentic_subparsers.add_parser('train', help='Train tool calling with RAFT')
+    add_apple_runtime_flags(agentic_train_parser)
     agentic_train_parser.add_argument('--model', '-m', default='Qwen/Qwen2.5-7B-Instruct',
                                       help='Model name (default: Qwen/Qwen2.5-7B-Instruct)')
     agentic_train_parser.add_argument('--dataset', '-d', default='xlam',
@@ -6135,6 +6199,7 @@ def cmd_reasoning_train(args):
         learning_rate=args.lr,
         lr_decay_per_cycle=args.lr_decay,
         output_dir=args.output,
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         seed=args.seed,
     )
     
@@ -6346,6 +6411,7 @@ def cmd_agentic_train(args):
         learning_rate=args.lr,
         lr_decay_per_cycle=args.lr_decay,
         output_dir=args.output,
+        enable_neural_accelerators=getattr(args, "enable_neural_accelerators", False),
         seed=args.seed,
     )
     

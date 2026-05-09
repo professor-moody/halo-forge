@@ -140,6 +140,9 @@ class GRPOTrainer:
 
     def __init__(self, config: Optional[GRPOConfig] = None):
         self.config = config or GRPOConfig()
+        from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
+
+        validate_neural_accelerator_opt_in(self.config, logger=logger, label="GRPO")
         self.model = None
         self.tokenizer = None
         self.training_summary: Dict[str, Any] = {}
