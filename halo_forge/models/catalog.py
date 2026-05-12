@@ -14,6 +14,22 @@ from typing import Any, Iterable, Mapping, Optional
 CATALOG_VERSION = "2026.05"
 
 
+def _estimate_memory_gb(parameter_count: str, memory_tier: str) -> Optional[float]:
+    """Conservative first-run memory estimate for LoRA-style local workflows."""
+    try:
+        normalized = parameter_count.strip().upper()
+        if normalized.endswith("M"):
+            params_b = float(normalized[:-1]) / 1000
+        elif normalized.endswith("B"):
+            params_b = float(normalized[:-1])
+        else:
+            return {"tiny": 2.0, "small": 8.0, "medium": 18.0, "large": 40.0}.get(memory_tier)
+        # Rough bf16 model footprint plus optimizer/activation headroom for LoRA training.
+        return round(max(1.5, params_b * 3.2 + 1.0), 1)
+    except Exception:
+        return {"tiny": 2.0, "small": 8.0, "medium": 18.0, "large": 40.0}.get(memory_tier)
+
+
 @dataclass(frozen=True)
 class ModelCatalogEntry:
     id: str
@@ -31,11 +47,24 @@ class ModelCatalogEntry:
     trust_remote_code_required: bool = False
     mlx_variant: Optional[str] = None
     status: str = "recommended"
+    recommended_first_run: bool = False
+    estimated_memory_gb: Optional[float] = None
+    license_note: Optional[str] = None
+    download_note: Optional[str] = None
+    fit_notes: tuple[str, ...] = ()
+    risk_level: str = "safe"
     last_verified: str = "2026-05-09"
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        for key in ("modalities", "tasks", "trainer_support", "backend_support", "known_caveats"):
+        for key in (
+            "modalities",
+            "tasks",
+            "trainer_support",
+            "backend_support",
+            "known_caveats",
+            "fit_notes",
+        ):
             data[key] = list(data[key])
         data["catalog_version"] = CATALOG_VERSION
         return data
@@ -58,7 +87,22 @@ def _entry(
     trust_remote_code_required: bool = False,
     mlx_variant: Optional[str] = None,
     status: str = "recommended",
+    recommended_first_run: bool = False,
+    estimated_memory_gb: Optional[float] = None,
+    license_note: Optional[str] = None,
+    download_note: Optional[str] = None,
+    fit_notes: Iterable[str] = (),
+    risk_level: Optional[str] = None,
 ) -> ModelCatalogEntry:
+    risk = risk_level
+    if risk is None:
+        risk = "experimental" if status == "experimental" else "caveated" if known_caveats or trust_remote_code_required else "safe"
+    if estimated_memory_gb is None:
+        estimated_memory_gb = _estimate_memory_gb(parameter_count, memory_tier)
+    if license_note is None and any("license" in str(c).lower() for c in known_caveats):
+        license_note = "Accept the upstream model license before download."
+    if download_note is None and trust_remote_code_required:
+        download_note = "Requires explicit trust-remote-code opt-in where supported."
     return ModelCatalogEntry(
         id=id,
         label=label,
@@ -75,6 +119,12 @@ def _entry(
         trust_remote_code_required=trust_remote_code_required,
         mlx_variant=mlx_variant,
         status=status,
+        recommended_first_run=recommended_first_run,
+        estimated_memory_gb=estimated_memory_gb,
+        license_note=license_note,
+        download_note=download_note,
+        fit_notes=tuple(fit_notes),
+        risk_level=risk,
     )
 
 
@@ -92,6 +142,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         "tiny",
         "Fastest code smoke tests and CI-friendly trainer checks.",
         mlx_variant="mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+        recommended_first_run=True,
+        fit_notes=("Best when the operator needs to validate install, dataset shape, and launch plumbing quickly.",),
     ),
     _entry(
         "Qwen/Qwen2.5-Coder-1.5B",
@@ -105,6 +157,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("cuda", "rocm_gfx1151", "rocm", "mps"),
         "small",
         "Low-memory code fine-tuning with enough capacity to show meaningful gains.",
+        recommended_first_run=True,
+        fit_notes=("Default first real code-training pick on PyTorch backends.",),
     ),
     _entry(
         "Qwen/Qwen2.5-Coder-3B",
@@ -157,6 +211,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("cuda", "rocm_gfx1151", "rocm", "mps"),
         "small",
         "Small general-purpose instruct model for reasoning and agentic quickstarts.",
+        recommended_first_run=True,
+        fit_notes=("Good first instruct model when the task is not code-specific.",),
     ),
     _entry(
         "Qwen/Qwen2.5-3B-Instruct",
@@ -308,6 +364,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("cuda", "rocm_gfx1151", "rocm", "mps", "cpu"),
         "tiny",
         "Fast audio/ASR smoke tests.",
+        recommended_first_run=True,
+        fit_notes=("Use before Whisper Small to verify audio dataset formatting.",),
     ),
     _entry(
         "openai/whisper-small",
@@ -471,6 +529,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("mlx",),
         "small",
         "Apple Silicon MLX-format quickstart model for local inference and MLX-native trainer paths.",
+        recommended_first_run=True,
+        fit_notes=("Best first MLX-format pick on Apple Silicon.",),
     ),
     _entry(
         "mlx-community/Qwen2.5-7B-Instruct-bf16",
@@ -575,7 +635,19 @@ def recommended_models(
     }
     items = list_models(filters)
     preferred = [item for item in items if item["status"] in {"recommended", "compatible"}]
-    return preferred[:8] if preferred else items[:8]
+    candidates = preferred if preferred else items
+    risk_rank = {"safe": 0, "caveated": 1, "experimental": 2}
+    status_rank = {"recommended": 0, "compatible": 1, "experimental": 2, "deprecated": 3}
+    candidates.sort(
+        key=lambda item: (
+            not bool(item.get("recommended_first_run")),
+            risk_rank.get(str(item.get("risk_level", "")), 9),
+            status_rank.get(str(item.get("status", "")), 9),
+            float(item.get("estimated_memory_gb") or 999),
+            _CATALOG_ORDER.get(str(item.get("id")), 9999),
+        )
+    )
+    return candidates[:8]
 
 
 def catalog_facets(items: list[dict[str, Any]]) -> dict[str, list[str]]:
@@ -597,4 +669,5 @@ def catalog_facets(items: list[dict[str, Any]]) -> dict[str, list[str]]:
         "backend_support": collect("backend_support"),
         "memory_tiers": collect("memory_tier"),
         "statuses": collect("status"),
+        "risk_levels": collect("risk_level"),
     }

@@ -38,6 +38,12 @@ const STATUS_TONE: Record<string, "success" | "warning" | "neutral" | "info"> = 
   deprecated: "neutral",
 };
 
+const RISK_TONE: Record<string, "success" | "warning" | "neutral" | "info"> = {
+  safe: "success",
+  caveated: "warning",
+  experimental: "warning",
+};
+
 type IntentPreset = {
   label: string;
   description: string;
@@ -297,9 +303,22 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             <Badge tone={STATUS_TONE[model.status] ?? "neutral"} size="sm">
               {model.status}
             </Badge>
+            {model.recommended_first_run ? (
+              <Badge tone="success" size="sm">
+                best first pick
+              </Badge>
+            ) : null}
+            <Badge tone={RISK_TONE[model.risk_level] ?? "neutral"} size="sm">
+              {model.risk_level}
+            </Badge>
             <Badge tone="neutral" size="sm">
               {model.memory_tier}
             </Badge>
+            {model.estimated_memory_gb ? (
+              <Badge tone="neutral" size="sm">
+                ~{model.estimated_memory_gb}GB
+              </Badge>
+            ) : null}
             {caveated ? (
               <Badge tone="warning" size="sm">
                 caveats
@@ -324,6 +343,22 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               </span>
             ))}
           </div>
+          {model.fit_notes.length ? (
+            <div className="space-y-1 text-[11px] text-fg-subtle">
+              {model.fit_notes.map((note) => (
+                <div key={note}>{note}</div>
+              ))}
+            </div>
+          ) : null}
+          {model.license_note || model.download_note || model.trust_remote_code_required ? (
+            <div className="space-y-1 text-[11px] text-warning">
+              {model.license_note ? <div>{model.license_note}</div> : null}
+              {model.download_note ? <div>{model.download_note}</div> : null}
+              {model.trust_remote_code_required ? (
+                <div>Remote model code is required; enable it only for trusted repositories.</div>
+              ) : null}
+            </div>
+          ) : null}
           {model.known_caveats.length ? (
             <ul className="space-y-1 text-[11px] text-warning">
               {model.known_caveats.map((caveat) => (

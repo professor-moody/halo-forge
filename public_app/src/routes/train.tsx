@@ -475,7 +475,15 @@ function SelectedModelInsight({ model }: { model: ModelCatalogEntry }) {
         <span className="font-medium text-[12px] text-fg">{model.label}</span>
         <span className="font-mono text-[10px] text-fg-disabled">{model.parameter_count}</span>
         <span className="font-mono text-[10px] text-fg-disabled">{model.memory_tier}</span>
+        {model.estimated_memory_gb ? (
+          <span className="font-mono text-[10px] text-fg-disabled">
+            ~{model.estimated_memory_gb}GB
+          </span>
+        ) : null}
         <span className="font-mono text-[10px] text-fg-disabled">{model.status}</span>
+        {model.recommended_first_run ? (
+          <span className="font-mono text-[10px] text-success">first-run</span>
+        ) : null}
       </div>
       <p className="mt-1 text-[12px] text-fg-muted">{model.recommended_use}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -491,6 +499,19 @@ function SelectedModelInsight({ model }: { model: ModelCatalogEntry }) {
       {model.mlx_variant ? (
         <div className="mt-2 font-mono text-[10.5px] text-fg-subtle">
           MLX variant: {model.mlx_variant}
+        </div>
+      ) : null}
+      {model.fit_notes.length ? (
+        <div className="mt-2 space-y-1 text-[11px] text-fg-subtle">
+          {model.fit_notes.map((note) => (
+            <div key={note}>{note}</div>
+          ))}
+        </div>
+      ) : null}
+      {model.license_note || model.download_note ? (
+        <div className="mt-2 space-y-1 text-[11px] text-warning">
+          {model.license_note ? <div>{model.license_note}</div> : null}
+          {model.download_note ? <div>{model.download_note}</div> : null}
         </div>
       ) : null}
       {caveats.length ? (

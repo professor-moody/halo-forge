@@ -37,9 +37,14 @@ Drop-in for any client expecting an OpenAI endpoint. Point your `OPENAI_BASE_URL
 
 **Chat-template rendering.** The `/v1/chat/completions` endpoint prefers the model tokenizer's native chat template; falls back to ChatML for adapters that don't expose one (the MLX path keeps its tokenizer private).
 
+**Streaming.** Set `stream: true` on chat or text completions to receive
+OpenAI-compatible `text/event-stream` chunks ending in `data: [DONE]`. The v1
+implementation streams the adapter result through the OpenAI wire shape; backend
+native token streaming remains a future optimization.
+
 **Not yet shipped (Track I-followups):**
-- Streaming SSE responses — arrives with I3 (speculative decoding).
 - Continuous batching — arrives with I2 (vLLM gives this for free on CUDA; needs explicit wiring for MLX/llama.cpp).
+- Speculative decoding with a draft model — opt-in future work after streaming.
 - Embeddings, function-calling, vision endpoints — separate items.
 
 ## Convert
@@ -133,6 +138,5 @@ merge_result = merge(
 ## Roadmap
 
 - **I2 — continuous batching** for the served endpoint on MLX / llama.cpp (CUDA gets it free via vLLM).
-- **I3 — speculative decoding** with a draft model. 1.5-3× throughput on long generations.
+- **I3 follow-up — speculative decoding** with a draft model. Disabled by default until measured.
 - **GGUF round-trip verify** — needs a GGUF-loading serving adapter; currently typed-NotImplementedError.
-- **Streaming chat completions** — SSE-formatted token-by-token responses.

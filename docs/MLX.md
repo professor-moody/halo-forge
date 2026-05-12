@@ -2,17 +2,22 @@
 
 halo-forge supports Apple's [MLX](https://github.com/ml-explore/mlx) framework as a first-class backend on Apple Silicon. MLX is faster than PyTorch MPS for many workloads because it's purpose-built for Apple Silicon — but it's a fundamentally different runtime, with its own model format, tokenizer wrappers, and inference loop.
 
-## Phase status
+## Current status
 
-The roadmap stages MLX support across multiple phases. Today (Phase 3):
+MLX support has moved past the original staged port. Current status:
 
 | Capability | Status | Notes |
 |---|---|---|
 | Inference (text generation) | ✅ shipped | via `--accelerator mlx` CLI flag |
-| LoRA SFT | 🟡 Phase 4 | will use `mlx_lm.tuner` |
-| RAFT / RLVR | 🟡 Phase 5 | staged: rollout-only first, then full policy update |
+| LoRA SFT | ✅ shipped | MLX-native trainer path |
+| RAFT / RLVR | ✅ shipped | MLX-native RAFT path |
+| DPO / GRPO | 🟡 partial | reference-free v1; reference-model variants remain roadmap |
+| MPS fallback telemetry | ✅ shipped | dashboard warning-line counter |
+| Chip-tier surfacing | ✅ shipped | telemetry/backend metadata only, no auto-tuning |
 
-For training on Apple Silicon today, use `--backend mps` (PyTorch MPS) — it works for SFT and RLVR with the same trainer code as ROCm/CUDA.
+For Apple Silicon training, use MLX when a trainer explicitly supports it and MPS
+for PyTorch trainer paths. The dashboard and `halo-forge info` expose the active
+backend and chip metadata.
 
 ## Install
 
@@ -30,7 +35,7 @@ python -c "from halo_forge.backend import get_backend; b = get_backend('mlx'); p
 
 ## Use
 
-The `--accelerator mlx` flag is global (distinct from the per-subcommand `--backend` flag on `data generate`, which selects the LLM API). Until Phase 4 ships training, only inference paths route to MLX:
+The `--accelerator mlx` flag is global (distinct from the per-subcommand `--backend` flag on `data generate`, which selects the LLM API). Use it with MLX-format models on serving, inference, and trainer paths that explicitly support MLX:
 
 ```bash
 halo-forge --accelerator mlx inference optimize \
@@ -107,7 +112,8 @@ PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTOR
 
 ## Roadmap reminders
 
-- **Phase 4** (next major MLX work): MLX LoRA SFT via `mlx_lm.tuner`. Will land as `halo_forge.sft.mlx_trainer.MLXSFTTrainer`, sibling of the PyTorch `SFTTrainer`. Same `SFTConfig`, same dataset loaders.
-- **Phase 5**: MLX RAFT loops. Stages: (5a) MLX rollout + PyTorch policy update, (5b) full MLX-native RAFT, (5c) curriculum/recovery.
+- **MLX compile measurement**: measure `mx.compile` candidates for DPO/GRPO loss paths before enabling any compiled default.
+- **MLX DPO completion**: reference-model DPO and non-sigmoid loss variants after memory and latency behavior are measured.
+- **Serving I3 follow-up**: speculative decoding remains opt-in future work after streaming support.
 
 The verifier sandbox at [halo_forge/rlvr/verifiers/execution_runner.py](../halo_forge/rlvr/verifiers/execution_runner.py) is already cross-platform via macOS-native `sandbox-exec`, so MLX RLVR doesn't need any sandbox work — only the policy/optimizer side changes.

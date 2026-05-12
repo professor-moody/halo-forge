@@ -74,7 +74,7 @@ class _TorchServingAdapter(ServingAdapter):
     rocm / cuda / mps / cpu without per-host conditional code.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, *, trust_remote_code: bool = False):
         from halo_forge.backend import get_backend
 
         backend = get_backend()

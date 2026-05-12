@@ -537,6 +537,12 @@ export type SuggestedModel = {
   trust_remote_code_required: boolean;
   mlx_variant: string | null;
   status: string;
+  recommended_first_run: boolean;
+  estimated_memory_gb: number | null;
+  license_note: string | null;
+  download_note: string | null;
+  fit_notes: string[];
+  risk_level: "safe" | "caveated" | "experimental" | string;
   last_verified: string;
   catalog_version: string;
 };

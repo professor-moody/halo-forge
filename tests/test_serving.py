@@ -91,18 +91,23 @@ def test_chat_completions_empty_messages_400(client):
     assert r.status_code == 400
 
 
-def test_chat_completions_streaming_returns_501(client):
-    c, _ = client
+def test_chat_completions_streaming_sends_openai_sse_chunks(client):
+    c, fake = client
     r = c.post(
         "/v1/chat/completions",
         json={
-            "model": "x",
+            "model": fake.model_name,
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,
         },
     )
-    assert r.status_code == 501
-    assert "stream" in r.json()["detail"].lower()
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    body = r.text
+    assert '"object":"chat.completion.chunk"' in body
+    assert '"role":"assistant"' in body
+    assert '"content":"hello there"' in body
+    assert "data: [DONE]" in body
 
 
 def test_completions_endpoint_round_trip(client):
@@ -121,6 +126,24 @@ def test_completions_endpoint_round_trip(client):
     assert body["choices"][0]["text"] == "hello there"
     # Plain prompt passes through unmodified.
     assert fake.last_prompt == "Once upon a time"
+
+
+def test_completions_streaming_sends_openai_sse_chunks(client):
+    c, fake = client
+    r = c.post(
+        "/v1/completions",
+        json={
+            "model": fake.model_name,
+            "prompt": "Once upon a time",
+            "stream": True,
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    body = r.text
+    assert '"object":"text_completion"' in body
+    assert '"text":"hello there"' in body
+    assert "data: [DONE]" in body
 
 
 def test_completions_stop_sequence_truncates(client):

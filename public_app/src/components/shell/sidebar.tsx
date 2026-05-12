@@ -10,6 +10,7 @@ import {
   MessageSquare,
   PackageSearch,
   Play,
+  Rocket,
   ShieldCheck,
   Stethoscope,
   type LucideIcon,
@@ -47,6 +48,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Overview", icon: LayoutDashboard, kbd: "G O" },
+  { to: "/start", label: "Start", icon: Rocket, kbd: "G S" },
   { to: "/train", label: "Training", icon: Play, kbd: "G T" },
   { to: "/models", label: "Models", icon: PackageSearch, kbd: "G M" },
   { to: "/runs", label: "Runs", icon: Activity, kbd: "G R" },
@@ -55,7 +57,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/registry", label: "Bundles", icon: Bookmark, kbd: "G B" },
   { to: "/verifiers", label: "Verifiers", icon: ShieldCheck, kbd: "G V" },
   { to: "/diagnostics", label: "Diagnostics", icon: Stethoscope, kbd: "G X" },
-  { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G S" },
+  { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G Y" },
   { to: "/docs", label: "Docs", icon: BookOpen, kbd: "G D" },
 ];
 

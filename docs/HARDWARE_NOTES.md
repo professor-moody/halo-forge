@@ -103,13 +103,11 @@ bash scripts/validate_environment.sh
 
 ## Apple Silicon (MLX)
 
-Roadmap. MLX (Apple's native ML framework) is faster than PyTorch MPS on Apple Silicon for many workloads. Landing in stages:
+MLX (Apple's native ML framework) is now a first-class Apple Silicon backend for supported inference and trainer paths.
 
-1. **Phase 3** — MLX inference backend (`halo-forge generate --backend mlx ...`)
-2. **Phase 4** — MLX LoRA SFT via `mlx_lm.tuner`
-3. **Phase 5** — MLX RAFT/RLVR loops (rollout-only first, then full policy update)
-
-Until then, use the MPS backend on Mac.
+Use MLX-format weights, typically from `mlx-community`, when running with
+`--accelerator mlx`. Use MPS for PyTorch trainer paths that do not yet have an
+MLX-native implementation.
 
 ---
 

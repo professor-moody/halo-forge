@@ -23,6 +23,8 @@ def test_get_model_returns_catalog_entry():
     assert item is not None
     assert item["provider"] == "Qwen"
     assert item["memory_tier"] == "small"
+    assert item["estimated_memory_gb"] > 0
+    assert item["risk_level"] in {"safe", "caveated", "experimental"}
 
 
 def test_recommended_models_respects_backend():
@@ -31,6 +33,7 @@ def test_recommended_models_respects_backend():
     items = recommended_models(mode="sft", backend="mlx")
     assert items
     assert all("mlx" in item["backend_support"] for item in items)
+    assert items[0]["recommended_first_run"] is True
 
 
 def test_public_api_model_catalog_shape():
@@ -43,6 +46,7 @@ def test_public_api_model_catalog_shape():
     assert payload["total"] == len(payload["items"])
     assert payload["items"]
     assert payload["facets"]["providers"] == ["Liquid AI"]
+    assert "risk_levels" in payload["facets"]
 
 
 def test_public_api_training_models_use_catalog(monkeypatch):

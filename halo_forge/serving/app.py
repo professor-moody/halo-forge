@@ -18,12 +18,14 @@ references but not actually serve).
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
-from typing import Any, List, Literal, Optional
+from typing import Any, Iterator, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from halo_forge.serving.adapter import (
@@ -144,6 +146,49 @@ def _approximate_tokens(text: str) -> int:
     return max(0, len(text) // 4)
 
 
+def _sse(payload: dict[str, Any] | str) -> str:
+    data = payload if isinstance(payload, str) else json.dumps(payload, separators=(",", ":"))
+    return f"data: {data}\n\n"
+
+
+def _chat_stream(
+    *,
+    chunk_id: str,
+    created: int,
+    model: str,
+    text: str,
+) -> Iterator[str]:
+    base = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+    }
+    yield _sse({**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]})
+    if text:
+        yield _sse({**base, "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]})
+    yield _sse({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+    yield _sse("[DONE]")
+
+
+def _completion_stream(
+    *,
+    chunk_id: str,
+    created: int,
+    model: str,
+    text: str,
+) -> Iterator[str]:
+    base = {
+        "id": chunk_id,
+        "object": "text_completion",
+        "created": created,
+        "model": model,
+    }
+    yield _sse({**base, "choices": [{"index": 0, "text": text, "finish_reason": None}]})
+    yield _sse({**base, "choices": [{"index": 0, "text": "", "finish_reason": "stop"}]})
+    yield _sse("[DONE]")
+
+
 # ----- app factory ---------------------------------------------------------
 
 
@@ -184,12 +229,7 @@ def create_serving_app(
         )
 
     @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-    def chat_completions(req: ChatCompletionRequest) -> ChatCompletionResponse:
-        if req.stream:
-            raise HTTPException(
-                status_code=501,
-                detail="Streaming not implemented in v1; arrives with Track I3.",
-            )
+    def chat_completions(req: ChatCompletionRequest):
         if not req.messages:
             raise HTTPException(status_code=400, detail="messages must be non-empty")
 
@@ -204,11 +244,24 @@ def create_serving_app(
         )
         if req.stop:
             text = _truncate_at_stop(text, req.stop)
+        created = int(time.time())
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        served_model = req.model or model_name
+        if req.stream:
+            return StreamingResponse(
+                _chat_stream(
+                    chunk_id=response_id,
+                    created=created,
+                    model=served_model,
+                    text=text,
+                ),
+                media_type="text/event-stream",
+            )
 
         return ChatCompletionResponse(
-            id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
-            created=int(time.time()),
-            model=req.model or model_name,
+            id=response_id,
+            created=created,
+            model=served_model,
             choices=[
                 ChatCompletionChoice(
                     index=0,
@@ -224,13 +277,7 @@ def create_serving_app(
         )
 
     @app.post("/v1/completions", response_model=CompletionResponse)
-    def completions(req: CompletionRequest) -> CompletionResponse:
-        if req.stream:
-            raise HTTPException(
-                status_code=501,
-                detail="Streaming not implemented in v1; arrives with Track I3.",
-            )
-
+    def completions(req: CompletionRequest):
         adapter = _get_adapter()
         text = adapter.generate(
             req.prompt,
@@ -241,10 +288,23 @@ def create_serving_app(
         )
         if req.stop:
             text = _truncate_at_stop(text, req.stop)
+        created = int(time.time())
+        response_id = f"cmpl-{uuid.uuid4().hex[:12]}"
+        served_model = req.model or model_name
+        if req.stream:
+            return StreamingResponse(
+                _completion_stream(
+                    chunk_id=response_id,
+                    created=created,
+                    model=served_model,
+                    text=text,
+                ),
+                media_type="text/event-stream",
+            )
         return CompletionResponse(
-            id=f"cmpl-{uuid.uuid4().hex[:12]}",
-            created=int(time.time()),
-            model=req.model or model_name,
+            id=response_id,
+            created=created,
+            model=served_model,
             choices=[CompletionChoice(index=0, text=text, finish_reason="stop")],
             usage=Usage(
                 prompt_tokens=_approximate_tokens(req.prompt),
