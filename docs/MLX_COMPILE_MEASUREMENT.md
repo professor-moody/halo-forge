@@ -61,13 +61,19 @@ worse.
 - No default `mx.compile` integration.
 - No chip-tier auto-tuning.
 - No speculative claims in docs or UI.
-- Reference-model sigmoid DPO is implemented for MLX, but `mx.compile`
-  remains measurement-only.
+- Reference-free and reference-model sigmoid DPO are candidates for a future
+  explicit opt-in compiled loss path, but `mx.compile` remains measurement-only.
+- GRPO stays eager: the synthetic advantage-loss results are mixed and do not
+  justify a production path.
 - Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
   until the measurement track justifies implementation.
 - Keep reference-model GRPO on MLX disabled until dual-model memory is measured.
 
-## Latest Terminal Measurement
+If a compiled path is implemented later, it should start as MLX DPO sigmoid only
+with `compile_loss=False` by default, a CLI opt-in such as `--compile-loss`, and
+summary metadata recording `compiled_loss_enabled=true`.
+
+## Earlier Terminal Measurement
 
 Recorded from a normal Terminal session on the same Apple M4 Max host:
 
@@ -88,6 +94,41 @@ at steady state, but first-step latency is about 2.5x eager. This is useful
 signal, but not enough to enable a production compiled path by default:
 larger shapes, label smoothing, GRPO loss reductions, and model-adjacent
 memory pressure still need measurement.
+
+## Expanded Terminal Measurement
+
+Recorded from a normal Terminal session on the Apple M4 Max host:
+
+- macOS: `26.3.1`
+- MLX: `0.31.2`
+- mlx-lm: `0.31.3`
+- Candidates: `dpo_reference_free_sigmoid`,
+  `dpo_reference_model_sigmoid`, `grpo_advantage_loss`
+- Batch sizes: `32`, `128`, `512`
+- Steps: `100`, warmup: `10`
+
+| Candidate | Batch | Eager Mean | Compiled Mean | Steady Delta | First-Step Note |
+|---|---:|---:|---:|---:|---|
+| DPO reference-free sigmoid | `32` | `0.000203s` | `0.000155s` | `+23.8%` | compiled first step `0.221509s` |
+| DPO reference-free sigmoid | `128` | `0.000169s` | `0.000123s` | `+27.3%` | compile cache appears warm |
+| DPO reference-free sigmoid | `512` | `0.000138s` | `0.000118s` | `+14.7%` | compile cache appears warm |
+| DPO reference-model sigmoid | `32` | `0.000140s` | `0.000107s` | `+23.4%` | compiled first step `0.002828s` |
+| DPO reference-model sigmoid | `128` | `0.000147s` | `0.000111s` | `+24.8%` | compile cache appears warm |
+| DPO reference-model sigmoid | `512` | `0.000133s` | `0.000109s` | `+18.1%` | compile cache appears warm |
+| GRPO advantage loss | `32` | `0.000099s` | `0.000142s` | `-43.9%` | compiled slower |
+| GRPO advantage loss | `128` | `0.000147s` | `0.000133s` | `+9.3%` | first step near `0.047s` |
+| GRPO advantage loss | `512` | `0.000133s` | `0.000096s` | `+28.0%` | first step near `0.049s` |
+
+Interpretation:
+
+- DPO sigmoid reductions show consistent steady-state wins across measured
+  shapes. This is enough to justify a future opt-in experiment, not a default.
+- GRPO is mixed: batch `32` regresses, larger batches improve, and first-step
+  compile cost is high relative to these tiny reductions.
+- The measurement is synthetic and reduction-only. It does not include full
+  trainer/model-forward overhead, padding behavior, or real sequence shapes.
+- IPO / hinge / KTO are still gated because this run did not measure their
+  variant-specific loss behavior.
 
 ## Codex Runner Measurement
 
