@@ -92,8 +92,23 @@ def _metal_device() -> dict[str, Any] | None:
             return {
                 "model": model,
                 "gpu_cores": _optional_int(item.get("sppci_cores")),
-                "metal_supported": item.get("spdisplays_metal") == "spdisplays_supported",
+                "metal_supported": _metal_supported(item.get("spdisplays_metal")),
             }
+    return None
+
+
+def _metal_supported(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if "unsupported" in text or "not supported" in text:
+        return False
+    if "supported" in text or "metal" in text:
+        return True
     return None
 
 
@@ -146,17 +161,28 @@ def check_mlx_readiness(*, timeout_seconds: float = 10.0) -> MLXReadiness:
     chip = _chip_info()
     macos_version = platform.mac_ver()[0] or None
     metal = _metal_device()
-    if metal and (not chip or str(chip.get("brand") or "").lower() in {"arm", "apple silicon"}):
+    should_enrich_chip = bool(
+        metal
+        and (
+            not chip
+            or str(chip.get("brand") or "").lower() in {"arm", "apple silicon"}
+            or chip.get("gpu_cores") is None
+        )
+    )
+    if should_enrich_chip:
         try:
             from halo_forge.utils.apple_chip import parse_chip_brand, with_gpu_cores
 
-            parsed = with_gpu_cores(
-                parse_chip_brand(str(metal.get("model") or "")),
-                _optional_int(metal.get("gpu_cores")),
-            )
+            gpu_cores = _optional_int(metal.get("gpu_cores"))
+            parsed = parse_chip_brand(str(metal.get("model") or ""))
             if parsed is not None:
-                chip = parsed.to_dict()
-                chip["raw_brand"] = metal.get("model")
+                enriched = with_gpu_cores(parsed, gpu_cores)
+                if enriched is not None:
+                    chip = enriched.to_dict()
+                    chip["raw_brand"] = metal.get("model")
+            elif chip and gpu_cores is not None:
+                chip = dict(chip)
+                chip["gpu_cores"] = gpu_cores
         except Exception:
             pass
 

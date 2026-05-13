@@ -3,8 +3,7 @@
 
 This script is intentionally outside normal CI. It first proves MLX can execute
 in the current Terminal session, then runs the bounded MLX smoke coverage that
-ships with the repo and records explicit skipped statuses for tracks that still
-need local fixture wiring.
+ships with the repo.
 """
 
 from __future__ import annotations
@@ -75,17 +74,34 @@ def main() -> int:
         )
     )
     summary["checks"].append(
-        {
-            "label": "mlx_dpo_reference_model_terminal",
-            "status": "skipped",
-            "reason": "No bounded local preference fixture is committed yet; unit margin coverage is run above.",
-        }
+        _run(
+            "mlx_dpo_reference_model_terminal",
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests/test_mlx_terminal_smoke.py::test_mlx_dpo_reference_model_terminal",
+                "-q",
+            ],
+        )
+    )
+    summary["checks"].append(
+        _run(
+            "mlx_grpo_terminal",
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests/test_mlx_terminal_smoke.py::test_mlx_grpo_terminal",
+                "-q",
+            ],
+        )
     )
     summary["checks"].append(
         {
-            "label": "mlx_grpo_terminal",
+            "label": "mlx_dpo_non_sigmoid_variants",
             "status": "skipped",
-            "reason": "No bounded local GRPO terminal fixture is committed yet; keep explicit until added.",
+            "reason": "IPO, hinge, and KTO remain disabled until larger MLX memory measurements justify them.",
         }
     )
 
