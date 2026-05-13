@@ -110,6 +110,32 @@ def test_chat_completions_streaming_sends_openai_sse_chunks(client):
     assert "data: [DONE]" in body
 
 
+def test_chat_completions_stop_sequence_truncates_streaming():
+    """Streaming must honor the same post-generation stop trimming as the
+    non-streaming response path."""
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    fake = _FakeAdapter(response="hello world. Goodbye world.")
+    app = create_serving_app(model_name="x", adapter=fake)
+    with TestClient(app) as c:
+        r = c.post(
+            "/v1/chat/completions",
+            json={
+                "model": "x",
+                "messages": [{"role": "user", "content": "x"}],
+                "stream": True,
+                "stop": ["Goodbye"],
+            },
+        )
+    assert r.status_code == 200
+    body = r.text
+    assert '"content":"hello world. "' in body
+    assert "Goodbye" not in body
+    assert "data: [DONE]" in body
+
+
 def test_completions_endpoint_round_trip(client):
     c, fake = client
     r = c.post(
@@ -143,6 +169,30 @@ def test_completions_streaming_sends_openai_sse_chunks(client):
     body = r.text
     assert '"object":"text_completion"' in body
     assert '"text":"hello there"' in body
+    assert "data: [DONE]" in body
+
+
+def test_completions_stop_sequence_truncates_streaming():
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    fake = _FakeAdapter(response="hello world. Goodbye world.")
+    app = create_serving_app(model_name="x", adapter=fake)
+    with TestClient(app) as c:
+        r = c.post(
+            "/v1/completions",
+            json={
+                "model": "x",
+                "prompt": "x",
+                "stream": True,
+                "stop": ["Goodbye"],
+            },
+        )
+    assert r.status_code == 200
+    body = r.text
+    assert '"text":"hello world. "' in body
+    assert "Goodbye" not in body
     assert "data: [DONE]" in body
 
 

@@ -7,8 +7,11 @@ Three endpoints:
 
 The chat endpoint builds a prompt from the messages array using the
 tokenizer's chat template when available, with a generic ChatML-style
-fallback. Both completion endpoints are non-streaming in v1; streaming
-arrives with Track I3 alongside speculative decoding.
+fallback. Both completion endpoints support OpenAI-shaped
+``text/event-stream`` responses for clients that set ``stream: true``.
+The current streaming path emits the adapter's completed result through
+the OpenAI wire format; backend-native token streaming is deliberately
+deferred.
 
 The app is built lazily by `create_serving_app(model_name)` so importing
 this module doesn't pull torch / mlx into the import graph (relevant for
