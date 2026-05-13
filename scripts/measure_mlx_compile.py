@@ -23,6 +23,12 @@ from typing import Any, Callable
 CANDIDATES = (
     "dpo_reference_free_sigmoid",
     "dpo_reference_model_sigmoid",
+    "dpo_reference_free_ipo",
+    "dpo_reference_model_ipo",
+    "dpo_reference_free_hinge",
+    "dpo_reference_model_hinge",
+    "dpo_reference_free_kto_pair",
+    "dpo_reference_model_kto_pair",
     "grpo_advantage_loss",
 )
 
@@ -120,17 +126,54 @@ def _selected_candidates(args: argparse.Namespace) -> list[str]:
     return [args.candidate]
 
 
-def _dpo_loss_fn(mx: Any, beta: float, label_smoothing: float, *, reference_model: bool) -> Callable[..., Any]:
-    def loss(chosen, rejected, ref_chosen=None, ref_rejected=None):
+def _dpo_loss_fn(
+    mx: Any,
+    beta: float,
+    label_smoothing: float,
+    *,
+    reference_model: bool,
+    loss_type: str,
+) -> Callable[..., Any]:
+    def _margin(chosen, rejected, ref_chosen=None, ref_rejected=None):
         margin = chosen - rejected
         if reference_model:
             margin = margin - (ref_chosen - ref_rejected)
-        logits = beta * margin
-        positive = mx.logaddexp(mx.array(0.0), -logits)
-        if label_smoothing > 0:
-            negative = mx.logaddexp(mx.array(0.0), logits)
-            return ((1 - label_smoothing) * positive + label_smoothing * negative).mean()
-        return positive.mean()
+        return margin
+
+    def loss(chosen, rejected, ref_chosen=None, ref_rejected=None):
+        margin = _margin(chosen, rejected, ref_chosen, ref_rejected)
+        if loss_type == "sigmoid":
+            logits = beta * margin
+            positive = mx.logaddexp(mx.array(0.0), -logits)
+            if label_smoothing > 0:
+                negative = mx.logaddexp(mx.array(0.0), logits)
+                return ((1 - label_smoothing) * positive + label_smoothing * negative).mean()
+            return positive.mean()
+        if loss_type == "ipo":
+            target = 1.0 / (2.0 * beta)
+            centered = margin - target
+            return (centered * centered).mean()
+        if loss_type == "hinge":
+            return mx.maximum(mx.array(0.0), 1.0 - beta * margin).mean()
+        raise ValueError(f"unsupported DPO loss_type for measurement: {loss_type}")
+
+    return loss
+
+
+def _dpo_kto_pair_loss_fn(mx: Any, beta: float, *, reference_model: bool) -> Callable[..., Any]:
+    def _sigmoid(value):
+        return 1.0 / (1.0 + mx.exp(-value))
+
+    def loss(chosen, rejected, ref_chosen=None, ref_rejected=None):
+        chosen_delta = chosen
+        rejected_delta = rejected
+        if reference_model:
+            chosen_delta = chosen_delta - ref_chosen
+            rejected_delta = rejected_delta - ref_rejected
+        kl = mx.maximum(mx.array(0.0), ((chosen_delta + rejected_delta) / 2.0).mean())
+        chosen_loss = 1.0 - _sigmoid(beta * (chosen_delta - kl))
+        rejected_loss = 1.0 - _sigmoid(beta * (kl - rejected_delta))
+        return ((chosen_loss + rejected_loss) / 2.0).mean()
 
     return loss
 
@@ -144,13 +187,91 @@ def _grpo_loss_fn(mx: Any) -> Callable[..., Any]:
 
 def _candidate_inputs(mx: Any, candidate: str, batch_size: int, args: argparse.Namespace) -> tuple[Callable[..., Any], tuple[Any, ...]]:
     if candidate == "dpo_reference_free_sigmoid":
-        fn = _dpo_loss_fn(mx, args.beta, args.label_smoothing, reference_model=False)
+        fn = _dpo_loss_fn(
+            mx,
+            args.beta,
+            args.label_smoothing,
+            reference_model=False,
+            loss_type="sigmoid",
+        )
         return fn, (
             mx.random.normal((batch_size,)),
             mx.random.normal((batch_size,)),
         )
     if candidate == "dpo_reference_model_sigmoid":
-        fn = _dpo_loss_fn(mx, args.beta, args.label_smoothing, reference_model=True)
+        fn = _dpo_loss_fn(
+            mx,
+            args.beta,
+            args.label_smoothing,
+            reference_model=True,
+            loss_type="sigmoid",
+        )
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_free_ipo":
+        fn = _dpo_loss_fn(
+            mx,
+            args.beta,
+            args.label_smoothing,
+            reference_model=False,
+            loss_type="ipo",
+        )
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_model_ipo":
+        fn = _dpo_loss_fn(
+            mx,
+            args.beta,
+            args.label_smoothing,
+            reference_model=True,
+            loss_type="ipo",
+        )
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_free_hinge":
+        fn = _dpo_loss_fn(
+            mx,
+            args.beta,
+            args.label_smoothing,
+            reference_model=False,
+            loss_type="hinge",
+        )
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_model_hinge":
+        fn = _dpo_loss_fn(
+            mx,
+            args.beta,
+            args.label_smoothing,
+            reference_model=True,
+            loss_type="hinge",
+        )
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_free_kto_pair":
+        fn = _dpo_kto_pair_loss_fn(mx, args.beta, reference_model=False)
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_model_kto_pair":
+        fn = _dpo_kto_pair_loss_fn(mx, args.beta, reference_model=True)
         return fn, (
             mx.random.normal((batch_size,)),
             mx.random.normal((batch_size,)),
@@ -300,7 +421,7 @@ def main() -> None:
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
         return
-    print("MLX DPO sigmoid loss compile measurement")
+    print("MLX compile measurement")
     for item in result["results"]:
         shape = item["shape"]["batch_size"]
         if item["status"] != "measured":

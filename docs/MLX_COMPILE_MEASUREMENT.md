@@ -6,9 +6,9 @@ speed or memory wins across realistic shapes.
 
 ## Candidate Scope
 
-- MLX DPO reference-free sigmoid loss.
+- MLX DPO reference-free sigmoid, IPO, hinge, and KTO-pair loss reductions.
+- MLX DPO reference-model sigmoid, IPO, hinge, and KTO-pair loss reductions.
 - MLX GRPO advantage/loss reduction.
-- MLX DPO reference-model sigmoid loss.
 - Larger synthetic batch shapes before enabling any compiled path.
 
 ## Measurement Protocol
@@ -23,6 +23,12 @@ By default this measures:
 
 - `dpo_reference_free_sigmoid`
 - `dpo_reference_model_sigmoid`
+- `dpo_reference_free_ipo`
+- `dpo_reference_model_ipo`
+- `dpo_reference_free_hinge`
+- `dpo_reference_model_hinge`
+- `dpo_reference_free_kto_pair`
+- `dpo_reference_model_kto_pair`
 - `grpo_advantage_loss`
 
 Across batch sizes:
@@ -35,7 +41,7 @@ To narrow a run:
 
 ```bash
 python scripts/measure_mlx_compile.py \
-  --candidate dpo_reference_model_sigmoid \
+  --candidate dpo_reference_model_hinge \
   --batch-sizes 32,128 \
   --json
 ```
@@ -66,7 +72,8 @@ worse.
 - GRPO stays eager: the synthetic advantage-loss results are mixed and do not
   justify a production path.
 - Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
-  until the measurement track justifies implementation.
+  until Terminal measurements show stable behavior and the live trainer path is
+  implemented deliberately.
 - Keep reference-model GRPO on MLX disabled until dual-model memory is measured.
 
 If a compiled path is implemented later, it should start as MLX DPO sigmoid only
@@ -180,3 +187,34 @@ Use the expanded results to decide:
 - whether compiled DPO/GRPO reductions are worth a production opt-in;
 - whether IPO / hinge / KTO have acceptable memory behavior on MLX;
 - whether reference-model GRPO is feasible on the M4 Max baseline host.
+
+## DPO Variant Gate Protocol
+
+The harness now includes non-sigmoid DPO reductions for IPO, hinge, and
+KTO-pair in both reference-free and reference-model forms. These candidates are
+measurement-only. The MLX trainer still raises typed `NotImplementedError` for
+those loss types until the Terminal results are reviewed and live smoke coverage
+is added for any implemented variant.
+
+Run the variant gate from a normal Apple Silicon Terminal:
+
+```bash
+python scripts/measure_mlx_compile.py --json
+```
+
+If the full run is too broad while iterating, narrow by candidate:
+
+```bash
+python scripts/measure_mlx_compile.py \
+  --candidate dpo_reference_model_kto_pair \
+  --batch-sizes 32,128,512 \
+  --json
+```
+
+Promotion criteria for any non-sigmoid DPO variant:
+
+- measured eager and compiled reductions complete at `32`, `128`, and `512`;
+- memory telemetry does not show a variant-specific jump relative to sigmoid;
+- the eager path is implemented first and covered by loss math tests;
+- live MLX smoke is added before the variant leaves typed-unsupported status;
+- compiled execution remains opt-in even if the reduction benchmark is strong.

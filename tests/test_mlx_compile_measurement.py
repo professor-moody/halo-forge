@@ -27,6 +27,10 @@ def test_measure_mlx_compile_imports_without_mlx():
     assert args.warmup == 10
     assert module._batch_sizes(args) == [32, 128, 512]
     assert module._selected_candidates(args) == list(module.CANDIDATES)
+    assert "dpo_reference_free_ipo" in module.CANDIDATES
+    assert "dpo_reference_model_hinge" in module.CANDIDATES
+    assert "dpo_reference_free_kto_pair" in module.CANDIDATES
+    assert "dpo_reference_model_kto_pair" in module.CANDIDATES
 
 
 def test_measure_mlx_compile_reports_missing_mlx_cleanly(monkeypatch):
