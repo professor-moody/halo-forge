@@ -222,6 +222,28 @@ def test_health_endpoint(client):
     body = r.json()
     assert body["ok"] is True
     assert body["model"] == fake.model_name
+    assert body["backend"] == "fake"
+    assert body["adapter_loaded"] is True
+    assert isinstance(body["started_at"], int)
+    assert body["streaming_supported"] is True
+
+
+def test_health_endpoint_before_lazy_adapter_load():
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    app = create_serving_app(model_name="lazy/model", backend_name="mlx")
+    with TestClient(app) as c:
+        r = c.get("/health")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["model"] == "lazy/model"
+    assert body["backend"] == "mlx"
+    assert body["adapter_loaded"] is False
+    assert body["streaming_supported"] is True
 
 
 def test_validation_errors_for_out_of_range_temperature():

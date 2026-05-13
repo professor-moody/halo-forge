@@ -319,7 +319,15 @@ def create_serving_app(
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        return {"ok": True, "model": model_name}
+        adapter = state.get("adapter")
+        return {
+            "ok": True,
+            "model": model_name,
+            "backend": getattr(adapter, "backend_name", None) or backend_name or "auto",
+            "adapter_loaded": adapter is not None,
+            "started_at": started_at,
+            "streaming_supported": True,
+        }
 
     return app
 
