@@ -10,6 +10,8 @@ so the answer matches what the trainer code will see at runtime.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 
 import pytest
 
@@ -27,7 +29,23 @@ def _detect_gpu_kind_safe() -> str:
 
 
 def _have_mlx() -> bool:
-    return importlib.util.find_spec("mlx") is not None
+    if importlib.util.find_spec("mlx") is None:
+        return False
+    try:
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import mlx.core as mx; x = mx.array([1.0]); mx.eval(x)",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return False
+    return probe.returncode == 0
 
 
 _BACKEND = _detect_gpu_kind_safe()
@@ -50,7 +68,7 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line(
         "markers",
-        "requires_mlx: skip unless the `mlx` package is importable",
+        "requires_mlx: skip unless MLX can execute a tiny array",
     )
     config.addinivalue_line(
         "markers",
@@ -63,7 +81,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     skip_rocm = pytest.mark.skip(reason=f"requires ROCm gfx1151; backend is {_BACKEND}")
     skip_cuda = pytest.mark.skip(reason=f"requires CUDA; backend is {_BACKEND}")
     skip_mps = pytest.mark.skip(reason=f"requires Apple Silicon MPS; backend is {_BACKEND}")
-    skip_mlx = pytest.mark.skip(reason="requires the `mlx` package")
+    skip_mlx = pytest.mark.skip(reason="requires an executable MLX runtime")
     skip_acc = pytest.mark.skip(reason="requires any non-CPU accelerator")
 
     for item in items:

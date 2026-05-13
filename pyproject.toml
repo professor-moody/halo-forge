@@ -103,11 +103,12 @@ inference = [
     "protobuf",
     "einops",
 ]
-# Apple MLX backend. Inference-only in Phase 3; Phase 4-5 add LoRA SFT and RAFT.
-# Apple Silicon only (mlx wheels are arm64 macOS).
+# Apple MLX backend. Apple Silicon only (mlx wheels are arm64 macOS).
+# Keep this on the measured compatibility line; older 0.29.x wheels can abort
+# during Metal initialization on macOS 26.x before Python can surface an error.
 mlx = [
-    "mlx>=0.18.0,<0.30.0",
-    "mlx-lm>=0.20.0,<0.30.0",
+    "mlx>=0.31.0,<0.32.0",
+    "mlx-lm>=0.31.0,<0.32.0",
 ]
 all = [
     "halo-forge[dev,llm-backends,benchmark,vlm-benchmark,vlm,audio,reasoning,agentic,inference]",

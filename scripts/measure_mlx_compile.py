@@ -9,9 +9,12 @@ candidate without downloading a model.
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
+import os
 import platform
 import statistics
+import sys
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
@@ -48,6 +51,35 @@ def _require_mlx() -> Any:
             "on Apple Silicon, then rerun this measurement."
         ) from exc
     return mx
+
+
+def _mlx_version(package: str) -> str | None:
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _is_metal_unavailable(exc: BaseException) -> bool:
+    message = str(exc)
+    return "No Metal device available" in message or "metal::load_device" in message
+
+
+def _unavailable_result(args: argparse.Namespace, reason: str) -> dict[str, Any]:
+    return {
+        "candidate": "mlx_dpo_sigmoid_loss",
+        "status": "unavailable",
+        "reason": reason,
+        "shape": {"batch_size": args.batch_size},
+        "platform": {
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "macos": platform.mac_ver()[0] or None,
+        },
+        "mlx_version": _mlx_version("mlx"),
+        "mlx_lm_version": _mlx_version("mlx-lm"),
+        "decision": "measurement_only",
+    }
 
 
 def _loss_fn(mx: Any, beta: float, label_smoothing: float) -> Callable[..., Any]:
@@ -152,7 +184,22 @@ def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> None:
     args = build_parser().parse_args()
-    result = run_measurement(args)
+    try:
+        result = run_measurement(args)
+    except RuntimeError as exc:
+        if not _is_metal_unavailable(exc):
+            raise
+        result = _unavailable_result(args, str(exc))
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(2)
+        print("MLX compile measurement unavailable")
+        print(f"- reason: {result['reason']}")
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(2)
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
         return

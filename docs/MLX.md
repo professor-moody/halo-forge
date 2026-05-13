@@ -25,7 +25,7 @@ backend and chip metadata.
 pip install -e '.[mlx]'
 ```
 
-This pulls `mlx>=0.18.0,<0.30.0` and `mlx-lm>=0.20.0,<0.30.0`. Wheels exist only for arm64 macOS — Intel Macs and Linux will fail at install time, which is correct (MLX is Apple Silicon only). The upper bound is intentional: MLX compile/cache behavior has moved quickly across minor releases, so halo-forge keeps the MLX extra inside the tested minor range and bumps it deliberately.
+This pulls `mlx>=0.31.0,<0.32.0` and `mlx-lm>=0.31.0,<0.32.0`. Wheels exist only for arm64 macOS — Intel Macs and Linux will fail at install time, which is correct (MLX is Apple Silicon only). The upper bound is intentional: MLX compile/cache behavior has moved quickly across minor releases, so halo-forge keeps the MLX extra inside the tested minor range and bumps it deliberately. The `0.31.x` floor also avoids a Metal-initialization abort observed with `0.29.x` wheels on macOS 26.x.
 
 Verify:
 

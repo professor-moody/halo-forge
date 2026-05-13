@@ -121,10 +121,10 @@ def test_vllm_gfx1151_warning_has_fallback_advice(capsys):
     assert "mlx" in out
 
 
+@pytest.mark.requires_mlx
 def test_mlx_sft_trainer_init_emits_warnings(monkeypatch, capsys):
     """End-to-end: instantiating MLXSFTTrainer with a non-MLX-compatible
     config should print the warnings without requiring a real model."""
-    pytest.importorskip("mlx_lm")  # Test only meaningful if MLX is around
     from halo_forge.sft.config import SFTConfig
     from halo_forge.sft.mlx_trainer import MLXSFTTrainer
 

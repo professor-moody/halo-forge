@@ -46,6 +46,31 @@ worse.
 
 ## Latest Local Measurement
 
-Not recorded in this workspace: the active `.venv` does not have `mlx`
-installed. Run the harness above on an Apple Silicon `[mlx]` environment and
-paste the JSON output here before enabling any compiled production path.
+Attempted from the Codex workspace on an Apple M4 Max host:
+
+- macOS: `26.3.1`
+- GPU: Apple M4 Max, 32 GPU cores, Metal supported according to
+  `system_profiler SPDisplaysDataType -json`
+- Python: `3.13`
+- MLX install from the project extra: `mlx==0.31.2`, `mlx-lm==0.31.3`
+- Candidate: synthetic reference-model DPO sigmoid loss
+- Batch sizes attempted: `32`, `128`, `512`
+
+Result: **measurement unavailable in this execution context**.
+
+`mlx==0.29.4` / `mlx-lm==0.29.1` aborted during import-time Metal
+initialization on macOS 26.3.1. After bumping the project extra to the
+`0.31.x` compatibility line, MLX imports cleanly, but array execution from
+this Codex runner still fails with:
+
+```text
+[metal::load_device] No Metal device available. This typically occurs in
+headless, sandboxed, or virtualized macOS sessions where the GPU is not
+accessible.
+```
+
+The harness now reports that state as structured JSON instead of surfacing a
+Python traceback. No compiled production path is enabled from this attempt.
+Run the same harness in a normal terminal session with GPU access before
+implementing IPO / hinge / KTO MLX DPO variants or enabling any compiled loss
+path.
