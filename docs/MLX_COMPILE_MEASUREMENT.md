@@ -71,9 +71,12 @@ worse.
   explicit opt-in compiled loss path, but `mx.compile` remains measurement-only.
 - GRPO stays eager: the synthetic advantage-loss results are mixed and do not
   justify a production path.
+- IPO, hinge, and KTO-pair DPO reductions now have complete synthetic Terminal
+  measurements across `32`, `128`, and `512`. This is enough to start an eager
+  MLX implementation pass with math tests and live smoke, but not enough to
+  enable compiled paths by default.
 - Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
-  until Terminal measurements show stable behavior and the live trainer path is
-  implemented deliberately.
+  until each live trainer path is implemented deliberately.
 - Keep reference-model GRPO on MLX disabled until dual-model memory is measured.
 
 If a compiled path is implemented later, it should start as MLX DPO sigmoid only
@@ -218,3 +221,59 @@ Promotion criteria for any non-sigmoid DPO variant:
 - the eager path is implemented first and covered by loss math tests;
 - live MLX smoke is added before the variant leaves typed-unsupported status;
 - compiled execution remains opt-in even if the reduction benchmark is strong.
+
+## DPO Variant Terminal Measurement
+
+Recorded from a normal Terminal session on the Apple M4 Max host and saved
+outside the repo history as `runs/mlx-compile-variants.json`:
+
+- macOS: `26.3.1`
+- MLX: `0.31.2`
+- mlx-lm: `0.31.3`
+- Candidates: sigmoid, IPO, hinge, KTO-pair, and GRPO advantage reduction
+- Batch sizes: `32`, `128`, `512`
+- Steps: `100`, warmup: `10`
+
+| Candidate | Batch | Eager Mean | Compiled Mean | Steady Delta | Compiled First Step | Peak Bytes |
+|---|---:|---:|---:|---:|---:|---:|
+| DPO reference-free sigmoid | `32` | `0.000184s` | `0.000148s` | `+19.2%` | `0.002786s` | `560` |
+| DPO reference-free sigmoid | `128` | `0.000195s` | `0.000131s` | `+32.6%` | `0.000174s` | `2104` |
+| DPO reference-free sigmoid | `512` | `0.000269s` | `0.000139s` | `+48.3%` | `0.000195s` | `8248` |
+| DPO reference-model sigmoid | `32` | `0.000147s` | `0.000099s` | `+32.9%` | `0.001217s` | `8248` |
+| DPO reference-model sigmoid | `128` | `0.000120s` | `0.000105s` | `+12.1%` | `0.000147s` | `8248` |
+| DPO reference-model sigmoid | `512` | `0.000133s` | `0.000108s` | `+18.5%` | `0.000155s` | `16440` |
+| DPO reference-free IPO | `32` | `0.000116s` | `0.000105s` | `+9.1%` | `0.002173s` | `16440` |
+| DPO reference-free IPO | `128` | `0.000120s` | `0.000107s` | `+10.5%` | `0.000135s` | `16440` |
+| DPO reference-free IPO | `512` | `0.000118s` | `0.000109s` | `+8.4%` | `0.000134s` | `16440` |
+| DPO reference-model IPO | `32` | `0.000127s` | `0.000105s` | `+17.0%` | `0.000778s` | `16440` |
+| DPO reference-model IPO | `128` | `0.000121s` | `0.000109s` | `+10.5%` | `0.000134s` | `16440` |
+| DPO reference-model IPO | `512` | `0.000132s` | `0.000109s` | `+17.4%` | `0.000141s` | `16456` |
+| DPO reference-free hinge | `32` | `0.000130s` | `0.000104s` | `+20.1%` | `0.001769s` | `16456` |
+| DPO reference-free hinge | `128` | `0.000125s` | `0.000117s` | `+6.9%` | `0.000134s` | `16456` |
+| DPO reference-free hinge | `512` | `0.000128s` | `0.000111s` | `+13.4%` | `0.000144s` | `16456` |
+| DPO reference-model hinge | `32` | `0.000132s` | `0.000108s` | `+17.8%` | `0.002004s` | `16456` |
+| DPO reference-model hinge | `128` | `0.000131s` | `0.000104s` | `+20.8%` | `0.000148s` | `16456` |
+| DPO reference-model hinge | `512` | `0.000137s` | `0.000111s` | `+19.4%` | `0.000175s` | `16456` |
+| DPO reference-free KTO-pair | `32` | `0.000179s` | `0.000138s` | `+23.0%` | `0.001783s` | `16456` |
+| DPO reference-free KTO-pair | `128` | `0.000173s` | `0.000122s` | `+29.2%` | `0.000209s` | `16456` |
+| DPO reference-free KTO-pair | `512` | `0.000179s` | `0.000126s` | `+29.3%` | `0.000201s` | `16456` |
+| DPO reference-model KTO-pair | `32` | `0.000170s` | `0.000126s` | `+25.9%` | `0.000309s` | `16456` |
+| DPO reference-model KTO-pair | `128` | `0.000199s` | `0.000131s` | `+34.0%` | `0.000232s` | `16456` |
+| DPO reference-model KTO-pair | `512` | `0.000191s` | `0.000136s` | `+28.7%` | `0.000245s` | `24708` |
+| GRPO advantage loss | `32` | `0.000110s` | `0.000109s` | `+1.4%` | `0.002057s` | `24708` |
+| GRPO advantage loss | `128` | `0.000113s` | `0.000097s` | `+13.8%` | `0.001078s` | `24708` |
+| GRPO advantage loss | `512` | `0.000108s` | `0.000102s` | `+5.8%` | `0.000953s` | `24708` |
+
+Interpretation:
+
+- All non-sigmoid DPO variants completed synthetic reduction measurement at
+  every planned batch size. That clears the first gate for an eager MLX DPO
+  implementation pass.
+- KTO-pair has the strongest compiled steady-state signal, but the
+  reference-model `512` case also reached the highest observed synthetic peak
+  memory. Treat this as a reason to implement eager first and require live
+  smoke before exposing it as supported.
+- IPO and hinge are also feasible for eager implementation. Their compiled
+  gains are smaller than KTO-pair and do not justify a default compiled path.
+- GRPO remains eager. The reduction-only compile signal is modest and does not
+  address the larger open question: reference-model GRPO dual-model memory.
