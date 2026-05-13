@@ -208,38 +208,30 @@ def test_public_api_docs_catalog_tracks_public_frontend_and_internal_console(tmp
 
 
 def test_public_frontend_scaffold_references_public_workflows():
-    api_helper = Path("public_app/lib/api.ts").read_text(encoding="utf-8")
-    train_source = Path("public_app/app/train/page.tsx").read_text(encoding="utf-8")
-    train_client_source = Path("public_app/app/train/train-client.tsx").read_text(encoding="utf-8")
-    run_source = Path("public_app/app/runs/[id]/page.tsx").read_text(encoding="utf-8")
-    run_client_source = Path("public_app/app/runs/[id]/run-client.tsx").read_text(encoding="utf-8")
-    results_source = Path("public_app/app/results/page.tsx").read_text(encoding="utf-8")
-    results_client_source = Path("public_app/app/results/results-client.tsx").read_text(encoding="utf-8")
-    readiness_source = Path("public_app/app/readiness/page.tsx").read_text(encoding="utf-8")
-    docs_source = Path("public_app/app/docs/page.tsx").read_text(encoding="utf-8")
-    home_source = Path("public_app/app/page.tsx").read_text(encoding="utf-8")
-    shell_path = Path("public_app/components/ui.tsx")
-    if not shell_path.exists():
-        shell_path = Path("public_app/components/shell.tsx")
-    if not shell_path.exists():
-        shell_path = Path("public_app/components/app-ui.tsx")
-    shell_source = shell_path.read_text(encoding="utf-8")
+    api_helper = Path("public_app/src/lib/api.ts").read_text(encoding="utf-8")
+    train_source = Path("public_app/src/routes/train.tsx").read_text(encoding="utf-8")
+    start_source = Path("public_app/src/routes/start.tsx").read_text(encoding="utf-8")
+    run_source = Path("public_app/src/routes/runs.$runId.tsx").read_text(encoding="utf-8")
+    results_source = Path("public_app/src/routes/results.tsx").read_text(encoding="utf-8")
+    docs_source = Path("public_app/src/routes/docs.tsx").read_text(encoding="utf-8")
+    home_source = Path("public_app/src/routes/index.tsx").read_text(encoding="utf-8")
+    shell_source = Path("public_app/src/components/shell/index.tsx").read_text(encoding="utf-8")
 
-    assert "export const API_BASE" in api_helper
-    assert 'from "../lib/api"' in home_source or 'from "@/components/shell"' in home_source
-    assert "System summary" in home_source
-    assert "Training platform" in shell_source
-    assert "Run configuration" in train_client_source
-    assert "Launch review" in train_client_source
-    assert "Run monitor" in run_source
-    assert "Run status" in run_client_source
-    assert "Training outcomes" in results_client_source
-    assert "Qualification matrix" in readiness_source
-    assert "Documentation catalog" in docs_source
+    assert 'const API_BASE = "/api/public"' in api_helper
+    assert 'from "@/components/shell"' in home_source
+    assert "SystemCard" in home_source
+    assert "Topbar" in shell_source
+    assert "Base model" in train_source
+    assert "Launch summary" in train_source
+    assert "MLX Ready" in start_source
+    assert "Run detail view" in run_source
+    assert 'label="STATUS"' in run_source
+    assert "Results view in progress" in results_source
+    assert "MLX backend guide" in docs_source
     assert "Training that stays understandable" not in home_source
     assert "Public workstation" not in shell_source
-    assert "Launch workspace" not in train_client_source
-    assert "Review quality" not in train_client_source
+    assert "Launch workspace" not in train_source
+    assert "Review quality" not in train_source
 
 
 def test_public_api_transport_exposes_public_workflows():
@@ -443,13 +435,13 @@ def test_public_api_rejects_unsupported_mode_specific_fields(tmp_path):
 
 def test_public_train_client_uses_mode_specific_payloads_and_labels():
     """Public train client should build mode-safe payloads and expose audio/VLM-specific labels."""
-    train_client_source = Path("public_app/app/train/train-client.tsx").read_text(encoding="utf-8")
+    train_client_source = Path("public_app/src/routes/train.tsx").read_text(encoding="utf-8")
 
-    assert "buildTrainingPayload(form)" in train_client_source
-    assert 'mode === "raft" || mode === "audio"' in train_client_source
-    assert 'mode === "reasoning" || mode === "agentic"' in train_client_source
-    assert 'mode === "vlm" ? (' in train_client_source
-    assert 'label="Task"' in train_client_source
+    assert "buildLaunchPayload(config)" in train_client_source
+    assert 'if (c.modality === "sft")' in train_client_source
+    assert 'mode: "raft"' in train_client_source
+    assert "stripEmpty" in train_client_source
+    assert "VerifierSection" in train_client_source
 
 
 def test_public_docs_reference_split_between_public_frontend_and_internal_console():

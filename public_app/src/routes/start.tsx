@@ -16,12 +16,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   useBackendInfo,
+  useModelCatalog,
   useTrainingDatasets,
   useTrainingLaunch,
   useTrainingModels,
   useTrainingPreflight,
 } from "@/lib/hooks";
-import type { ModelCatalogEntry } from "@/lib/api";
+import type { BackendInfo, ModelCatalogEntry } from "@/lib/api";
 
 export const Route = createFileRoute("/start")({
   component: StartRoute,
@@ -31,11 +32,22 @@ function StartRoute() {
   const backend = useBackendInfo();
   const datasets = useTrainingDatasets();
   const models = useTrainingModels({ mode: "sft" });
+  const mlxModels = useModelCatalog({ mode: "sft", backend: "mlx" });
   const preflight = useTrainingPreflight();
   const launch = useTrainingLaunch();
   const lastPreflightKey = useRef<string | null>(null);
 
-  const recommended = useMemo(() => selectFirstRunModel(models.data?.items ?? []), [models.data]);
+  const mlxReadiness = backend.data?.mlx_readiness;
+  const mlxReady = mlxReadiness?.executable === true;
+  const appleSilicon = Boolean(
+    backend.data?.chip ||
+      backend.data?.name === "mps" ||
+      backend.data?.name === "mlx" ||
+      mlxReadiness?.macos_version ||
+      mlxReadiness?.metal_device,
+  );
+  const modelCandidates = mlxReady ? (mlxModels.data?.items ?? []) : (models.data?.items ?? []);
+  const recommended = useMemo(() => selectFirstRunModel(modelCandidates), [modelCandidates]);
   const dataset = datasets.data?.items.find((item) => item.key === "codealpaca")
     ? "codealpaca"
     : datasets.data?.items[0]?.key ?? "";
@@ -47,13 +59,14 @@ function StartRoute() {
             model: recommended.id,
             dataset,
             output_dir: `models/first-run-${slug(recommended.id)}`,
+            accelerator: mlxReady ? "mlx" : undefined,
             epochs: 1,
-            batch_size: backend.data?.name === "mlx" || backend.data?.name === "mps" ? 1 : 2,
+            batch_size: mlxReady || backend.data?.name === "mlx" || backend.data?.name === "mps" ? 1 : 2,
             learning_rate: 2e-4,
             max_samples: 200,
           }
         : null,
-    [backend.data?.name, dataset, recommended],
+    [backend.data?.name, dataset, mlxReady, recommended],
   );
 
   const payloadKey = payload ? JSON.stringify(payload) : "";
@@ -116,7 +129,7 @@ function StartRoute() {
           </div>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className={`grid gap-3 ${appleSilicon ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
           <StepCard
             step="01"
             title="Backend"
@@ -124,11 +137,22 @@ function StartRoute() {
             loading={backend.isLoading}
             body={backend.data ? `${backend.data.name} · ${backend.data.device}` : "Detecting accelerator"}
           />
+          {appleSilicon ? (
+            <StepCard
+              step="02"
+              title="MLX Ready"
+              ready={mlxReady}
+              loading={backend.isLoading}
+              body={mlxReady ? "MLX executable probe passed" : mlxReadinessLabel(mlxReadiness)}
+              detail={mlxPackageLabel(mlxReadiness)}
+              tone={mlxReady ? "success" : mlxReadiness ? "danger" : "neutral"}
+            />
+          ) : null}
           <StepCard
-            step="02"
+            step={appleSilicon ? "03" : "02"}
             title="Model"
             ready={Boolean(recommended)}
-            loading={models.isLoading}
+            loading={mlxReady ? mlxModels.isLoading : models.isLoading}
             body={recommended ? recommended.id : "Selecting a first-run catalog model"}
             detail={
               recommended
@@ -137,7 +161,7 @@ function StartRoute() {
             }
           />
           <StepCard
-            step="03"
+            step={appleSilicon ? "04" : "03"}
             title="Preflight"
             ready={ready}
             loading={preflight.isPending}
@@ -280,11 +304,12 @@ function LaunchPreview({
 }) {
   const rows = [
     ["Mode", String(payload.mode)],
+    payload.accelerator ? ["Accelerator", String(payload.accelerator)] : null,
     ["Model", String(payload.model)],
     ["Dataset", String(payload.dataset)],
     ["Memory", modelMemoryLabel(model)],
     ["Output", String(payload.output_dir)],
-  ];
+  ].filter(Boolean) as string[][];
   return (
     <dl className="rounded-md border border-border-subtle bg-bg-subtle/50">
       {rows.map(([label, value]) => (
@@ -317,6 +342,18 @@ function firstPreflightIssue(
   data: NonNullable<ReturnType<typeof useTrainingPreflight>["data"]>,
 ): string | null {
   return data.errors[0] ?? data.suggested_fixes[0] ?? data.user_summary?.next_step ?? null;
+}
+
+function mlxReadinessLabel(readiness: BackendInfo["mlx_readiness"] | undefined): string {
+  if (!readiness) return "Checking MLX runtime";
+  const first = readiness.errors[0] ?? readiness.warnings[0];
+  return first || `MLX ${readiness.status}`;
+}
+
+function mlxPackageLabel(readiness: BackendInfo["mlx_readiness"] | undefined): string | undefined {
+  if (!readiness) return undefined;
+  const versions = readiness.package_versions ?? {};
+  return `mlx ${versions.mlx ?? "missing"} · mlx-lm ${versions["mlx-lm"] ?? "missing"}`;
 }
 
 function extractRunId(data: unknown): string | null {

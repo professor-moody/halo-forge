@@ -84,6 +84,39 @@ TEMPLATES: tuple[TrainingTemplate, ...] = (
         expected_runtime="2-4h on Strix Halo",
         learn_more="docs/TRAINERS.md#raft",
     ),
+    TrainingTemplate(
+        id="sft_mlx_quickstart",
+        name="Apple Silicon SFT quickstart",
+        category="code",
+        intent="Prove the MLX training path with a tiny Qwen instruct model, CodeAlpaca, and bounded samples.",
+        modality="sft",
+        model_hint="mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+        dataset_hint="codealpaca",
+        hyperparams={"epochs": 1, "batch_size": 1, "learning_rate": 2e-4, "max_samples": 200, "accelerator": "mlx"},
+        expected_runtime="10-25 min on Apple Silicon with MLX",
+        learn_more="docs/getting-started/apple-silicon-mlx",
+        cli_hint=(
+            "halo-forge --accelerator mlx sft train --model mlx-community/Qwen2.5-0.5B-Instruct-bf16 "
+            "--dataset codealpaca --output models/sft_mlx_quickstart --epochs 1 --batch-size 1 --max-samples 200"
+        ),
+    ),
+    TrainingTemplate(
+        id="raft_mlx_code",
+        name="Apple Silicon code RAFT",
+        category="code",
+        intent="Run verifier-filtered code training on MLX with conservative rollout counts.",
+        modality="raft",
+        model_hint="mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+        dataset_hint="humaneval",
+        verifier="execution",
+        hyperparams={"cycles": 1, "samples_per_prompt": 2, "batch_size": 1, "accelerator": "mlx"},
+        expected_runtime="20-45 min on Apple Silicon with MLX",
+        learn_more="docs/getting-started/apple-silicon-mlx",
+        cli_hint=(
+            "halo-forge --accelerator mlx raft train --model mlx-community/Qwen2.5-0.5B-Instruct-bf16 "
+            "--prompts humaneval --verifier execution --output models/raft_mlx_code --cycles 1 --samples-per-prompt 2"
+        ),
+    ),
 
     # ---- Reasoning ------------------------------------------------------
     TrainingTemplate(
@@ -110,6 +143,23 @@ TEMPLATES: tuple[TrainingTemplate, ...] = (
         hyperparams={"group_size": 8, "kl_coef": 0.05},
         expected_runtime="3-6h on Strix Halo",
         learn_more="docs/TRAINERS.md#grpo",
+    ),
+    TrainingTemplate(
+        id="grpo_mlx_reasoning",
+        name="Apple Silicon reasoning GRPO",
+        category="reasoning",
+        intent="Use MLX for a small verifiable reasoning GRPO run with low group size and no compile path.",
+        modality="grpo",
+        model_hint="mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+        dataset_hint="gsm8k",
+        verifier="json_schema",
+        hyperparams={"group_size": 4, "kl_coef": 0.05, "batch_size": 1, "accelerator": "mlx"},
+        expected_runtime="30-90 min on Apple Silicon with MLX",
+        learn_more="docs/getting-started/apple-silicon-mlx",
+        cli_hint=(
+            "halo-forge --accelerator mlx grpo train --model mlx-community/Qwen2.5-0.5B-Instruct-bf16 "
+            "--dataset gsm8k --verifier json_schema --output models/grpo_mlx_reasoning --group-size 4"
+        ),
     ),
 
     # ---- Vision ---------------------------------------------------------
@@ -165,6 +215,22 @@ TEMPLATES: tuple[TrainingTemplate, ...] = (
         hyperparams={"beta": 0.1, "epochs": 1, "batch_size": 2, "learning_rate": 5e-7},
         expected_runtime="1-2h on Strix Halo",
         learn_more="docs/TRAINERS.md#dpo",
+    ),
+    TrainingTemplate(
+        id="dpo_mlx_sigmoid",
+        name="Apple Silicon DPO sigmoid",
+        category="preference",
+        intent="Run MLX DPO with the supported sigmoid objective and conservative batch sizing.",
+        modality="dpo",
+        model_hint="mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+        dataset_hint="ultrafeedback-binarized",
+        hyperparams={"beta": 0.1, "epochs": 1, "batch_size": 1, "learning_rate": 5e-7, "loss_type": "sigmoid", "accelerator": "mlx"},
+        expected_runtime="30-75 min on Apple Silicon with MLX",
+        learn_more="docs/getting-started/apple-silicon-mlx",
+        cli_hint=(
+            "halo-forge --accelerator mlx dpo train --model mlx-community/Qwen2.5-0.5B-Instruct-bf16 "
+            "--dataset ultrafeedback-binarized --output models/dpo_mlx_sigmoid --loss-type sigmoid --batch-size 1"
+        ),
     ),
     TrainingTemplate(
         id="pref-orpo-chat",

@@ -30,7 +30,23 @@ This pulls `mlx>=0.31.0,<0.32.0` and `mlx-lm>=0.31.0,<0.32.0`. Wheels exist only
 Verify:
 
 ```bash
-python -c "from halo_forge.backend import get_backend; b = get_backend('mlx'); print(b.name, b.capabilities)"
+halo-forge doctor mlx
+halo-forge doctor mlx --json
+```
+
+The doctor command checks package versions and executes a tiny MLX array in a
+subprocess. This matters because headless/sandboxed macOS processes can import
+`mlx` but fail with `No Metal device available`; Halo Forge treats that as
+`unavailable`, not a crash. If doctor is ready, use MLX explicitly:
+
+```bash
+halo-forge --accelerator mlx sft train \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-bf16 \
+  --dataset codealpaca \
+  --output models/sft_mlx_quickstart \
+  --epochs 1 \
+  --batch-size 1 \
+  --max-samples 200
 ```
 
 ## Use
@@ -100,6 +116,11 @@ curl localhost:8000/api/public/backend | jq
 
 On Apple Silicon, telemetry and backend responses also include parsed chip metadata when the host exposes it, for example `M3 Max` plus the system-reported GPU core count. Halo-forge surfaces this information only; it does not auto-tune batch sizes, LoRA ranks, or memory settings from the chip tier.
 
+The backend response also includes `mlx_readiness`, the same stable schema used
+by `halo-forge doctor mlx`. The dashboard Start flow recommends an MLX-format
+model only when that executable probe passes; otherwise it falls back to the
+MPS-safe first-run path and shows the readiness error.
+
 ## Experimental M5 Neural Accelerator flag
 
 `supports_neural_accelerators` is reported only when the active MLX backend sees an Apple M5-generation chip on macOS 26.2 or newer. Trainer configs expose `enable_neural_accelerators=False` as an explicit opt-in and validate it at trainer initialization.
@@ -112,8 +133,12 @@ PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTOR
 
 ## Roadmap reminders
 
-- **MLX compile measurement**: measure `mx.compile` candidates for DPO/GRPO loss paths before enabling any compiled default.
-- **MLX DPO completion**: non-sigmoid loss variants after memory and latency behavior are measured.
+- **MLX compile measurement**: `mx.compile` is measurement-only. Current DPO sigmoid
+  numbers are recorded in [MLX_COMPILE_MEASUREMENT.md](MLX_COMPILE_MEASUREMENT.md);
+  no compiled trainer path is enabled by default.
+- **MLX DPO completion**: sigmoid supports reference-free and reference-model paths.
+  Non-sigmoid loss variants remain gated until larger terminal measurements justify
+  the memory behavior.
 - **Serving I3 follow-up**: speculative decoding remains opt-in future work after streaming support.
 
 The verifier sandbox at [halo_forge/rlvr/verifiers/execution_runner.py](../halo_forge/rlvr/verifiers/execution_runner.py) is already cross-platform via macOS-native `sandbox-exec`, so MLX RLVR doesn't need any sandbox work — only the policy/optimizer side changes.

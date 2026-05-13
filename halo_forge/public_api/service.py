@@ -45,6 +45,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "model",
         "dataset",
         "output_dir",
+        "accelerator",
         "epochs",
         "max_samples",
         "batch_size",
@@ -57,6 +58,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "model",
         "prompts",
         "output_dir",
+        "accelerator",
         "cycles",
         "samples_per_prompt",
         "keep_percent",
@@ -213,10 +215,15 @@ class PublicApiService:
         try:
             from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
 
-            provider = AppleSiliconTelemetry(backend_name=backend.name)
-            chip = provider.sample().chip
+            parsed_chip = AppleSiliconTelemetry._detect_chip_info(
+                AppleSiliconTelemetry._detect_device_name()
+            )
+            chip = parsed_chip.to_dict() if parsed_chip is not None else None
         except Exception:
             chip = None
+        mlx_readiness = self._mlx_readiness_snapshot()
+        if (not chip or str(chip.get("brand") or "").lower() in {"arm", "apple silicon"}) and mlx_readiness.get("chip"):
+            chip = mlx_readiness.get("chip")
         return {
             "name": backend.name,
             "device": backend.device(),
@@ -224,7 +231,28 @@ class PublicApiService:
             "capabilities": asdict(backend.capabilities),
             "training_defaults": backend.training_defaults(),
             "inference_defaults": backend.inference_defaults(),
+            "mlx_readiness": mlx_readiness,
         }
+
+    @staticmethod
+    def _mlx_readiness_snapshot() -> dict[str, Any]:
+        try:
+            from halo_forge.backend.mlx_readiness import check_mlx_readiness
+
+            return check_mlx_readiness(timeout_seconds=5.0).to_dict()
+        except Exception as exc:
+            return {
+                "status": "error",
+                "executable": False,
+                "package_versions": {"mlx": None, "mlx-lm": None},
+                "chip": None,
+                "macos_version": None,
+                "metal_device": None,
+                "errors": [f"MLX readiness probe failed: {exc}"],
+                "warnings": [],
+                "suggested_fixes": [],
+                "probe": {},
+            }
 
     async def cancel_run(self, run_identifier: str) -> Dict[str, Any]:
         """Cancel a running training job.
@@ -761,6 +789,7 @@ class PublicApiService:
                 reward_threshold=self._optional_float(payload.get("reward_threshold")),
             )
 
+        self._augment_mlx_preflight(payload=payload, preflight=preflight)
         return to_dict(self._build_preflight_view(mode=mode, preflight=preflight))
 
     async def launch_training(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -778,6 +807,7 @@ class PublicApiService:
                 max_samples=self._optional_int(payload.get("max_samples")),
                 learning_rate=float(self._value_or_default(payload.get("learning_rate"), 2e-4)),
                 no_caffeinate=bool(payload.get("no_caffeinate", False)),
+                accelerator=self._optional_str(payload.get("accelerator")),
                 source_ui_page="/public/train",
             )
         elif mode == "raft":
@@ -794,6 +824,7 @@ class PublicApiService:
                 min_samples=int(self._value_or_default(payload.get("min_samples"), 1)),
                 max_new_tokens=int(self._value_or_default(payload.get("max_new_tokens"), 512)),
                 no_caffeinate=bool(payload.get("no_caffeinate", False)),
+                accelerator=self._optional_str(payload.get("accelerator")),
                 source_ui_page="/public/train",
             )
         elif mode in {"vlm", "audio", "reasoning", "agentic"}:
@@ -850,6 +881,44 @@ class PublicApiService:
             if self._has_public_value(value):
                 sanitized[field_name] = value
         return sanitized
+
+    def _augment_mlx_preflight(
+        self,
+        *,
+        payload: Dict[str, Any],
+        preflight: TrainingLaunchPreflight,
+    ) -> None:
+        model = str(payload.get("model") or "")
+        accelerator = str(payload.get("accelerator") or "").strip().lower()
+        wants_mlx = accelerator == "mlx" or model.startswith("mlx-community/")
+        if not wants_mlx:
+            return
+
+        readiness = self._mlx_readiness_snapshot()
+        executable = bool(readiness.get("executable"))
+        if accelerator != "mlx" and model.startswith("mlx-community/"):
+            preflight.warnings.append(
+                "MLX-format model selected; dashboard launch should use accelerator=mlx."
+            )
+            preflight.suggested_fixes.append(
+                "Use the guided Start flow or launch with `halo-forge --accelerator mlx ...`."
+            )
+        if executable:
+            return
+        status = str(readiness.get("status") or "unavailable")
+        first_error = ""
+        errors = readiness.get("errors")
+        if isinstance(errors, list) and errors:
+            first_error = str(errors[0])
+        preflight.warnings.append(
+            f"MLX readiness is {status}; MLX training may not launch from this process."
+        )
+        if first_error:
+            preflight.warnings.append(first_error)
+        fixes = readiness.get("suggested_fixes")
+        if isinstance(fixes, list):
+            preflight.suggested_fixes.extend(str(item) for item in fixes if item)
+        preflight.quality_outlook.setdefault("mlx_readiness", readiness)
 
     async def apply_guided_recovery(
         self,

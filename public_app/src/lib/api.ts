@@ -136,6 +136,20 @@ export type BackendInfo = {
   };
   training_defaults: Record<string, unknown>;
   inference_defaults: Record<string, unknown>;
+  mlx_readiness: MLXReadiness;
+};
+
+export type MLXReadiness = {
+  status: "ready" | "unavailable" | "error";
+  executable: boolean;
+  package_versions: Record<string, string | null>;
+  chip: (TelemetrySample["chip"] & { raw_brand?: string | null }) | { brand?: string | null; raw_brand?: string | null } | null;
+  macos_version: string | null;
+  metal_device: Record<string, unknown> | null;
+  errors: string[];
+  warnings: string[];
+  suggested_fixes: string[];
+  probe: Record<string, unknown>;
 };
 
 export type DashboardSummary = {

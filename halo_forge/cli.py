@@ -234,13 +234,17 @@ def print_banner():
         c, nc = CYAN, NC
     else:
         c, nc = "", ""
-    
-    print(f"""
-{c}╔═══════════════════════════════════════════════════════════════╗
-║                      HALO-FORGE                               ║
-║              RAFT Training for AMD Strix Halo                 ║
-╚═══════════════════════════════════════════════════════════════╝{nc}
-""")
+
+    width = 63
+    lines = [
+        "HALO-FORGE",
+        "Local AI Training Framework",
+        "ROCm / CUDA / MPS / MLX / CPU",
+    ]
+    print(f"\n{c}╔{'═' * width}╗")
+    for line in lines:
+        print(f"║{line.center(width)}║")
+    print(f"╚{'═' * width}╝{nc}\n")
 
 
 def cmd_data_synthesize(args):
@@ -2269,70 +2273,175 @@ def cmd_plot_benchmarks(args):
 
 def cmd_info(args):
     """Show hardware info."""
-    def _apple_lines() -> list[str]:
+    def _backend_info() -> dict[str, Any]:
+        info: dict[str, Any] = {
+            "name": "unknown",
+            "device": "unknown",
+            "supports_neural_accelerators": False,
+            "chip": None,
+        }
         try:
             from halo_forge.backend import get_backend
-            from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
 
             backend = get_backend()
-            sample = AppleSiliconTelemetry(backend_name=backend.name).sample()
-            lines: list[str] = []
-            if sample.chip:
-                chip = sample.chip
-                gpu = (
-                    f", gpu_cores={chip['gpu_cores']}"
-                    if chip.get("gpu_cores") is not None
-                    else ""
-                )
-                lines.append(
-                    f"Chip: {chip['brand']} (gen={chip['generation']}, "
-                    f"variant={chip.get('variant') or 'base'}{gpu})"
-                )
-            na_status = (
-                "available"
-                if backend.capabilities.supports_neural_accelerators
-                else "unavailable"
+            info["name"] = backend.name
+            info["device"] = backend.device()
+            info["supports_neural_accelerators"] = bool(
+                getattr(backend.capabilities, "supports_neural_accelerators", False)
             )
-            lines.append(f"Neural Accelerators: {na_status}")
-            return lines
         except Exception:
-            return []
+            pass
+
+        try:
+            from halo_forge.telemetry.apple_silicon import AppleSiliconTelemetry
+
+            chip = AppleSiliconTelemetry._detect_chip_info(
+                AppleSiliconTelemetry._detect_device_name()
+            )
+            if chip is not None:
+                info["chip"] = chip.to_dict()
+        except Exception:
+            pass
+        if not info.get("chip") or str(info.get("chip", {}).get("brand", "")).lower() in {"arm", "apple silicon"}:
+            try:
+                from halo_forge.backend.mlx_readiness import _metal_device, _optional_int
+                from halo_forge.utils.apple_chip import parse_chip_brand, with_gpu_cores
+
+                metal = _metal_device()
+                if metal:
+                    parsed = with_gpu_cores(
+                        parse_chip_brand(str(metal.get("model") or "")),
+                        _optional_int(metal.get("gpu_cores")),
+                    )
+                    if parsed is not None:
+                        info["chip"] = parsed.to_dict()
+            except Exception:
+                pass
+        return info
+
+    def _hardware_lines(backend_info: dict[str, Any]) -> list[tuple[str, str]]:
+        lines: list[tuple[str, str]] = [
+            ("info", f"Backend: {backend_info['name']} ({backend_info['device']})")
+        ]
+        chip = backend_info.get("chip")
+        if isinstance(chip, dict):
+            gpu = (
+                f", gpu_cores={chip['gpu_cores']}"
+                if chip.get("gpu_cores") is not None
+                else ""
+            )
+            lines.append(
+                (
+                    "info",
+                    f"Chip: {chip['brand']} (gen={chip['generation']}, "
+                    f"variant={chip.get('variant') or 'base'}{gpu})",
+                )
+            )
+        if backend_info["name"] in {"mps", "mlx"}:
+            lines.append(("success", "Apple Silicon accelerator detected"))
+        elif backend_info["name"] in {"cuda", "rocm", "rocm_gfx1151"}:
+            lines.append(("success", f"{backend_info['name'].upper()} accelerator detected"))
+        elif backend_info["name"] == "cpu":
+            lines.append(("warning", "No hardware accelerator backend is active"))
+        if backend_info["name"] in {"mps", "mlx"}:
+            lines.append(("info", "PyTorch CUDA/ROCm not active; using Apple backend"))
+        lines.append(
+            (
+                "info",
+                "Neural Accelerators: "
+                + (
+                    "available"
+                    if backend_info.get("supports_neural_accelerators")
+                    else "unavailable"
+                ),
+            )
+        )
+        return lines
+
+    backend_info = _backend_info()
 
     try:
         from halo_forge import ui
-        import torch
-        
+
         ui.print_banner()
-        
-        if torch.cuda.is_available():
-            gpu_name = torch.cuda.get_device_name(0)
-            props = torch.cuda.get_device_properties(0)
-            memory_gb = props.total_memory / 1e9
-            
-            # Try to get versions
-            rocm_version = ""
-            if hasattr(torch.version, 'hip'):
-                rocm_version = torch.version.hip or ""
-            
-            pytorch_version = torch.__version__
-            
-            ui.print_hardware_info(
-                gpu_name=gpu_name,
-                memory_gb=memory_gb,
-                rocm_version=rocm_version,
-                pytorch_version=pytorch_version
-            )
-        else:
-            ui.print_warning("No GPU detected")
-            ui.print_info("PyTorch CUDA/ROCm not available")
-        for line in _apple_lines():
-            ui.print_info(line)
+        try:
+            import torch
+
+            if torch.cuda.is_available() and backend_info["name"] in {"cuda", "rocm", "rocm_gfx1151"}:
+                gpu_name = torch.cuda.get_device_name(0)
+                props = torch.cuda.get_device_properties(0)
+                memory_gb = props.total_memory / 1e9
+
+                rocm_version = ""
+                if hasattr(torch.version, 'hip'):
+                    rocm_version = torch.version.hip or ""
+
+                ui.print_hardware_info(
+                    gpu_name=gpu_name,
+                    memory_gb=memory_gb,
+                    rocm_version=rocm_version,
+                    pytorch_version=torch.__version__,
+                )
+        except Exception:
+            pass
+
+        for level, line in _hardware_lines(backend_info):
+            if level == "success":
+                ui.print_success(line)
+            elif level == "warning":
+                ui.print_warning(line)
+            else:
+                ui.print_info(line)
     except ImportError:
-        # Fallback if rich not installed
-        from halo_forge.utils.hardware import print_hardware_info
-        print_hardware_info()
-        for line in _apple_lines():
-            print(line)
+        print_banner()
+        for level, line in _hardware_lines(backend_info):
+            prefix = {"success": "[OK]", "warning": "[!]", "info": ">"}[level]
+            print(f"{prefix} {line}")
+
+
+def cmd_doctor(args):
+    """Run environment readiness checks."""
+    if args.doctor_command != "mlx":
+        print(f"Unknown doctor check: {args.doctor_command}", file=sys.stderr)
+        sys.exit(1)
+
+    from halo_forge.backend.mlx_readiness import check_mlx_readiness
+
+    readiness = check_mlx_readiness()
+    payload = readiness.to_dict()
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        versions = payload.get("package_versions") or {}
+        chip = payload.get("chip") or {}
+        metal = payload.get("metal_device") or {}
+        print(f"MLX readiness: {payload['status']}")
+        print(f"  executable: {payload['executable']}")
+        print(f"  packages: mlx={versions.get('mlx') or 'missing'}, mlx-lm={versions.get('mlx-lm') or 'missing'}")
+        if payload.get("macos_version"):
+            print(f"  macOS: {payload['macos_version']}")
+        if chip:
+            print(f"  chip: {chip.get('brand') or chip.get('raw_brand') or chip}")
+        if metal:
+            print(f"  Metal device: {metal.get('model') or metal}")
+        for label in ("warnings", "errors", "suggested_fixes"):
+            values = [str(item) for item in payload.get(label, []) if item]
+            if values:
+                print(f"  {label.replace('_', ' ')}:")
+                for value in values:
+                    print(f"    - {value}")
+        if readiness.executable:
+            print()
+            print("Next:")
+            print(
+                "  halo-forge --accelerator mlx sft train "
+                "--model mlx-community/Qwen2.5-0.5B-Instruct-bf16 "
+                "--dataset codealpaca --output models/sft_mlx_quickstart"
+            )
+
+    if readiness.executable:
+        return
+    sys.exit(2 if readiness.status == "unavailable" else 1)
 
 
 def cmd_models(args):
@@ -4842,7 +4951,7 @@ def main():
         choices=['auto', 'rocm', 'rocm_gfx1151', 'cuda', 'mps', 'mlx', 'cpu'],
         default='auto',
         help='Compute accelerator to target. "auto" (default) detects ROCm/CUDA/MPS/CPU; '
-             'pass "mlx" explicitly to use Apple MLX for inference. '
+             'pass "mlx" explicitly to use Apple MLX for supported training and inference paths. '
              'Sets HALOFORGE_BACKEND for downstream code.'
     )
 
@@ -5884,6 +5993,12 @@ def main():
     # info command
     info_parser = subparsers.add_parser('info', help='Show hardware info')
 
+    # doctor command
+    doctor_parser = subparsers.add_parser('doctor', help='Run environment readiness checks')
+    doctor_subparsers = doctor_parser.add_subparsers(dest='doctor_command', required=True)
+    doctor_mlx_parser = doctor_subparsers.add_parser('mlx', help='Check Apple MLX package and Metal runtime readiness')
+    doctor_mlx_parser.add_argument('--json', action='store_true', help='Emit JSON')
+
     # models command
     models_parser = subparsers.add_parser('models', help='Browse curated base-model catalog')
     models_subparsers = models_parser.add_subparsers(dest='models_command', required=True)
@@ -6682,6 +6797,8 @@ def _dispatch_commands(args):
             cmd_agentic_sft(args)
     elif args.command == 'info':
         cmd_info(args)
+    elif args.command == 'doctor':
+        cmd_doctor(args)
     elif args.command == 'models':
         cmd_models(args)
     elif args.command == 'plot':

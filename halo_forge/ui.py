@@ -33,21 +33,30 @@ COLORS = {
 
 
 # ASCII art banner (simple, clean)
-BANNER = """
-[dim]╭──────────────────────────────────────────────────────────────╮[/dim]
-[dim]│[/dim]                                                              [dim]│[/dim]
-[dim]│[/dim]   [bold {primary}]HALO[/bold {primary}][{secondary}]-[/{secondary}][bold {primary}]FORGE[/bold {primary}]                                          [dim]│[/dim]
-[dim]│[/dim]                                                              [dim]│[/dim]
-[dim]│[/dim]   [dim]RLVR Training Framework[/dim]                                   [dim]│[/dim]
-[dim]│[/dim]   [dim]Optimized for AMD Strix Halo[/dim]                              [dim]│[/dim]
-[dim]│[/dim]                                                              [dim]│[/dim]
-[dim]╰──────────────────────────────────────────────────────────────╯[/dim]
-""".format(**COLORS)
+_BANNER_WIDTH = 62
+
+
+def _banner_line(text: str = "") -> str:
+    return f"│{text.center(_BANNER_WIDTH)}│"
+
+
+BANNER = "\n".join(
+    [
+        "╭" + "─" * _BANNER_WIDTH + "╮",
+        _banner_line(),
+        _banner_line("HALO-FORGE"),
+        _banner_line(),
+        _banner_line("Local AI Training Framework"),
+        _banner_line("ROCm / CUDA / MPS / MLX / CPU"),
+        _banner_line(),
+        "╰" + "─" * _BANNER_WIDTH + "╯",
+    ]
+)
 
 
 def print_banner():
     """Print the halo-forge banner."""
-    console.print(BANNER)
+    console.print(BANNER, style=COLORS["muted"])
 
 
 def print_header(title: str, subtitle: Optional[str] = None):
@@ -253,4 +262,3 @@ def print_benchmark_results(results: Dict[str, Any]):
 def cli_header():
     """Print CLI header with banner."""
     print_banner()
-

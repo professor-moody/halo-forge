@@ -941,6 +941,7 @@ class TrainingService:
         resume_strategy: Optional[str] = None,
         guided_recovery: Optional[dict[str, Any]] = None,
         no_caffeinate: bool = False,
+        accelerator: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -992,10 +993,10 @@ class TrainingService:
         job.total_epochs = epochs
         
         # Build command
-        cmd = [
-            sys.executable, "-m", "halo_forge.cli", "sft", "train",
-            "--model", model,
-        ]
+        cmd = [sys.executable, "-m", "halo_forge.cli"]
+        if accelerator and accelerator != "auto":
+            cmd.extend(["--accelerator", accelerator])
+        cmd.extend(["sft", "train", "--model", model])
         
         # Route dataset: use --data for local files, --dataset for HuggingFace IDs
         # Check if it's an actual local file (HF IDs like "user/dataset" also contain "/")
@@ -1068,6 +1069,7 @@ class TrainingService:
             "early_stopping_patience": early_stopping_patience,
             "gradient_checkpointing": gradient_checkpointing,
             "no_caffeinate": no_caffeinate,
+            "accelerator": accelerator,
         }
         launch_args.update({k: v for k, v in kwargs.items() if v is not None})
         launch_context_file = None
@@ -1163,6 +1165,7 @@ class TrainingService:
         resume_strategy: Optional[str] = None,
         guided_recovery: Optional[dict[str, Any]] = None,
         no_caffeinate: bool = False,
+        accelerator: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -1217,8 +1220,11 @@ class TrainingService:
         job.total_cycles = cycles
         
         # Build command
-        cmd = [
-            sys.executable, "-m", "halo_forge.cli", "raft", "train",
+        cmd = [sys.executable, "-m", "halo_forge.cli"]
+        if accelerator and accelerator != "auto":
+            cmd.extend(["--accelerator", accelerator])
+        cmd.extend([
+            "raft", "train",
             "--model", model,
             "--prompts", prompts,
             "--output", output_dir,
@@ -1235,7 +1241,7 @@ class TrainingService:
             "--curriculum", curriculum,
             "--reward-shaping", reward_shaping,
             "--system-prompt", system_prompt,
-        ]
+        ])
         
         # Curriculum-specific options
         if curriculum == "historical" and curriculum_stats:
@@ -1284,6 +1290,7 @@ class TrainingService:
             "system_prompt": system_prompt,
             "experimental_attention": experimental_attention,
             "no_caffeinate": no_caffeinate,
+            "accelerator": accelerator,
         }
         launch_args.update({k: v for k, v in kwargs.items() if v is not None})
         launch_context_file = None
