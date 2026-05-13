@@ -66,11 +66,11 @@ halo-forge dpo train \
 - `--beta` — KL-regularization strength against the reference model (0.1 canonical; 0.05 gentler; 0.5 sharper)
 - `--loss-type` — `sigmoid` (canonical), `ipo`, `hinge`, `kto_pair`, `rpo`
 - `--label-smoothing` — cDPO smoothing (0.0 disables)
-- `--reference-free` — skip loading the reference model; use a frozen policy at step 0 instead. Saves memory; required for MLX DPO in v1.
+- `--reference-free` — skip loading the reference model; use a frozen policy at step 0 instead. Saves memory and is still the lowest-risk MLX mode.
 
 **Datasets.** Built-in short names: `ultrafeedback`, `orca_dpo`, `hh_rlhf`, `py_dpo`. JSONL files need `prompt`, `chosen`, `rejected` columns; UltraFeedback's chat-list format is auto-collapsed.
 
-**MLX DPO scope.** v1 supports `--reference-free` with `loss_type='sigmoid'`. Other loss types and reference-model DPO raise typed `NotImplementedError` pointing at the exact knob to flip. The [mlx-lm-lora community fork](https://github.com/Goekdeniz-Guelmez/mlx-lm-lora) covers the full reference-model surface today.
+**MLX DPO scope.** MLX supports `loss_type='sigmoid'` in both reference-free and reference-model modes. IPO, hinge, KTO-pair, and RPO still raise typed `NotImplementedError` until their memory behavior is measured.
 
 ## GRPO
 

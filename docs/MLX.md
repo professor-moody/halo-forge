@@ -11,7 +11,7 @@ MLX support has moved past the original staged port. Current status:
 | Inference (text generation) | ✅ shipped | via `--accelerator mlx` CLI flag |
 | LoRA SFT | ✅ shipped | MLX-native trainer path |
 | RAFT / RLVR | ✅ shipped | MLX-native RAFT path |
-| DPO / GRPO | 🟡 partial | reference-free v1; reference-model variants remain roadmap |
+| DPO / GRPO | 🟡 partial | DPO sigmoid supports reference-free and reference-model; GRPO remains reference-free v1 |
 | MPS fallback telemetry | ✅ shipped | dashboard warning-line counter |
 | Chip-tier surfacing | ✅ shipped | telemetry/backend metadata only, no auto-tuning |
 
@@ -113,7 +113,7 @@ PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTOR
 ## Roadmap reminders
 
 - **MLX compile measurement**: measure `mx.compile` candidates for DPO/GRPO loss paths before enabling any compiled default.
-- **MLX DPO completion**: reference-model DPO and non-sigmoid loss variants after memory and latency behavior are measured.
+- **MLX DPO completion**: non-sigmoid loss variants after memory and latency behavior are measured.
 - **Serving I3 follow-up**: speculative decoding remains opt-in future work after streaming support.
 
 The verifier sandbox at [halo_forge/rlvr/verifiers/execution_runner.py](../halo_forge/rlvr/verifiers/execution_runner.py) is already cross-platform via macOS-native `sandbox-exec`, so MLX RLVR doesn't need any sandbox work — only the policy/optimizer side changes.

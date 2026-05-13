@@ -2,10 +2,10 @@
 
 Closes the silent-failure gap from the May 2026 audit: until now
 ``halo-forge dpo train --accelerator mlx`` raised NotImplementedError.
-This v1 ships **reference-free DPO** (`--reference-free`), which is the
-narrower-contract variant that Tülu 3 et al. publish and which
-sidesteps the dual-model memory question entirely. Full reference-model
-DPO on MLX (loading two copies of the base) lands in a follow-up.
+This ships **reference-free DPO** (`--reference-free`) and the canonical
+reference-model sigmoid variant. The reference-model path loads a second
+frozen copy of the base model, so it is explicit and still limited to
+``loss_type="sigmoid"`` until memory measurements justify more variants.
 
 Why a custom loop instead of wrapping ``mlx_lm.tuner.train``: DPO's
 loss is structurally different from SFT's cross-entropy. SFT computes
@@ -21,9 +21,9 @@ Algorithm (reference-free DPO):
     pi_rejected = sum log p_θ(yl | x)   over response tokens
     loss        = -log σ(β · (pi_chosen − pi_rejected))
 
-Pairs map directly to TRL's ``loss_type="sigmoid"`` with
-``reference_free=True``. cDPO label smoothing is supported; IPO /
-hinge / kto_pair are not (they need the reference model).
+Pairs map directly to TRL's ``loss_type="sigmoid"``. cDPO label
+smoothing is supported; IPO / hinge / kto_pair remain typed unsupported
+until their MLX memory behavior is measured.
 """
 
 from __future__ import annotations
@@ -117,13 +117,22 @@ def _sigmoid_dpo_loss(
     rejected_logp: Any,
     beta: float,
     label_smoothing: float = 0.0,
+    reference_chosen_logp: Any = None,
+    reference_rejected_logp: Any = None,
 ) -> Any:
     """Standard sigmoid DPO loss with optional cDPO label smoothing.
 
-    Reference-free variant: π_ref drops out, so this is just
-    ``-log σ(β (logp_chosen − logp_rejected))``.
+    In reference-free mode π_ref drops out. When reference log-probs are
+    provided, the margin is:
+
+    ``(π_chosen − π_rejected) − (ref_chosen − ref_rejected)``.
     """
-    logits = beta * (chosen_logp - rejected_logp)
+    logits = beta * _dpo_margin(
+        chosen_logp=chosen_logp,
+        rejected_logp=rejected_logp,
+        reference_chosen_logp=reference_chosen_logp,
+        reference_rejected_logp=reference_rejected_logp,
+    )
     if label_smoothing > 0:
         # cDPO: assume label is correct with prob (1-eps), wrong with
         # prob eps. Loss is the convex combination.
@@ -134,12 +143,31 @@ def _sigmoid_dpo_loss(
     return -nn.log_sigmoid(logits)
 
 
-class MLXDPOTrainer:
-    """Reference-free DPO trainer on MLX (Apple Silicon).
+def _dpo_margin(
+    *,
+    chosen_logp: Any,
+    rejected_logp: Any,
+    reference_chosen_logp: Any = None,
+    reference_rejected_logp: Any = None,
+) -> Any:
+    """Return the policy-vs-reference preference margin.
 
-    Currently supports ``loss_type="sigmoid"`` with
-    ``reference_free=True``. Other loss types and reference-model
-    support are roadmap work (T17 follow-up).
+    The helper is intentionally scalar/array-polymorphic so tests can
+    exercise the math without importing MLX.
+    """
+    policy_margin = chosen_logp - rejected_logp
+    if reference_chosen_logp is None and reference_rejected_logp is None:
+        return policy_margin
+    if reference_chosen_logp is None or reference_rejected_logp is None:
+        raise ValueError("both reference_chosen_logp and reference_rejected_logp are required")
+    return policy_margin - (reference_chosen_logp - reference_rejected_logp)
+
+
+class MLXDPOTrainer:
+    """DPO trainer on MLX (Apple Silicon).
+
+    Currently supports ``loss_type="sigmoid"`` in reference-free mode or
+    with a frozen reference model. Other loss types remain roadmap work.
     """
 
     def __init__(self, config: Optional[DPOConfig] = None):
@@ -149,20 +177,14 @@ class MLXDPOTrainer:
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="MLX DPO")
 
-        if not self.config.reference_free:
-            raise NotImplementedError(
-                "MLX DPO v1 supports --reference-free only. Full reference-"
-                "model DPO on MLX (load two copies of the base) is on the "
-                "roadmap. For now: pass --reference-free, or run on a "
-                "PyTorch backend."
-            )
         if self.config.loss_type != "sigmoid":
             raise NotImplementedError(
                 f"MLX DPO v1 supports loss_type='sigmoid' only; got {self.config.loss_type!r}. "
-                "IPO / hinge / kto_pair require the reference model."
+                "IPO / hinge / kto_pair remain disabled until MLX memory measurements justify them."
             )
 
         self.model: Any = None
+        self.reference_model: Any = None
         self.tokenizer: Any = None
         self.run_id: str = ""
         self.training_summary: Dict[str, Any] = {}
@@ -199,10 +221,15 @@ class MLXDPOTrainer:
             seed=cfg.seed,
         )
 
-        print(f"Loading MLX model: {cfg.model_name}")
+        print(f"Loading MLX policy model: {cfg.model_name}")
         self.model, self.tokenizer = deps["mlx_load"](cfg.model_name)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+        if not cfg.reference_free:
+            print(f"Loading frozen MLX reference model: {cfg.model_name}")
+            self.reference_model, _ = deps["mlx_load"](cfg.model_name)
+            self.reference_model.freeze()
 
         # Apply LoRA (mlx_lm freeze-then-swap convention).
         self.model.freeze()
@@ -233,16 +260,34 @@ class MLXDPOTrainer:
                 mx=mx, nn=nn, model=model,
                 prompt_tokens=prompt_tokens, response_tokens=rejected_tokens,
             )
+            reference_chosen_logp = None
+            reference_rejected_logp = None
+            if self.reference_model is not None:
+                reference_chosen_logp = _response_logprobs(
+                    mx=mx, nn=nn, model=self.reference_model,
+                    prompt_tokens=prompt_tokens, response_tokens=chosen_tokens,
+                )
+                reference_rejected_logp = _response_logprobs(
+                    mx=mx, nn=nn, model=self.reference_model,
+                    prompt_tokens=prompt_tokens, response_tokens=rejected_tokens,
+                )
             loss = _sigmoid_dpo_loss(
                 mx=mx, nn=nn,
                 chosen_logp=chosen_logp,
                 rejected_logp=rejected_logp,
                 beta=cfg.beta,
                 label_smoothing=cfg.label_smoothing,
+                reference_chosen_logp=reference_chosen_logp,
+                reference_rejected_logp=reference_rejected_logp,
             )
             # Auxiliary metrics for the training_summary; same shape TRL's
             # rewards/accuracies / rewards/margins surface.
-            margin = cfg.beta * (chosen_logp - rejected_logp)
+            margin = cfg.beta * _dpo_margin(
+                chosen_logp=chosen_logp,
+                rejected_logp=rejected_logp,
+                reference_chosen_logp=reference_chosen_logp,
+                reference_rejected_logp=reference_rejected_logp,
+            )
             return loss, (chosen_logp, rejected_logp, margin)
 
         loss_and_grad = nn.value_and_grad(self.model, loss_fn)
@@ -252,7 +297,7 @@ class MLXDPOTrainer:
         # for clarity. Batched loss is a follow-up perf win.
         rows = list(train_ds)
         print(
-            f"=" * 70 + f"\nMLX DPO (reference-free, sigmoid) on {len(rows)} pairs\n"
+            f"=" * 70 + f"\nMLX DPO ({'reference-free' if cfg.reference_free else 'reference-model'}, sigmoid) on {len(rows)} pairs\n"
             f"  beta={cfg.beta} learning_rate={cfg.learning_rate} epochs={cfg.num_epochs}\n"
             + "=" * 70
         )
@@ -420,7 +465,8 @@ class MLXDPOTrainer:
                 "reward_margin_final": margin_history[-1] if margin_history else None,
                 "beta": cfg.beta,
                 "loss_type": cfg.loss_type,
-                "reference_free": True,
+                "reference_free": cfg.reference_free,
+                "reference_model_loaded": not cfg.reference_free,
             },
         )
         summary = build_training_summary(
@@ -447,7 +493,8 @@ class MLXDPOTrainer:
                 "beta": cfg.beta,
                 "loss_type": cfg.loss_type,
                 "label_smoothing": cfg.label_smoothing,
-                "reference_free": True,
+                "reference_free": cfg.reference_free,
+                "reference_model_loaded": not cfg.reference_free,
                 "backend": "mlx",
             },
         )
@@ -479,7 +526,7 @@ class MLXDPOTrainer:
                 "batch_size": cfg.batch_size,
                 "beta": cfg.beta,
                 "loss_type": cfg.loss_type,
-                "reference_free": True,
+                "reference_free": cfg.reference_free,
             },
             representative_examples=[],
         )

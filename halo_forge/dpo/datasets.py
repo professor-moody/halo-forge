@@ -212,7 +212,7 @@ def load_preference_dataset(
         ds = ds.remove_columns(["_halo_invalid"])
     if len(ds) == 0:
         raise ValueError(
-            "Preference dataset has no valid rows after validation "
+            "Preference dataset has no valid rows after validation; invalid rows were rejected "
             f"(invalid={invalid_count}, empty={max(0, empty_count)}, total={before_filter})"
         )
     if invalid_count:

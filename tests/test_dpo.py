@@ -131,26 +131,24 @@ def test_preference_loader_rejects_null_pairs(tmp_path: Path):
         load_preference_dataset(train_file=str(path), validation_split=0.0)
 
 
-def test_dispatch_mlx_path_returns_mlx_trainer_when_reference_free():
-    """T17 v1: MLX dispatch returns MLXDPOTrainer when reference_free=True
-    is set on the config; otherwise raises NotImplementedError pointing
-    at the knob to flip. This replaces the old "always raise" stub."""
+def test_dispatch_mlx_path_returns_mlx_trainer_for_sigmoid_modes():
+    """MLX dispatch supports sigmoid DPO in reference-model and
+    reference-free modes. mlx-lm imports stay lazy until training."""
     from halo_forge.dpo.config import DPOConfig
     from halo_forge.dpo._dispatch import get_dpo_trainer
 
     class _FakeMLXBackend:
         name = "mlx"
 
-    # Without reference_free: trainer construction raises.
     cfg_default = DPOConfig()  # reference_free defaults to False
-    with pytest.raises(NotImplementedError) as ei:
-        get_dpo_trainer(cfg_default, backend=_FakeMLXBackend())  # type: ignore[arg-type]
-    assert "reference-free" in str(ei.value).lower() or "reference_free" in str(ei.value)
+    trainer_default = get_dpo_trainer(cfg_default, backend=_FakeMLXBackend())  # type: ignore[arg-type]
+    assert trainer_default.__class__.__name__ == "MLXDPOTrainer"
+    assert trainer_default.config.reference_free is False
 
-    # With reference_free=True: trainer instantiates.
     cfg_ref_free = DPOConfig(reference_free=True)
     trainer = get_dpo_trainer(cfg_ref_free, backend=_FakeMLXBackend())  # type: ignore[arg-type]
     assert trainer.__class__.__name__ == "MLXDPOTrainer"
+    assert trainer.config.reference_free is True
 
 
 def test_mlx_dpo_rejects_non_sigmoid_loss():

@@ -24,8 +24,8 @@ scratch plans may still describe already-shipped tracks as future work.
    a later opt-in flag after streaming lands.
 4. **MLX compile measurement**: measure `mx.compile` candidates for DPO/GRPO
    loss paths before enabling any compiled default.
-5. **MLX DPO completion**: reference-model DPO and non-sigmoid losses after the
-   measurement track establishes memory and latency behavior.
+5. **MLX DPO completion**: non-sigmoid DPO losses after the measurement track
+   establishes memory and latency behavior.
 
 ## Deferred
 

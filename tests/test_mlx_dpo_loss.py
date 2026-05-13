@@ -131,6 +131,49 @@ def test_label_smoothing_pulls_toward_indifference():
     assert float(standard) == pytest.approx(math.log(2), rel=1e-9)
 
 
+def test_reference_model_margin_subtracts_reference_preference():
+    """Reference-model DPO should reward policy improvement over the
+    reference, not just the raw policy chosen-vs-rejected gap."""
+    from halo_forge.dpo.mlx_trainer import _dpo_margin
+
+    _, _, Scalar = _make_stub_mx_nn()
+    margin = _dpo_margin(
+        chosen_logp=Scalar(-2.0),
+        rejected_logp=Scalar(-5.0),
+        reference_chosen_logp=Scalar(-1.0),
+        reference_rejected_logp=Scalar(-5.0),
+    )
+    assert float(margin) == pytest.approx(-1.0)
+
+
+def test_sigmoid_dpo_loss_accepts_reference_model_logps():
+    from halo_forge.dpo.mlx_trainer import _sigmoid_dpo_loss
+
+    mx, nn, Scalar = _make_stub_mx_nn()
+    loss = _sigmoid_dpo_loss(
+        mx=mx,
+        nn=nn,
+        chosen_logp=Scalar(-2.0),
+        rejected_logp=Scalar(-5.0),
+        reference_chosen_logp=Scalar(-1.0),
+        reference_rejected_logp=Scalar(-5.0),
+        beta=1.0,
+    )
+    assert float(loss) > math.log(2)
+
+
+def test_reference_margin_requires_both_reference_logps():
+    from halo_forge.dpo.mlx_trainer import _dpo_margin
+
+    _, _, Scalar = _make_stub_mx_nn()
+    with pytest.raises(ValueError, match="both reference"):
+        _dpo_margin(
+            chosen_logp=Scalar(-2.0),
+            rejected_logp=Scalar(-5.0),
+            reference_chosen_logp=Scalar(-1.0),
+        )
+
+
 def test_beta_amplifies_signal():
     """A larger β makes the same logp-margin produce a *smaller* loss
     — this is the KL-regularization knob in the DPO derivation."""
@@ -161,15 +204,15 @@ def test_mlx_dpo_trainer_module_imports_without_mlx():
     assert hasattr(mod, "_response_logprobs")
 
 
-def test_mlx_dpo_trainer_init_validates_reference_free():
-    """Constructing without reference_free=True raises a typed error
-    even before mlx-lm imports happen."""
+def test_mlx_dpo_trainer_init_allows_reference_model_sigmoid():
+    """Reference-model sigmoid DPO is allowed at construction time.
+    mlx-lm is still imported lazily only when training begins."""
     from halo_forge.dpo import DPOConfig
     from halo_forge.dpo.mlx_trainer import MLXDPOTrainer
 
     cfg = DPOConfig(reference_free=False)
-    with pytest.raises(NotImplementedError, match=r"reference-free|reference_free"):
-        MLXDPOTrainer(cfg)
+    trainer = MLXDPOTrainer(cfg)
+    assert trainer.config.reference_free is False
 
 
 def test_mlx_dpo_trainer_init_validates_loss_type():
@@ -177,5 +220,5 @@ def test_mlx_dpo_trainer_init_validates_loss_type():
     from halo_forge.dpo.mlx_trainer import MLXDPOTrainer
 
     cfg = DPOConfig(reference_free=True, loss_type="ipo")
-    with pytest.raises(NotImplementedError, match=r"sigmoid|ipo"):
+    with pytest.raises(NotImplementedError, match=r"sigmoid|ipo|measurements"):
         MLXDPOTrainer(cfg)

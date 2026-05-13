@@ -12,6 +12,12 @@ speed or memory wins across realistic shapes.
 
 ## Measurement Protocol
 
+Run the local harness:
+
+```bash
+python scripts/measure_mlx_compile.py --json
+```
+
 Record each run with:
 
 - model id and parameter count
@@ -33,5 +39,13 @@ worse.
 - No default `mx.compile` integration.
 - No chip-tier auto-tuning.
 - No speculative claims in docs or UI.
-- Keep typed `NotImplementedError` paths for unsupported MLX DPO variants until
-  the measurement track justifies implementation.
+- Reference-model sigmoid DPO is implemented for MLX, but `mx.compile`
+  remains measurement-only.
+- Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
+  until the measurement track justifies implementation.
+
+## Latest Local Measurement
+
+Not recorded in this workspace: the active `.venv` does not have `mlx`
+installed. Run the harness above on an Apple Silicon `[mlx]` environment and
+paste the JSON output here before enabling any compiled production path.
