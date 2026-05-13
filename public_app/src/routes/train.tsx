@@ -116,6 +116,7 @@ function TrainConfiguratorRoute() {
     () => models.data?.items.find((item) => item.id === config.model) ?? null,
     [config.model, models.data?.items],
   );
+  const currentPreflightStatus = preflightStatus(preflight, config);
 
   useEffect(() => {
     if (!modelId) return;
@@ -268,13 +269,13 @@ function TrainConfiguratorRoute() {
           {/* RIGHT: preflight + launch (sticky) */}
           <div className="lg:sticky lg:top-4 self-start space-y-3">
             <PreflightPanel
-              preflightStatus={preflightStatus(preflight, config)}
+              preflightStatus={currentPreflightStatus}
               checks={buildPreflightChecks(config, preflight, backend.data?.name)}
             />
             <LaunchPanel
               config={config}
               selectedModel={selectedModel}
-              disabled={!canLaunch(config) || launch.isPending}
+              disabled={!canLaunch(config) || currentPreflightStatus !== "ok" || launch.isPending}
               launching={launch.isPending}
               onLaunch={() => launch.mutate(buildLaunchPayload(config))}
               launchedRunId={launch.data?.run_id as string | undefined}
@@ -444,7 +445,7 @@ function ModelSection({
                 key={m.id}
                 type="button"
                 onClick={() => setConfig((c) => ({ ...c, model: m.id }))}
-                title={m.known_caveats.length ? m.known_caveats.join(" ") : m.recommended_use}
+                title={(m.known_caveats ?? []).length ? (m.known_caveats ?? []).join(" ") : m.recommended_use}
                 className={cn(
                   "px-2 py-0.5 rounded-sm border text-[11px] font-mono transition-colors",
                   m.id === config.model
@@ -465,29 +466,32 @@ function ModelSection({
 
 function SelectedModelInsight({ model }: { model: ModelCatalogEntry }) {
   const caveats = [
-    ...model.known_caveats,
+    ...(model.known_caveats ?? []),
     ...(model.trust_remote_code_required ? ["Requires explicit trust_remote_code opt-in."] : []),
   ];
+  const fitNotes = model.fit_notes ?? [];
 
   return (
     <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-medium text-[12px] text-fg">{model.label}</span>
-        <span className="font-mono text-[10px] text-fg-disabled">{model.parameter_count}</span>
-        <span className="font-mono text-[10px] text-fg-disabled">{model.memory_tier}</span>
+        <span className="font-medium text-[12px] text-fg">{model.label || model.id}</span>
+        <span className="font-mono text-[10px] text-fg-disabled">{model.parameter_count || "size unknown"}</span>
+        <span className="font-mono text-[10px] text-fg-disabled">{model.memory_tier || "memory unknown"}</span>
         {model.estimated_memory_gb ? (
           <span className="font-mono text-[10px] text-fg-disabled">
             ~{model.estimated_memory_gb}GB
           </span>
         ) : null}
-        <span className="font-mono text-[10px] text-fg-disabled">{model.status}</span>
+        <span className="font-mono text-[10px] text-fg-disabled">{model.status || "catalog"}</span>
         {model.recommended_first_run ? (
           <span className="font-mono text-[10px] text-success">first-run</span>
         ) : null}
       </div>
-      <p className="mt-1 text-[12px] text-fg-muted">{model.recommended_use}</p>
+      <p className="mt-1 text-[12px] text-fg-muted">
+        {model.recommended_use || "Catalog metadata is still loading for this suggestion."}
+      </p>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {model.backend_support.map((backend) => (
+        {(model.backend_support ?? []).map((backend) => (
           <span
             key={backend}
             className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
@@ -501,9 +505,9 @@ function SelectedModelInsight({ model }: { model: ModelCatalogEntry }) {
           MLX variant: {model.mlx_variant}
         </div>
       ) : null}
-      {model.fit_notes.length ? (
+      {fitNotes.length ? (
         <div className="mt-2 space-y-1 text-[11px] text-fg-subtle">
-          {model.fit_notes.map((note) => (
+          {fitNotes.map((note) => (
             <div key={note}>{note}</div>
           ))}
         </div>
@@ -967,7 +971,7 @@ function RunSummary({
     ["Mode", config.modality.toUpperCase()],
     ["Model", config.model || "not set"],
     ["Dataset", config.dataset === "__custom__" ? config.customDatasetFile || "custom path needed" : config.dataset],
-    ["Memory", selectedModel?.memory_tier ?? "unknown"],
+    ["Memory", selectedModel?.estimated_memory_gb ? `${selectedModel.memory_tier || "unknown"} · ~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "unknown"],
     ["Output", `models/${config.modality}-${slug(config.model || "model")}`],
   ];
 
@@ -1074,7 +1078,7 @@ function preflightStatus(
   if (!config.model) return "idle";
   if (preflight.isPending) return "loading";
   if (preflight.isError) return "error";
-  if (preflight.isSuccess) return "ok";
+  if (preflight.isSuccess) return preflight.data.ok ? "ok" : "error";
   return "idle";
 }
 
@@ -1121,23 +1125,23 @@ function buildPreflightChecks(
     });
   }
 
-  // Backend preflight result. The endpoint returns a payload with
-  // domain-specific keys; we treat any non-error response as "ok" for
-  // now and surface the message in the detail line.
   if (preflight.isPending) {
     checks.push({ label: "Server preflight", status: "loading", detail: "Validating launch…" });
   } else if (preflight.isError) {
     const msg = (preflight.error as Error | null)?.message ?? "Preflight failed";
     checks.push({ label: "Server preflight", status: "error", detail: msg });
   } else if (preflight.isSuccess && preflight.data) {
-    const data = preflight.data as Record<string, unknown>;
+    const data = preflight.data;
+    const issue = data.errors[0] ?? data.suggested_fixes[0];
     const summary =
-      typeof data.summary === "string"
-        ? data.summary
-        : typeof data.message === "string"
-          ? (data.message as string)
-          : "All checks passed";
-    checks.push({ label: "Server preflight", status: "ok", detail: summary });
+      issue ??
+      data.user_summary?.headline ??
+      (data.ok ? "All checks passed" : "Preflight found launch issues");
+    checks.push({
+      label: "Server preflight",
+      status: data.ok ? (data.warnings.length ? "warning" : "ok") : "error",
+      detail: summary,
+    });
   } else {
     checks.push({
       label: "Server preflight",

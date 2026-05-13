@@ -116,9 +116,9 @@ function ModelsRoute() {
         item.provider,
         item.family,
         item.recommended_use,
-        ...item.tasks,
-        ...item.trainer_support,
-      ].some((value) => value.toLowerCase().includes(q));
+        ...(item.tasks ?? []),
+        ...(item.trainer_support ?? []),
+      ].some((value) => String(value ?? "").toLowerCase().includes(q));
     });
   }, [items, modality, provider, query, status]);
 
@@ -155,8 +155,9 @@ function ModelsRoute() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-fg-subtle">
-                {filtered.length}/{items.length} models
-                {data?.catalog_version ? ` · v${data.catalog_version}` : ""}
+                {isError || (!isLoading && !data)
+                  ? "Catalog unavailable"
+                  : `${filtered.length}/${items.length} models${data?.catalog_version ? ` · v${data.catalog_version}` : ""}`}
               </span>
               <button
                 type="button"
@@ -291,7 +292,9 @@ function FilterSelect({
 }
 
 function ModelRow({ model }: { model: ModelCatalogEntry }) {
-  const caveated = model.known_caveats.length > 0 || model.trust_remote_code_required;
+  const caveats = model.known_caveats ?? [];
+  const fitNotes = model.fit_notes ?? [];
+  const caveated = caveats.length > 0 || model.trust_remote_code_required;
 
   return (
     <Card>
@@ -301,7 +304,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             <Boxes className="h-4 w-4 text-accent" />
             <h2 className="font-mono text-[13px] font-semibold text-fg">{model.id}</h2>
             <Badge tone={STATUS_TONE[model.status] ?? "neutral"} size="sm">
-              {model.status}
+              {model.status || "catalog"}
             </Badge>
             {model.recommended_first_run ? (
               <Badge tone="success" size="sm">
@@ -309,10 +312,10 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               </Badge>
             ) : null}
             <Badge tone={RISK_TONE[model.risk_level] ?? "neutral"} size="sm">
-              {model.risk_level}
+              {model.risk_level || "unknown risk"}
             </Badge>
             <Badge tone="neutral" size="sm">
-              {model.memory_tier}
+              {model.memory_tier || "memory unknown"}
             </Badge>
             {model.estimated_memory_gb ? (
               <Badge tone="neutral" size="sm">
@@ -325,9 +328,11 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               </Badge>
             ) : null}
           </div>
-          <p className="text-[13px] text-fg-muted">{model.recommended_use}</p>
+          <p className="text-[13px] text-fg-muted">
+            {model.recommended_use || "Catalog metadata is not available for this model yet."}
+          </p>
           <div className="flex flex-wrap gap-1.5">
-            {[model.provider, model.family, model.parameter_count, ...model.modalities].map((chip) => (
+            {[model.provider, model.family, model.parameter_count, ...(model.modalities ?? [])].filter(Boolean).map((chip) => (
               <span
                 key={chip}
                 className="rounded-sm border border-border-subtle px-1.5 py-0.5 text-[10px] text-fg-subtle"
@@ -337,15 +342,15 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             ))}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {model.trainer_support.map((mode) => (
+            {(model.trainer_support ?? []).map((mode) => (
               <span key={mode} className="font-mono text-[10px] text-fg-disabled">
                 {mode}
               </span>
             ))}
           </div>
-          {model.fit_notes.length ? (
+          {fitNotes.length ? (
             <div className="space-y-1 text-[11px] text-fg-subtle">
-              {model.fit_notes.map((note) => (
+              {fitNotes.map((note) => (
                 <div key={note}>{note}</div>
               ))}
             </div>
@@ -359,9 +364,9 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               ) : null}
             </div>
           ) : null}
-          {model.known_caveats.length ? (
+          {caveats.length ? (
             <ul className="space-y-1 text-[11px] text-warning">
-              {model.known_caveats.map((caveat) => (
+              {caveats.map((caveat) => (
                 <li key={caveat}>{caveat}</li>
               ))}
             </ul>
@@ -392,5 +397,5 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
 }
 
 function preferredTrainMode(model: ModelCatalogEntry): "sft" | "raft" {
-  return model.trainer_support.includes("raft") ? "raft" : "sft";
+  return (model.trainer_support ?? []).includes("raft") ? "raft" : "sft";
 }

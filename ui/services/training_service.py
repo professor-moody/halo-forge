@@ -387,7 +387,7 @@ class TrainingService:
                 suggested_fixes.append("Grant write permissions on the output parent directory.")
                 return
             warnings.append(f"output_dir does not exist yet: {output_path}")
-            suggested_fixes.append("Use 'Create output scaffold' or launch to create output_dir.")
+            suggested_fixes.append("Launch will create output_dir because its parent is writable.")
             return
 
         ancestor = parent
@@ -399,7 +399,7 @@ class TrainingService:
             return
 
         warnings.append(f"output_dir parent does not exist yet and will be created: {parent}")
-        suggested_fixes.append("Use 'Create output scaffold' to pre-create output directories.")
+        suggested_fixes.append("Launch will create the missing output parent directories.")
 
     def expected_output_artifacts(self, mode_key: str) -> list[str]:
         """Return canonical artifact expectations for a training mode."""

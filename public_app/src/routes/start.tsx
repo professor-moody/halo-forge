@@ -1,13 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRight,
+  AlertTriangle,
   CheckCircle2,
   CircleDashed,
   Loader2,
   Play,
   Rocket,
+  XCircle,
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,7 @@ function StartRoute() {
   const models = useTrainingModels({ mode: "sft" });
   const preflight = useTrainingPreflight();
   const launch = useTrainingLaunch();
+  const lastPreflightKey = useRef<string | null>(null);
 
   const recommended = useMemo(() => selectFirstRunModel(models.data?.items ?? []), [models.data]);
   const dataset = datasets.data?.items.find((item) => item.key === "codealpaca")
@@ -53,15 +56,25 @@ function StartRoute() {
     [backend.data?.name, dataset, recommended],
   );
 
+  const payloadKey = payload ? JSON.stringify(payload) : "";
+
   useEffect(() => {
-    if (!payload || preflight.isPending || preflight.isSuccess) return;
+    if (!payload || preflight.isPending || lastPreflightKey.current === payloadKey) return;
+    lastPreflightKey.current = payloadKey;
     preflight.mutate(payload);
-    // Preflight should fire once for this generated payload.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload]);
+  }, [payload, payloadKey, preflight]);
 
   const runId = extractRunId(launch.data);
-  const ready = Boolean(payload && preflight.isSuccess && !preflight.isError);
+  const preflightOk = preflight.isSuccess && preflight.data?.ok === true;
+  const preflightBlocked = preflight.isSuccess && preflight.data?.ok === false;
+  const ready = Boolean(payload && preflightOk && !preflight.isError);
+  const launchLabel = launch.isPending
+    ? "Launching..."
+    : preflightBlocked
+      ? "Fix preflight"
+      : preflight.isPending
+        ? "Checking..."
+        : "Launch first run";
 
   return (
     <>
@@ -98,7 +111,7 @@ function StartRoute() {
               onClick={() => payload && launch.mutate(payload)}
             >
               {launch.isPending ? <Loader2 className="animate-spin" /> : <Play />}
-              Launch first run
+              {launchLabel}
             </Button>
           </div>
         </div>
@@ -119,7 +132,7 @@ function StartRoute() {
             body={recommended ? recommended.id : "Selecting a first-run catalog model"}
             detail={
               recommended
-                ? `${recommended.memory_tier} · ~${recommended.estimated_memory_gb ?? "?"}GB · ${recommended.risk_level}`
+                ? `${modelMemoryLabel(recommended)} · ${modelRiskLabel(recommended)}`
                 : undefined
             }
           />
@@ -132,10 +145,12 @@ function StartRoute() {
               preflight.isError
                 ? (preflight.error as Error).message
                 : preflight.isSuccess
-                  ? "Launch checks passed"
+                  ? preflight.data.ok
+                    ? "Launch checks passed"
+                    : firstPreflightIssue(preflight.data) ?? "Preflight found launch issues"
                   : "Waiting for generated launch payload"
             }
-            tone={preflight.isError ? "danger" : ready ? "success" : "neutral"}
+            tone={preflight.isError || preflightBlocked ? "danger" : ready ? "success" : "neutral"}
           />
         </div>
 
@@ -148,6 +163,7 @@ function StartRoute() {
           </CardHeader>
           <CardContent className="space-y-3">
             {payload ? <LaunchPreview payload={payload} model={recommended} /> : null}
+            {preflight.data ? <PreflightMessages data={preflight.data} /> : null}
             {runId ? (
               <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-bg px-3 py-2">
                 <span className="font-mono text-[11px] text-success">Started {runId}</span>
@@ -167,6 +183,41 @@ function StartRoute() {
         </Card>
       </div>
     </>
+  );
+}
+
+function PreflightMessages({
+  data,
+}: {
+  data: NonNullable<ReturnType<typeof useTrainingPreflight>["data"]>;
+}) {
+  const messages = data.ok
+    ? data.warnings.map((message) => ({ tone: "warning" as const, message }))
+    : [
+        ...data.errors.map((message) => ({ tone: "danger" as const, message })),
+        ...data.suggested_fixes.map((message) => ({ tone: "warning" as const, message })),
+      ];
+  if (!messages.length) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {messages.slice(0, 3).map(({ tone, message }) => {
+        const Icon = tone === "danger" ? XCircle : AlertTriangle;
+        return (
+          <div
+            key={`${tone}-${message}`}
+            className={
+              tone === "danger"
+                ? "flex items-start gap-2 rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11.5px] text-danger"
+                : "flex items-start gap-2 rounded-md border border-warning/30 bg-warning-bg px-3 py-2 text-[11.5px] text-warning"
+            }
+          >
+            <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{message}</span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -228,7 +279,7 @@ function LaunchPreview({
     ["Mode", String(payload.mode)],
     ["Model", String(payload.model)],
     ["Dataset", String(payload.dataset)],
-    ["Memory", model?.estimated_memory_gb ? `~${model.estimated_memory_gb}GB` : "unknown"],
+    ["Memory", modelMemoryLabel(model)],
     ["Output", String(payload.output_dir)],
   ];
   return (
@@ -247,6 +298,22 @@ function LaunchPreview({
 
 function selectFirstRunModel(items: ModelCatalogEntry[]): ModelCatalogEntry | null {
   return items.find((item) => item.recommended_first_run && item.risk_level === "safe") ?? items[0] ?? null;
+}
+
+function modelMemoryLabel(model: ModelCatalogEntry | null): string {
+  if (!model) return "unknown";
+  const tier = model.memory_tier || "unknown tier";
+  return model.estimated_memory_gb ? `${tier} · ~${model.estimated_memory_gb}GB` : tier;
+}
+
+function modelRiskLabel(model: ModelCatalogEntry | null): string {
+  return model?.risk_level || model?.status || "catalog metadata pending";
+}
+
+function firstPreflightIssue(
+  data: NonNullable<ReturnType<typeof useTrainingPreflight>["data"]>,
+): string | null {
+  return data.errors[0] ?? data.suggested_fixes[0] ?? data.user_summary?.next_step ?? null;
 }
 
 function extractRunId(data: unknown): string | null {

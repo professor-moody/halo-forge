@@ -432,6 +432,22 @@ export type TrainingVerifier = {
   platforms: string[];
 };
 
+export type TrainingPreflight = {
+  mode: string;
+  ok: boolean;
+  resolved_paths: Record<string, string>;
+  errors: string[];
+  warnings: string[];
+  suggested_fixes: string[];
+  user_summary?: {
+    headline?: string;
+    why_it_matters?: string;
+    next_step?: string;
+    confidence_tone?: string;
+  };
+  details?: Record<string, unknown>;
+};
+
 export type VerifierCatalogEntry = {
   name: string;
   cls: string;
@@ -662,7 +678,7 @@ export const api = {
     return request<{ items: SuggestedModel[] }>(`/train/models${qs ? `?${qs}` : ""}`);
   },
   trainingPreflight: (payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>("/train/preflight", {
+    request<TrainingPreflight>("/train/preflight", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

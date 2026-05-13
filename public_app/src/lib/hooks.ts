@@ -8,6 +8,7 @@ import {
   type SuggestedModel,
   type TelemetrySample,
   type TrainingDataset,
+  type TrainingPreflight,
   type TrainingVerifier,
 } from "@/lib/api";
 
@@ -133,7 +134,7 @@ export function useModelCatalog(params: Record<string, string | undefined> = {})
  * show live validation; launch is the explicit user-triggered action.
  */
 export function useTrainingPreflight() {
-  return useMutation({
+  return useMutation<TrainingPreflight, Error, Record<string, unknown>>({
     mutationFn: (payload: Record<string, unknown>) => api.trainingPreflight(payload),
   });
 }
