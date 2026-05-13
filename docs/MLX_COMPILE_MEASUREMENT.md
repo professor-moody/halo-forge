@@ -8,7 +8,8 @@ speed or memory wins across realistic shapes.
 
 - MLX DPO reference-free sigmoid loss.
 - MLX GRPO advantage/loss reduction.
-- Reference-model DPO only after the dual-model memory footprint is measured.
+- MLX DPO reference-model sigmoid loss.
+- Larger synthetic batch shapes before enabling any compiled path.
 
 ## Measurement Protocol
 
@@ -16,6 +17,27 @@ Run the local harness:
 
 ```bash
 python scripts/measure_mlx_compile.py --json
+```
+
+By default this measures:
+
+- `dpo_reference_free_sigmoid`
+- `dpo_reference_model_sigmoid`
+- `grpo_advantage_loss`
+
+Across batch sizes:
+
+- `32`
+- `128`
+- `512`
+
+To narrow a run:
+
+```bash
+python scripts/measure_mlx_compile.py \
+  --candidate dpo_reference_model_sigmoid \
+  --batch-sizes 32,128 \
+  --json
 ```
 
 Record each run with:
@@ -43,6 +65,7 @@ worse.
   remains measurement-only.
 - Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
   until the measurement track justifies implementation.
+- Keep reference-model GRPO on MLX disabled until dual-model memory is measured.
 
 ## Latest Terminal Measurement
 
@@ -96,3 +119,23 @@ Python traceback. No compiled production path is enabled from this attempt.
 Run the same harness in a normal terminal session with GPU access before
 implementing IPO / hinge / KTO MLX DPO variants or enabling any compiled loss
 path.
+
+## Expanded Measurement Protocol
+
+The harness now emits a top-level `results` list. Each item carries a candidate
+name, batch shape, status, eager/compiled timing data when measured, and
+best-effort memory telemetry. If a larger shape fails due to memory pressure,
+that item should be recorded as `status="error"` while smaller shapes remain
+usable evidence.
+
+Next Terminal run:
+
+```bash
+python scripts/measure_mlx_compile.py --json
+```
+
+Use the expanded results to decide:
+
+- whether compiled DPO/GRPO reductions are worth a production opt-in;
+- whether IPO / hinge / KTO have acceptable memory behavior on MLX;
+- whether reference-model GRPO is feasible on the M4 Max baseline host.

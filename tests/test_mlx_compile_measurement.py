@@ -21,8 +21,12 @@ def test_measure_mlx_compile_imports_without_mlx():
     parser = module.build_parser()
     args = parser.parse_args([])
     assert args.batch_size == 32
+    assert args.batch_sizes == "32,128,512"
+    assert args.candidate == "all"
     assert args.steps == 100
     assert args.warmup == 10
+    assert module._batch_sizes(args) == [32, 128, 512]
+    assert module._selected_candidates(args) == list(module.CANDIDATES)
 
 
 def test_measure_mlx_compile_reports_missing_mlx_cleanly(monkeypatch):
@@ -55,6 +59,14 @@ def test_measure_mlx_compile_reports_metal_unavailable_as_structured_result():
         "[metal::load_device] No Metal device available",
     )
     assert result["status"] == "unavailable"
-    assert result["shape"]["batch_size"] == 16
+    assert result["shapes"] == [{"batch_size": 32}, {"batch_size": 128}, {"batch_size": 512}]
     assert "No Metal device available" in result["reason"]
     assert module._is_metal_unavailable(RuntimeError(result["reason"])) is True
+
+
+def test_measure_mlx_compile_single_batch_fallback():
+    module = _load_script_module()
+    parser = module.build_parser()
+    args = parser.parse_args(["--batch-sizes", "", "--batch-size", "16"])
+
+    assert module._batch_sizes(args) == [16]

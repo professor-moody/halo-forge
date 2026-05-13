@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Measure MLX eager vs compiled DPO sigmoid loss.
+"""Measure MLX eager vs compiled loss/reduction candidates.
 
 This is intentionally a measurement harness, not a production training path.
-It uses synthetic log-prob tensors so it can isolate the DPO loss/reduction
-candidate without downloading a model.
+It uses synthetic tensors so it can isolate candidate reductions without
+downloading a model.
 """
 
 from __future__ import annotations
@@ -20,6 +20,13 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
 
+CANDIDATES = (
+    "dpo_reference_free_sigmoid",
+    "dpo_reference_model_sigmoid",
+    "grpo_advantage_loss",
+)
+
+
 @dataclass
 class Measurement:
     name: str
@@ -32,7 +39,18 @@ class Measurement:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=32, help="Single batch size when --batch-sizes is omitted")
+    parser.add_argument(
+        "--batch-sizes",
+        default="32,128,512",
+        help="Comma-separated batch sizes to measure (default: 32,128,512)",
+    )
+    parser.add_argument(
+        "--candidate",
+        choices=("all",) + CANDIDATES,
+        default="all",
+        help="Candidate to measure, or all candidates",
+    )
     parser.add_argument("--steps", type=int, default=100)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--beta", type=float, default=0.1)
@@ -67,10 +85,11 @@ def _is_metal_unavailable(exc: BaseException) -> bool:
 
 def _unavailable_result(args: argparse.Namespace, reason: str) -> dict[str, Any]:
     return {
-        "candidate": "mlx_dpo_sigmoid_loss",
+        "candidate": args.candidate,
+        "candidates": _selected_candidates(args),
         "status": "unavailable",
         "reason": reason,
-        "shape": {"batch_size": args.batch_size},
+        "shapes": [{"batch_size": batch_size} for batch_size in _batch_sizes(args)],
         "platform": {
             "system": platform.system(),
             "machine": platform.machine(),
@@ -82,9 +101,31 @@ def _unavailable_result(args: argparse.Namespace, reason: str) -> dict[str, Any]
     }
 
 
-def _loss_fn(mx: Any, beta: float, label_smoothing: float) -> Callable[..., Any]:
-    def loss(chosen, rejected, ref_chosen, ref_rejected):
-        logits = beta * ((chosen - rejected) - (ref_chosen - ref_rejected))
+def _batch_sizes(args: argparse.Namespace) -> list[int]:
+    raw = str(args.batch_sizes or "").strip()
+    if not raw:
+        return [args.batch_size]
+    out: list[int] = []
+    for part in raw.split(","):
+        value = int(part.strip())
+        if value <= 0:
+            raise SystemExit("--batch-sizes values must be positive")
+        out.append(value)
+    return out
+
+
+def _selected_candidates(args: argparse.Namespace) -> list[str]:
+    if args.candidate == "all":
+        return list(CANDIDATES)
+    return [args.candidate]
+
+
+def _dpo_loss_fn(mx: Any, beta: float, label_smoothing: float, *, reference_model: bool) -> Callable[..., Any]:
+    def loss(chosen, rejected, ref_chosen=None, ref_rejected=None):
+        margin = chosen - rejected
+        if reference_model:
+            margin = margin - (ref_chosen - ref_rejected)
+        logits = beta * margin
         positive = mx.logaddexp(mx.array(0.0), -logits)
         if label_smoothing > 0:
             negative = mx.logaddexp(mx.array(0.0), logits)
@@ -92,6 +133,38 @@ def _loss_fn(mx: Any, beta: float, label_smoothing: float) -> Callable[..., Any]
         return positive.mean()
 
     return loss
+
+
+def _grpo_loss_fn(mx: Any) -> Callable[..., Any]:
+    def loss(logps, advantages):
+        return -(logps * advantages).mean()
+
+    return loss
+
+
+def _candidate_inputs(mx: Any, candidate: str, batch_size: int, args: argparse.Namespace) -> tuple[Callable[..., Any], tuple[Any, ...]]:
+    if candidate == "dpo_reference_free_sigmoid":
+        fn = _dpo_loss_fn(mx, args.beta, args.label_smoothing, reference_model=False)
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "dpo_reference_model_sigmoid":
+        fn = _dpo_loss_fn(mx, args.beta, args.label_smoothing, reference_model=True)
+        return fn, (
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+            mx.random.normal((batch_size,)),
+        )
+    if candidate == "grpo_advantage_loss":
+        rewards = mx.random.normal((batch_size,))
+        advantages = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+        return _grpo_loss_fn(mx), (
+            mx.random.normal((batch_size,)),
+            advantages,
+        )
+    raise ValueError(f"unknown candidate: {candidate}")
 
 
 def _time_callable(mx: Any, fn: Callable[[], Any], *, steps: int, warmup: int, name: str) -> Measurement:
@@ -136,38 +209,62 @@ def _metal_memory(mx: Any) -> dict[str, int | None]:
     return out
 
 
-def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
-    mx = _require_mlx()
-    mx.random.seed(args.seed)
-
-    chosen = mx.random.normal((args.batch_size,))
-    rejected = mx.random.normal((args.batch_size,))
-    ref_chosen = mx.random.normal((args.batch_size,))
-    ref_rejected = mx.random.normal((args.batch_size,))
-    eager_loss = _loss_fn(mx, args.beta, args.label_smoothing)
-    compiled_loss = getattr(mx, "compile", None)
-    if compiled_loss is None:
+def _measure_candidate(mx: Any, args: argparse.Namespace, candidate: str, batch_size: int) -> dict[str, Any]:
+    fn, inputs = _candidate_inputs(mx, candidate, batch_size, args)
+    compiled_fn = getattr(mx, "compile", None)
+    if compiled_fn is None:
         raise SystemExit("This MLX version does not expose mx.compile.")
-    compiled = compiled_loss(eager_loss)
+    compiled = compiled_fn(fn)
 
     eager = _time_callable(
         mx,
-        lambda: eager_loss(chosen, rejected, ref_chosen, ref_rejected),
+        lambda: fn(*inputs),
         steps=args.steps,
         warmup=args.warmup,
         name="eager",
     )
     compiled_result = _time_callable(
         mx,
-        lambda: compiled(chosen, rejected, ref_chosen, ref_rejected),
+        lambda: compiled(*inputs),
         steps=args.steps,
         warmup=args.warmup,
         name="compiled",
     )
+    return {
+        "candidate": candidate,
+        "shape": {"batch_size": batch_size},
+        "status": "measured",
+        "measurements": [asdict(eager), asdict(compiled_result)],
+        "memory": _metal_memory(mx),
+    }
+
+
+def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
+    mx = _require_mlx()
+    mx.random.seed(args.seed)
+
+    results: list[dict[str, Any]] = []
+    for candidate in _selected_candidates(args):
+        for batch_size in _batch_sizes(args):
+            try:
+                results.append(_measure_candidate(mx, args, candidate, batch_size))
+            except RuntimeError as exc:
+                if _is_metal_unavailable(exc):
+                    raise
+                results.append(
+                    {
+                        "candidate": candidate,
+                        "shape": {"batch_size": batch_size},
+                        "status": "error",
+                        "reason": str(exc),
+                        "memory": _metal_memory(mx),
+                    }
+                )
 
     return {
-        "candidate": "mlx_dpo_sigmoid_loss",
-        "shape": {"batch_size": args.batch_size},
+        "candidate": args.candidate,
+        "candidates": _selected_candidates(args),
+        "shapes": [{"batch_size": batch_size} for batch_size in _batch_sizes(args)],
         "beta": args.beta,
         "label_smoothing": args.label_smoothing,
         "platform": {
@@ -176,8 +273,8 @@ def run_measurement(args: argparse.Namespace) -> dict[str, Any]:
             "macos": platform.mac_ver()[0] or None,
         },
         "mlx_version": getattr(mx, "__version__", None),
-        "measurements": [asdict(eager), asdict(compiled_result)],
-        "memory": _metal_memory(mx),
+        "mlx_lm_version": _mlx_version("mlx-lm"),
+        "results": results,
         "decision": "measurement_only",
     }
 
@@ -204,14 +301,20 @@ def main() -> None:
         print(json.dumps(result, indent=2, sort_keys=True))
         return
     print("MLX DPO sigmoid loss compile measurement")
-    for entry in result["measurements"]:
-        print(
-            f"- {entry['name']}: first={entry['first_step_seconds']:.6f}s "
-            f"mean={entry['steady_state_seconds_mean']:.6f}s "
-            f"p50={entry['steady_state_seconds_p50']:.6f}s"
-        )
-    if result["memory"]:
-        print(f"memory={result['memory']}")
+    for item in result["results"]:
+        shape = item["shape"]["batch_size"]
+        if item["status"] != "measured":
+            print(f"- {item['candidate']} batch={shape}: {item['status']} {item.get('reason', '')}")
+            continue
+        print(f"- {item['candidate']} batch={shape}")
+        for entry in item["measurements"]:
+            print(
+                f"  {entry['name']}: first={entry['first_step_seconds']:.6f}s "
+                f"mean={entry['steady_state_seconds_mean']:.6f}s "
+                f"p50={entry['steady_state_seconds_p50']:.6f}s"
+            )
+        if item["memory"]:
+            print(f"  memory={item['memory']}")
 
 
 if __name__ == "__main__":
