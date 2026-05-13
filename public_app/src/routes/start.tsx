@@ -192,7 +192,10 @@ function PreflightMessages({
   data: NonNullable<ReturnType<typeof useTrainingPreflight>["data"]>;
 }) {
   const messages = data.ok
-    ? data.warnings.map((message) => ({ tone: "warning" as const, message }))
+    ? [
+        ...data.suggested_fixes.map((message) => ({ tone: "warning" as const, message })),
+        ...data.warnings.map((message) => ({ tone: "warning" as const, message })),
+      ]
     : [
         ...data.errors.map((message) => ({ tone: "danger" as const, message })),
         ...data.suggested_fixes.map((message) => ({ tone: "warning" as const, message })),
