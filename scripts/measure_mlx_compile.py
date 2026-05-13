@@ -118,16 +118,16 @@ def _time_callable(mx: Any, fn: Callable[[], Any], *, steps: int, warmup: int, n
 
 
 def _metal_memory(mx: Any) -> dict[str, int | None]:
-    metal = getattr(mx, "metal", None)
-    if metal is None:
-        return {}
     out: dict[str, int | None] = {}
     for label, attr in {
         "active_memory_bytes": "get_active_memory",
         "peak_memory_bytes": "get_peak_memory",
         "cache_memory_bytes": "get_cache_memory",
     }.items():
-        getter = getattr(metal, attr, None)
+        getter = getattr(mx, attr, None)
+        if getter is None:
+            metal = getattr(mx, "metal", None)
+            getter = getattr(metal, attr, None) if metal is not None else None
         if getter is not None:
             try:
                 out[label] = int(getter())

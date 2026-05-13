@@ -44,7 +44,29 @@ worse.
 - Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
   until the measurement track justifies implementation.
 
-## Latest Local Measurement
+## Latest Terminal Measurement
+
+Recorded from a normal Terminal session on the same Apple M4 Max host:
+
+- macOS: `26.3.1`
+- MLX: `0.31.2`
+- Candidate: synthetic reference-model DPO sigmoid loss
+- Shape: `batch_size=32`
+- Steps: `100`, warmup: `10`
+- Memory: active `540` bytes, peak `1080` bytes, cache `680` bytes
+
+| Mode | First Step | Steady Mean | Steady P50 |
+| --- | ---: | ---: | ---: |
+| eager | `0.095464s` | `0.000240s` | `0.000217s` |
+| compiled | `0.234942s` | `0.000177s` | `0.000172s` |
+
+Interpretation: `mx.compile` improves this tiny synthetic loss by about 26%
+at steady state, but first-step latency is about 2.5x eager. This is useful
+signal, but not enough to enable a production compiled path by default:
+larger shapes, label smoothing, GRPO loss reductions, and model-adjacent
+memory pressure still need measurement.
+
+## Codex Runner Measurement
 
 Attempted from the Codex workspace on an Apple M4 Max host:
 
