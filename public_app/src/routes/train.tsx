@@ -36,13 +36,14 @@ import {
 } from "@/components/ui/select";
 import {
   useBackendInfo,
+  useModelCatalog,
   useTrainingDatasets,
   useTrainingLaunch,
   useTrainingModels,
   useTrainingPreflight,
   useTrainingVerifiers,
 } from "@/lib/hooks";
-import type { ModelCatalogEntry } from "@/lib/api";
+import type { BackendInfo, ModelCatalogEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/train")({
@@ -70,6 +71,7 @@ interface ConfigState {
   model: string;
   dataset: string;
   customDatasetFile: string; // when dataset === "__custom__"
+  accelerator: "" | "mlx";
   verifier: string; // RAFT only
   // hyperparameters
   epochs: number;
@@ -88,6 +90,7 @@ function defaultConfig(): ConfigState {
     model: "",
     dataset: "codealpaca",
     customDatasetFile: "",
+    accelerator: "",
     verifier: "gcc",
     epochs: 3,
     batchSize: 2,
@@ -112,9 +115,20 @@ function TrainConfiguratorRoute() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [templateApplied, setTemplateApplied] = useState<string | null>(null);
   const models = useTrainingModels({ mode: config.modality });
+  const mlxModels = useModelCatalog({ mode: config.modality, backend: "mlx" });
+  const mlxReadiness = backend.data?.mlx_readiness;
+  const mlxReady = mlxReadiness?.executable === true;
+  const modelSuggestions = useMemo(
+    () => (mlxReady ? (mlxModels.data?.items ?? []) : (models.data?.items ?? [])),
+    [mlxReady, mlxModels.data?.items, models.data?.items],
+  );
+  const allCatalogModels = useMemo(
+    () => [...(models.data?.items ?? []), ...(mlxModels.data?.items ?? [])],
+    [models.data?.items, mlxModels.data?.items],
+  );
   const selectedModel = useMemo(
-    () => models.data?.items.find((item) => item.id === config.model) ?? null,
-    [config.model, models.data?.items],
+    () => allCatalogModels.find((item) => item.id === config.model) ?? null,
+    [allCatalogModels, config.model],
   );
   const currentPreflightStatus = preflightStatus(preflight, config);
 
@@ -124,6 +138,7 @@ function TrainConfiguratorRoute() {
       ...prev,
       model: modelId,
       modality: mode === "raft" || mode === "sft" ? mode : prev.modality,
+      accelerator: isMlxModel(modelId) ? "mlx" : prev.accelerator,
     }));
   }, [modelId, mode]);
 
@@ -153,6 +168,7 @@ function TrainConfiguratorRoute() {
       verifier: typeof t.verifier === "string" ? t.verifier : prev.verifier,
       epochs: typeof hp.epochs === "number" ? hp.epochs : prev.epochs,
       batchSize: typeof hp.batch_size === "number" ? hp.batch_size : prev.batchSize,
+      accelerator: hp.accelerator === "mlx" || isMlxModel(t.model_hint) ? "mlx" : prev.accelerator,
       learningRate: typeof hp.learning_rate === "number"
         ? hp.learning_rate.toString()
         : prev.learningRate,
@@ -169,9 +185,15 @@ function TrainConfiguratorRoute() {
   // once the suggestion list arrives. Don't overwrite a user-typed value
   // and don't overwrite a template-supplied value.
   useEffect(() => {
-    if (modelId || config.model || !models.data?.items.length || templateApplied) return;
-    setConfig((prev) => ({ ...prev, model: models.data!.items[0].id }));
-  }, [models.data, config.model, templateApplied, modelId]);
+    if (modelId || config.model || !modelSuggestions.length || templateApplied) return;
+    const first = modelSuggestions[0].id;
+    setConfig((prev) => ({
+      ...prev,
+      model: first,
+      accelerator: mlxReady && isMlxModel(first) ? "mlx" : prev.accelerator,
+      batchSize: mlxReady && isMlxModel(first) ? 1 : prev.batchSize,
+    }));
+  }, [modelSuggestions, config.model, templateApplied, modelId, mlxReady]);
 
   // Live preflight: 400ms debounce on form changes. The mutation status
   // gives us loading / success / error states to render in the side panel.
@@ -189,6 +211,7 @@ function TrainConfiguratorRoute() {
     config.model,
     config.dataset,
     config.customDatasetFile,
+    config.accelerator,
     config.verifier,
   ]);
 
@@ -220,9 +243,11 @@ function TrainConfiguratorRoute() {
           <>
             <ReadoutItem label="MODE" value={config.modality.toUpperCase()} />
             <ReadoutSep />
-            <ReadoutItem label="BACKEND" value={backend.data?.name ?? "—"} />
-            <ReadoutSep />
-            <ReadoutItem
+          <ReadoutItem label="BACKEND" value={backend.data?.name ?? "—"} />
+          <ReadoutSep />
+          <ReadoutItem label="MLX" value={mlxReady ? "READY" : mlxReadiness?.status?.toUpperCase() ?? "—"} />
+          <ReadoutSep />
+          <ReadoutItem
               label="MODEL"
               value={config.model ? truncate(config.model, 28) : "—"}
             />
@@ -233,6 +258,7 @@ function TrainConfiguratorRoute() {
       <div className="px-5 py-5 space-y-4">
         <FirstRunPanel
           backendName={backend.data?.name}
+          mlxReadiness={mlxReadiness}
           onApply={(next) => setConfig((prev) => ({ ...prev, ...next }))}
         />
 
@@ -243,8 +269,9 @@ function TrainConfiguratorRoute() {
             <ModelSection
               config={config}
               setConfig={setConfig}
-              models={models.data?.items ?? []}
+              models={modelSuggestions}
               selectedModel={selectedModel}
+              mlxReady={mlxReady}
             />
             <DatasetSection
               config={config}
@@ -270,7 +297,7 @@ function TrainConfiguratorRoute() {
           <div className="lg:sticky lg:top-4 self-start space-y-3">
             <PreflightPanel
               preflightStatus={currentPreflightStatus}
-              checks={buildPreflightChecks(config, preflight, backend.data?.name)}
+              checks={buildPreflightChecks(config, preflight, backend.data?.name, mlxReadiness)}
             />
             <LaunchPanel
               config={config}
@@ -294,16 +321,24 @@ function TrainConfiguratorRoute() {
 
 function FirstRunPanel({
   backendName,
+  mlxReadiness,
   onApply,
 }: {
   backendName?: string;
+  mlxReadiness?: BackendInfo["mlx_readiness"];
   onApply: (partial: Partial<ConfigState>) => void;
 }) {
-  const appleMlx = backendName === "mlx";
+  const mlxReady = mlxReadiness?.executable === true;
+  const appleMlx = backendName === "mlx" || mlxReady;
   const appleTorch = backendName === "mps";
   const firstModel = appleMlx
-    ? "mlx-community/Qwen2.5-3B-Instruct-bf16"
+    ? "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
     : "Qwen/Qwen2.5-Coder-1.5B";
+  const statusText = mlxReady
+    ? "MLX ready"
+    : mlxReadiness?.status
+      ? `MLX ${mlxReadiness.status}`
+      : "MLX checking";
 
   return (
     <div className="rounded-lg border border-border bg-surface px-4 py-3">
@@ -315,6 +350,16 @@ function FirstRunPanel({
             </span>
             <span className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-fg-disabled">
               {backendName ? `backend:${backendName}` : "detecting backend"}
+            </span>
+            <span
+              className={cn(
+                "rounded-sm border px-1.5 py-0.5 font-mono text-[10px]",
+                mlxReady
+                  ? "border-success/40 text-success"
+                  : "border-border-subtle text-fg-disabled",
+              )}
+            >
+              {statusText}
             </span>
           </div>
           <p className="mt-1 text-[13px] text-fg-muted">
@@ -332,6 +377,7 @@ function FirstRunPanel({
                 modality: "sft",
                 model: firstModel,
                 dataset: "codealpaca",
+                accelerator: appleMlx ? "mlx" : "",
                 epochs: 1,
                 batchSize: appleMlx || appleTorch ? 1 : 2,
               })
@@ -347,11 +393,14 @@ function FirstRunPanel({
             onClick={() =>
               onApply({
                 modality: "raft",
-                model: "Qwen/Qwen2.5-Coder-1.5B",
+                model: appleMlx
+                  ? "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+                  : "Qwen/Qwen2.5-Coder-1.5B",
                 dataset: "codealpaca",
+                accelerator: appleMlx ? "mlx" : "",
                 verifier: "gcc",
-                cycles: 2,
-                samplesPerPrompt: 4,
+                cycles: appleMlx ? 1 : 2,
+                samplesPerPrompt: appleMlx ? 2 : 4,
               })
             }
           >
@@ -412,11 +461,13 @@ function ModelSection({
   setConfig,
   models,
   selectedModel,
+  mlxReady,
 }: {
   config: ConfigState;
   setConfig: SetConfig;
   models: ModelCatalogEntry[];
   selectedModel: ModelCatalogEntry | null;
+  mlxReady: boolean;
 }) {
   return (
     <Card>
@@ -433,7 +484,14 @@ function ModelSection({
           mono
           placeholder="Qwen/Qwen2.5-Coder-3B"
           value={config.model}
-          onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
+          onChange={(e) =>
+            setConfig((c) => ({
+              ...c,
+              model: e.target.value,
+              accelerator: isMlxModel(e.target.value) && mlxReady ? "mlx" : c.accelerator,
+              batchSize: isMlxModel(e.target.value) && mlxReady ? 1 : c.batchSize,
+            }))
+          }
         />
         {models.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 pt-1">
@@ -444,7 +502,14 @@ function ModelSection({
               <button
                 key={m.id}
                 type="button"
-                onClick={() => setConfig((c) => ({ ...c, model: m.id }))}
+                onClick={() =>
+                  setConfig((c) => ({
+                    ...c,
+                    model: m.id,
+                    accelerator: isMlxModel(m.id) && mlxReady ? "mlx" : c.accelerator,
+                    batchSize: isMlxModel(m.id) && mlxReady ? 1 : c.batchSize,
+                  }))
+                }
                 title={(m.known_caveats ?? []).length ? (m.known_caveats ?? []).join(" ") : m.recommended_use}
                 className={cn(
                   "px-2 py-0.5 rounded-sm border text-[11px] font-mono transition-colors",
@@ -969,6 +1034,7 @@ function RunSummary({
 }) {
   const rows = [
     ["Mode", config.modality.toUpperCase()],
+    ["Accelerator", config.accelerator || "auto"],
     ["Model", config.model || "not set"],
     ["Dataset", config.dataset === "__custom__" ? config.customDatasetFile || "custom path needed" : config.dataset],
     ["Memory", selectedModel?.estimated_memory_gb ? `${selectedModel.memory_tier || "unknown"} · ~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "unknown"],
@@ -1028,6 +1094,7 @@ function buildLaunchPayload(c: ConfigState): Record<string, unknown> {
       // suffix (.jsonl) and routed to load_local_dataset internally.
       dataset: isCustom ? c.customDatasetFile : c.dataset,
       output_dir: `models/sft-${slug(c.model)}`,
+      accelerator: c.accelerator || (isMlxModel(c.model) ? "mlx" : undefined),
       epochs: c.epochs,
       batch_size: c.batchSize,
       learning_rate: Number.isFinite(lr) ? lr : undefined,
@@ -1043,6 +1110,7 @@ function buildLaunchPayload(c: ConfigState): Record<string, unknown> {
     model: c.model,
     prompts: isCustom ? c.customDatasetFile : c.dataset,
     output_dir: `models/raft-${slug(c.model)}`,
+    accelerator: c.accelerator || (isMlxModel(c.model) ? "mlx" : undefined),
     cycles: c.cycles,
     samples_per_prompt: c.samplesPerPrompt,
     temperature: undefined, // wired in advanced section in a future iteration
@@ -1062,6 +1130,10 @@ function stripEmpty(o: Record<string, unknown>): Record<string, unknown> {
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+}
+
+function isMlxModel(model: string | undefined): boolean {
+  return Boolean(model && model.startsWith("mlx-community/"));
 }
 
 function canLaunch(c: ConfigState): boolean {
@@ -1086,7 +1158,9 @@ function buildPreflightChecks(
   config: ConfigState,
   preflight: ReturnType<typeof useTrainingPreflight>,
   backendName: string | undefined,
+  mlxReadiness: BackendInfo["mlx_readiness"] | undefined,
 ): PreflightCheck[] {
+  const wantsMlx = config.accelerator === "mlx" || isMlxModel(config.model);
   const checks: PreflightCheck[] = [
     {
       label: "Backend connected",
@@ -1114,6 +1188,16 @@ function buildPreflightChecks(
           : config.dataset,
     },
   ];
+
+  if (wantsMlx) {
+    checks.push({
+      label: "MLX readiness",
+      status: mlxReadiness?.executable ? "ok" : mlxReadiness ? "warning" : "loading",
+      detail: mlxReadiness?.executable
+        ? "MLX executable probe passed"
+        : mlxReadiness?.errors?.[0] ?? mlxReadiness?.warnings?.[0] ?? "Checking MLX runtime",
+    });
+  }
 
   if (config.modality === "raft") {
     checks.push({

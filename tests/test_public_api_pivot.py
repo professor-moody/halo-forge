@@ -224,6 +224,8 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "Base model" in train_source
     assert "Launch summary" in train_source
     assert "MLX Ready" in start_source
+    assert "MLX readiness" in train_source
+    assert "accelerator" in train_source
     assert "Run detail view" in run_source
     assert 'label="STATUS"' in run_source
     assert "Results view in progress" in results_source
@@ -260,9 +262,10 @@ def test_public_api_transport_exposes_public_workflows():
                 "gradient_accumulation_steps": 4,
                 "max_samples": 200,
                 "learning_rate": 2e-4,
+                "accelerator": "mlx",
             },
             "sft",
-            {"learning_rate": 2e-4, "max_samples": 200},
+            {"learning_rate": 2e-4, "max_samples": 200, "accelerator": "mlx"},
             {"temperature", "reward_threshold", "limit", "samples_per_prompt"},
         ),
         (
