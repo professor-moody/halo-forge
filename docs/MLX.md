@@ -11,7 +11,8 @@ MLX support has moved past the original staged port. Current status:
 | Inference (text generation) | ✅ shipped | via `--accelerator mlx` CLI flag |
 | LoRA SFT | ✅ shipped | MLX-native trainer path |
 | RAFT / RLVR | ✅ shipped | MLX-native RAFT path |
-| DPO / GRPO | 🟡 partial | DPO sigmoid supports reference-free and reference-model; GRPO remains reference-free v1 |
+| DPO sigmoid | ✅ shipped | reference-free and reference-model paths |
+| GRPO | 🟡 partial | reference-free v1; reference-model GRPO remains roadmap |
 | MPS fallback telemetry | ✅ shipped | dashboard warning-line counter |
 | Chip-tier surfacing | ✅ shipped | telemetry/backend metadata only, no auto-tuning |
 
@@ -121,6 +122,54 @@ by `halo-forge doctor mlx`. The dashboard Start flow recommends an MLX-format
 model only when that executable probe passes; otherwise it falls back to the
 MPS-safe first-run path and shows the readiness error.
 
+### Expected doctor shapes
+
+Ready terminal sessions report an executable GPU probe:
+
+```json
+{
+  "status": "ready",
+  "executable": true,
+  "probe": {"default_device": "Device(gpu, 0)", "value": 6.0}
+}
+```
+
+Headless or sandboxed sessions can still import MLX but fail at array
+execution. Halo Forge reports that as `unavailable`, not as a crash:
+
+```json
+{
+  "status": "unavailable",
+  "executable": false,
+  "errors": ["No Metal device available"]
+}
+```
+
+## Live MLX acceptance
+
+For a release-confidence pass from a normal Apple Silicon Terminal:
+
+```bash
+python scripts/run_mlx_smoke.py --output-dir runs/mlx-smoke
+```
+
+The script writes `runs/mlx-smoke/mlx_smoke_summary.json`. A healthy MLX host
+should pass the SFT/RAFT live smoke, DPO reference-free sigmoid live smoke, DPO
+reference-model sigmoid live smoke, and GRPO reference-free live smoke. The only
+expected skip is `mlx_dpo_non_sigmoid_variants`, because IPO / hinge / KTO are
+still measurement-gated.
+
+## MLX training support matrix
+
+| Trainer | MLX status | Notes |
+|---|---|---|
+| SFT | ✅ supported | MLX LoRA path via `mlx_lm.tuner` |
+| RAFT / RLVR | ✅ supported | MLX rollout + verifier filtering + MLX SFT update |
+| DPO sigmoid | ✅ supported | reference-free and reference-model |
+| DPO IPO / hinge / KTO | ❌ gated | typed unsupported until memory measurements justify |
+| GRPO | ⚠️ reference-free | single-cycle policy update; reference-model GRPO is roadmap |
+| Reward model | ❌ roadmap | use PyTorch MPS/CUDA/ROCm today |
+
 ## Experimental M5 Neural Accelerator flag
 
 `supports_neural_accelerators` is reported only when the active MLX backend sees an Apple M5-generation chip on macOS 26.2 or newer. Trainer configs expose `enable_neural_accelerators=False` as an explicit opt-in and validate it at trainer initialization.
@@ -139,6 +188,7 @@ PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTOR
 - **MLX DPO completion**: sigmoid supports reference-free and reference-model paths.
   Non-sigmoid loss variants remain gated until larger terminal measurements justify
   the memory behavior.
-- **Serving I3 follow-up**: speculative decoding remains opt-in future work after streaming support.
+- **Serving follow-up**: speculative decoding and native token streaming remain
+  opt-in future work after the shipped OpenAI-shaped streaming surface.
 
 The verifier sandbox at [halo_forge/rlvr/verifiers/execution_runner.py](../halo_forge/rlvr/verifiers/execution_runner.py) is already cross-platform via macOS-native `sandbox-exec`, so MLX RLVR doesn't need any sandbox work — only the policy/optimizer side changes.

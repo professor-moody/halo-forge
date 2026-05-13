@@ -28,6 +28,18 @@ halo-forge doctor mlx --json
 usually means the process cannot see a Metal device, which can happen in
 headless or sandboxed shells even when a normal Terminal works.
 
+Ready JSON includes the executable probe:
+
+```json
+{"status": "ready", "executable": true, "probe": {"default_device": "Device(gpu, 0)"}}
+```
+
+Headless sessions should fail softly:
+
+```json
+{"status": "unavailable", "executable": false, "errors": ["No Metal device available"]}
+```
+
 ## 3. Start with SFT
 
 Use a small MLX-format model first:
@@ -72,6 +84,10 @@ halo-forge --accelerator mlx dpo train \
   --batch-size 1
 ```
 
+MLX supports sigmoid DPO in both reference-free and reference-model modes. Keep
+IPO, hinge, and KTO on the PyTorch backends until the MLX memory measurements
+justify those variants.
+
 GRPO reasoning:
 
 ```bash
@@ -92,6 +108,28 @@ python scripts/run_mlx_smoke.py --output-dir runs/mlx-smoke
 ```
 
 The script writes `mlx_smoke_summary.json` and leaves repo fixtures untouched.
+Expected passing checks on a healthy Apple Silicon Terminal:
+
+- `mlx_sft_raft_live_smoke`
+- `mlx_dpo_reference_free_live_smoke`
+- `mlx_dpo_reference_model_live_smoke`
+- `mlx_grpo_reference_free_live_smoke`
+- `mlx_dpo_loss_unit`
+- `mlx_dpo_reference_model_terminal`
+- `mlx_grpo_terminal`
+
+The only expected skip is `mlx_dpo_non_sigmoid_variants`.
+
+## Support matrix
+
+| Trainer | MLX status |
+|---|---|
+| SFT | supported |
+| RAFT / RLVR | supported |
+| DPO sigmoid | reference-free and reference-model supported |
+| DPO IPO / hinge / KTO | measurement-gated |
+| GRPO | reference-free supported |
+| Reward model | roadmap |
 
 ## Troubleshooting
 

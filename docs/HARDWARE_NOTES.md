@@ -5,7 +5,7 @@ Performance findings and per-backend recommendations.
 - [Feature × backend matrix](#feature--backend-matrix) — what works where, today
 - [AMD Strix Halo (gfx1151)](#amd-strix-halo-gfx1151) — first-class, original target
 - [Apple Silicon (PyTorch MPS)](#apple-silicon-pytorch-mps) — Mac primary; supported now
-- [Apple Silicon (MLX)](#apple-silicon-mlx) — roadmap; staged delivery
+- [Apple Silicon (MLX)](#apple-silicon-mlx) — first-class for supported native paths
 - [NVIDIA CUDA](#nvidia-cuda) — falls out of the ROCm code path
 - [CPU only](#cpu-only) — last-resort fallback
 
@@ -55,7 +55,7 @@ Legend: ✅ supported · ⚠️ supported with caveats (see footnotes) · ❌ no
 
 1. **MPS** training works for 1B-3B models; 7B+ may hit dtype / memory edges (see MPS section).
 2. **CPU** training "works" for tiny models or smoke tests — production runs are infeasible.
-3. **MLX DPO** v1 ships **reference-free** sigmoid DPO only (`--reference-free`). Pass that flag and the MLX-native trainer runs end-to-end on Apple Silicon. Reference-model DPO (loading two copies of the base) and other loss types (IPO / hinge / kto_pair) raise typed `NotImplementedError` pointing at the exact knob — they require the dual-model memory footprint and are roadmap follow-ups for T17. The [mlx-lm-lora community fork](https://github.com/Goekdeniz-Guelmez/mlx-lm-lora) covers the full reference-model surface today.
+3. **MLX DPO** supports sigmoid DPO in both reference-free and reference-model modes. Other loss types (IPO / hinge / kto_pair) raise typed `NotImplementedError` until the MLX measurement track justifies their memory and latency behavior.
 4. **QLoRA / bnb-optim on Strix Halo** depends on community-built bitsandbytes-rocm wheels. They exist but aren't always current; if a load fails, set `allow_quantization_fallback=True` to drop to bf16.
 5. **QLoRA on MPS / MLX / CPU**: bitsandbytes has no Apple Silicon kernels. The trainer warns and falls back to bf16 (or fails loudly if you set `allow_quantization_fallback=False`).
 6. **PEFT on MLX**: `mlx_lm.tuner` only ships LoRA. Setting `--use-dora`, `--use-rslora`, or `--init-lora-weights pissa` on the MLX backend now prints a loud warning at trainer init so you know the flag was ignored. PyTorch backends honor all four.

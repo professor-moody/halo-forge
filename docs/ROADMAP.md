@@ -13,19 +13,29 @@ scratch plans may still describe already-shipped tracks as future work.
   public API, dashboard quick-picks, and docs.
 - **First-run UI polish**: training presets, model decision details, launch
   summaries, model intent filters, and dashboard docs alignment.
+- **First Run Experience v2**: guided `/start` backend detection, MLX readiness,
+  safe model recommendation, preflight, launch, and route-to-run flow.
+- **Model Catalog v2**: first-run ranking, memory estimates, license/download
+  notes, risk levels, and MLX catalog/template alignment.
+- **Serving streaming**: `/v1/chat/completions` and `/v1/completions` support
+  OpenAI-shaped `text/event-stream` responses ending in `data: [DONE]`.
+- **MLX compile measurement**: terminal harness and recorded DPO sigmoid
+  measurement; production compiled trainer paths remain disabled.
+- **MLX sigmoid DPO**: reference-free and reference-model sigmoid DPO run on
+  MLX; non-sigmoid losses remain gated.
 
 ## Next Tracks
 
-1. **First Run Experience v2**: guided `/start` flow that detects the backend,
-   chooses safe catalog defaults, preflights, launches, and routes to the run.
-2. **Model Catalog v2**: decision metadata, memory estimates, first-run ranking,
-   license/download warnings, and clearer risk levels.
-3. **Serving I3**: OpenAI-compatible streaming responses; speculative decoding is
-   a later opt-in flag after streaming lands.
-4. **MLX compile measurement**: measure `mx.compile` candidates for DPO/GRPO
-   loss paths before enabling any compiled default.
-5. **MLX DPO completion**: non-sigmoid DPO losses after the measurement track
-   establishes memory and latency behavior.
+1. **MLX productization**: live terminal acceptance for SFT, RAFT, DPO
+   reference-free/reference-model sigmoid, and GRPO reference-free paths.
+2. **Serving QA**: keep OpenAI streaming compatibility tested and documented;
+   native token streaming is a later optimization.
+3. **MLX compile expansion**: measure larger DPO/GRPO shapes before enabling any
+   compiled default.
+4. **MLX DPO variants**: IPO / hinge / KTO only after measurement establishes
+   acceptable memory and latency behavior.
+5. **Reference-model GRPO on MLX**: implement only after dual-model memory is
+   measured on real Apple Silicon hosts.
 
 ## Deferred
 

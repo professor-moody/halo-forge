@@ -230,6 +230,10 @@ def check_mlx_readiness(*, timeout_seconds: float = 10.0) -> MLXReadiness:
             probe = json.loads(stdout.strip().splitlines()[-1])
         except Exception:
             probe = {"stdout": stdout.strip()}
+        default_device = str(probe.get("default_device") or "").lower()
+        if metal and metal.get("metal_supported") is None and "gpu" in default_device:
+            metal = dict(metal)
+            metal["metal_supported"] = True
         return MLXReadiness(
             status="ready",
             executable=True,

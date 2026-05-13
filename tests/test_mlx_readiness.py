@@ -71,6 +71,33 @@ def test_mlx_readiness_enriches_parsed_chip_with_metal_gpu_cores(monkeypatch):
     assert readiness.metal_device["metal_supported"] is True
 
 
+def test_mlx_readiness_infers_metal_supported_from_gpu_probe(monkeypatch):
+    from halo_forge.backend import mlx_readiness as mod
+
+    monkeypatch.setattr(
+        mod,
+        "_package_version",
+        lambda name: {"mlx": "0.31.2", "mlx-lm": "0.31.3"}.get(name),
+    )
+    monkeypatch.setattr(mod, "_chip_info", lambda: {"brand": "M4 Max", "generation": 4})
+    monkeypatch.setattr(
+        mod,
+        "_metal_device",
+        lambda: {"model": "Apple M4 Max", "gpu_cores": 32, "metal_supported": None},
+    )
+    monkeypatch.setattr(
+        mod,
+        "_probe_mlx",
+        lambda timeout: (0, '{"default_device":"Device(gpu, 0)","value":6.0}\n', ""),
+    )
+
+    readiness = mod.check_mlx_readiness()
+
+    assert readiness.executable is True
+    assert readiness.metal_device is not None
+    assert readiness.metal_device["metal_supported"] is True
+
+
 def test_metal_supported_parses_system_profiler_values():
     from halo_forge.backend import mlx_readiness as mod
 

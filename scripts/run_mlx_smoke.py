@@ -66,6 +66,42 @@ def main() -> int:
                 [sys.executable, "-m", "pytest", "tests/test_mlx_smoke.py", "-q"],
             )
         )
+        summary["checks"].append(
+            _run(
+                "mlx_dpo_reference_free_live_smoke",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "tests/test_mlx_live_training.py::test_mlx_dpo_live_reference_free_sigmoid_runs_one_cycle",
+                    "-q",
+                ],
+            )
+        )
+        summary["checks"].append(
+            _run(
+                "mlx_dpo_reference_model_live_smoke",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "tests/test_mlx_live_training.py::test_mlx_dpo_live_reference_model_sigmoid_runs_one_cycle",
+                    "-q",
+                ],
+            )
+        )
+        summary["checks"].append(
+            _run(
+                "mlx_grpo_reference_free_live_smoke",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "tests/test_mlx_live_training.py::test_mlx_grpo_live_reference_free_runs_one_cycle",
+                    "-q",
+                ],
+            )
+        )
 
     summary["checks"].append(
         _run(
