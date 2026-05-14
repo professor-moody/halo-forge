@@ -459,6 +459,28 @@ export type RunDetail = {
   };
 };
 
+export type RunLive = {
+  id: string;
+  status: string;
+  progress_percent: number | null;
+  current_step: number | null;
+  total_steps: number | null;
+  current_epoch: number | null;
+  total_epochs: number | null;
+  current_cycle: number | null;
+  total_cycles: number | null;
+  latest_loss: number | null;
+  latest_learning_rate: number | null;
+  latest_grad_norm: number | null;
+  headline?: string | null;
+  next_step?: string | null;
+  top_issue?: string | null;
+  user_summary?: RunUserSummary;
+  metrics_summary?: RunMetricsSummary;
+  primary_action?: Record<string, unknown> | null;
+  research_sections?: unknown[];
+};
+
 export type TrainingDataset = {
   key: string;
   huggingface_id: string;
@@ -691,6 +713,7 @@ export const api = {
       `/runs/${encodeURIComponent(runId)}/samples${qs ? `?${qs}` : ""}`,
     );
   },
+  runLive: (runId: string) => request<RunLive>(`/runs/${encodeURIComponent(runId)}/live`),
   trainingPresets: () => request<{ items: TrainingPreset[] }>("/train/presets"),
   trainingDatasets: () => request<{ items: TrainingDataset[] }>("/train/datasets"),
   trainingVerifiers: () => request<{ items: TrainingVerifier[] }>("/train/verifiers"),

@@ -2,14 +2,18 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRight,
   AlertTriangle,
+  Bot,
   CheckCircle2,
   CircleDashed,
+  Code2,
+  Cpu,
   Loader2,
   Play,
   Rocket,
+  Sigma,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,19 +27,90 @@ import {
   useTrainingPreflight,
 } from "@/lib/hooks";
 import type { BackendInfo, ModelCatalogEntry } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/start")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    goal: typeof search.goal === "string" ? search.goal : undefined,
+  }),
   component: StartRoute,
 });
 
+type StartGoalId = "code" | "reasoning" | "tool-use" | "apple-silicon";
+
+type StartGoal = {
+  id: StartGoalId;
+  title: string;
+  body: string;
+  mode: "sft";
+  dataset: string;
+  query: string;
+  modelFallback: string;
+  outputPrefix: string;
+  icon: typeof Code2;
+  requiresApple?: boolean;
+};
+
+const START_GOALS: StartGoal[] = [
+  {
+    id: "code",
+    title: "Code",
+    body: "Validate local fine-tuning with a small coder model and CodeAlpaca.",
+    mode: "sft",
+    dataset: "codealpaca",
+    query: "code",
+    modelFallback: "Qwen/Qwen2.5-Coder-0.5B",
+    outputPrefix: "code",
+    icon: Code2,
+  },
+  {
+    id: "reasoning",
+    title: "Reasoning",
+    body: "Run a small math/reasoning SFT smoke test with GSM8K-format data.",
+    mode: "sft",
+    dataset: "gsm8k_sft",
+    query: "reasoning",
+    modelFallback: "Qwen/Qwen2.5-1.5B-Instruct",
+    outputPrefix: "reasoning",
+    icon: Sigma,
+  },
+  {
+    id: "tool-use",
+    title: "Tool use",
+    body: "Check function-calling data flow with a compact agentic SFT run.",
+    mode: "sft",
+    dataset: "xlam_sft",
+    query: "agentic",
+    modelFallback: "Qwen/Qwen2.5-1.5B-Instruct",
+    outputPrefix: "tool-use",
+    icon: Bot,
+  },
+  {
+    id: "apple-silicon",
+    title: "Apple Silicon",
+    body: "Use MLX-friendly code defaults when this workstation is ready for MLX.",
+    mode: "sft",
+    dataset: "codealpaca",
+    query: "mlx code",
+    modelFallback: "mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+    outputPrefix: "mlx-code",
+    icon: Cpu,
+    requiresApple: true,
+  },
+];
+
 function StartRoute() {
+  const search = Route.useSearch();
   const backend = useBackendInfo();
   const datasets = useTrainingDatasets();
   const models = useTrainingModels({ mode: "sft" });
   const mlxModels = useModelCatalog({ mode: "sft", backend: "mlx" });
+  const catalog = useModelCatalog({ mode: "sft" });
   const preflight = useTrainingPreflight();
   const launch = useTrainingLaunch();
   const lastPreflightKey = useRef<string | null>(null);
+  const initialGoal = START_GOALS.find((goal) => goal.id === search.goal)?.id ?? "code";
+  const [goalId, setGoalId] = useState<StartGoalId>(initialGoal);
 
   const mlxReadiness = backend.data?.mlx_readiness;
   const mlxReady = mlxReadiness?.executable === true;
@@ -46,30 +121,62 @@ function StartRoute() {
       mlxReadiness?.macos_version ||
       mlxReadiness?.metal_device,
   );
-  const modelCandidates = mlxReady ? (mlxModels.data?.items ?? []) : (models.data?.items ?? []);
-  const recommended = useMemo(() => selectFirstRunModel(modelCandidates), [modelCandidates]);
-  const dataset = datasets.data?.items.find((item) => item.key === "codealpaca")
-    ? "codealpaca"
-    : datasets.data?.items[0]?.key ?? "";
+  const selectedGoal = START_GOALS.find((goal) => goal.id === goalId) ?? START_GOALS[0];
+  const modelCandidates = useMemo(() => {
+    const raw =
+      selectedGoal.id === "apple-silicon" && mlxReady
+        ? (mlxModels.data?.items ?? [])
+        : (catalog.data?.items ?? models.data?.items ?? []);
+    const backendName = backend.data?.name;
+    if (!backendName) return raw;
+    const compatible = raw.filter((item) => item.backend_support.includes(backendName));
+    return compatible.length ? compatible : raw;
+  }, [
+    backend.data?.name,
+    catalog.data?.items,
+    mlxModels.data?.items,
+    mlxReady,
+    models.data?.items,
+    selectedGoal.id,
+  ]);
+  const recommended = useMemo(
+    () => selectGoalModel(modelCandidates, selectedGoal),
+    [modelCandidates, selectedGoal],
+  );
+  const dataset =
+    datasets.data?.items.find((item) => item.key === selectedGoal.dataset)?.key ??
+    selectedGoal.dataset;
   const payload = useMemo(
     () =>
       backend.data && recommended && dataset
         ? {
-            mode: "sft",
+            mode: selectedGoal.mode,
             model: recommended.id,
             dataset,
-            output_dir: `models/first-run-${slug(recommended.id)}`,
-            accelerator: mlxReady ? "mlx" : undefined,
+            output_dir: `models/start-${selectedGoal.outputPrefix}-${slug(recommended.id)}`,
+            accelerator: selectedGoal.id === "apple-silicon" && mlxReady ? "mlx" : undefined,
             epochs: 1,
-            batch_size: mlxReady || backend.data?.name === "mlx" || backend.data?.name === "mps" ? 1 : 2,
+            batch_size:
+              selectedGoal.id === "apple-silicon" ||
+              mlxReady ||
+              backend.data?.name === "mlx" ||
+              backend.data?.name === "mps"
+                ? 1
+                : 2,
             learning_rate: 2e-4,
             max_samples: 200,
           }
         : null,
-    [backend.data?.name, dataset, mlxReady, recommended],
+    [backend.data, dataset, mlxReady, recommended, selectedGoal],
   );
 
   const payloadKey = payload ? JSON.stringify(payload) : "";
+
+  useEffect(() => {
+    if (backend.data && selectedGoal.requiresApple && !appleSilicon) {
+      setGoalId("code");
+    }
+  }, [appleSilicon, backend.data, selectedGoal.requiresApple]);
 
   useEffect(() => {
     if (!payload || preflight.isPending || lastPreflightKey.current === payloadKey) return;
@@ -87,14 +194,14 @@ function StartRoute() {
       ? "Fix preflight"
       : preflight.isPending
         ? "Checking..."
-        : "Launch first run";
+        : `Launch ${selectedGoal.title.toLowerCase()} run`;
 
   return (
     <>
       <Topbar
         eyebrow="Workspace"
         title="Start"
-        subtitle="A guided first run using safe catalog defaults and preflight before launch."
+        subtitle="Pick a goal. Halo Forge chooses safe SFT defaults and checks the launch first."
         actions={
           <Button asChild variant="ghost" size="sm">
             <Link to="/train">
@@ -105,21 +212,39 @@ function StartRoute() {
       />
 
       <div className="px-5 py-5 space-y-4">
+        <section className="grid gap-2 lg:grid-cols-4">
+          {START_GOALS.map((goal) => (
+            <GoalButton
+              key={goal.id}
+              goal={goal}
+              active={goal.id === selectedGoal.id}
+              disabled={goal.requiresApple && !appleSilicon}
+              onClick={() => {
+                setGoalId(goal.id);
+                lastPreflightKey.current = null;
+                preflight.reset();
+                launch.reset();
+              }}
+            />
+          ))}
+        </section>
+
         <div className="rounded-lg border border-border bg-surface px-4 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
+            <div className="min-w-0 max-w-[86ch]">
               <div className="flex items-center gap-2">
                 <Rocket className="h-4 w-4 text-accent" />
-                <span className="text-sm font-semibold text-fg">First successful run</span>
+                <span className="text-sm font-semibold text-fg">{selectedGoal.title} first run</span>
               </div>
               <p className="mt-1 text-[13px] text-fg-muted">
-                Halo Forge will use a small catalog model, a known dataset, and conservative
-                SFT settings so the first launch proves the machine and data path.
+                {selectedGoal.body} The page keeps the settings conservative and lets preflight
+                catch missing data, model, or backend issues before launch.
               </p>
             </div>
             <Button
               variant="primary"
               size="md"
+              className="shrink-0"
               disabled={!ready || launch.isPending}
               onClick={() => payload && launch.mutate(payload)}
             >
@@ -189,13 +314,23 @@ function StartRoute() {
             {payload ? <LaunchPreview payload={payload} model={recommended} /> : null}
             {preflight.data ? <PreflightMessages data={preflight.data} /> : null}
             {runId ? (
-              <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-bg px-3 py-2">
-                <span className="font-mono text-[11px] text-success">Started {runId}</span>
-                <Button asChild size="sm" variant="ghost">
-                  <Link to="/runs/$runId" params={{ runId }}>
-                    Open run <ArrowRight />
-                  </Link>
-                </Button>
+              <div className="rounded-md border border-success/30 bg-success-bg px-3 py-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-[12px] font-medium text-success">Run started</div>
+                    <div className="mt-1 font-mono text-[11px] text-success">{runId}</div>
+                    {payload ? (
+                      <div className="mt-1 text-[11px] text-fg-muted">
+                        {String(payload.model)} · {String(payload.dataset)} · {String(payload.output_dir)}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button asChild size="sm" variant="ghost">
+                    <Link to="/runs/$runId" params={{ runId }}>
+                      Open run <ArrowRight />
+                    </Link>
+                  </Button>
+                </div>
               </div>
             ) : null}
             {launch.error ? (
@@ -207,6 +342,50 @@ function StartRoute() {
         </Card>
       </div>
     </>
+  );
+}
+
+function GoalButton({
+  goal,
+  active,
+  disabled,
+  onClick,
+}: {
+  goal: StartGoal;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const Icon = goal.icon;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "rounded-lg border px-3 py-3 text-left transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        active
+          ? "border-accent bg-accent/10"
+          : "border-border bg-surface hover:border-border-strong hover:bg-surface-hover/40",
+        disabled && "cursor-not-allowed opacity-50 hover:border-border hover:bg-surface",
+      )}
+      aria-pressed={active}
+    >
+      <div className="flex items-center gap-2">
+        <Icon className={cn("h-4 w-4", active ? "text-accent" : "text-fg-subtle")} />
+        <span className="text-[13px] font-semibold text-fg">{goal.title}</span>
+        {active ? (
+          <Badge tone="success" size="sm">
+            selected
+          </Badge>
+        ) : null}
+      </div>
+      <p className="mt-1.5 text-[11.5px] leading-5 text-fg-muted">{goal.body}</p>
+      {disabled ? (
+        <p className="mt-1 text-[10.5px] text-warning">Apple/MLX not detected on this host.</p>
+      ) : null}
+    </button>
   );
 }
 
@@ -324,8 +503,30 @@ function LaunchPreview({
   );
 }
 
-function selectFirstRunModel(items: ModelCatalogEntry[]): ModelCatalogEntry | null {
-  return items.find((item) => item.recommended_first_run && item.risk_level === "safe") ?? items[0] ?? null;
+function selectGoalModel(items: ModelCatalogEntry[], goal: StartGoal): ModelCatalogEntry | null {
+  const q = goal.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const matching = items.filter((item) => {
+    const haystack = [
+      item.id,
+      item.label,
+      item.family,
+      item.recommended_use,
+      ...(item.tasks ?? []),
+      ...(item.modalities ?? []),
+      ...(item.trainer_support ?? []),
+      ...(item.backend_support ?? []),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return q.every((token) => haystack.includes(token));
+  });
+  const candidates = matching.length ? matching : items;
+  return (
+    candidates.find((item) => item.id === goal.modelFallback) ??
+    candidates.find((item) => item.recommended_first_run && item.risk_level === "safe") ??
+    candidates[0] ??
+    null
+  );
 }
 
 function modelMemoryLabel(model: ModelCatalogEntry | null): string {

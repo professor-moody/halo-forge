@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Cpu,
+  CheckCircle2,
+  CircleAlert,
   Layers,
   Loader2,
   Pin,
@@ -16,7 +18,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { api, type CycleMetric, type RunCost, type RunDetail } from "@/lib/api";
+import { api, type CycleMetric, type RunCost, type RunDetail, type RunLive } from "@/lib/api";
+import { useEventSource } from "@/lib/event-source";
 import { queryKeys } from "@/lib/hooks";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
@@ -69,12 +72,19 @@ function RunDetailRoute() {
     refetchIntervalInBackground: false,
   });
   const data = detailQuery.data;
+  const detailStatus = data?.status ?? "";
+  const detailIsLive = isJobRunning(detailStatus);
+  const liveStream = useEventSource<RunLive>(
+    detailIsLive ? `/api/public/runs/${encodeURIComponent(runId)}/events` : null,
+  );
+  const live = liveStream.data;
+  const displayStatus = live?.status ?? data?.status;
 
   const cycleMetrics = useMemo<CycleMetric[]>(() => {
     return (data?.details?.cycle_metrics ?? []) as CycleMetric[];
   }, [data]);
 
-  const isLive = isJobRunning(data?.status);
+  const isLive = isJobRunning(displayStatus);
 
   // Phase F — pinning. Pinned runs accumulate in localStorage and feed
   // the comparison route at /runs/compare. Cap is enforced by the store
@@ -163,7 +173,7 @@ function RunDetailRoute() {
         }
         statusBar={
           <>
-            <ReadoutItem label="STATUS" value={String(data?.status ?? "—")} />
+            <ReadoutItem label="STATUS" value={plainRunStatus(displayStatus, liveStream.status, liveStream.error)} />
             <ReadoutSep />
             <ReadoutItem
               label="STARTED"
@@ -191,6 +201,7 @@ function RunDetailRoute() {
         <ErrorState message="Run not found." />
       ) : (
         <div className="px-5 py-5 space-y-4">
+          <LiveSummary data={data} live={live} streamStatus={liveStream.status} streamError={liveStream.error} />
           <StatRibbon data={data} />
 
           {/* Cycle scrubber — playback head for the charts below. */}
@@ -235,6 +246,89 @@ function RunDetailRoute() {
         </div>
       )}
     </>
+  );
+}
+
+function LiveSummary({
+  data,
+  live,
+  streamStatus,
+  streamError,
+}: {
+  data: RunDetail;
+  live: RunLive | null;
+  streamStatus: "idle" | "connecting" | "open" | "closed" | "error";
+  streamError: string | null;
+}) {
+  const status = live?.status ?? data.status;
+  const isTerminal = ["completed", "failed", "stopped", "cancelled", "canceled"].includes(
+    String(status ?? "").toLowerCase(),
+  );
+  const loss = live?.latest_loss ?? data.metrics_summary?.final_train_loss ?? null;
+  const steps = live?.current_step ?? data.metrics_summary?.update_steps ?? null;
+  const totalSteps = live?.total_steps ?? null;
+  const cycles = live?.current_cycle ?? data.details?.cycles_executed ?? null;
+  const totalCycles = live?.total_cycles ?? null;
+  const nextStep =
+    live?.next_step ??
+    live?.user_summary?.next_step ??
+    data.user_summary?.next_step ??
+    data.next_step ??
+    (isTerminal ? "Review outputs and compare the run." : "Keep this page open to monitor progress.");
+  const headline =
+    live?.headline ??
+    live?.user_summary?.headline ??
+    data.user_summary?.headline ??
+    data.headline ??
+    (isTerminal ? "Run finished" : "Run monitor");
+  const streamLabel = plainRunStatus(status, streamStatus, streamError);
+  const streamTone =
+    streamStatus === "open" || isTerminal
+      ? "success"
+      : streamStatus === "error"
+        ? "warning"
+        : "neutral";
+
+  return (
+    <Card className="bg-surface/90">
+      <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {streamTone === "success" ? (
+              <CheckCircle2 className="h-4 w-4 text-success" />
+            ) : (
+              <CircleAlert className="h-4 w-4 text-warning" />
+            )}
+            <span className="text-sm font-semibold text-fg">{headline}</span>
+            <Badge tone={streamTone} dot size="sm">
+              {streamLabel}
+            </Badge>
+          </div>
+          <p className="mt-1 max-w-[72ch] text-[12.5px] leading-5 text-fg-muted">
+            {nextStep}
+          </p>
+        </div>
+        <div className="grid min-w-[360px] grid-cols-2 gap-2 lg:grid-cols-4">
+          <LiveMetric label="Loss" value={fmt(loss, 4)} />
+          <LiveMetric label="Steps" value={formatProgress(steps, totalSteps)} />
+          <LiveMetric label="Cycles" value={formatProgress(cycles, totalCycles)} />
+          <LiveMetric label="Artifact" value={data.details?.final_model_available ? "saved" : "pending"} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LiveMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-[0.14em] text-fg-disabled">
+        {label}
+      </div>
+      <div className="mt-1 truncate font-mono text-[12px] text-fg" title={value}>
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -1027,6 +1121,31 @@ function fmtDuration(seconds: number | null | undefined): string {
   if (seconds < 60) return `${seconds.toFixed(0)}s`;
   if (seconds < 3600) return `${(seconds / 60).toFixed(1)}m`;
   return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+function formatProgress(current: number | null | undefined, total: number | null | undefined): string {
+  if (current == null || Number.isNaN(current)) return "—";
+  if (total == null || Number.isNaN(total) || total <= 0) return String(current);
+  return `${current}/${total}`;
+}
+
+function plainRunStatus(
+  status: string | undefined,
+  streamStatus: "idle" | "connecting" | "open" | "closed" | "error",
+  streamError: string | null,
+): string {
+  if (streamError === "Remote token required.") return "auth needed";
+  if (streamStatus === "connecting") return "connecting";
+  if (streamStatus === "error") return "reconnecting";
+  const normalized = String(status ?? "").toLowerCase();
+  if (normalized === "completed") return "completed";
+  if (normalized === "failed") return "failed";
+  if (normalized === "stopped" || normalized === "cancelled" || normalized === "canceled") {
+    return "cancelled";
+  }
+  if (isJobRunning(normalized)) return "running";
+  if (!normalized && streamStatus === "closed") return "backend unreachable";
+  return normalized || "unknown";
 }
 
 function isJobRunning(status: string | undefined): boolean {

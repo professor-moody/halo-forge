@@ -83,7 +83,7 @@ export function LogsPanel({
   const streamUrl = autoTail
     ? `/api/public/runs/${encodeURIComponent(runId)}/logs/stream?tail=${tail}`
     : null;
-  const { data: streamEvent, status: streamStatus } =
+  const { data: streamEvent, status: streamStatus, error: streamError } =
     useEventSource<LogStreamEvent>(streamUrl);
 
   // Buffer all received lines; replace on `reset`, append otherwise.
@@ -128,13 +128,14 @@ export function LogsPanel({
   const lines = linesRef.current;
 
   const isLoading = streamStatus === "connecting" && lines.length === 0;
-  const isUnavailable = !!errorMessage;
+  const isUnavailable = !!errorMessage || (streamStatus === "error" && lines.length === 0);
   // The query-driven `isError` from before mapped to network/status
   // failures; the new SSE world distinguishes "connection lost" (handled
   // by the browser) from "stream emitted error event" (we render).
-  const error = useMemo(() => (isUnavailable ? new Error(errorMessage!) : null), [
+  const error = useMemo(() => (isUnavailable ? new Error(errorMessage ?? streamError ?? "Log stream reconnecting.") : null), [
     isUnavailable,
     errorMessage,
+    streamError,
   ]);
 
   // Auto-scroll handler: if the user was at the bottom when new lines
@@ -223,9 +224,15 @@ export function LogsPanel({
         ) : error ? (
           <div className="px-4 py-12 flex flex-col items-center gap-1.5 text-center">
             <AlertCircle className="h-4 w-4 text-fg-subtle" />
-            <div className="text-[12px] text-fg">{error.message}</div>
+            <div className="text-[12px] text-fg">
+              {error.message === "Remote token required."
+                ? "Remote token required"
+                : "Reconnecting to logs"}
+            </div>
             <div className="text-[11px] text-fg-subtle max-w-[44ch]">
-              Logs land here once the trainer's TeeWriter starts emitting.
+              {error.message === "Remote token required."
+                ? "Open Connection and save a valid workstation token."
+                : "Logs land here once the trainer starts writing, and this panel will reconnect automatically."}
             </div>
           </div>
         ) : !autoTail && lines.length === 0 ? (
@@ -281,7 +288,7 @@ export function LogsPanel({
           </>
         ) : (
           <div className="px-4 py-12 text-center text-xs text-fg-subtle">
-            Log file is empty.
+            Waiting for the trainer to write its first log line.
           </div>
         )}
       </CardContent>

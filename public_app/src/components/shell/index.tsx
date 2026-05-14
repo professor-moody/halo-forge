@@ -45,17 +45,26 @@ function MobileNav() {
         <img src="/mark.svg" alt="" width={18} height={18} />
         halo-forge
       </Link>
-      <MobileNavLink to="/start">Start</MobileNavLink>
+      <MobileNavLink to="/start" search={{ goal: undefined }}>Start</MobileNavLink>
       <MobileNavLink to="/runs">Runs</MobileNavLink>
       <MobileNavLink to="/connect">Connect</MobileNavLink>
     </div>
   );
 }
 
-function MobileNavLink({ to, children }: { to: "/" | "/start" | "/runs" | "/connect"; children: ReactNode }) {
+function MobileNavLink({
+  to,
+  search,
+  children,
+}: {
+  to: "/" | "/start" | "/runs" | "/connect";
+  search?: Record<string, unknown>;
+  children: ReactNode;
+}) {
   return (
     <Link
       to={to}
+      search={search}
       className="rounded-sm px-2 py-1 text-[12px] text-fg-muted hover:bg-surface hover:text-fg"
     >
       {children}

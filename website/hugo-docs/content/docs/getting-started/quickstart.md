@@ -97,13 +97,15 @@ Then visit the dashboard, open **Models** for the curated catalog, **Training te
 
 The dashboard is the easiest way to avoid a bad first launch:
 
-1. Open **Training**.
-2. Use **Safe SFT** for a conservative first run, or **Code RAFT** once SFT preflight is clean.
-3. Check **Base model** for the catalog recommendation, backend support, memory tier, MLX variant, and caveats.
+1. Open **Start**.
+2. Choose a goal: **Code**, **Reasoning**, **Tool use**, or **Apple Silicon**.
+3. Review the generated SFT launch. Start keeps the model, dataset, sample count, and output path conservative.
 4. Watch **Preflight** before launching. It distinguishes missing inputs, backend detection, and server-side launch checks.
-5. Read **Launch summary** before pressing **Launch run**. It shows the mode, model, dataset, memory tier, verifier/cycles for RAFT, and output path.
+5. Press **Launch** when the checks pass, then open the run monitor from the success state.
 
-For model exploration, open **Models** first and use the intent filters: **First run**, **Code RAFT**, **Apple Silicon**, **VLM**, **Audio**, and **Liquid AI**.
+Use **Advanced training** after the first clean SFT run when you want RAFT, VLM, audio, preference tuning, or direct knob control.
+
+For model exploration, open **Models** first and use the workstation filter plus intent filters: **First run**, **Code RAFT**, **Apple Silicon**, **VLM**, **Audio**, and **Liquid AI**.
 
 ## Path 3: Power User
 

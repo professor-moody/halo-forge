@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -263,6 +264,34 @@ def test_public_frontend_remote_auth_regression_contract():
     assert 'reportAuthRequired({ source: "stream"' in stream_source
 
 
+def test_public_frontend_friendly_workstation_contract():
+    start_source = Path("public_app/src/routes/start.tsx").read_text(encoding="utf-8")
+    run_source = Path("public_app/src/routes/runs.$runId.tsx").read_text(encoding="utf-8")
+    models_source = Path("public_app/src/routes/models.tsx").read_text(encoding="utf-8")
+    api_source = Path("public_app/src/lib/api.ts").read_text(encoding="utf-8")
+    logs_source = Path("public_app/src/components/run/logs-panel.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "START_GOALS" in start_source
+    assert '"code"' in start_source
+    assert '"reasoning"' in start_source
+    assert '"tool-use"' in start_source
+    assert '"apple-silicon"' in start_source
+    assert '"gsm8k_sft"' in start_source
+    assert '"xlam_sft"' in start_source
+    assert "Run started" in start_source
+    assert "export type RunLive" in api_source
+    assert "runLive:" in api_source
+    assert "/events" in run_source
+    assert "LiveSummary" in run_source
+    assert "plainRunStatus" in run_source
+    assert "Reconnecting to logs" in logs_source
+    assert "Fits ${detectedBackend}" in models_source
+    assert "Use in Start" in models_source
+    assert "startGoalForModel" in models_source
+
+
 def test_public_api_transport_exposes_public_workflows():
     api_source = Path("halo_forge/public_api/app.py").read_text(encoding="utf-8")
 
@@ -487,3 +516,37 @@ def test_public_docs_reference_split_between_public_frontend_and_internal_consol
     assert "internal ops/research console" in web_ui_doc
     assert "Remote v1 means one Halo Forge machine" in public_doc
     assert "The retired NiceGUI product surface is no longer the primary user workflow" in public_doc
+
+
+def test_public_docs_stale_copy_and_local_hugo_links():
+    docs_root = Path("website/hugo-docs/content")
+    docs_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in docs_root.rglob("*.md")
+    )
+
+    assert "Next.js" not in docs_text
+    assert "NEXT_PUBLIC_HALO_API_BASE" not in docs_text
+    assert "8081" not in docs_text
+    assert "Start keeps the model, dataset, sample count, and output path conservative." in docs_text
+    assert "Use in Start" in docs_text
+
+    missing: list[str] = []
+    for path in docs_root.rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"\]\((/docs/[^)#?]*)(?:#[^)]+)?\)", text):
+            target = match.group(1)
+            if not _hugo_doc_target_exists(docs_root, target):
+                missing.append(f"{path}:{target}")
+
+    assert missing == []
+
+
+def _hugo_doc_target_exists(content_root: Path, target: str) -> bool:
+    slug = target.strip("/")
+    if slug == "docs":
+        return (content_root / "docs" / "_index.md").exists()
+    rel = slug.removeprefix("docs/")
+    return (
+        (content_root / "docs" / f"{rel}.md").exists()
+        or (content_root / "docs" / rel / "_index.md").exists()
+    )

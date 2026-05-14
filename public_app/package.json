@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "tsc -b --noEmit"
+    "lint": "tsc -b --noEmit",
+    "qa:visual": "node scripts/visual-qa.mjs"
   },
   "dependencies": {
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -39,6 +40,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.60.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.0"
   }

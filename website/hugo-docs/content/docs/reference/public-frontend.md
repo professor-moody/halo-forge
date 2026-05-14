@@ -24,9 +24,9 @@ In development, Vite proxies `/api/*` to `http://127.0.0.1:8000`. In production,
 
 ## Product flow
 
-- **Start**: guided first run with backend detection, safe catalog defaults, and preflight.
+- **Start**: goal-based first run for Code, Reasoning, Tool use, or Apple Silicon with safe SFT defaults and preflight.
 - **Advanced training**: direct SFT/RAFT configuration for users who already know the knobs.
-- **Runs**: live progress, logs, samples, cancellation, recovery actions, and comparison pins.
+- **Runs**: live progress, plain-language status, logs, samples, cancellation, recovery actions, and comparison pins.
 - **Results**: completed run outcomes and readiness-oriented follow-up.
 - **Docs**: intent-based links for first run, remote setup, models, hardware, verifiers, CLI, and troubleshooting.
 - **Connection**: token entry and connection test for remote workstation access.
@@ -65,6 +65,6 @@ Use the public frontend for default product workflows. Use internal tools only f
 
 - One primary action per state.
 - Plain-language status first, research detail second.
-- Start is the first-run path; Advanced training is for direct configuration.
+- Start is the first-run path; Advanced training is for RAFT, VLM, audio, preference tuning, and direct configuration.
 - Remote v1 controls one workstation and uses bearer tokens.
 - Capability copy should follow backend/readiness truth, not hand-written claims.

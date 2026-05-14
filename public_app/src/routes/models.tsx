@@ -23,7 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useModelCatalog } from "@/lib/hooks";
+import { useBackendInfo, useModelCatalog } from "@/lib/hooks";
 import type { ModelCatalogEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -97,15 +97,25 @@ const INTENT_PRESETS: IntentPreset[] = [
 
 function ModelsRoute() {
   const { data, isLoading, isError } = useModelCatalog();
+  const backend = useBackendInfo();
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("all");
   const [status, setStatus] = useState("all");
   const [modality, setModality] = useState("all");
+  const [backendScope, setBackendScope] = useState<"detected" | "all">("detected");
+  const detectedBackend = backend.data?.name ?? "";
 
   const items = data?.items ?? [];
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((item) => {
+      if (
+        backendScope === "detected" &&
+        detectedBackend &&
+        !item.backend_support.includes(detectedBackend)
+      ) {
+        return false;
+      }
       if (provider !== "all" && item.provider !== provider) return false;
       if (status !== "all" && item.status !== status) return false;
       if (modality !== "all" && !item.modalities.includes(modality)) return false;
@@ -120,14 +130,18 @@ function ModelsRoute() {
         ...(item.trainer_support ?? []),
       ].some((value) => String(value ?? "").toLowerCase().includes(q));
     });
-  }, [items, modality, provider, query, status]);
+  }, [backendScope, detectedBackend, items, modality, provider, query, status]);
 
   return (
     <>
       <Topbar
         eyebrow="Workspace"
         title="Models"
-        subtitle="Curated upstream and MLX-format base models for training, eval, and serving."
+        subtitle={
+          detectedBackend
+            ? `Curated models filtered for this ${detectedBackend} workstation.`
+            : "Curated upstream and MLX-format base models for training, eval, and serving."
+        }
         actions={
           <Button asChild variant="ghost" size="sm">
             <Link to="/train">
@@ -157,7 +171,7 @@ function ModelsRoute() {
               <span className="text-[11px] text-fg-subtle">
                 {isError || (!isLoading && !data)
                   ? "Catalog unavailable"
-                  : `${filtered.length}/${items.length} models${data?.catalog_version ? ` · v${data.catalog_version}` : ""}`}
+                  : `${filtered.length}/${items.length} models${detectedBackend && backendScope === "detected" ? ` · ${detectedBackend}` : ""}${data?.catalog_version ? ` · v${data.catalog_version}` : ""}`}
               </span>
               <button
                 type="button"
@@ -166,6 +180,7 @@ function ModelsRoute() {
                   setProvider("all");
                   setStatus("all");
                   setModality("all");
+                  setBackendScope("detected");
                 }}
                 className="text-[11px] text-fg-subtle hover:text-fg"
               >
@@ -202,6 +217,36 @@ function ModelsRoute() {
                 values={data?.facets.modalities ?? []}
                 onChange={setModality}
               />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-fg-disabled">
+                Workstation
+              </span>
+              <button
+                type="button"
+                onClick={() => setBackendScope("detected")}
+                className={cn(
+                  "rounded-sm border px-2 py-1 text-[11px]",
+                  backendScope === "detected"
+                    ? "border-accent bg-accent/10 text-fg"
+                    : "border-border-subtle text-fg-subtle hover:text-fg",
+                )}
+                disabled={!detectedBackend}
+              >
+                {detectedBackend ? `Fits ${detectedBackend}` : "Detecting backend"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBackendScope("all")}
+                className={cn(
+                  "rounded-sm border px-2 py-1 text-[11px]",
+                  backendScope === "all"
+                    ? "border-accent bg-accent/10 text-fg"
+                    : "border-border-subtle text-fg-subtle hover:text-fg",
+                )}
+              >
+                All catalog models
+              </button>
             </div>
           </CardContent>
         </Card>
@@ -295,6 +340,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   const caveats = model.known_caveats ?? [];
   const fitNotes = model.fit_notes ?? [];
   const caveated = caveats.length > 0 || model.trust_remote_code_required;
+  const startGoal = startGoalForModel(model);
 
   return (
     <Card>
@@ -331,6 +377,12 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           <p className="text-[13px] text-fg-muted">
             {model.recommended_use || "Catalog metadata is not available for this model yet."}
           </p>
+          <div className="flex flex-wrap gap-1.5">
+            <FitBadge label={model.memory_tier || "memory unknown"} />
+            {model.estimated_memory_gb ? <FitBadge label={`~${model.estimated_memory_gb}GB`} /> : null}
+            <FitBadge label={`${(model.backend_support ?? []).join(" / ") || "backend pending"}`} />
+            {model.recommended_first_run ? <FitBadge label="first-run safe" tone="success" /> : null}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {[model.provider, model.family, model.parameter_count, ...(model.modalities ?? [])].filter(Boolean).map((chip) => (
               <span
@@ -373,7 +425,14 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-          <Button asChild size="sm" variant="primary">
+          {startGoal ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="/start" search={{ goal: startGoal }}>
+                Use in Start
+              </Link>
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant={startGoal ? "ghost" : "primary"}>
             <Link to="/train" search={{ model: model.id, mode: preferredTrainMode(model) }}>
               Use in Advanced
             </Link>
@@ -394,6 +453,45 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
       </CardContent>
     </Card>
   );
+}
+
+function FitBadge({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "success" | "neutral";
+}) {
+  return (
+    <span
+      className={cn(
+        "rounded-sm border px-1.5 py-0.5 text-[10px]",
+        tone === "success"
+          ? "border-success/30 bg-success-bg text-success"
+          : "border-border-subtle text-fg-subtle",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function startGoalForModel(model: ModelCatalogEntry): "code" | "reasoning" | "tool-use" | "apple-silicon" | null {
+  const trainerSupport = model.trainer_support ?? [];
+  if (!trainerSupport.includes("sft")) return null;
+  if (model.risk_level !== "safe") return null;
+  const tasks = new Set([...(model.tasks ?? []), ...(model.modalities ?? [])]);
+  if ((model.backend_support ?? []).includes("mlx") && model.recommended_first_run) {
+    return "apple-silicon";
+  }
+  if (tasks.has("code") && model.recommended_first_run) return "code";
+  if ((tasks.has("reasoning") || tasks.has("math")) && model.recommended_first_run) {
+    return "reasoning";
+  }
+  if ((tasks.has("agentic") || tasks.has("tool-use") || tasks.has("structured-output")) && model.recommended_first_run) {
+    return "tool-use";
+  }
+  return null;
 }
 
 function preferredTrainMode(model: ModelCatalogEntry): "sft" | "raft" {
