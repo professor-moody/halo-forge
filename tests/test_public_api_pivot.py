@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -523,10 +524,25 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     docs_text = "\n".join(
         path.read_text(encoding="utf-8") for path in docs_root.rglob("*.md")
     )
+    public_frontend_doc = (
+        docs_root / "docs" / "reference" / "public-frontend.md"
+    ).read_text(encoding="utf-8")
+    quickstart_doc = (
+        docs_root / "docs" / "getting-started" / "quickstart.md"
+    ).read_text(encoding="utf-8")
 
     assert "Next.js" not in docs_text
     assert "NEXT_PUBLIC_HALO_API_BASE" not in docs_text
     assert "8081" not in docs_text
+    assert "halo-forge serve --host 127.0.0.1 --port 8000" not in docs_text
+    assert "halo-forge serve --host 0.0.0.0 --port 8000" not in docs_text
+    assert "halo-forge serve-public" in public_frontend_doc
+    assert "halo-forge serve-public --check" in public_frontend_doc
+    assert "npm run qa:visual" in public_frontend_doc
+    assert "npm run dev -- --host 0.0.0.0" in public_frontend_doc
+    assert "http://<workstation-host>:3000" in public_frontend_doc
+    assert "http://<workstation-host>:8000" not in public_frontend_doc
+    assert "halo-forge serve-public" in quickstart_doc
     assert "Start keeps the model, dataset, sample count, and output path conservative." in docs_text
     assert "Use in Start" in docs_text
 
@@ -539,6 +555,42 @@ def test_public_docs_stale_copy_and_local_hugo_links():
                 missing.append(f"{path}:{target}")
 
     assert missing == []
+
+
+def test_serve_public_check_prints_dashboard_launch_recipe(monkeypatch, capsys):
+    import halo_forge.cli as cli_mod
+
+    monkeypatch.setattr(sys, "argv", ["halo-forge", "serve-public", "--check"])
+
+    cli_mod.main()
+
+    out = capsys.readouterr().out
+    assert "halo-forge serve-public" in out
+    assert "bind:        127.0.0.1:8000" in out
+    assert "http://127.0.0.1:8000/api/public/health" in out
+    assert "cd public_app && npm run dev" in out
+    assert "http://127.0.0.1:3000" in out
+    assert "remote auth: loopback bypass" in out
+    assert "Dashboard API preflight OK" in out
+    assert "No server started." in out
+
+
+def test_serve_public_check_prints_remote_workstation_recipe(monkeypatch, capsys):
+    import halo_forge.cli as cli_mod
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["halo-forge", "serve-public", "--host", "0.0.0.0", "--check"],
+    )
+
+    cli_mod.main()
+
+    out = capsys.readouterr().out
+    assert "remote auth: required" in out
+    assert "cd public_app && npm run dev -- --host 0.0.0.0" in out
+    assert "http://<workstation-host>:3000" in out
+    assert "Dashboard API preflight OK" in out
 
 
 def _hugo_doc_target_exists(content_root: Path, target: str) -> bool:

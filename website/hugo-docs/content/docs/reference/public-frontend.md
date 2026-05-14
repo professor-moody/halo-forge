@@ -11,16 +11,26 @@ Use it for guided first runs, advanced SFT/RAFT launches, live run monitoring, r
 ## Run locally
 
 ```bash
-# Terminal 1: public API / bundled frontend host
-halo-forge serve --host 127.0.0.1 --port 8000
+# Terminal 1: dashboard API
+halo-forge serve-public
 
-# Terminal 2: frontend development server
+# Optional no-bind check
+halo-forge serve-public --check
+
+# Terminal 2: React app
 cd public_app
 npm install
 npm run dev
 ```
 
-In development, Vite proxies `/api/*` to `http://127.0.0.1:8000`. In production, the FastAPI host serves the built frontend and API from the same origin.
+Open `http://127.0.0.1:3000`. In development, Vite proxies `/api/*` to `http://127.0.0.1:8000`.
+
+Run repeatable desktop screenshot QA with:
+
+```bash
+cd public_app
+npm run qa:visual
+```
 
 ## Product flow
 
@@ -40,14 +50,22 @@ Remote v1 means one Halo Forge machine with the accelerator is exposed to a trus
 ```bash
 # On the training workstation
 halo-forge token create dashboard
-halo-forge serve --host 0.0.0.0 --port 8000
+halo-forge serve-public --host 0.0.0.0 --port 8000
 ```
 
 Save the token when it is printed. Halo Forge stores only a hash in `~/.halo-forge/tokens.json`; the bearer secret is shown once.
 
+Run the app on the same workstation so browser requests stay same-origin through the Vite proxy:
+
+```bash
+cd public_app
+npm install
+npm run dev -- --host 0.0.0.0
+```
+
 ### Browser setup
 
-1. Open `http://<workstation-host>:8000` from the remote device.
+1. Open `http://<workstation-host>:3000` from the remote device.
 2. Go to **Connection**.
 3. Paste the `hfk_...` token.
 4. Click **Save and test**.

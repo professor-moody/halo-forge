@@ -88,10 +88,16 @@ halo-forge benchmark full \
 Open the dashboard:
 
 ```bash
+# Terminal 1
 halo-forge serve-public
+
+# Terminal 2
+cd public_app
+npm install
+npm run dev
 ```
 
-Then visit the dashboard, open **Models** for the curated catalog, **Training templates** for intent-first recipes, and **Run Bundles** to save groups of trained runs for comparison.
+Then open `http://127.0.0.1:3000`, use **Start** for the guided first run, open **Models** for the curated catalog, and use **Bundles** to save groups of trained runs for comparison.
 
 ## Dashboard First Run
 

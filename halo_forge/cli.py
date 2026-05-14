@@ -1393,16 +1393,40 @@ def cmd_serve_public(args):
     OpenAI-compatible inference server (`halo-forge serve`); a typical
     workstation runs both side by side on different ports.
     """
-    import uvicorn
-
-    from halo_forge.public_api.app import create_app
-
     print_banner()
     print(f"{GREEN}halo-forge serve-public{NC} — dashboard API")
     print("=" * 60)
-    print(f"  bind:    {args.host}:{args.port}")
-    print(f"  health:  http://{args.host}:{args.port}/api/public/health")
+    is_loopback = str(args.host) in {"127.0.0.1", "localhost", "::1"}
+    remote_app_host = "<workstation-host>" if str(args.host) == "0.0.0.0" else str(args.host)
+    print(f"  bind:        {args.host}:{args.port}")
+    print(f"  health:      http://{args.host}:{args.port}/api/public/health")
+    print(f"  local app:   cd public_app && npm run dev")
+    print(f"  open app:    http://127.0.0.1:3000")
+    if not is_loopback:
+        print(f"  remote app:  cd public_app && npm run dev -- --host 0.0.0.0")
+        print(f"  remote URL:  http://{remote_app_host}:3000")
+    print(f"  remote auth: {'loopback bypass' if is_loopback else 'required'}")
     print()
+
+    if getattr(args, "check", False):
+        print(f"{GREEN}Dashboard API preflight OK.{NC} No server started.")
+        return
+
+    if is_loopback:
+        print("Local development:")
+        print("  Terminal 1: halo-forge serve-public")
+        print("  Terminal 2: cd public_app && npm install && npm run dev")
+    else:
+        print("Remote development:")
+        print("  Terminal 1a: halo-forge token create dashboard")
+        print(f"  Terminal 1b: halo-forge serve-public --host {args.host}")
+        print("  Terminal 2:  cd public_app && npm install && npm run dev -- --host 0.0.0.0")
+        print(f"  Browser:    http://{remote_app_host}:3000")
+    print()
+
+    import uvicorn
+
+    from halo_forge.public_api.app import create_app
 
     app = create_app()
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
@@ -5547,6 +5571,8 @@ def main():
                                      help='Bind host (default: 127.0.0.1; loopback skips bearer auth)')
     serve_public_parser.add_argument('--port', type=int, default=8000,
                                      help='Bind port (default: 8000)')
+    serve_public_parser.add_argument('--check', action='store_true',
+                                     help='Print dashboard API startup details without binding a port')
 
     # raft command
     raft_parser = subparsers.add_parser('raft', help='RAFT training')
