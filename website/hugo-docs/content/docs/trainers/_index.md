@@ -70,7 +70,7 @@ halo-forge dpo train \
 
 **Datasets.** Built-in short names: `ultrafeedback`, `orca_dpo`, `hh_rlhf`, `py_dpo`. JSONL files need `prompt`, `chosen`, `rejected` columns; UltraFeedback's chat-list format is auto-collapsed.
 
-**MLX DPO scope.** MLX supports `loss_type='sigmoid'` in both reference-free and reference-model modes. IPO, hinge, KTO-pair, and RPO still raise typed `NotImplementedError` until their memory behavior is measured.
+**MLX DPO scope.** MLX supports `sigmoid`, `ipo`, `hinge`, and `kto_pair` in reference-free and reference-model modes. `rpo` remains on the PyTorch/TRL path.
 
 ## GRPO
 

@@ -67,16 +67,13 @@ worse.
 - No default `mx.compile` integration.
 - No chip-tier auto-tuning.
 - No speculative claims in docs or UI.
-- Reference-free and reference-model sigmoid DPO are candidates for a future
-  explicit opt-in compiled loss path, but `mx.compile` remains measurement-only.
+- Reference-free and reference-model DPO losses are eager in production.
+  `mx.compile` remains measurement-only.
 - GRPO stays eager: the synthetic advantage-loss results are mixed and do not
   justify a production path.
-- IPO, hinge, and KTO-pair DPO reductions now have complete synthetic Terminal
-  measurements across `32`, `128`, and `512`. This is enough to start an eager
-  MLX implementation pass with math tests and live smoke, but not enough to
-  enable compiled paths by default.
-- Keep typed `NotImplementedError` paths for MLX IPO / hinge / KTO variants
-  until each live trainer path is implemented deliberately.
+- IPO, hinge, and KTO-pair DPO reductions have complete synthetic Terminal
+  measurements across `32`, `128`, and `512`, and now run through eager MLX
+  trainer paths. Compiled execution remains disabled.
 - Keep reference-model GRPO on MLX disabled until dual-model memory is measured.
 
 If a compiled path is implemented later, it should start as MLX DPO sigmoid only
@@ -193,11 +190,10 @@ Use the expanded results to decide:
 
 ## DPO Variant Gate Protocol
 
-The harness now includes non-sigmoid DPO reductions for IPO, hinge, and
-KTO-pair in both reference-free and reference-model forms. These candidates are
-measurement-only. The MLX trainer still raises typed `NotImplementedError` for
-those loss types until the Terminal results are reviewed and live smoke coverage
-is added for any implemented variant.
+The harness includes non-sigmoid DPO reductions for IPO, hinge, and KTO-pair in
+both reference-free and reference-model forms. These candidates are still
+compile-measurement-only: the eager trainer paths are supported, but no compiled
+trainer path is enabled.
 
 Run the variant gate from a normal Apple Silicon Terminal:
 
@@ -219,7 +215,7 @@ Promotion criteria for any non-sigmoid DPO variant:
 - measured eager and compiled reductions complete at `32`, `128`, and `512`;
 - memory telemetry does not show a variant-specific jump relative to sigmoid;
 - the eager path is implemented first and covered by loss math tests;
-- live MLX smoke is added before the variant leaves typed-unsupported status;
+- live MLX smoke passes before the variant is treated as release-supported;
 - compiled execution remains opt-in even if the reduction benchmark is strong.
 
 ## DPO Variant Terminal Measurement

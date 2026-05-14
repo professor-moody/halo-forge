@@ -37,7 +37,7 @@ def _write_tiny_preference_file(path: Path) -> Path:
     return path
 
 
-def _run_mlx_dpo_live_sigmoid(tmp_path, *, reference_free: bool, label: str) -> dict:
+def _run_mlx_dpo_live_variant(tmp_path, *, loss_type: str, reference_free: bool, label: str) -> dict:
     from halo_forge.dpo.config import DPOConfig
     from halo_forge.dpo.mlx_trainer import MLXDPOTrainer
 
@@ -53,7 +53,7 @@ def _run_mlx_dpo_live_sigmoid(tmp_path, *, reference_free: bool, label: str) -> 
         max_seq_length=64,
         max_prompt_length=48,
         beta=0.1,
-        loss_type="sigmoid",
+        loss_type=loss_type,
         reference_free=reference_free,
         learning_rate=5e-6,
         lora_r=2,
@@ -69,8 +69,9 @@ def _run_mlx_dpo_live_sigmoid(tmp_path, *, reference_free: bool, label: str) -> 
 
 
 def test_mlx_dpo_live_reference_free_sigmoid_runs_one_cycle(tmp_path):
-    summary = _run_mlx_dpo_live_sigmoid(
+    summary = _run_mlx_dpo_live_variant(
         tmp_path,
+        loss_type="sigmoid",
         reference_free=True,
         label="reference_free",
     )
@@ -81,6 +82,7 @@ def test_mlx_dpo_live_reference_free_sigmoid_runs_one_cycle(tmp_path):
     assert summary["total_train_steps_executed"] > 0
     assert summary["reference_free"] is True
     assert summary["reference_model_loaded"] is False
+    assert summary["loss_type"] == "sigmoid"
     assert summary["backend"] == "mlx"
     final_path = Path(summary["final_model_path"])
     assert final_path.exists()
@@ -88,8 +90,9 @@ def test_mlx_dpo_live_reference_free_sigmoid_runs_one_cycle(tmp_path):
 
 
 def test_mlx_dpo_live_reference_model_sigmoid_runs_one_cycle(tmp_path):
-    summary = _run_mlx_dpo_live_sigmoid(
+    summary = _run_mlx_dpo_live_variant(
         tmp_path,
+        loss_type="sigmoid",
         reference_free=False,
         label="reference_model",
     )
@@ -100,6 +103,31 @@ def test_mlx_dpo_live_reference_model_sigmoid_runs_one_cycle(tmp_path):
     assert summary["total_train_steps_executed"] > 0
     assert summary["reference_free"] is False
     assert summary["reference_model_loaded"] is True
+    assert summary["loss_type"] == "sigmoid"
+    assert summary["backend"] == "mlx"
+    final_path = Path(summary["final_model_path"])
+    assert final_path.exists()
+    assert list(final_path.glob("*.safetensors"))
+
+
+@pytest.mark.parametrize("loss_type", ["ipo", "hinge", "kto_pair"])
+@pytest.mark.parametrize("reference_free", [True, False])
+def test_mlx_dpo_live_non_sigmoid_variants_run_one_cycle(tmp_path, loss_type, reference_free):
+    label = f"{loss_type}_{'reference_free' if reference_free else 'reference_model'}"
+    summary = _run_mlx_dpo_live_variant(
+        tmp_path,
+        loss_type=loss_type,
+        reference_free=reference_free,
+        label=label,
+    )
+
+    assert summary["modality"] == "dpo"
+    assert summary["model_name"] == MLX_TINY_MODEL
+    assert summary["weights_updated"] is True
+    assert summary["total_train_steps_executed"] > 0
+    assert summary["reference_free"] is reference_free
+    assert summary["reference_model_loaded"] is (not reference_free)
+    assert summary["loss_type"] == loss_type
     assert summary["backend"] == "mlx"
     final_path = Path(summary["final_model_path"])
     assert final_path.exists()

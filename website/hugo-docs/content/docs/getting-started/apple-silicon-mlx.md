@@ -84,9 +84,8 @@ halo-forge --accelerator mlx dpo train \
   --batch-size 1
 ```
 
-MLX supports sigmoid DPO in both reference-free and reference-model modes. Keep
-IPO, hinge, and KTO on the PyTorch backends until the MLX memory measurements
-justify those variants.
+MLX supports sigmoid, IPO, hinge, and KTO-pair DPO in both reference-free and
+reference-model modes. RPO remains on the PyTorch/TRL path.
 
 GRPO reasoning:
 
@@ -118,7 +117,7 @@ Expected passing checks on a healthy Apple Silicon Terminal:
 - `mlx_dpo_reference_model_terminal`
 - `mlx_grpo_terminal`
 
-The only expected skip is `mlx_dpo_non_sigmoid_variants`.
+No DPO variant skip is expected on a healthy MLX host.
 
 ## Support matrix
 
@@ -127,7 +126,7 @@ The only expected skip is `mlx_dpo_non_sigmoid_variants`.
 | SFT | supported |
 | RAFT / RLVR | supported |
 | DPO sigmoid | reference-free and reference-model supported |
-| DPO IPO / hinge / KTO | measurement-gated |
+| DPO IPO / hinge / KTO | reference-free and reference-model supported |
 | GRPO | reference-free supported |
 | Reward model | roadmap |
 

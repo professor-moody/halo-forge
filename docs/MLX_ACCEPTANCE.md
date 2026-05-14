@@ -40,10 +40,11 @@ Passed checks:
 - `mlx_dpo_reference_model_terminal`
 - `mlx_grpo_terminal`
 
-Intentional skip:
+Historical intentional skip:
 
-- `mlx_dpo_non_sigmoid_variants` — IPO, hinge, and KTO remain disabled until
-  larger MLX memory measurements justify them.
+- `mlx_dpo_non_sigmoid_variants` — this 2026-05-13 acceptance run predates the
+  eager MLX IPO / hinge / KTO-pair implementation. Fresh smoke summaries should
+  now pass this check instead of skipping it.
 
 Validate a fresh run with:
 

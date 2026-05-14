@@ -11,7 +11,7 @@ MLX support has moved past the original staged port. Current status:
 | Inference (text generation) | ✅ shipped | via `--accelerator mlx` CLI flag |
 | LoRA SFT | ✅ shipped | MLX-native trainer path |
 | RAFT / RLVR | ✅ shipped | MLX-native RAFT path |
-| DPO sigmoid | ✅ shipped | reference-free and reference-model paths |
+| DPO | ✅ shipped | sigmoid, IPO, hinge, and KTO-pair; reference-free and reference-model paths |
 | GRPO | 🟡 partial | reference-free v1; reference-model GRPO remains roadmap |
 | MPS fallback telemetry | ✅ shipped | dashboard warning-line counter |
 | Chip-tier surfacing | ✅ shipped | telemetry/backend metadata only, no auto-tuning |
@@ -155,9 +155,8 @@ python scripts/run_mlx_smoke.py --output-dir runs/mlx-smoke
 
 The script writes `runs/mlx-smoke/mlx_smoke_summary.json`. A healthy MLX host
 should pass the SFT/RAFT live smoke, DPO reference-free sigmoid live smoke, DPO
-reference-model sigmoid live smoke, and GRPO reference-free live smoke. The only
-expected skip is `mlx_dpo_non_sigmoid_variants`, because IPO / hinge / KTO are
-still measurement-gated.
+reference-model sigmoid live smoke, DPO non-sigmoid variant smoke, and GRPO
+reference-free live smoke. No DPO variant skip is expected on a healthy MLX host.
 
 ## MLX training support matrix
 
@@ -166,7 +165,7 @@ still measurement-gated.
 | SFT | ✅ supported | MLX LoRA path via `mlx_lm.tuner` |
 | RAFT / RLVR | ✅ supported | MLX rollout + verifier filtering + MLX SFT update |
 | DPO sigmoid | ✅ supported | reference-free and reference-model |
-| DPO IPO / hinge / KTO | ❌ gated | typed unsupported until memory measurements justify |
+| DPO IPO / hinge / KTO | ✅ supported | eager MLX path; compiled execution remains measurement-only |
 | GRPO | ⚠️ reference-free | single-cycle policy update; reference-model GRPO is roadmap |
 | Reward model | ❌ roadmap | use PyTorch MPS/CUDA/ROCm today |
 
@@ -185,9 +184,8 @@ PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTOR
 - **MLX compile measurement**: `mx.compile` is measurement-only. Current DPO sigmoid
   numbers are recorded in [MLX_COMPILE_MEASUREMENT.md](MLX_COMPILE_MEASUREMENT.md);
   no compiled trainer path is enabled by default.
-- **MLX DPO completion**: sigmoid supports reference-free and reference-model paths.
-  Non-sigmoid loss variants remain gated until larger terminal measurements justify
-  the memory behavior.
+- **MLX DPO completion**: sigmoid, IPO, hinge, and KTO-pair support reference-free
+  and reference-model paths. RPO remains on PyTorch backends.
 - **Serving follow-up**: speculative decoding and native token streaming remain
   opt-in future work after the shipped OpenAI-shaped streaming surface.
 

@@ -10,10 +10,10 @@ Major release. Halo-forge becomes a cross-vendor local finetuning workstation.
 ### Added
 
 #### Trainers
-- **DPO** (`halo-forge dpo train`) — preference optimization via TRL on PyTorch backends; MLX-native sigmoid DPO on Apple Silicon supports reference-free and reference-model modes. IPO / hinge / KTO-pair / RPO / cDPO remain PyTorch paths.
+- **DPO** (`halo-forge dpo train`) — preference optimization via TRL on PyTorch backends; MLX-native DPO on Apple Silicon supports sigmoid, IPO, hinge, and KTO-pair in reference-free and reference-model modes. RPO remains a PyTorch path.
 - **GRPO** (`halo-forge grpo train`) — verifier-grounded policy gradient with group-relative advantages. PyTorch via TRL; MLX-native reference-free. DeepSeek-R1 / Tülu 3 family.
 - **Reward Model** (`halo-forge rm train`) — Bradley-Terry RM from preference pairs. Closes the RLHF loop for non-code modalities.
-- **MLX-native DPO + GRPO** — DPO sigmoid supports reference-free and reference-model modes; GRPO remains reference-free in v1 with rollouts via `mlx_lm.generate`.
+- **MLX-native DPO + GRPO** — DPO supports sigmoid, IPO, hinge, and KTO-pair in reference-free and reference-model modes; GRPO remains reference-free in v1 with rollouts via `mlx_lm.generate`.
 
 #### PEFT + optimizers
 - **DoRA / rsLoRA / PiSSA / LoftQ / OLoRA** — `--use-dora`, `--use-rslora`, `--init-lora-weights pissa` etc. on every torch backend.

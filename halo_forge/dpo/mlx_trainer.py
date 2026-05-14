@@ -11,7 +11,8 @@ Why a custom loop instead of wrapping ``mlx_lm.tuner.train``: DPO's
 loss is structurally different from SFT's cross-entropy. SFT computes
 a per-token loss over the whole sequence; DPO computes per-pair
 logp(chosen) - logp(rejected) over only the *response* tokens (prompt
-tokens are masked) and combines them through a sigmoid. ``mlx_lm.tuner``
+tokens are masked) and combines them through DPO-family preference losses.
+``mlx_lm.tuner``
 isn't shaped for that — we own the loop here so the loss math is
 explicit and inspectable.
 
@@ -21,9 +22,8 @@ Algorithm (reference-free DPO):
     pi_rejected = sum log p_θ(yl | x)   over response tokens
     loss        = -log σ(β · (pi_chosen − pi_rejected))
 
-Pairs map directly to TRL's ``loss_type="sigmoid"``. cDPO label
-smoothing is supported; IPO / hinge / kto_pair remain typed unsupported
-until their MLX memory behavior is measured.
+Pairs map directly to TRL's ``loss_type`` choices for ``sigmoid``, ``ipo``,
+``hinge``, and ``kto_pair``. cDPO label smoothing is supported for sigmoid.
 """
 
 from __future__ import annotations
@@ -46,6 +46,8 @@ from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.utils.backend_config import warn_unsupported_for_mlx
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_MLX_DPO_LOSS_TYPES = {"sigmoid", "ipo", "hinge", "kto_pair"}
 
 
 def _require_mlx_lm() -> Dict[str, Any]:
@@ -143,6 +145,87 @@ def _sigmoid_dpo_loss(
     return -nn.log_sigmoid(logits)
 
 
+def _mlx_sigmoid(mx: Any, value: Any) -> Any:
+    return 1.0 / (1.0 + mx.exp(-value))
+
+
+def _mlx_relu(mx: Any, value: Any) -> Any:
+    return mx.maximum(mx.array(0.0), value)
+
+
+def _dpo_logratios(
+    *,
+    chosen_logp: Any,
+    rejected_logp: Any,
+    reference_chosen_logp: Any = None,
+    reference_rejected_logp: Any = None,
+) -> tuple[Any, Any]:
+    if reference_chosen_logp is None and reference_rejected_logp is None:
+        return chosen_logp, rejected_logp
+    if reference_chosen_logp is None or reference_rejected_logp is None:
+        raise ValueError("both reference_chosen_logp and reference_rejected_logp are required")
+    return chosen_logp - reference_chosen_logp, rejected_logp - reference_rejected_logp
+
+
+def _dpo_preference_loss(
+    *,
+    mx: Any,
+    nn: Any,
+    loss_type: str,
+    chosen_logp: Any,
+    rejected_logp: Any,
+    beta: float,
+    label_smoothing: float = 0.0,
+    reference_chosen_logp: Any = None,
+    reference_rejected_logp: Any = None,
+    chosen_length: int | None = None,
+    rejected_length: int | None = None,
+) -> Any:
+    """Return a scalar DPO-family loss for a single chosen/rejected pair."""
+    if loss_type == "sigmoid":
+        return _sigmoid_dpo_loss(
+            mx=mx,
+            nn=nn,
+            chosen_logp=chosen_logp,
+            rejected_logp=rejected_logp,
+            beta=beta,
+            label_smoothing=label_smoothing,
+            reference_chosen_logp=reference_chosen_logp,
+            reference_rejected_logp=reference_rejected_logp,
+        )
+
+    chosen_logratio, rejected_logratio = _dpo_logratios(
+        chosen_logp=chosen_logp,
+        rejected_logp=rejected_logp,
+        reference_chosen_logp=reference_chosen_logp,
+        reference_rejected_logp=reference_rejected_logp,
+    )
+    delta = chosen_logratio - rejected_logratio
+
+    if loss_type == "hinge":
+        return _mlx_relu(mx, 1.0 - beta * delta)
+
+    if loss_type == "ipo":
+        if chosen_length is not None:
+            chosen_logratio = chosen_logratio / max(1, int(chosen_length))
+        if rejected_length is not None:
+            rejected_logratio = rejected_logratio / max(1, int(rejected_length))
+        ipo_delta = chosen_logratio - rejected_logratio
+        target = 1.0 / (2.0 * beta)
+        centered = ipo_delta - target
+        return centered * centered
+
+    if loss_type == "kto_pair":
+        kl = _mlx_relu(mx, (chosen_logratio + rejected_logratio) / 2.0)
+        chosen_loss = 1.0 - _mlx_sigmoid(mx, beta * (chosen_logratio - kl))
+        rejected_loss = 1.0 - _mlx_sigmoid(mx, beta * (kl - rejected_logratio))
+        return (chosen_loss + rejected_loss) / 2.0
+
+    raise NotImplementedError(
+        f"MLX DPO supports loss_type values {sorted(SUPPORTED_MLX_DPO_LOSS_TYPES)}; got {loss_type!r}."
+    )
+
+
 def _dpo_margin(
     *,
     chosen_logp: Any,
@@ -166,8 +249,9 @@ def _dpo_margin(
 class MLXDPOTrainer:
     """DPO trainer on MLX (Apple Silicon).
 
-    Currently supports ``loss_type="sigmoid"`` in reference-free mode or
-    with a frozen reference model. Other loss types remain roadmap work.
+    Currently supports ``loss_type`` values in
+    ``SUPPORTED_MLX_DPO_LOSS_TYPES`` in reference-free mode or with a
+    frozen reference model.
     """
 
     def __init__(self, config: Optional[DPOConfig] = None):
@@ -177,10 +261,15 @@ class MLXDPOTrainer:
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="MLX DPO")
 
-        if self.config.loss_type != "sigmoid":
+        if self.config.loss_type not in SUPPORTED_MLX_DPO_LOSS_TYPES:
             raise NotImplementedError(
-                f"MLX DPO v1 supports loss_type='sigmoid' only; got {self.config.loss_type!r}. "
-                "IPO / hinge / kto_pair remain disabled until MLX memory measurements justify them."
+                f"MLX DPO supports loss_type values {sorted(SUPPORTED_MLX_DPO_LOSS_TYPES)}; "
+                f"got {self.config.loss_type!r}."
+            )
+        if self.config.loss_type != "sigmoid" and self.config.label_smoothing:
+            raise NotImplementedError(
+                "MLX DPO label_smoothing is supported for loss_type='sigmoid' only; "
+                f"got loss_type={self.config.loss_type!r} with label_smoothing={self.config.label_smoothing}."
             )
 
         self.model: Any = None
@@ -271,14 +360,17 @@ class MLXDPOTrainer:
                     mx=mx, nn=nn, model=self.reference_model,
                     prompt_tokens=prompt_tokens, response_tokens=rejected_tokens,
                 )
-            loss = _sigmoid_dpo_loss(
+            loss = _dpo_preference_loss(
                 mx=mx, nn=nn,
+                loss_type=cfg.loss_type,
                 chosen_logp=chosen_logp,
                 rejected_logp=rejected_logp,
                 beta=cfg.beta,
                 label_smoothing=cfg.label_smoothing,
                 reference_chosen_logp=reference_chosen_logp,
                 reference_rejected_logp=reference_rejected_logp,
+                chosen_length=int(chosen_tokens.shape[0]),
+                rejected_length=int(rejected_tokens.shape[0]),
             )
             # Auxiliary metrics for the training_summary; same shape TRL's
             # rewards/accuracies / rewards/margins surface.
@@ -297,7 +389,8 @@ class MLXDPOTrainer:
         # for clarity. Batched loss is a follow-up perf win.
         rows = list(train_ds)
         print(
-            f"=" * 70 + f"\nMLX DPO ({'reference-free' if cfg.reference_free else 'reference-model'}, sigmoid) on {len(rows)} pairs\n"
+            f"=" * 70
+            + f"\nMLX DPO ({'reference-free' if cfg.reference_free else 'reference-model'}, {cfg.loss_type}) on {len(rows)} pairs\n"
             f"  beta={cfg.beta} learning_rate={cfg.learning_rate} epochs={cfg.num_epochs}\n"
             + "=" * 70
         )

@@ -26,7 +26,7 @@ Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train, eval
 ### Trainers
 
 - **SFT** — supervised finetuning with QLoRA / LoRA / DoRA / rsLoRA / PiSSA. PyTorch on every torch backend; MLX-native on Apple Silicon.
-- **DPO** — preference optimization (sigmoid / IPO / hinge / KTO-pair / RPO / cDPO). PyTorch via TRL; MLX-native sigmoid DPO supports reference-free and reference-model modes.
+- **DPO** — preference optimization (sigmoid / IPO / hinge / KTO-pair / RPO / cDPO). PyTorch via TRL; MLX-native DPO supports sigmoid, IPO, hinge, and KTO-pair in reference-free and reference-model modes.
 - **GRPO** — verifier-grounded policy gradient (DeepSeek-R1 / Tülu 3 family). PyTorch via TRL; MLX-native reference-free GRPO.
 - **RAFT** — rejection-sampling RLVR with curriculum + reward shaping. PyTorch + native MLX.
 - **Reward Model** — Bradley-Terry RM from preference pairs. Becomes a learned verifier for any other modality.

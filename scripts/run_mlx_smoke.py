@@ -92,6 +92,18 @@ def main() -> int:
         )
         summary["checks"].append(
             _run(
+                "mlx_dpo_non_sigmoid_variants",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "tests/test_mlx_live_training.py::test_mlx_dpo_live_non_sigmoid_variants_run_one_cycle",
+                    "-q",
+                ],
+            )
+        )
+        summary["checks"].append(
+            _run(
                 "mlx_grpo_reference_free_live_smoke",
                 [
                     sys.executable,
@@ -132,13 +144,6 @@ def main() -> int:
                 "-q",
             ],
         )
-    )
-    summary["checks"].append(
-        {
-            "label": "mlx_dpo_non_sigmoid_variants",
-            "status": "skipped",
-            "reason": "IPO, hinge, and KTO remain disabled until larger MLX memory measurements justify them.",
-        }
     )
 
     failed = [check for check in summary["checks"] if check.get("status") == "failed"]

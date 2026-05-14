@@ -12,6 +12,7 @@ def _passing_summary() -> dict:
         "mlx_sft_raft_live_smoke",
         "mlx_dpo_reference_free_live_smoke",
         "mlx_dpo_reference_model_live_smoke",
+        "mlx_dpo_non_sigmoid_variants",
         "mlx_grpo_reference_free_live_smoke",
         "mlx_dpo_loss_unit",
         "mlx_dpo_reference_model_terminal",
@@ -27,13 +28,6 @@ def _passing_summary() -> dict:
         "checks": [
             {"label": label, "status": "passed", "returncode": 0}
             for label in labels
-        ]
-        + [
-            {
-                "label": "mlx_dpo_non_sigmoid_variants",
-                "status": "skipped",
-                "reason": "measurement gated",
-            }
         ],
     }
 

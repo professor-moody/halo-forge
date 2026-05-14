@@ -55,7 +55,7 @@ Legend: ✅ supported · ⚠️ supported with caveats (see footnotes) · ❌ no
 
 1. **MPS** training works for 1B-3B models; 7B+ may hit dtype / memory edges (see MPS section).
 2. **CPU** training "works" for tiny models or smoke tests — production runs are infeasible.
-3. **MLX DPO** supports sigmoid DPO in both reference-free and reference-model modes. Other loss types (IPO / hinge / kto_pair) raise typed `NotImplementedError` until the MLX measurement track justifies their memory and latency behavior.
+3. **MLX DPO** supports sigmoid, IPO, hinge, and KTO-pair losses in both reference-free and reference-model modes. RPO remains on the PyTorch/TRL path.
 4. **QLoRA / bnb-optim on Strix Halo** depends on community-built bitsandbytes-rocm wheels. They exist but aren't always current; if a load fails, set `allow_quantization_fallback=True` to drop to bf16.
 5. **QLoRA on MPS / MLX / CPU**: bitsandbytes has no Apple Silicon kernels. The trainer warns and falls back to bf16 (or fails loudly if you set `allow_quantization_fallback=False`).
 6. **PEFT on MLX**: `mlx_lm.tuner` only ships LoRA. Setting `--use-dora`, `--use-rslora`, or `--init-lora-weights pissa` on the MLX backend now prints a loud warning at trainer init so you know the flag was ignored. PyTorch backends honor all four.

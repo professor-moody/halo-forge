@@ -1,11 +1,10 @@
 """Backend-aware DPO trainer factory.
 
-Phase Q1 / Track T1 ships the PyTorch path; T17 lands MLX-native.
-The MLX path supports reference-free DPO (loss_type='sigmoid') in
-v1; reference-model DPO and other loss types stay roadmap. Configs
-that the MLX trainer can't honor raise NotImplementedError with the
-exact knob to flip — the dispatcher itself doesn't pre-check beyond
-backend selection.
+Phase Q1 / Track T1 shipped the PyTorch path; T17 lands MLX-native.
+The MLX path supports sigmoid, IPO, hinge, and KTO-pair DPO in
+reference-free and reference-model modes. Configs that the MLX trainer
+can't honor raise NotImplementedError with the exact knob to flip — the
+dispatcher itself doesn't pre-check beyond backend selection.
 """
 
 from __future__ import annotations
@@ -30,13 +29,8 @@ def get_dpo_trainer(
             `--accelerator` / `HALOFORGE_BACKEND` choice.
 
     Returns:
-        `DPOTrainer` (PyTorch) — the only path implemented in Q1.
-
-    Raises:
-        NotImplementedError if `backend.name == "mlx"`. Phase T17 (MLX
-        algorithm parity) will lift this; reference implementation is
-        the community mlx-lm-lora fork at
-        https://github.com/Goekdeniz-Guelmez/mlx-lm-lora.
+        `MLXDPOTrainer` on the MLX backend, otherwise the PyTorch
+        `DPOTrainer`.
     """
     backend = backend or get_backend(require_training=True)
 

@@ -19,21 +19,22 @@ scratch plans may still describe already-shipped tracks as future work.
   notes, risk levels, and MLX catalog/template alignment.
 - **Serving streaming**: `/v1/chat/completions` and `/v1/completions` support
   OpenAI-shaped `text/event-stream` responses ending in `data: [DONE]`.
-- **MLX compile measurement**: terminal harness and recorded DPO sigmoid
-  measurement; production compiled trainer paths remain disabled.
-- **MLX sigmoid DPO**: reference-free and reference-model sigmoid DPO run on
-  MLX; non-sigmoid losses remain gated.
+- **MLX compile measurement**: terminal harness and recorded DPO sigmoid and
+  non-sigmoid variant measurements; production compiled trainer paths remain
+  disabled.
+- **MLX DPO**: reference-free and reference-model DPO run on MLX for sigmoid,
+  IPO, hinge, and KTO-pair; RPO remains a PyTorch path.
 
 ## Next Tracks
 
 1. **MLX productization**: live terminal acceptance for SFT, RAFT, DPO
-   reference-free/reference-model sigmoid, and GRPO reference-free paths.
+   reference-free/reference-model variants, and GRPO reference-free paths.
 2. **Serving QA**: keep OpenAI streaming compatibility tested and documented;
    native token streaming is a later optimization.
 3. **MLX compile expansion**: measure larger DPO/GRPO shapes before enabling any
    compiled default.
-4. **MLX DPO variants**: IPO / hinge / KTO only after measurement establishes
-   acceptable memory and latency behavior.
+4. **MLX DPO variants**: live smoke and docs follow-through for IPO / hinge /
+   KTO-pair; compiled execution remains opt-in future work.
 5. **Reference-model GRPO on MLX**: implement only after dual-model memory is
    measured on real Apple Silicon hosts.
 
