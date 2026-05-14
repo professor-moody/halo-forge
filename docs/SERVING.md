@@ -23,7 +23,7 @@ Spins up a FastAPI server on `127.0.0.1:8001` (overridable). Endpoints:
 - `POST /v1/chat/completions` — OpenAI v1 chat-completions surface.
 - `POST /v1/completions` — OpenAI v1 text-completions surface.
 - `GET  /v1/models` — list the served model.
-- `GET  /health` — liveness + identity check.
+- `GET  /health` — Halo Forge liveness + serving status check.
 
 Drop-in for any client expecting an OpenAI endpoint. Point your `OPENAI_BASE_URL` at `http://127.0.0.1:8001/v1` and the same code that targets `api.openai.com` works unchanged.
 
@@ -41,6 +41,12 @@ Drop-in for any client expecting an OpenAI endpoint. Point your `OPENAI_BASE_URL
 OpenAI-compatible `text/event-stream` chunks ending in `data: [DONE]`. The v1
 implementation streams the adapter result through the OpenAI wire shape; backend
 native token streaming remains a future optimization.
+
+**Health.** `/health` is intentionally Halo Forge-specific rather than part of
+the strict OpenAI `/v1` surface. It reports `ok`, `model`, `backend`,
+`adapter_loaded`, `started_at`, and `streaming_supported`. Use it for process
+liveness, backend identity, and whether the lazy adapter has been loaded; keep
+OpenAI clients pointed at `/v1/models` for model listing.
 
 **Not yet shipped (Track I-followups):**
 - Continuous batching — arrives with I2 (vLLM gives this for free on CUDA; needs explicit wiring for MLX/llama.cpp).
