@@ -1337,18 +1337,33 @@ def cmd_serve(args):
     request so `halo-forge serve` returns control quickly even for large
     weights — the first chat call eats the load cost.
     """
-    import uvicorn
+    if args.backend:
+        backend_display = f"{args.backend} (forced)"
+    else:
+        try:
+            from halo_forge.backend import get_backend
 
-    from halo_forge.serving.app import create_serving_app
+            backend_display = f"{get_backend().name} (auto)"
+        except Exception:
+            backend_display = "auto"
 
     print_banner()
     print(f"{GREEN}halo-forge serve{NC} — OpenAI-compatible endpoint")
     print("=" * 60)
-    print(f"  model:   {args.model}")
-    print(f"  bind:    {args.host}:{args.port}")
-    if args.backend:
-        print(f"  backend: {args.backend} (forced)")
+    print(f"  model:               {args.model}")
+    print(f"  bind:                {args.host}:{args.port}")
+    print(f"  backend:             {backend_display}")
+    print(f"  adapter load:        lazy (first generation request)")
+    print(f"  streaming:           OpenAI SSE supported")
+    print(f"  trust remote code:   {bool(args.trust_remote_code)}")
+    print(f"  health:              http://{args.host}:{args.port}/health")
+    print(f"  models:              http://{args.host}:{args.port}/v1/models")
     print()
+
+    if getattr(args, "check", False):
+        print(f"{GREEN}Serve preflight OK.{NC} No server started.")
+        return
+
     print("Try:")
     print(f"  curl http://{args.host}:{args.port}/v1/models")
     print(
@@ -1357,6 +1372,10 @@ def cmd_serve(args):
         '-d \'{"model":"' + args.model + '","messages":[{"role":"user","content":"hi"}]}\''
     )
     print()
+
+    import uvicorn
+
+    from halo_forge.serving.app import create_serving_app
 
     app = create_serving_app(
         model_name=args.model,
@@ -5516,6 +5535,8 @@ def main():
                                    'defaults to autodetect')
     serve_parser.add_argument('--trust-remote-code', action='store_true',
                               help='Opt into executing remote model code while loading the served model')
+    serve_parser.add_argument('--check', action='store_true',
+                              help='Validate serving configuration and print endpoints without binding a port')
 
     # serve-public — dashboard FastAPI (the API the public_app SPA talks to)
     serve_public_parser = subparsers.add_parser(

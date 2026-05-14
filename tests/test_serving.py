@@ -136,6 +136,27 @@ def test_chat_completions_stop_sequence_truncates_streaming():
     assert "data: [DONE]" in body
 
 
+def test_chat_completions_stop_sequence_truncates_non_streaming():
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    fake = _FakeAdapter(response="hello world. Goodbye world.")
+    app = create_serving_app(model_name="x", adapter=fake)
+    with TestClient(app) as c:
+        r = c.post(
+            "/v1/chat/completions",
+            json={
+                "model": "x",
+                "messages": [{"role": "user", "content": "x"}],
+                "stop": ["Goodbye"],
+            },
+        )
+    assert r.status_code == 200
+    text = r.json()["choices"][0]["message"]["content"]
+    assert text == "hello world. "
+
+
 def test_completions_endpoint_round_trip(client):
     c, fake = client
     r = c.post(
@@ -246,6 +267,96 @@ def test_health_endpoint_before_lazy_adapter_load():
     assert body["streaming_supported"] is True
 
 
+def test_health_endpoint_after_lazy_adapter_load(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    fake = _FakeAdapter(response="hello")
+    monkeypatch.setattr(
+        "halo_forge.serving.app.build_serving_adapter",
+        lambda *args, **kwargs: fake,
+    )
+    app = create_serving_app(model_name="lazy/model", backend_name="cpu")
+    with TestClient(app) as c:
+        before = c.get("/health").json()
+        r = c.post(
+            "/v1/completions",
+            json={"model": "lazy/model", "prompt": "hi"},
+        )
+        after = c.get("/health").json()
+
+    assert r.status_code == 200
+    assert before["adapter_loaded"] is False
+    assert after["adapter_loaded"] is True
+    assert after["backend"] == "fake"
+
+
+def test_missing_local_model_path_maps_to_400(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    missing = tmp_path / "missing-model"
+    app = create_serving_app(model_name=str(missing), backend_name="cpu")
+    with TestClient(app) as c:
+        r = c.post("/v1/completions", json={"model": str(missing), "prompt": "hi"})
+
+    assert r.status_code == 400
+    assert "local model path does not exist" in r.json()["detail"]
+
+
+def test_missing_backend_dependency_maps_to_503(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    def fail(*args, **kwargs):
+        raise ModuleNotFoundError("No module named 'mlx_lm'")
+
+    monkeypatch.setattr("halo_forge.serving.app.build_serving_adapter", fail)
+    app = create_serving_app(model_name="org/model", backend_name="mlx")
+    with TestClient(app) as c:
+        r = c.post("/v1/completions", json={"model": "org/model", "prompt": "hi"})
+
+    assert r.status_code == 503
+    assert "dependency unavailable" in r.json()["detail"]
+
+
+def test_mlx_no_metal_maps_to_503(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("[metal::load_device] No Metal device available.")
+
+    monkeypatch.setattr("halo_forge.serving.app.build_serving_adapter", fail)
+    app = create_serving_app(model_name="mlx/model", backend_name="mlx")
+    with TestClient(app) as c:
+        r = c.post("/v1/completions", json={"model": "mlx/model", "prompt": "hi"})
+
+    assert r.status_code == 503
+    assert "Metal GPU" in r.json()["detail"]
+
+
+def test_unexpected_adapter_load_error_maps_to_500(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("halo_forge.serving.app.build_serving_adapter", fail)
+    app = create_serving_app(model_name="org/model", backend_name="cpu")
+    with TestClient(app) as c:
+        r = c.post("/v1/completions", json={"model": "org/model", "prompt": "hi"})
+
+    assert r.status_code == 500
+    assert "failed to load serving adapter" in r.json()["detail"]
+
+
 def test_validation_errors_for_out_of_range_temperature():
     """Pydantic validators bound `temperature` to the OpenAI-spec range."""
     from fastapi.testclient import TestClient
@@ -287,3 +398,31 @@ def test_cli_serve_help_registers(monkeypatch, capsys):
     assert ei.value.code == 0
     out = capsys.readouterr().out
     assert "OpenAI-compatible" in out or "serve" in out.lower()
+
+
+def test_cli_serve_check_reports_preflight_without_binding(monkeypatch, capsys):
+    import sys
+    import halo_forge.cli as cli_mod
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "halo-forge",
+            "serve",
+            "--model",
+            "fake/model",
+            "--backend",
+            "cpu",
+            "--check",
+        ],
+    )
+    cli_mod.main()
+    out = capsys.readouterr().out
+    assert "Serve preflight OK" in out
+    assert "fake/model" in out
+    assert "backend:" in out
+    assert "cpu" in out
+    assert "/health" in out
+    assert "/v1/models" in out
+    assert "No server started" in out

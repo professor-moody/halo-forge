@@ -21,6 +21,7 @@ The three compose: `merge → convert --verify → serve`.
 halo-forge serve --model ./models/sft/final_model
 halo-forge serve --model mlx-community/Qwen2.5-3B-Instruct-4bit --backend mlx
 halo-forge serve --model X --host 0.0.0.0 --port 8080
+halo-forge serve --model X --backend cpu --check
 ```
 
 Spins up a FastAPI server on `127.0.0.1:8001` (overridable). Endpoints:
@@ -31,6 +32,43 @@ Spins up a FastAPI server on `127.0.0.1:8001` (overridable). Endpoints:
 - `GET  /health` — Halo Forge liveness + serving status check.
 
 Drop-in for any client expecting an OpenAI endpoint. Point your `OPENAI_BASE_URL` at `http://127.0.0.1:8001/v1` and the same code that targets `api.openai.com` works unchanged.
+
+`--check` is a no-bind preflight. It prints the model, backend selection, bind
+target, lazy-load behavior, streaming support, and trust-remote-code status
+without downloading weights or starting Uvicorn.
+
+### Client examples
+
+```bash
+curl http://127.0.0.1:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"local","messages":[{"role":"user","content":"Say hi"}]}'
+
+curl -N http://127.0.0.1:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"local","prompt":"Once upon a time","stream":true}'
+```
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8001/v1", api_key="halo-forge")
+
+reply = client.chat.completions.create(
+    model="local",
+    messages=[{"role": "user", "content": "Say hi"}],
+)
+print(reply.choices[0].message.content)
+
+for event in client.chat.completions.create(
+    model="local",
+    messages=[{"role": "user", "content": "Count to three"}],
+    stream=True,
+):
+    delta = event.choices[0].delta.content
+    if delta:
+        print(delta, end="")
+```
 
 **Sampling.** Standard knobs supported in v1: `temperature`, `top_p`, `max_tokens`, `stop`. Validation is bounded — `temperature ∈ [0, 2]`, `top_p ∈ (0, 1]`, `max_tokens ∈ [1, 8192]`.
 
@@ -52,6 +90,11 @@ the strict OpenAI `/v1` surface. It reports `ok`, `model`, `backend`,
 `adapter_loaded`, `started_at`, and `streaming_supported`. Use it for process
 liveness, backend identity, and whether the lazy adapter has been loaded; keep
 OpenAI clients pointed at `/v1/models` for model listing.
+
+**Load failures.** The first generation request lazy-loads the adapter. Missing
+explicit local paths return `400`; missing backend dependencies and headless MLX
+Metal access return `503`; unexpected adapter-load failures return `500` with a
+concise detail string.
 
 **Not yet shipped (Track I-followups):**
 - Continuous batching — arrives with I2 (vLLM gives this for free on CUDA; needs explicit wiring for MLX/llama.cpp).

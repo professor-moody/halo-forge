@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 import time
 import uuid
 from typing import Any, Iterator, List, Literal, Optional
@@ -192,6 +193,41 @@ def _completion_stream(
     yield _sse("[DONE]")
 
 
+def _looks_like_local_path(model_name: str) -> bool:
+    text = str(model_name or "").strip()
+    return text.startswith(("./", "../", "/", "~"))
+
+
+def _missing_local_model_detail(model_name: str) -> Optional[str]:
+    if not _looks_like_local_path(model_name):
+        return None
+    path = Path(model_name).expanduser()
+    if path.exists():
+        return None
+    return f"local model path does not exist: {model_name}"
+
+
+def _load_error_to_http_exception(exc: Exception, *, model_name: str) -> HTTPException:
+    text = str(exc)
+    if isinstance(exc, (ImportError, ModuleNotFoundError)):
+        return HTTPException(
+            status_code=503,
+            detail=f"serving backend dependency unavailable: {text}",
+        )
+    if "No Metal device available" in text or "metal::load_device" in text:
+        return HTTPException(
+            status_code=503,
+            detail=(
+                "MLX is installed, but this process cannot access a Metal GPU. "
+                "Run from a normal Apple Silicon Terminal session or choose another backend."
+            ),
+        )
+    missing_path = _missing_local_model_detail(model_name)
+    if missing_path is not None:
+        return HTTPException(status_code=400, detail=missing_path)
+    return HTTPException(status_code=500, detail=f"failed to load serving adapter: {text}")
+
+
 # ----- app factory ---------------------------------------------------------
 
 
@@ -218,11 +254,20 @@ def create_serving_app(
 
     def _get_adapter() -> ServingAdapter:
         if state["adapter"] is None:
-            state["adapter"] = build_serving_adapter(
-                model_name,
-                backend_name=backend_name,
-                trust_remote_code=trust_remote_code,
-            )
+            missing_path = _missing_local_model_detail(model_name)
+            if missing_path is not None:
+                raise HTTPException(status_code=400, detail=missing_path)
+            try:
+                state["adapter"] = build_serving_adapter(
+                    model_name,
+                    backend_name=backend_name,
+                    trust_remote_code=trust_remote_code,
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.exception("Serving adapter load failed for model=%s", model_name)
+                raise _load_error_to_http_exception(exc, model_name=model_name) from exc
         return state["adapter"]
 
     @app.get("/v1/models", response_model=ModelList)
