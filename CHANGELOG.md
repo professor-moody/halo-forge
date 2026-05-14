@@ -5,6 +5,46 @@ All notable changes to halo forge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-05-14
+
+### Added
+- **Apple Silicon MLX first-class path** - `halo-forge doctor mlx`, shared MLX
+  readiness probes, dashboard MLX readiness surfacing, and Terminal smoke
+  validation for SFT, RAFT, DPO, and GRPO.
+- **MLX-native trainers** - DPO supports sigmoid, IPO, hinge, and KTO-pair in
+  reference-free and reference-model modes; GRPO supports reference-free and
+  reference-model eager updates with recorded KL metadata.
+- **First Run Experience v2** - guided `/start` flow with backend detection,
+  safe model recommendation, preflight, launch, and route-to-run behavior.
+- **Model Catalog v2** - static curated model metadata with first-run ranking,
+  memory estimates, license/download notes, fit notes, and risk levels.
+- **OpenAI-compatible streaming** - `/v1/chat/completions` and
+  `/v1/completions` stream SSE chunks ending in `data: [DONE]`.
+- **Release confidence tooling** - `docs/RELEASE_CHECKLIST.md` and
+  `scripts/run_release_confidence.py` capture the 1.4.0 local proof path.
+
+### Changed
+- **Serving health contract** - `/health` is documented as the expanded Halo
+  Forge status endpoint while `/v1/models` remains strict OpenAI-compatible.
+- **MLX documentation** - acceptance evidence, compile measurements, live smoke
+  commands, support matrix, and headless/Codex Metal behavior are now documented.
+- **Dashboard** - Vite/React public app is the qualified UI surface; retired
+  NiceGUI paths are no longer used for release qualification.
+
+### Removed
+- **NiceGUI UI surface** - `halo-forge ui` and the old `ui/app.py` route layer
+  remain retired in favor of `public_app/` plus the FastAPI dashboard API.
+
+### Known limitations
+- Direct CLI users still opt into MLX explicitly with `--accelerator mlx`; the
+  dashboard recommends MLX only when readiness says it is executable.
+- `mx.compile` remains measurement-only. No trainer path enables compiled loss
+  kernels by default.
+- Speculative decoding and backend-native token streaming are later serving
+  tracks, not part of 1.4.0.
+- Halo Forge surfaces chip/model facts but does not auto-tune batch size, LoRA
+  rank, or trainer defaults from chip tier.
+
 ## [1.3.0] - 2026-01-21
 
 ### Added
@@ -96,4 +136,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial project structure
 - Core framework components
-

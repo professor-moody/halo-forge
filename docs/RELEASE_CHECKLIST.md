@@ -70,3 +70,15 @@ Before tagging or publishing, confirm:
 - `docs/MLX_ACCEPTANCE.md` records the latest Terminal MLX acceptance evidence.
 - GitHub Actions for the latest pushed commit are green.
 - No generated `runs/*`, local `examples/datasets/*`, or `uv.lock` artifacts are staged.
+
+## Tagging
+
+Only tag after the latest push CI and nightly qualification proof are green:
+
+```bash
+git tag -a v1.4.0 -m "Halo Forge 1.4.0"
+git push origin v1.4.0
+```
+
+Do not create a GitHub Release from this checklist unless the release task
+explicitly asks for one.

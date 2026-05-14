@@ -74,6 +74,13 @@ with an acceptance-backed Apple Silicon MLX path.
 - **Backend matrix** — every shipped feature is documented with its actual backend support status (✅ / ⚠️ / ❌). Silent-failure paths for MLX-with-PEFT-flags now warn loudly at trainer init.
 - **MLX productization** — `halo-forge doctor mlx`, Terminal smoke validation, and acceptance evidence document the supported Apple Silicon path for SFT, RAFT, DPO, and GRPO.
 
+### Known limitations
+
+- Direct CLI users still choose MLX explicitly with `--accelerator mlx`; the dashboard recommends MLX only when the readiness probe is executable.
+- `mx.compile` remains measurement-only. Eager trainer paths are the production default.
+- Speculative decoding and backend-native token streaming are later serving tracks.
+- Halo Forge surfaces chip, memory, and catalog facts but does not auto-tune batch size, LoRA rank, or trainer defaults from chip tier.
+
 ---
 
 ## [1.3.0] - 2026-01-21

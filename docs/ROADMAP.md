@@ -29,16 +29,14 @@ scratch plans may still describe already-shipped tracks as future work.
 
 ## Next Tracks
 
-1. **MLX productization**: live terminal acceptance for SFT, RAFT, DPO
-   reference-free/reference-model variants, and GRPO reference-free/reference-model paths.
-2. **Serving QA**: keep OpenAI streaming compatibility tested and documented;
+1. **Serving I4**: keep OpenAI streaming compatibility tested and documented;
    native token streaming is a later optimization.
-3. **MLX compile expansion**: measure larger DPO/GRPO shapes before enabling any
-   compiled default.
-4. **MLX DPO variants**: live smoke and docs follow-through for IPO / hinge /
-   KTO-pair; compiled execution remains opt-in future work.
-5. **GRPO scale-out**: measure multi-cycle and larger dual-model GRPO before
+2. **MLX compile production gate**: use the recorded DPO/GRPO measurements to
+   decide whether a disabled-by-default `compile_loss` opt-in is worth adding.
+3. **GRPO scale-out**: measure multi-cycle and larger dual-model GRPO before
    enabling broader defaults.
+4. **Release hardening**: keep all-module qualification, MLX smoke validation,
+   and release-confidence checks green across nightly and push workflows.
 
 ## Deferred
 
