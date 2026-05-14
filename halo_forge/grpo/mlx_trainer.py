@@ -1,17 +1,17 @@
 """MLX-native GRPO trainer.
 
-Track T2 + T17 v1.
+Track T2 + T17.
 
-Same scope discipline as MLX DPO: ship the reference-free variant
-first; full reference-model GRPO needs dual-model memory and stays
-roadmap. The algorithm path:
+Same scope discipline as MLX DPO: keep the reference-free path small and
+explicit, and route the reference-model path through the existing
+``reference_free=False`` config. The algorithm path:
 
     1. Sample N completions per prompt via MLXRolloutGenerator.
     2. Score each via the requested verifier (Track V1 plugin registry).
     3. Compute group-relative advantages: a_i = (r_i - mean(group)) / std(group).
     4. Forward through policy to get response-token log-probs.
-    5. Loss = -E[a · log π(completion|prompt)]; KL term skipped in
-       reference-free mode (no π_ref to compute against).
+    5. Loss = -E[a · log π(completion|prompt)] in reference-free mode.
+       Reference-model mode adds β · (log π - log π_ref).
     6. mlx grad + AdamW step.
 
 Reuses building blocks from MLX DPO (`_response_logprobs`) so the
@@ -85,11 +85,25 @@ def _group_advantages(rewards: List[float], *, scale_by_std: bool = True) -> Lis
     return [(r - mean) / std for r in rewards]
 
 
-class MLXGRPOTrainer:
-    """Reference-free GRPO trainer on MLX (Apple Silicon).
+def _grpo_policy_loss(
+    policy_logp: Any,
+    advantage: float,
+    beta: float,
+    reference_logp: Any = None,
+) -> Any:
+    """Return the scalar GRPO policy loss for one prompt/completion pair."""
+    loss = -advantage * policy_logp
+    if reference_logp is not None:
+        loss = loss + beta * (policy_logp - reference_logp)
+    return loss
 
-    v1 contract:
-      - reference_free=True required (no dual-model memory)
+
+class MLXGRPOTrainer:
+    """GRPO trainer on MLX (Apple Silicon).
+
+    Contract:
+      - reference_free=True skips the KL/reference-model term
+      - reference_free=False loads a frozen reference model and applies β KL
       - rollout via MLXRolloutGenerator (mlx_lm.generate)
       - verifier via the V1 plugin registry
       - single-cycle: rollout once, train once, save adapter
@@ -106,14 +120,8 @@ class MLXGRPOTrainer:
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="MLX GRPO")
 
-        if not self.config.reference_free:
-            raise NotImplementedError(
-                "MLX GRPO v1 supports --reference-free only. Full reference-"
-                "model GRPO on MLX is roadmap. Pass --reference-free, or run "
-                "on a PyTorch backend."
-            )
-
         self.model: Any = None
+        self.reference_model: Any = None
         self.tokenizer: Any = None
         self.run_id: str = ""
         self.training_summary: Dict[str, Any] = {}
@@ -128,6 +136,7 @@ class MLXGRPOTrainer:
         mx = deps["mx"]
         nn = deps["nn"]
         cfg = self.config
+        self.reference_model = None
 
         if dataset is not None:
             cfg.dataset = dataset
@@ -156,6 +165,7 @@ class MLXGRPOTrainer:
             batch_size=max(1, cfg.batch_size),
             system_prompt="",
         )
+        rollout.cleanup()
 
         # Group samples by prompt to compute group-relative advantages.
         # `samples` is [(prompt, completion), ...] in prompt-major order.
@@ -190,6 +200,11 @@ class MLXGRPOTrainer:
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
+        if not cfg.reference_free:
+            logger.info("Loading frozen MLX reference model: %s", cfg.model_name)
+            self.reference_model, _ = deps["mlx_load"](cfg.model_name)
+            self.reference_model.freeze()
+
         self.model.freeze()
         lora_cfg = {
             "rank": cfg.lora_r,
@@ -209,16 +224,34 @@ class MLXGRPOTrainer:
         from halo_forge.dpo.mlx_trainer import _response_logprobs
 
         def loss_fn(model, prompt_tokens, completion_tokens, advantage):
-            # GRPO policy gradient: -advantage * sum(log π(completion|prompt))
-            logp = _response_logprobs(
+            policy_logp = _response_logprobs(
                 mx=mx, nn=nn, model=model,
                 prompt_tokens=prompt_tokens, response_tokens=completion_tokens,
             )
-            return -advantage * logp
+            reference_logp = None
+            kl = mx.array(0.0)
+            if self.reference_model is not None:
+                reference_logp = _response_logprobs(
+                    mx=mx, nn=nn, model=self.reference_model,
+                    prompt_tokens=prompt_tokens, response_tokens=completion_tokens,
+                )
+                kl = policy_logp - reference_logp
+            loss = _grpo_policy_loss(
+                policy_logp,
+                advantage=float(advantage),
+                beta=cfg.beta,
+                reference_logp=reference_logp,
+            )
+            return loss, (
+                policy_logp,
+                reference_logp if reference_logp is not None else policy_logp,
+                kl,
+            )
 
         loss_and_grad = nn.value_and_grad(self.model, loss_fn)
 
         loss_history: List[float] = []
+        kl_history: List[float] = []
         reward_history: List[float] = [r for _, _, r, _ in scored]
         advantage_history: List[float] = [a for _, _, _, a in scored]
 
@@ -245,12 +278,14 @@ class MLXGRPOTrainer:
                 ):
                     completion_ids = completion_ids[: cfg.max_completion_length]
 
-                loss_value, grads = loss_and_grad(
+                (loss_value, aux), grads = loss_and_grad(
                     self.model, prompt_ids, completion_ids, advantage
                 )
                 optimizer.update(self.model, grads)
                 mx.eval(self.model.parameters(), optimizer.state)
                 loss_history.append(float(loss_value))
+                _policy_logp, _reference_logp, kl_value = aux
+                kl_history.append(float(kl_value))
 
                 step += 1
                 if step % cfg.logging_steps == 0:
@@ -291,6 +326,7 @@ class MLXGRPOTrainer:
 
         summary = self._build_summary(
             loss_history=loss_history,
+            kl_history=kl_history,
             reward_history=reward_history,
             advantage_history=advantage_history,
             scored_pairs=scored,
@@ -360,6 +396,7 @@ class MLXGRPOTrainer:
         self,
         *,
         loss_history,
+        kl_history,
         reward_history,
         advantage_history,
         scored_pairs,
@@ -376,6 +413,8 @@ class MLXGRPOTrainer:
         avg_reward = (
             sum(reward_history) / max(1, len(reward_history)) if reward_history else None
         )
+        avg_kl = sum(kl_history) / max(1, len(kl_history)) if kl_history else None
+        final_kl = kl_history[-1] if kl_history else None
 
         cycle = build_cycle_summary(
             cycle=0,
@@ -402,9 +441,11 @@ class MLXGRPOTrainer:
                 "n_completions": n_completions,
                 "num_generations": cfg.num_generations,
                 "avg_reward": avg_reward,
+                "avg_kl_final": final_kl,
                 "beta": cfg.beta,
                 "verifier": cfg.verifier_name,
-                "reference_free": True,
+                "reference_free": cfg.reference_free,
+                "reference_model_loaded": not cfg.reference_free,
             },
         )
         summary = build_training_summary(
@@ -431,10 +472,14 @@ class MLXGRPOTrainer:
                 "epsilon": cfg.epsilon,
                 "temperature": cfg.temperature,
                 "verifier": cfg.verifier_name,
-                "reference_free": True,
+                "reference_free": cfg.reference_free,
+                "reference_model_loaded": not cfg.reference_free,
                 "backend": "mlx",
                 "reward_history": reward_history,
                 "advantage_history": advantage_history,
+                "kl_history": kl_history,
+                "avg_kl_final": final_kl,
+                "avg_kl": avg_kl,
             },
         )
         summary["final_model_path"] = str(final_output)
@@ -464,11 +509,11 @@ class MLXGRPOTrainer:
                 "num_generations": cfg.num_generations,
                 "beta": cfg.beta,
                 "verifier": cfg.verifier_name,
-                "reference_free": True,
+                "reference_free": cfg.reference_free,
             },
             representative_examples=[],
         )
         return summary
 
 
-__all__ = ["MLXGRPOTrainer", "_group_advantages"]
+__all__ = ["MLXGRPOTrainer", "_group_advantages", "_grpo_policy_loss"]

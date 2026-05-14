@@ -103,7 +103,7 @@ Authoritative coverage at [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md). Hi
 | **bnb optimizers** | ⚠️ bnb-rocm | ✅ | ❌ | ❌ | ❌ |
 | **OpenAI serve** | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-1. MLX DPO + GRPO are reference-free in v1; full reference-model variants are roadmap (T17). Other DPO loss types (IPO / hinge / kto_pair) require the reference model.
+1. MLX DPO supports sigmoid, IPO, hinge, and KTO-pair in reference-free and reference-model modes. MLX GRPO supports reference-free and reference-model eager single-cycle updates.
 2. PEFT additions (DoRA / rsLoRA / PiSSA) are peft-only; mlx-lm.tuner ships LoRA. Setting these flags on MLX prints a loud warning at trainer init.
 
 ## Quick start

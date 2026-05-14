@@ -114,6 +114,18 @@ def main() -> int:
                 ],
             )
         )
+        summary["checks"].append(
+            _run(
+                "mlx_grpo_reference_model_live_smoke",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "tests/test_mlx_live_training.py::test_mlx_grpo_live_reference_model_runs_one_cycle",
+                    "-q",
+                ],
+            )
+        )
 
     summary["checks"].append(
         _run(

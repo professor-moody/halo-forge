@@ -41,10 +41,8 @@ class GRPOConfig:
     # model. 0.04 is the value DeepSeek-R1 published; lower means
     # the policy can drift further from the base; 0 disables KL.
     beta: float = 0.04
-    # `reference_free` skips loading a separate reference model — the
-    # KL term is computed against a snapshot of the policy at step 0.
-    # Saves memory at the cost of some quality. v1 only supports this
-    # mode on MLX (full reference-model GRPO on MLX is a follow-up).
+    # `reference_free` skips loading a separate reference model. It saves
+    # memory at the cost of removing the explicit reference KL term.
     reference_free: bool = False
     # `epsilon` clips the policy ratio (PPO-style) so a single bad
     # update can't blow out the policy. 0.2 is the standard value.

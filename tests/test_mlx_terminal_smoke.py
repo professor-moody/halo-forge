@@ -42,7 +42,7 @@ def test_mlx_grpo_terminal():
     import mlx.nn as nn
 
     from halo_forge.dpo.mlx_trainer import _response_logprobs
-    from halo_forge.grpo.mlx_trainer import _group_advantages
+    from halo_forge.grpo.mlx_trainer import _grpo_policy_loss, _group_advantages
 
     class TinyUniformPolicy:
         def __call__(self, inputs):
@@ -66,3 +66,12 @@ def test_mlx_grpo_terminal():
     assert advantages == pytest.approx([-1.0, 1.0])
     assert math.isfinite(value)
     assert value == pytest.approx(2 * math.log(8), rel=1e-6)
+
+    ref_loss = _grpo_policy_loss(
+        mx.array(2.0),
+        advantage=1.0,
+        beta=0.1,
+        reference_logp=mx.array(1.0),
+    )
+    mx.eval(ref_loss)
+    assert float(ref_loss.item()) == pytest.approx(-1.9)

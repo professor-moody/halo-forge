@@ -89,7 +89,7 @@ halo-forge grpo train \
 - `--epsilon` — PPO ratio clip (0.2 standard).
 - `--temperature` — rollout sampling temperature (0.9 default; higher = more diverse groups).
 - `--no-scale-rewards` — flip from canonical GRPO (advantage / std) to RLOO-flavored (mean baseline only).
-- `--reference-free` — required for MLX GRPO in v1.
+- `--reference-free` — skip the reference model; saves memory. MLX supports both reference-free and reference-model GRPO.
 
 **Verifier integration.** `--verifier <short_name>` resolves through the [V1 plugin registry](VERIFIERS.md). Pass `execution`, `pytest`, `humaneval`, `llm_judge`, `json_schema`, or any `@register_verifier`-decorated class. The trainer instantiates and bridges to TRL's `reward_funcs` (PyTorch) or the manual scoring loop (MLX).
 
@@ -125,7 +125,7 @@ halo-forge raft train \
 | Wall-clock per step | low | medium (2× forward) | high (N forwards + verify) | high (N forwards + verify) |
 | Sample efficiency | high (every token contributes) | medium | high (advantages reweight all samples) | low (drops 70%+ via threshold) |
 | KL term | no | yes | yes | no |
-| MLX native | ✅ | ✅ reference-free | ✅ reference-free | ✅ |
+| MLX native | ✅ | ✅ reference-free/reference-model | ✅ reference-free/reference-model | ✅ |
 
 **Recommended pipeline for a new task.**
 1. **SFT** on a domain dataset to align format + style. 1-3 epochs, LR 2e-4.

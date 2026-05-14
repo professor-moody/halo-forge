@@ -14,6 +14,7 @@ def _passing_summary() -> dict:
         "mlx_dpo_reference_model_live_smoke",
         "mlx_dpo_non_sigmoid_variants",
         "mlx_grpo_reference_free_live_smoke",
+        "mlx_grpo_reference_model_live_smoke",
         "mlx_dpo_loss_unit",
         "mlx_dpo_reference_model_terminal",
         "mlx_grpo_terminal",

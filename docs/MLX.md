@@ -12,7 +12,7 @@ MLX support has moved past the original staged port. Current status:
 | LoRA SFT | ✅ shipped | MLX-native trainer path |
 | RAFT / RLVR | ✅ shipped | MLX-native RAFT path |
 | DPO | ✅ shipped | sigmoid, IPO, hinge, and KTO-pair; reference-free and reference-model paths |
-| GRPO | 🟡 partial | reference-free v1; reference-model GRPO remains roadmap |
+| GRPO | ✅ shipped | reference-free and reference-model eager paths |
 | MPS fallback telemetry | ✅ shipped | dashboard warning-line counter |
 | Chip-tier surfacing | ✅ shipped | telemetry/backend metadata only, no auto-tuning |
 
@@ -155,8 +155,18 @@ python scripts/run_mlx_smoke.py --output-dir runs/mlx-smoke
 
 The script writes `runs/mlx-smoke/mlx_smoke_summary.json`. A healthy MLX host
 should pass the SFT/RAFT live smoke, DPO reference-free sigmoid live smoke, DPO
-reference-model sigmoid live smoke, DPO non-sigmoid variant smoke, and GRPO
-reference-free live smoke. No DPO variant skip is expected on a healthy MLX host.
+reference-model sigmoid live smoke, DPO non-sigmoid variant smoke, GRPO
+reference-free live smoke, and GRPO reference-model live smoke. No DPO variant
+skip is expected on a healthy MLX host.
+
+For a focused dual-model GRPO memory check, run:
+
+```bash
+python scripts/measure_mlx_grpo_reference_model.py --json
+```
+
+Headless/Codex sessions may report `status=unavailable`; use a normal Terminal
+for the real Metal-backed feasibility result.
 
 ## MLX training support matrix
 
@@ -166,7 +176,7 @@ reference-free live smoke. No DPO variant skip is expected on a healthy MLX host
 | RAFT / RLVR | ✅ supported | MLX rollout + verifier filtering + MLX SFT update |
 | DPO sigmoid | ✅ supported | reference-free and reference-model |
 | DPO IPO / hinge / KTO | ✅ supported | eager MLX path; compiled execution remains measurement-only |
-| GRPO | ⚠️ reference-free | single-cycle policy update; reference-model GRPO is roadmap |
+| GRPO | ✅ supported | eager reference-free and reference-model single-cycle policy update |
 | Reward model | ❌ roadmap | use PyTorch MPS/CUDA/ROCm today |
 
 ## Experimental M5 Neural Accelerator flag
@@ -186,6 +196,9 @@ PyTorch MPS can silently fall back to CPU for unsupported operations when `PYTOR
   no compiled trainer path is enabled by default.
 - **MLX DPO completion**: sigmoid, IPO, hinge, and KTO-pair support reference-free
   and reference-model paths. RPO remains on PyTorch backends.
+- **MLX GRPO completion**: reference-free and reference-model GRPO both run eager
+  on MLX. Reference-model mode loads a frozen second copy and records KL summary
+  metadata; no compiled path or memory auto-tuning is enabled.
 - **Serving follow-up**: speculative decoding and native token streaming remain
   opt-in future work after the shipped OpenAI-shaped streaming surface.
 

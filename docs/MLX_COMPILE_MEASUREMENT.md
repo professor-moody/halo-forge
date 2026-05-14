@@ -70,11 +70,12 @@ worse.
 - Reference-free and reference-model DPO losses are eager in production.
   `mx.compile` remains measurement-only.
 - GRPO stays eager: the synthetic advantage-loss results are mixed and do not
-  justify a production path.
+  justify a compiled production path.
 - IPO, hinge, and KTO-pair DPO reductions have complete synthetic Terminal
   measurements across `32`, `128`, and `512`, and now run through eager MLX
   trainer paths. Compiled execution remains disabled.
-- Keep reference-model GRPO on MLX disabled until dual-model memory is measured.
+- Reference-model GRPO on MLX has a separate dual-model feasibility harness
+  (`scripts/measure_mlx_grpo_reference_model.py`) and stays eager.
 
 If a compiled path is implemented later, it should start as MLX DPO sigmoid only
 with `compile_loss=False` by default, a CLI opt-in such as `--compile-loss`, and
@@ -186,7 +187,8 @@ Use the expanded results to decide:
 
 - whether compiled DPO/GRPO reductions are worth a production opt-in;
 - whether IPO / hinge / KTO have acceptable memory behavior on MLX;
-- whether reference-model GRPO is feasible on the M4 Max baseline host.
+- whether reference-model GRPO needs further dual-model memory runs before
+  multi-cycle expansion.
 
 ## DPO Variant Gate Protocol
 
@@ -271,5 +273,6 @@ Interpretation:
   smoke before exposing it as supported.
 - IPO and hinge are also feasible for eager implementation. Their compiled
   gains are smaller than KTO-pair and do not justify a default compiled path.
-- GRPO remains eager. The reduction-only compile signal is modest and does not
-  address the larger open question: reference-model GRPO dual-model memory.
+- GRPO remains eager. The reduction-only compile signal is modest; dual-model
+  reference GRPO is measured by `scripts/measure_mlx_grpo_reference_model.py`,
+  not by the compile-reduction harness.

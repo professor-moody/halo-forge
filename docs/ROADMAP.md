@@ -24,19 +24,21 @@ scratch plans may still describe already-shipped tracks as future work.
   disabled.
 - **MLX DPO**: reference-free and reference-model DPO run on MLX for sigmoid,
   IPO, hinge, and KTO-pair; RPO remains a PyTorch path.
+- **MLX GRPO**: reference-free and reference-model GRPO run on MLX with eager
+  single-cycle updates and recorded KL metadata.
 
 ## Next Tracks
 
 1. **MLX productization**: live terminal acceptance for SFT, RAFT, DPO
-   reference-free/reference-model variants, and GRPO reference-free paths.
+   reference-free/reference-model variants, and GRPO reference-free/reference-model paths.
 2. **Serving QA**: keep OpenAI streaming compatibility tested and documented;
    native token streaming is a later optimization.
 3. **MLX compile expansion**: measure larger DPO/GRPO shapes before enabling any
    compiled default.
 4. **MLX DPO variants**: live smoke and docs follow-through for IPO / hinge /
    KTO-pair; compiled execution remains opt-in future work.
-5. **Reference-model GRPO on MLX**: implement only after dual-model memory is
-   measured on real Apple Silicon hosts.
+5. **GRPO scale-out**: measure multi-cycle and larger dual-model GRPO before
+   enabling broader defaults.
 
 ## Deferred
 

@@ -1449,8 +1449,8 @@ def cmd_grpo_train(args):
     """Run GRPO training (Track T2 / phase Q1).
 
     Wraps trl.GRPOTrainer for the PyTorch path; MLX path uses an
-    in-house reference-free implementation. Verifier comes from the
-    plugin registry (V1) — `--verifier execution` (default), or any
+    in-house reference-free/reference-model implementation. Verifier comes from
+    the plugin registry (V1) — `--verifier execution` (default), or any
     registered short name (e.g. `llm_judge` from V2).
     """
     from halo_forge.grpo import GRPOConfig, get_grpo_trainer
@@ -5331,7 +5331,7 @@ def main():
     grpo_train_parser.add_argument('--no-scale-rewards', action='store_true',
                                    help='Skip dividing advantages by std(group); RLOO-flavored')
     grpo_train_parser.add_argument('--reference-free', action='store_true',
-                                   help='Skip reference model (required on MLX backend)')
+                                   help='Skip reference model; saves memory')
     grpo_train_parser.add_argument('--verifier', default='execution',
                                    help='Verifier short-name from the V1 plugin registry '
                                         '(execution, llm_judge, ...). Run halo-forge sft datasets '

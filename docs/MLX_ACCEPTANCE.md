@@ -46,6 +46,8 @@ Notes:
 - The current acceptance run was validated after the eager MLX IPO / hinge /
   KTO-pair implementation. No DPO variant skip is expected on a healthy MLX
   Terminal session.
+- Fresh acceptance runs after the reference-model GRPO pass must also include
+  `mlx_grpo_reference_model_live_smoke` as a passed check.
 
 Validate a fresh run with:
 

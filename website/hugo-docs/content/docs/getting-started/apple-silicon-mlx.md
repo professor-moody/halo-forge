@@ -112,12 +112,23 @@ Expected passing checks on a healthy Apple Silicon Terminal:
 - `mlx_sft_raft_live_smoke`
 - `mlx_dpo_reference_free_live_smoke`
 - `mlx_dpo_reference_model_live_smoke`
+- `mlx_dpo_non_sigmoid_variants`
 - `mlx_grpo_reference_free_live_smoke`
+- `mlx_grpo_reference_model_live_smoke`
 - `mlx_dpo_loss_unit`
 - `mlx_dpo_reference_model_terminal`
 - `mlx_grpo_terminal`
 
 No DPO variant skip is expected on a healthy MLX host.
+
+For a focused dual-model GRPO memory check:
+
+```bash
+python scripts/measure_mlx_grpo_reference_model.py --json
+```
+
+Run that from normal Terminal; headless/Codex sessions can import MLX while
+still reporting `status=unavailable` because Metal is not visible.
 
 ## Support matrix
 
@@ -127,7 +138,7 @@ No DPO variant skip is expected on a healthy MLX host.
 | RAFT / RLVR | supported |
 | DPO sigmoid | reference-free and reference-model supported |
 | DPO IPO / hinge / KTO | reference-free and reference-model supported |
-| GRPO | reference-free supported |
+| GRPO | reference-free and reference-model supported |
 | Reward model | roadmap |
 
 ## Troubleshooting

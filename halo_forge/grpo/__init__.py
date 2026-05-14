@@ -17,7 +17,7 @@ Algorithm:
 
 Backend dispatch:
     rocm_gfx1151 / cuda / mps / cpu  →  PyTorch path via trl.GRPOTrainer
-    mlx                              →  MLX-native (reference-free in v1)
+    mlx                              →  MLX-native reference-free/reference-model
 
 Both paths reuse:
   - The pluggable rollout engine (I6) — vLLM on CUDA/ROCm, mlx_lm on

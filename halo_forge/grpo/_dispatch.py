@@ -1,8 +1,8 @@
 """Backend-aware GRPO trainer factory.
 
 Mirrors the DPO dispatch shape: PyTorch path covers rocm / cuda / mps /
-cpu via TRL's GRPOTrainer; MLX path uses an in-house implementation
-gated to reference-free + sigmoid-equivalent variant in v1.
+cpu via TRL's GRPOTrainer; MLX path uses an in-house implementation for
+reference-free and reference-model GRPO.
 """
 
 from __future__ import annotations

@@ -135,6 +135,41 @@ def test_mlx_dpo_live_non_sigmoid_variants_run_one_cycle(tmp_path, loss_type, re
 
 
 def test_mlx_grpo_live_reference_free_runs_one_cycle(monkeypatch, tmp_path):
+    summary = _run_mlx_grpo_live(monkeypatch, tmp_path, reference_free=True, label="reference_free")
+
+    assert summary["modality"] == "grpo"
+    assert summary["model_name"] == MLX_TINY_MODEL
+    assert summary["weights_updated"] is True
+    assert summary["total_train_steps_executed"] > 0
+    assert summary["reference_free"] is True
+    assert summary["reference_model_loaded"] is False
+    assert summary["backend"] == "mlx"
+    assert summary["n_prompts"] == 1
+    assert summary["n_completions"] == 2
+    final_path = Path(summary["final_model_path"])
+    assert final_path.exists()
+    assert list(final_path.glob("*.safetensors"))
+
+
+def test_mlx_grpo_live_reference_model_runs_one_cycle(monkeypatch, tmp_path):
+    summary = _run_mlx_grpo_live(monkeypatch, tmp_path, reference_free=False, label="reference_model")
+
+    assert summary["modality"] == "grpo"
+    assert summary["model_name"] == MLX_TINY_MODEL
+    assert summary["weights_updated"] is True
+    assert summary["total_train_steps_executed"] > 0
+    assert summary["reference_free"] is False
+    assert summary["reference_model_loaded"] is True
+    assert summary["backend"] == "mlx"
+    assert summary["n_prompts"] == 1
+    assert summary["n_completions"] == 2
+    assert "kl_history" in summary
+    final_path = Path(summary["final_model_path"])
+    assert final_path.exists()
+    assert list(final_path.glob("*.safetensors"))
+
+
+def _run_mlx_grpo_live(monkeypatch, tmp_path, *, reference_free: bool, label: str) -> dict:
     from halo_forge.grpo.config import GRPOConfig
     from halo_forge.grpo.mlx_trainer import MLXGRPOTrainer
 
@@ -163,8 +198,8 @@ def test_mlx_grpo_live_reference_free_runs_one_cycle(monkeypatch, tmp_path):
     cfg = GRPOConfig(
         model_name=MLX_TINY_MODEL,
         train_file=str(train_file),
-        output_dir=str(tmp_path / "grpo_out"),
-        reference_free=True,
+        output_dir=str(tmp_path / f"grpo_{label}_out"),
+        reference_free=reference_free,
         num_generations=2,
         max_samples=1,
         max_prompt_length=48,
@@ -182,16 +217,4 @@ def test_mlx_grpo_live_reference_free_runs_one_cycle(monkeypatch, tmp_path):
         gradient_checkpointing=False,
     )
 
-    summary = MLXGRPOTrainer(cfg).train()
-
-    assert summary["modality"] == "grpo"
-    assert summary["model_name"] == MLX_TINY_MODEL
-    assert summary["weights_updated"] is True
-    assert summary["total_train_steps_executed"] > 0
-    assert summary["reference_free"] is True
-    assert summary["backend"] == "mlx"
-    assert summary["n_prompts"] == 1
-    assert summary["n_completions"] == 2
-    final_path = Path(summary["final_model_path"])
-    assert final_path.exists()
-    assert list(final_path.glob("*.safetensors"))
+    return MLXGRPOTrainer(cfg).train()

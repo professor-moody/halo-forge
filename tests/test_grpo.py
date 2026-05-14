@@ -63,22 +63,22 @@ def test_group_advantages_three_member_group():
     assert result[0] < result[1] < result[2]
 
 
-def test_dispatch_mlx_path_returns_mlx_trainer_when_reference_free():
+def test_dispatch_mlx_path_returns_mlx_trainer_for_reference_modes():
     from halo_forge.grpo import GRPOConfig
     from halo_forge.grpo._dispatch import get_grpo_trainer
 
     class _FakeMLXBackend:
         name = "mlx"
 
-    # Default reference_free=False → typed error.
     cfg = GRPOConfig()
-    with pytest.raises(NotImplementedError, match=r"reference-free|reference_free"):
-        get_grpo_trainer(cfg, backend=_FakeMLXBackend())  # type: ignore[arg-type]
+    trainer_default = get_grpo_trainer(cfg, backend=_FakeMLXBackend())  # type: ignore[arg-type]
+    assert trainer_default.__class__.__name__ == "MLXGRPOTrainer"
+    assert trainer_default.config.reference_free is False
 
-    # reference_free=True → instantiates.
     cfg_rf = GRPOConfig(reference_free=True)
     trainer = get_grpo_trainer(cfg_rf, backend=_FakeMLXBackend())  # type: ignore[arg-type]
     assert trainer.__class__.__name__ == "MLXGRPOTrainer"
+    assert trainer.config.reference_free is True
 
 
 def test_mlx_grpo_trainer_module_imports_without_mlx():
@@ -87,6 +87,19 @@ def test_mlx_grpo_trainer_module_imports_without_mlx():
 
     assert hasattr(mod, "MLXGRPOTrainer")
     assert hasattr(mod, "_group_advantages")
+    assert hasattr(mod, "_grpo_policy_loss")
+
+
+def test_grpo_policy_loss_reference_free_and_reference_model():
+    from halo_forge.grpo.mlx_trainer import _grpo_policy_loss
+
+    assert _grpo_policy_loss(2.0, advantage=1.0, beta=0.04) == pytest.approx(-2.0)
+    assert _grpo_policy_loss(
+        2.0,
+        advantage=1.0,
+        beta=0.1,
+        reference_logp=1.0,
+    ) == pytest.approx(-1.9)
 
 
 def test_mlx_grpo_warns_on_unsupported_config(capsys):
