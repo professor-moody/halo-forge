@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-forge"
-version = "1.3.0"
+version = "1.4.0"
 description = "Multi-backend RLVR training framework for AMD ROCm, Apple Silicon, and CUDA"
 readme = "README.md"
 license = {text = "Apache-2.0"}

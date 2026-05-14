@@ -33,9 +33,10 @@ halo-forge replay ./models/dpo --launch --force # relaunch even on env drift
     "platform": "Darwin arm64",
     "backend": "mlx",
     "packages": {
-      "halo_forge": "1.3.0",
+      "halo_forge": "1.4.0",
       "torch": "2.5.0",
-      "mlx": "0.21.0",
+      "mlx": "0.31.2",
+      "mlx_lm": "0.31.3",
       "transformers": "4.49.0",
       "peft": "0.14.0",
       "trl": "0.29.1",

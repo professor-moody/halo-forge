@@ -3,9 +3,10 @@ title: "Changelog"
 description: "All notable changes to halo forge"
 ---
 
-## [1.4.0] - 2026-05-07
+## [1.4.0] - 2026-05-14
 
-Major release. Halo-forge becomes a cross-vendor local finetuning workstation.
+Major release. Halo-forge becomes a cross-vendor local finetuning workstation
+with an acceptance-backed Apple Silicon MLX path.
 
 ### Added
 
@@ -31,7 +32,8 @@ Major release. Halo-forge becomes a cross-vendor local finetuning workstation.
 - **Quality scoring** (`halo-forge data score`) — five-component heuristic + threshold / top-K filter.
 
 #### Inference + serving
-- **OpenAI-compatible serving** — `halo-forge serve --model X` exposes `/v1/chat/completions`, `/v1/completions`, `/v1/models`.
+- **OpenAI-compatible serving** — `halo-forge serve --model X` exposes `/v1/chat/completions`, `/v1/completions`, `/v1/models`, and a Halo Forge `/health` status endpoint.
+- **Streaming responses** — chat and text completions support OpenAI-shaped `text/event-stream` chunks ending in `data: [DONE]`.
 - **Unified convert** — `halo-forge convert --format mlx|gguf|hf --quant q4|q8|fp16|bf16|fp32`.
 - **Round-trip verify** — `halo-forge convert --verify` catches silently-broken exports.
 - **vLLM rollout** — `--rollout-engine vllm` for CUDA / ROCm.
@@ -52,6 +54,8 @@ Major release. Halo-forge becomes a cross-vendor local finetuning workstation.
 
 #### Frontend
 - **Vite + React 19 + Tanstack Router** — replaces the retired NiceGUI surface.
+- **First Run Experience v2** — guided `/start` flow with backend detection, MLX readiness, safe model recommendation, preflight, launch, and route-to-run behavior.
+- **Model Catalog v2** — curated static catalog with first-run ranking, memory estimates, license/download notes, fit notes, and risk levels.
 - **Live run view** — cycle-by-cycle loss + reward charts, scrubber, log tail, sample inspector, cancel button.
 - **Multi-run comparison** — pin up to 6 runs, overlay loss / reward, side-by-side config diff.
 - **Run search** — DB-backed filter chips for modality / status / model / has-eval.
@@ -68,6 +72,7 @@ Major release. Halo-forge becomes a cross-vendor local finetuning workstation.
 
 - **Documentation** — README rewritten; new feature-area docs (TRAINERS, DATA, EVAL, SERVING, REPLAY); per-backend feature × backend matrix in HARDWARE_NOTES.
 - **Backend matrix** — every shipped feature is documented with its actual backend support status (✅ / ⚠️ / ❌). Silent-failure paths for MLX-with-PEFT-flags now warn loudly at trainer init.
+- **MLX productization** — `halo-forge doctor mlx`, Terminal smoke validation, and acceptance evidence document the supported Apple Silicon path for SFT, RAFT, DPO, and GRPO.
 
 ---
 
