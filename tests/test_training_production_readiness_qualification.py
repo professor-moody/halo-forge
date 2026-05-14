@@ -67,6 +67,25 @@ def test_fixture_profile_marks_all_training_modalities_production_ready():
         assert entry.readiness_tier == "production_ready"
 
 
+def test_ui_ops_qualification_uses_public_app_contract():
+    """UI ops qualification should track the React/FastAPI surface, not retired NiceGUI files."""
+    result = validate_all_module_qualification(
+        module="ui_ops",
+        output_dir=Path.cwd(),
+        seed=42,
+        require_artifacts=True,
+        profile="fixture-v1",
+    )
+
+    assert result.status == "pass"
+    assert result.artifacts_ok is True
+    evidence_text = json.dumps(result.evidence, sort_keys=True)
+    assert "public_app" in evidence_text
+    assert "halo_forge/public_api" in evidence_text
+    assert "ui/app.py" not in evidence_text
+    assert "ui/components/sidebar.py" not in evidence_text
+
+
 def test_training_production_readiness_contract_files_exist_and_validate():
     """Each training modality should have a tracked production-readiness contract file."""
     for module in sorted(TRAINING_MODULES):

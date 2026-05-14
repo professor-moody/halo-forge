@@ -1332,10 +1332,25 @@ def _artifact_paths(module: str, output_dir: Path) -> Dict[str, Any]:
         return {"benchmark_json": [str(path) for path in output_dir.glob("**/benchmark.json")]}
     if module == "benchmark_non_code":
         return {"benchmark_json": [str(path) for path in output_dir.glob("**/benchmark.json")]}
-    return {
-        "ui_app": str(Path.cwd() / "ui" / "app.py"),
-        "ui_sidebar": str(Path.cwd() / "ui" / "components" / "sidebar.py"),
-    }
+    if module == "ui_ops":
+        repo_root = Path.cwd()
+        return {
+            "public_api_app": str(repo_root / "halo_forge" / "public_api" / "app.py"),
+            "public_api_service": str(repo_root / "halo_forge" / "public_api" / "service.py"),
+            "public_app_root": str(repo_root / "public_app" / "package.json"),
+            "public_app_entry": str(repo_root / "public_app" / "src" / "main.tsx"),
+            "public_app_shell": str(
+                repo_root / "public_app" / "src" / "routes" / "__root.tsx"
+            ),
+            "ui_ops_readiness_service": str(
+                repo_root / "ui" / "services" / "ops_readiness_service.py"
+            ),
+            "ui_results_service": str(repo_root / "ui" / "services" / "results_service.py"),
+            "ui_training_service": str(
+                repo_root / "ui" / "services" / "training_service.py"
+            ),
+        }
+    return {}
 
 
 def _service_has_method(service_module: str, service_class: str, method: str) -> bool:

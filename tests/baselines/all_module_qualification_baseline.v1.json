@@ -654,11 +654,14 @@
       "eval_available": false,
       "eval_metric_name": "",
       "evidence": {
-        "file_app": "<repo_root>/ui/app.py",
         "file_benchmark_service": "<repo_root>/ui/services/benchmark_service.py",
         "file_inference_service": "<repo_root>/ui/services/inference_service.py",
         "file_ops_readiness_service": "<repo_root>/ui/services/ops_readiness_service.py",
-        "file_sidebar": "<repo_root>/ui/components/sidebar.py",
+        "file_public_api_app": "<repo_root>/halo_forge/public_api/app.py",
+        "file_public_api_service": "<repo_root>/halo_forge/public_api/service.py",
+        "file_public_app_root": "<repo_root>/public_app/package.json",
+        "file_results_service": "<repo_root>/ui/services/results_service.py",
+        "file_training_service": "<repo_root>/ui/services/training_service.py",
         "output_dir": "<repo_root>",
         "profile": "fixture-v1",
         "repo_root": "<repo_root>"
