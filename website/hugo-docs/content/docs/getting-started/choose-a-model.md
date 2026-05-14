@@ -22,7 +22,7 @@ The dashboard catalog is designed as a decision surface, not just a list. Use th
 - **VLM** and **Audio**: modality-specific starting points.
 - **Liquid AI**: experimental LFM entries with caveats surfaced before training.
 
-From any catalog row, choose **Use in Training** to prefill the training configurator. The configurator then shows backend support, memory tier, known caveats, MLX variants, preflight status, and a launch summary before the run starts.
+From any catalog row, choose **Use in Advanced** to prefill the advanced training configurator. For a safer first launch, start from the **Start** flow and let Halo Forge pick the first-run defaults.
 
 ## First Picks
 
@@ -30,7 +30,7 @@ From any catalog row, choose **Use in Training** to prefill the training configu
 |---|---|---|
 | Code training | `Qwen/Qwen2.5-Coder-3B` | Best-tested code default for SFT and RAFT |
 | Fast code smoke | `Qwen/Qwen2.5-Coder-0.5B` | Small enough for quick validation |
-| Preference tuning | `Qwen/Qwen2.5-3B-Instruct` | Good DPO/ORPO/RM default |
+| Preference tuning | `Qwen/Qwen2.5-3B-Instruct` | Good DPO/RM default |
 | Reasoning | `Qwen/Qwen2.5-1.5B-Instruct` or `Qwen/Qwen2.5-Math-1.5B` | Small reasoning-friendly baselines |
 | VLM | `Qwen/Qwen2-VL-2B-Instruct` or `Qwen/Qwen2.5-VL-3B-Instruct` | Safest current VLM adapter path |
 | Audio | `openai/whisper-small` | Current Halo Forge audio path is Whisper-oriented |
@@ -76,6 +76,6 @@ Primary references:
 
 1. Start smaller than you think. Prove the data and verifier first.
 2. Use Qwen Coder for code unless you have a reason not to.
-3. Use instruct models for DPO, ORPO, agentic, and chat refinement.
+3. Use instruct models for DPO, GRPO, agentic, and chat refinement.
 4. Use MLX-format repos for Apple MLX. Do not expect bitsandbytes-style runtime quantization there.
 5. Treat `experimental` catalog entries as “interesting, not guaranteed.”

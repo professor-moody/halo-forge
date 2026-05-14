@@ -375,7 +375,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
         <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
           <Button asChild size="sm" variant="primary">
             <Link to="/train" search={{ model: model.id, mode: preferredTrainMode(model) }}>
-              Use in Training
+              Use in Advanced
             </Link>
           </Button>
           {model.mlx_variant ? (

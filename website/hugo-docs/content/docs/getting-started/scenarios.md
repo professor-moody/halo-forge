@@ -27,23 +27,18 @@ halo-forge raft train \
 
 Use this when you want the verifier to filter generated code before the next training pass.
 
-## Preference Tuning: DPO Or ORPO
+## Preference Tuning: DPO
 
 ```bash
 halo-forge dpo train \
   --dataset ultrafeedback \
   --model Qwen/Qwen2.5-3B-Instruct \
   --output models/chat-dpo \
-  --epochs 1
-
-halo-forge orpo train \
-  --dataset ultrafeedback \
-  --model Qwen/Qwen2.5-3B-Instruct \
-  --output models/chat-orpo \
-  --epochs 1
+  --epochs 1 \
+  --loss-type sigmoid
 ```
 
-Use DPO when you want the standard preference baseline. Use ORPO when you want a faster reference-free preference run.
+Use DPO when you want the standard preference baseline. On MLX, Halo Forge supports sigmoid, IPO, hinge, and KTO-pair paths.
 
 ## Reasoning: GRPO
 

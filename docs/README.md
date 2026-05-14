@@ -9,7 +9,7 @@ Full documentation is available at **[halo-forge.io/docs](https://halo-forge.io/
 | [Quick Start](https://halo-forge.io/docs/getting-started/quickstart/) | Get running in 30 minutes |
 | [How to Train](https://halo-forge.io/docs/training-pipeline/how-to-train/) | Complete step-by-step guide |
 | [Command Index](https://halo-forge.io/docs/reference/command-index/) | Every command and flag |
-| [Public Frontend](https://halo-forge.io/docs/reference/public-frontend/) | Public-facing training, monitor, results, and readiness surface |
+| [Public Frontend](https://halo-forge.io/docs/reference/public-frontend/) | Local/remote training, monitor, results, docs, and connection surface |
 | [Verifiers](https://halo-forge.io/docs/verifiers/) | Verification options |
 | [Experimental](https://halo-forge.io/docs/experimental/) | VLM, Audio, Reasoning, Agentic readiness tiers and modality caveats |
 | [Contributing](https://halo-forge.io/docs/contributing/) | How to contribute |
@@ -20,11 +20,11 @@ These files contain additional detail or unique content:
 
 | Document | Description |
 |----------|-------------|
-| [MASTER_PLAN.md](MASTER_PLAN.md) | Consolidated remediation roadmap from deep project audit |
 | [VERIFIERS.md](VERIFIERS.md) | Verifier guide with safety considerations |
 | [MODELS.md](MODELS.md) | Supported models reference |
 | [HARDWARE_NOTES.md](HARDWARE_NOTES.md) | AMD Strix Halo configuration details |
 | [GGUF_EXPORT.md](GGUF_EXPORT.md) | GGUF export guide for llama.cpp/Ollama |
+| [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) | Release verification checklist |
 
 ## Experimental Configs
 

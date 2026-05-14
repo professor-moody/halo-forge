@@ -31,7 +31,7 @@ Tokens are stored at `~/.halo-forge/tokens.json` (overridable with `HALOFORGE_TO
 curl -H "Authorization: Bearer hfk_..." http://my-host:8000/api/public/health
 ```
 
-The frontend at `public_app/` reads from `localStorage["halo-forge:api-token"]` and injects the header automatically. Set it once via the developer console:
+The frontend at `public_app/` reads from `localStorage["halo-forge:api-token"]` and injects the header automatically. Use the in-app **Connection** screen to paste and test the token. For automation, the same value can be pre-seeded:
 
 ```javascript
 localStorage.setItem("halo-forge:api-token", "hfk_...")

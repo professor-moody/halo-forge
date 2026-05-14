@@ -10,6 +10,7 @@ import {
   MessageSquare,
   PackageSearch,
   Play,
+  Plug,
   Rocket,
   ShieldCheck,
   Stethoscope,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { ApiError, connectionMode, getApiToken, isAuthRequiredError } from "@/lib/api";
 import { useBackendInfo } from "@/lib/hooks";
 import { usePinnedRuns } from "@/lib/pinned-runs";
 import { ThemeToggle } from "./theme-toggle";
@@ -48,8 +50,8 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Overview", icon: LayoutDashboard, kbd: "G O" },
-  { to: "/start", label: "Start", icon: Rocket, kbd: "G S" },
-  { to: "/train", label: "Training", icon: Play, kbd: "G T" },
+  { to: "/start", label: "Start run", icon: Rocket, kbd: "G S" },
+  { to: "/train", label: "Advanced", icon: Play, kbd: "G T" },
   { to: "/models", label: "Models", icon: PackageSearch, kbd: "G M" },
   { to: "/runs", label: "Runs", icon: Activity, kbd: "G R" },
   { to: "/eval", label: "Eval", icon: BarChart3, kbd: "G E" },
@@ -59,13 +61,14 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/diagnostics", label: "Diagnostics", icon: Stethoscope, kbd: "G X" },
   { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G Y" },
   { to: "/docs", label: "Docs", icon: BookOpen, kbd: "G D" },
+  { to: "/connect", label: "Connection", icon: Plug, kbd: "G C" },
 ];
 
 export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <aside className="flex h-screen w-56 flex-col border-r border-border bg-bg-subtle">
+    <aside className="hidden h-screen w-56 flex-col border-r border-border bg-bg-subtle md:flex">
       {/* Wordmark */}
       <Link
         to="/"
@@ -202,7 +205,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function ComputePanel() {
-  const { data, isLoading, isError } = useBackendInfo();
+  const { data, isLoading, isError, error } = useBackendInfo();
+  const mode = connectionMode();
+  const authNeeded = isAuthRequiredError(error);
+  const tokenStored = Boolean(getApiToken());
 
   return (
     <div className="border-t border-border-subtle p-2.5">
@@ -210,11 +216,25 @@ function ComputePanel() {
       <div className="rounded-md border border-border-subtle bg-surface/60">
         {isLoading ? (
           <div className="h-12 animate-pulse" />
+        ) : authNeeded ? (
+          <div className="px-2.5 py-2 space-y-1.5">
+            <Badge tone="danger" dot size="sm">
+              Auth needed
+            </Badge>
+            <Link to="/connect" className="block text-[11px] text-accent hover:underline">
+              Enter token
+            </Link>
+          </div>
         ) : isError || !data ? (
-          <div className="px-2.5 py-2 flex items-center gap-2">
+          <div className="px-2.5 py-2 space-y-1.5">
             <Badge tone="danger" dot size="sm">
               Offline
             </Badge>
+            {error instanceof ApiError ? (
+              <div className="font-mono text-[10px] text-fg-disabled">
+                {error.status}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="px-2.5 py-2 space-y-1.5">
@@ -249,6 +269,20 @@ function ComputePanel() {
                   ? "NA ready"
                   : data.capabilities.preferred_attn_impl}
               </span>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[10px] uppercase tracking-wider">
+              <span className={mode === "remote" ? "text-warning" : "text-fg-subtle"}>
+                {mode === "remote" ? "Remote" : "Local"}
+              </span>
+              <Link
+                to="/connect"
+                className={cn(
+                  "hover:underline",
+                  tokenStored ? "text-success" : "text-fg-disabled",
+                )}
+              >
+                {tokenStored ? "token" : "no token"}
+              </Link>
             </div>
           </div>
         )}

@@ -160,7 +160,9 @@ pip install vllm                # for --rollout-engine vllm (CUDA/ROCm)
 
 ## Web UI
 
-A Vite + React 19 + Tanstack Router frontend lives in [`public_app/`](public_app/). Run with:
+A Vite + React 19 + Tanstack Router frontend lives in [`public_app/`](public_app/). It is the user-facing local or remote workstation surface for guided launch, monitoring, results, model selection, docs, and token-based remote access.
+
+Run in development with:
 
 ```bash
 cd public_app && npm install && npm run dev
@@ -169,11 +171,13 @@ cd public_app && npm install && npm run dev
 Connects to the FastAPI backend at `/api/public/*`. Surfaces:
 
 - **Telemetry strip** — live GPU util / VRAM / power / throughput across MPS / MLX / ROCm / CUDA
-- **Training launcher** — preset-driven SFT / RAFT configurator
+- **Start flow** — guided first run with safe catalog defaults and preflight
+- **Advanced training launcher** — direct SFT / RAFT configurator
 - **Live run view** — cycle-by-cycle loss + reward charts, scrubber, log tail, sample inspector, cancel button
 - **Multi-run comparison** — pin up to 6 runs, overlay loss/reward, side-by-side config diff
 - **Run search** — DB-backed filter chips for modality / status / model / has-eval
 - **Energy & spend card** — kWh + $/kWh per run
+- **Remote workstation connection** — paste a `halo-forge token create dashboard` token when accessing a non-loopback host
 
 ## Documentation
 

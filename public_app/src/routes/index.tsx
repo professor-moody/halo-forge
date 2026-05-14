@@ -62,9 +62,9 @@ function OverviewRoute() {
               <RefreshCw className={dashboard.isFetching ? "animate-spin" : undefined} />
             </Button>
             <Button asChild variant="primary" size="md">
-              <Link to="/train">
+              <Link to="/start">
                 <Plus />
-                New run
+                Start run
               </Link>
             </Button>
           </>
@@ -323,7 +323,7 @@ function EmptyRunsState() {
         Launch a training job to populate this list. RAFT and SFT both surface here.
       </div>
       <Button asChild variant="primary" size="sm" className="mt-3.5">
-        <Link to="/train">Start a run</Link>
+        <Link to="/start">Start guided run</Link>
       </Button>
     </div>
   );

@@ -16,6 +16,7 @@ Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train, eval
 | I want to... | Start here |
 |---|---|
 | Train my first local model | [Quick Start](/docs/getting-started/quickstart/) |
+| Control a training workstation remotely | [Public Frontend: remote workstation](/docs/reference/public-frontend/#remote-workstation) |
 | Pick the right base model | [Choose a Model](/docs/getting-started/choose-a-model/) |
 | See runnable examples | [Usage Scenarios](/docs/getting-started/scenarios/) |
 | Run on Apple Silicon | [Hardware Notes](/docs/getting-started/hardware/) and [Apple Silicon MLX Quickstart](/docs/getting-started/apple-silicon-mlx/) |
@@ -72,6 +73,7 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 - **Cohort eval dashboard** — runs × tasks grid; best-per-task highlighted.
 - **Cost rollup** — per-run kWh + $ from wall-clock × backend nominal power.
 - **Live telemetry strip** — SSE-streamed GPU util / VRAM / power / throughput.
+- **Remote workstation** — non-loopback access uses bearer tokens and controls one Halo Forge host.
 
 ### Adapter merging
 
@@ -89,6 +91,7 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 - [Choose a Model](/docs/getting-started/choose-a-model/) — Model catalog, Liquid AI caveats, and first picks
 - [Usage Scenarios](/docs/getting-started/scenarios/) — Code, preference, reasoning, VLM, audio, agentic, serve/export
 - [Hardware Notes](/docs/getting-started/hardware/) — Per-backend recommendations + feature matrix
+- [Remote Workstation](/docs/reference/public-frontend/#remote-workstation) — Token-authenticated browser access to one training host
 
 ### Trainers
 - [Overview](/docs/trainers/) — Choosing between SFT / DPO / GRPO / RAFT / RM
@@ -118,6 +121,7 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 ### Reference
 - [Command Index](/docs/reference/command-index/)
 - [Auth + tokens](/docs/auth/)
+- [Public Frontend](/docs/reference/public-frontend/)
 - [Configuration](/docs/reference/configuration/)
 - [Web UI](/docs/reference/web-ui/)
 - [Troubleshooting](/docs/reference/troubleshooting/)

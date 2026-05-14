@@ -1,46 +1,70 @@
 ---
 title: "Public Frontend"
-description: "Public-facing training, monitor, results, and readiness surface"
+description: "User-facing local and remote workstation surface for training, monitoring, results, and docs"
 weight: 6
 ---
 
-The public halo-forge product surface is now split from the internal NiceGUI console.
+The public Halo Forge frontend is the default product surface for normal training work. It is a Vite + React + TanStack Router app in `public_app/`, backed by the FastAPI public API under `/api/public/*`.
 
-## Public Surface
+Use it for guided first runs, advanced SFT/RAFT launches, live run monitoring, results review, model selection, verifier browsing, playground checks, and remote workstation access.
 
-The public frontend is a dedicated Next.js app aimed at normal users:
-
-- **Train**: launch training with quickstart presets and a plain-language quality outlook
-- **Runs**: watch live progress with one recommended next step and expandable research detail
-- **Results**: review outcomes, recovery guidance, and follow-up actions
-- **Readiness**: see modality qualification status without opening the internal console
-- **Docs**: consume repo-truth capability summaries and workflow guidance
-
-The public frontend reads from the standalone public API:
+## Run locally
 
 ```bash
-uvicorn halo_forge.public_api.app:app --host 127.0.0.1 --port 8081
+# Terminal 1: public API / bundled frontend host
+halo-forge serve --host 127.0.0.1 --port 8000
+
+# Terminal 2: frontend development server
+cd public_app
+npm install
+npm run dev
 ```
 
-Set `NEXT_PUBLIC_HALO_API_BASE` when running the frontend if the API is not on `http://127.0.0.1:8081/api/public`.
+In development, Vite proxies `/api/*` to `http://127.0.0.1:8000`. In production, the FastAPI host serves the built frontend and API from the same origin.
 
-## Internal Console
+## Product flow
 
-halo-forge ui remains the internal ops/research console.
+- **Start**: guided first run with backend detection, safe catalog defaults, and preflight.
+- **Advanced training**: direct SFT/RAFT configuration for users who already know the knobs.
+- **Runs**: live progress, logs, samples, cancellation, recovery actions, and comparison pins.
+- **Results**: completed run outcomes and readiness-oriented follow-up.
+- **Docs**: intent-based links for first run, remote setup, models, hardware, verifiers, CLI, and troubleshooting.
+- **Connection**: token entry and connection test for remote workstation access.
 
-Use the NiceGUI console for:
+## Remote workstation
 
-- raw logs and deep trace inspection
-- advanced diagnostics tools
-- ops workflows and setup remediation
-- internal-only debugging surfaces
+Remote v1 means one Halo Forge machine with the accelerator is exposed to a trusted network, and another browser controls that same workstation. It is not a worker registry, cloud queue, or distributed scheduler.
 
-Use the public frontend for the default product workflow.
+### Workstation setup
 
-## Product Rules
+```bash
+# On the training workstation
+halo-forge token create dashboard
+halo-forge serve --host 0.0.0.0 --port 8000
+```
 
-- One primary action per state
-- Plain-language status first
-- Research details available but collapsed by default
-- Internal reason codes and low-level traces are not shown in the primary UI
-- Readiness and capability copy should follow qualification truth, not hand-written claims
+Save the token when it is printed. Halo Forge stores only a hash in `~/.halo-forge/tokens.json`; the bearer secret is shown once.
+
+### Browser setup
+
+1. Open `http://<workstation-host>:8000` from the remote device.
+2. Go to **Connection**.
+3. Paste the `hfk_...` token.
+4. Click **Save and test**.
+5. Launch or monitor runs against that workstation.
+
+Loopback requests stay zero-config. Non-loopback requests require `Authorization: Bearer <token>` for every `/api/public/*` endpoint. The frontend stores the token in `localStorage["halo-forge:api-token"]` and attaches it automatically.
+
+## Internal console
+
+The retired NiceGUI product surface is no longer the primary user workflow. Internal modules under `ui/services/` still provide service-layer behavior consumed by the public API, and any staff-only diagnostics should remain behind advanced/internal docs.
+
+Use the public frontend for default product workflows. Use internal tools only for raw traces, development diagnostics, or low-level remediation.
+
+## Product rules
+
+- One primary action per state.
+- Plain-language status first, research detail second.
+- Start is the first-run path; Advanced training is for direct configuration.
+- Remote v1 controls one workstation and uses bearer tokens.
+- Capability copy should follow backend/readiness truth, not hand-written claims.

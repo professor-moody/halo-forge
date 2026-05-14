@@ -4,7 +4,7 @@
 
 ## Overview
 
-**halo-forge** is a Reinforcement Learning from Verifiable Rewards (RLVR) training framework optimized for AMD Strix Halo hardware. It enables training code generation models using compiler verification and test execution as reward signals.
+**halo-forge** is a cross-vendor local fine-tuning workstation for SFT, DPO, GRPO, RAFT, eval, serving, and export. It began with AMD Strix Halo and verifier-ranked code training, but the current architecture routes through backend-aware ROCm, CUDA, Apple MPS, Apple MLX, and CPU paths.
 
 ### Core Philosophy
 
@@ -20,7 +20,9 @@
 flowchart TB
     subgraph entrypoint [Entry Points]
         CLI["halo-forge CLI"]
-        WebUI["NiceGUI Web UI"]
+        PublicApp["React Public App"]
+        PublicAPI["FastAPI Public API"]
+        Services["Shared UI Services"]
     end
     
     subgraph commands [Command Handlers]
@@ -431,24 +433,15 @@ print(result)  # Detailed report with format detection, stats, errors
 
 ### UI Orchestration
 
-**Directory:** `ui/`
+**Directories:** `public_app/`, `halo_forge/public_api/`, `ui/services/`
 
-NiceGUI-based web interface that orchestrates training via subprocess calls to CLI.
+The public product surface is a Vite + React app backed by the FastAPI public API. The API reuses service-layer modules under `ui/services/` for launch, preflight, monitoring, and result projection. Older NiceGUI product pages are retired; keep any low-level diagnostics internal.
 
 #### App Structure
 
-**File:** `ui/app.py`
+**Files:** `public_app/src/routes/*`, `halo_forge/public_api/app.py`
 
-```python
-@ui.page('/')
-def dashboard_page(): ...
-
-@ui.page('/training')
-def training_page(): ...
-
-@ui.page('/monitor/{job_id}')
-def monitor_page(job_id): ...
-```
+Key routes: `/start`, `/train`, `/runs`, `/results`, `/models`, `/docs`, and `/connect`.
 
 #### TrainingService
 

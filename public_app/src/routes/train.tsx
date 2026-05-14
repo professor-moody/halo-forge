@@ -219,8 +219,8 @@ function TrainConfiguratorRoute() {
     <>
       <Topbar
         eyebrow="Workspace"
-        title="Training"
-        subtitle="Configure and launch RAFT or SFT runs."
+        title="Advanced training"
+        subtitle="Configure RAFT or SFT runs directly after the guided Start flow."
         actions={
           <>
             <Button asChild variant="ghost" size="sm">

@@ -12,6 +12,7 @@
  */
 
 const API_BASE = "/api/public";
+export const AUTH_REQUIRED_EVENT = "halo-forge:auth-required";
 
 export class ApiError extends Error {
   constructor(
@@ -31,6 +32,20 @@ export class ApiError extends Error {
  * because the API is same-origin in prod and CORS-allowlisted in dev.
  */
 const TOKEN_STORAGE_KEY = "halo-forge:api-token";
+
+export function isLoopbackHost(hostname: string | undefined = window.location.hostname): boolean {
+  const h = (hostname || "").trim().toLowerCase();
+  return h === "localhost" || h === "::1" || h === "[::1]" || h.startsWith("127.") || h === "";
+}
+
+export function connectionMode(): "local" | "remote" {
+  return isLoopbackHost() ? "local" : "remote";
+}
+
+export function reportAuthRequired(detail?: unknown): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail }));
+}
 
 export function getApiToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -52,6 +67,18 @@ export function setApiToken(token: string | null): void {
   } catch {
     // localStorage may throw in private mode; auth header just won't fire.
   }
+}
+
+export function isAuthRequiredError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 401) return false;
+  const payload = error.payload;
+  if (payload && typeof payload === "object" && "detail" in payload) {
+    const detail = (payload as { detail?: unknown }).detail;
+    if (detail && typeof detail === "object" && "error" in detail) {
+      return (detail as { error?: unknown }).error === "invalid_token";
+    }
+  }
+  return true;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -77,6 +104,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       }
     } catch {
       // body wasn't JSON; keep statusText as the detail
+    }
+    if (res.status === 401) {
+      reportAuthRequired(payload);
     }
     throw new ApiError(res.status, detail, payload);
   }

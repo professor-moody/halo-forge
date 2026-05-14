@@ -206,7 +206,7 @@ function RunsListRoute() {
               <div className="px-6 py-12 text-center text-sm text-fg-muted">
                 {filtersActive
                   ? "No runs match the current filters."
-                  : "No runs indexed yet. Launch a training run from /train to populate."}
+                  : "No runs indexed yet. Launch a guided run from Start to populate."}
               </div>
             ) : (
               <div className={cn(isFetching && "opacity-70 transition-opacity")}>

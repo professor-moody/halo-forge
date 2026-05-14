@@ -35,7 +35,7 @@ export function TelemetryStrip() {
 
   return (
     <div className="border-b border-border bg-bg-subtle/40">
-      <div className="relative flex items-stretch divide-x divide-border-subtle px-5">
+      <div className="relative flex items-stretch divide-x divide-border-subtle overflow-x-auto px-3 md:px-5">
         <Cell
           icon={Gauge}
           label="GPU UTIL"
@@ -127,7 +127,7 @@ interface CellProps {
 
 function Cell({ icon: Icon, label, value, unit, hint, tone = "neutral", loading }: CellProps) {
   return (
-    <div className="flex flex-1 items-center gap-2.5 px-4 py-2.5 first:pl-0 last:pr-0">
+    <div className="flex min-w-32 flex-1 items-center gap-2.5 px-4 py-2.5 first:pl-0 last:pr-0">
       <Icon
         className={cn(
           "h-3.5 w-3.5 shrink-0 transition-colors",
@@ -214,7 +214,7 @@ function VramCell({
     ratio != null && ratio > 0.9 ? "danger" : ratio != null && ratio > 0.75 ? "warning" : "neutral";
 
   return (
-    <div className="flex flex-1 items-center gap-2.5 px-4 py-2.5 first:pl-0 last:pr-0">
+    <div className="flex min-w-32 flex-1 items-center gap-2.5 px-4 py-2.5 first:pl-0 last:pr-0">
       <Cpu
         className={cn(
           "h-3.5 w-3.5 shrink-0 transition-colors",

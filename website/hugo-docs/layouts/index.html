@@ -2,16 +2,17 @@
 <section class="hero">
     <div class="hero-content">
         <img src="/images/halo-forge.png" alt="halo-forge" class="hero-logo">
-        <h1>Local <span class="accent">Model Training</span> Workstation</h1>
-        <p class="subtitle">SFT, DPO, ORPO, GRPO, RAFT, eval, serving, and export across ROCm, CUDA, Apple MPS, and Apple MLX.</p>
+        <h1>Local or Remote <span class="accent">Training</span> Workstation</h1>
+        <p class="subtitle">Train, evaluate, serve, and export models from one Halo Forge machine across ROCm, CUDA, Apple MPS, and Apple MLX.</p>
         <div class="hero-meta">
             <span class="meta-item"><span class="label">Version</span> {{ .Site.Params.version }}</span>
             <span class="meta-item"><span class="label">Hardware</span> ROCm · CUDA · Apple</span>
             <span class="meta-item"><span class="label">License</span> Apache 2.0</span>
         </div>
         <div class="hero-actions">
-            <a href="/docs/getting-started/quickstart/" class="btn btn-primary">Get Started</a>
+            <a href="/docs/getting-started/quickstart/" class="btn btn-primary">Quick Start</a>
             <a href="/docs/getting-started/choose-a-model/" class="btn btn-secondary">Choose a Model</a>
+            <a href="/docs/reference/public-frontend/#remote-workstation" class="btn btn-secondary">Start Remote Workstation</a>
             <a href="{{ .Site.Params.github }}" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
         </div>
     </div>
@@ -43,7 +44,55 @@
     </div>
 </section>
 
-<section class="section alt">
+<section class="section alt" id="remote-workstation">
+    <div class="container">
+        <h2>Local or Remote Workstation</h2>
+        <p class="section-intro">Halo Forge runs on the machine with the accelerator. Use it locally at the desk, or open the same product surface from another device on a trusted network.</p>
+
+        <div class="results-grid">
+            <div class="result-card">
+                <div class="result-value">Local</div>
+                <div class="result-label">Loopback is zero-config</div>
+                <div class="result-context">127.0.0.1</div>
+            </div>
+            <div class="result-card">
+                <div class="result-value">Token</div>
+                <div class="result-label">Non-loopback requires bearer auth</div>
+                <div class="result-context">hfk_...</div>
+            </div>
+            <div class="result-card">
+                <div class="result-value">Monitor</div>
+                <div class="result-label">Watch runs, logs, telemetry</div>
+                <div class="result-context">Remote browser</div>
+            </div>
+            <div class="result-card">
+                <div class="result-value">One</div>
+                <div class="result-label">One workstation, not a worker fleet</div>
+                <div class="result-context">Remote v1</div>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                <span class="code-lang">bash</span>
+            </div>
+            <pre><code><span class="comment"># On the training workstation</span>
+halo-forge token create dashboard
+halo-forge serve --host <span class="number">0.0.0.0</span> --port <span class="number">8000</span>
+
+<span class="comment"># From another device</span>
+open http://workstation.local:<span class="number">8000</span>
+<span class="comment"># Paste the token in the Connection screen.</span></code></pre>
+        </div>
+
+        <div class="cta-row">
+            <a href="/docs/reference/public-frontend/#remote-workstation" class="btn btn-primary">Remote Setup Guide →</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
     <div class="container">
         <h2>The RAFT Approach</h2>
         <p class="section-intro">halo-forge implements RAFT (Reward-Ranked Fine-Tuning) — essentially iterated rejection sampling:</p>
