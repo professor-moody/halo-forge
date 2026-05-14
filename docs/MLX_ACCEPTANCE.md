@@ -35,16 +35,17 @@ Passed checks:
 - `mlx_sft_raft_live_smoke`
 - `mlx_dpo_reference_free_live_smoke`
 - `mlx_dpo_reference_model_live_smoke`
+- `mlx_dpo_non_sigmoid_variants`
 - `mlx_grpo_reference_free_live_smoke`
 - `mlx_dpo_loss_unit`
 - `mlx_dpo_reference_model_terminal`
 - `mlx_grpo_terminal`
 
-Historical intentional skip:
+Notes:
 
-- `mlx_dpo_non_sigmoid_variants` — this 2026-05-13 acceptance run predates the
-  eager MLX IPO / hinge / KTO-pair implementation. Fresh smoke summaries should
-  now pass this check instead of skipping it.
+- The current acceptance run was validated after the eager MLX IPO / hinge /
+  KTO-pair implementation. No DPO variant skip is expected on a healthy MLX
+  Terminal session.
 
 Validate a fresh run with:
 
