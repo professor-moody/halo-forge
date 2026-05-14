@@ -229,11 +229,38 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "Run detail view" in run_source
     assert 'label="STATUS"' in run_source
     assert "Results view in progress" in results_source
-    assert "MLX backend guide" in docs_source
+    assert "First guided run" in docs_source
+    assert "Remote workstation" in docs_source
+    assert "CLI reference" in docs_source
     assert "Training that stays understandable" not in home_source
     assert "Public workstation" not in shell_source
     assert "Launch workspace" not in train_source
-    assert "Review quality" not in train_source
+
+
+def test_public_frontend_remote_auth_regression_contract():
+    api_helper = Path("public_app/src/lib/api.ts").read_text(encoding="utf-8")
+    shell_source = Path("public_app/src/components/shell/index.tsx").read_text(
+        encoding="utf-8"
+    )
+    sidebar_source = Path("public_app/src/components/shell/sidebar.tsx").read_text(
+        encoding="utf-8"
+    )
+    connect_source = Path("public_app/src/routes/connect.tsx").read_text(
+        encoding="utf-8"
+    )
+    stream_source = Path("public_app/src/lib/event-source.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'AUTH_REQUIRED_EVENT = "halo-forge:auth-required"' in api_helper
+    assert "reportAuthRequired(payload)" in api_helper
+    assert "isAuthRequiredError(error)" in sidebar_source
+    assert 'navigate({ to: "/connect"' in shell_source
+    assert "api.health()" in connect_source
+    assert "setApiToken(nextToken)" in connect_source
+    assert 'TOKEN_STORAGE_KEY = "halo-forge:api-token"' in api_helper
+    assert 'headers.Authorization = `Bearer ${token}`' in stream_source
+    assert 'reportAuthRequired({ source: "stream"' in stream_source
 
 
 def test_public_api_transport_exposes_public_workflows():
@@ -458,4 +485,5 @@ def test_public_docs_reference_split_between_public_frontend_and_internal_consol
 
     assert "Public Frontend" in docs_index
     assert "internal ops/research console" in web_ui_doc
-    assert "halo-forge ui remains the internal ops/research console" in public_doc
+    assert "Remote v1 means one Halo Forge machine" in public_doc
+    assert "The retired NiceGUI product surface is no longer the primary user workflow" in public_doc
