@@ -37,17 +37,41 @@ Passed checks:
 - `mlx_dpo_reference_model_live_smoke`
 - `mlx_dpo_non_sigmoid_variants`
 - `mlx_grpo_reference_free_live_smoke`
+- `mlx_grpo_reference_model_live_smoke`
 - `mlx_dpo_loss_unit`
 - `mlx_dpo_reference_model_terminal`
 - `mlx_grpo_terminal`
+
+Reference-model GRPO feasibility:
+
+Command:
+
+```bash
+python scripts/measure_mlx_grpo_reference_model.py --json > runs/mlx-grpo-reference-model.json
+```
+
+Result:
+
+| Field | Value |
+|---|---|
+| Status | `measured` |
+| Model | `mlx-community/Qwen2.5-0.5B-Instruct-bf16` |
+| Rollout samples | `2` |
+| One update | `true` |
+| Active memory | `1,997,544,270` bytes |
+| Peak memory | `2,070,449,900` bytes |
+| Cache memory | `117,812,852` bytes |
+| Total elapsed | `2.250s` |
+| One-update elapsed | `0.070s` |
 
 Notes:
 
 - The current acceptance run was validated after the eager MLX IPO / hinge /
   KTO-pair implementation. No DPO variant skip is expected on a healthy MLX
   Terminal session.
-- Fresh acceptance runs after the reference-model GRPO pass must also include
-  `mlx_grpo_reference_model_live_smoke` as a passed check.
+- The reference-model GRPO pass completed the focused dual-model measurement and
+  the live smoke check on the same M4 Max Terminal path. Production GRPO remains
+  eager; no `mx.compile`, auto-tuning, or generated run artifacts are committed.
 
 Validate a fresh run with:
 
