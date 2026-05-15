@@ -115,6 +115,7 @@ function ResultRow({ run }: { run: RunListItem }) {
     typeof run.final_train_loss === "number" ? run.final_train_loss.toFixed(4) : "-";
   const verdict = run.effectiveness?.verdict ?? "completed";
   const servingThis = Boolean(artifact && serveStatus.data?.running && serveStatus.data.model === artifact);
+  const anotherModelServing = Boolean(serveStatus.data?.running && !servingThis);
   const serveDisabled =
     !artifact || serveStart.isPending || Boolean(serveStatus.data?.running && !servingThis);
 
@@ -151,10 +152,21 @@ function ResultRow({ run }: { run: RunListItem }) {
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-fg-disabled">
           <FileText className="h-3.5 w-3.5" />
+          <span>Local workstation path:</span>
           <span className={cn("truncate font-mono", outputDir ? "text-fg-subtle" : "text-fg-disabled")}>
             {artifact ?? outputDir ?? "No output path indexed"}
           </span>
         </div>
+        {anotherModelServing ? (
+          <div className="rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
+            {serveStatus.data?.model} is already serving. Stop it in Playground before serving this result.
+          </div>
+        ) : null}
+        {serveStart.error ? (
+          <div className="rounded-sm border border-danger/30 bg-danger-bg px-2 py-1.5 text-[11px] text-danger">
+            {(serveStart.error as Error).message}
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap gap-2 lg:justify-end">
         <Button asChild size="sm" variant="primary">
@@ -198,6 +210,11 @@ function ResultRow({ run }: { run: RunListItem }) {
           <Server className="h-3.5 w-3.5" />
           {servingThis ? "Serving" : "Serve model"}
         </Button>
+        {servingThis ? (
+          <Button asChild size="sm" variant="primary">
+            <Link to="/playground">Open Playground</Link>
+          </Button>
+        ) : null}
         <Button asChild size="sm" variant="ghost">
           <Link to="/runs/compare">
             <GitCompareArrows className="h-3.5 w-3.5" />

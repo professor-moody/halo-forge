@@ -303,10 +303,16 @@ def test_public_frontend_friendly_workstation_contract():
     assert "startGoalForModel" in models_source
     assert "export type ServeStatus" in api_source
     assert 'state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string' in api_source
+    assert "active_action" in api_source
+    assert "error_hint" in api_source
     assert "serveStart:" in api_source
     assert "ServeStatusPanel" in playground_source
+    assert "useServeLogs" in playground_source
+    assert "Open Playground" in models_source
     assert "Results files" in results_source
     assert "View logs" in results_source
+    assert "Local workstation path" in results_source
+    assert "Serve when complete" in start_source
     assert "Apple Neural Accelerators (experimental)" in overview_source
     assert "installChunkLoadRecovery" in main_source
 
@@ -391,6 +397,7 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
             return {
                 "running": self.running,
                 "state": state,
+                "active_action": "serving" if self.running else None,
                 "pid": 123 if self.running else None,
                 "model": self.model,
                 "backend": "mlx",
@@ -402,6 +409,7 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
                 "log_path": None,
                 "logs_available": self.running,
                 "last_error": None,
+                "error_hint": None,
                 "healthy": self.running,
                 "message": "Local model server is ready." if self.running else "No local model is being served.",
             }
@@ -442,6 +450,7 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
 
     assert started["running"] is True
     assert started["state"] == "running"
+    assert started["active_action"] == "serving"
     assert service.serve_status()["model"] == "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
     with pytest.raises(ValueError, match="already being served"):
         service.serve_start({"model": "Qwen/Qwen2.5-1.5B-Instruct"})
@@ -467,6 +476,7 @@ def test_managed_serve_rejects_busy_port_before_spawn(tmp_path):
             )
 
     assert manager.status()["state"] == "idle"
+    assert manager.status()["active_action"] is None
 
 
 def test_desktop_tauri_foundation_contract():
@@ -474,11 +484,13 @@ def test_desktop_tauri_foundation_contract():
     config = (tauri_dir / "tauri.conf.json").read_text(encoding="utf-8")
     main_rs = (tauri_dir / "src" / "main.rs").read_text(encoding="utf-8")
     capabilities = (tauri_dir / "capabilities" / "default.json").read_text(encoding="utf-8")
+    startup_html = Path("apps/desktop-tauri/startup/index.html").read_text(encoding="utf-8")
 
     assert '"identifier": "ai.haloforge.desktop"' in config
-    assert '"frontendDist": "../../../public_app/dist"' in config
+    assert '"frontendDist": "../startup"' in config
+    assert '"withGlobalTauri": true' in config
     assert '"devUrl": "http://127.0.0.1:8765"' in config
-    assert '"url": "http://127.0.0.1:8765"' in config
+    assert '"url": "index.html"' in config
     assert '"targets": ["app", "dmg", "appimage", "deb"]' in config
     assert '"../../../public_app/dist": "frontend"' in config
     assert '"externalBin": ["sidecars/halo-forge-runtime"]' in config
@@ -489,12 +501,21 @@ def test_desktop_tauri_foundation_contract():
     assert "HALO_FORGE_FRONTEND_DIST" in main_rs
     assert "HALO_FORGE_REPO_ROOT" in main_rs
     assert "fn dev_repo_root()" in main_rs
+    assert "desktop_status" in main_rs
+    assert "desktop_retry" in main_rs
+    assert "port_conflict" in main_rs
+    assert "health_timeout" in main_rs
+    assert "backend_exited" in main_rs
+    assert "runtime.log" in main_rs
     assert 'const DASHBOARD_PORT: u16 = 8765' in main_rs
     assert '"dashboard"' in main_rs
     assert '"--no-build"' in main_rs
     assert "GET /api/public/health HTTP/1.1" in main_rs
     assert "child.kill()" in main_rs
     assert '"shell:allow-spawn"' in capabilities
+    assert "Starting Halo Forge" in startup_html
+    assert "desktop_status" in startup_html
+    assert "desktop_retry" in startup_html
     for sidecar_name in [
         "halo-forge-runtime",
         "halo-forge-runtime-aarch64-apple-darwin",
@@ -503,6 +524,7 @@ def test_desktop_tauri_foundation_contract():
         sidecar_source = (tauri_dir / "sidecars" / sidecar_name).read_text(encoding="utf-8")
         assert "HALO_FORGE_REPO_ROOT" in sidecar_source
         assert ".venv/bin/python" in sidecar_source
+        assert "desktop dev runtime error" in sidecar_source
 
 
 def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():

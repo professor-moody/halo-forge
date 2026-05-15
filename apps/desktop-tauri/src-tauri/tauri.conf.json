@@ -6,10 +6,11 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "frontendDist": "../../../public_app/dist",
+    "frontendDist": "../startup",
     "devUrl": "http://127.0.0.1:8765"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Halo Forge",
@@ -17,7 +18,7 @@
         "height": 920,
         "minWidth": 1100,
         "minHeight": 720,
-        "url": "http://127.0.0.1:8765"
+        "url": "index.html"
       }
     ],
     "security": {

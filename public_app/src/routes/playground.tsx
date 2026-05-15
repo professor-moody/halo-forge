@@ -17,7 +17,7 @@ import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardEyebrow, CardHeader, CardTitle } from "@/components/ui/card";
-import { queryKeys, useServeStatus, useServeStop } from "@/lib/hooks";
+import { queryKeys, useServeLogs, useServeStatus, useServeStop } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/playground")({
@@ -49,6 +49,7 @@ function PlaygroundRoute() {
   const queryClient = useQueryClient();
   const serveStatus = useServeStatus();
   const serveStop = useServeStop();
+  const serveLogs = useServeLogs(80, Boolean(serveStatus.data?.logs_available));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
@@ -217,6 +218,7 @@ function PlaygroundRoute() {
           message={serveStatus.data?.message ?? null}
           logsAvailable={Boolean(serveStatus.data?.logs_available)}
           logPath={serveStatus.data?.log_path ?? null}
+          logLines={serveLogs.data?.lines ?? []}
           loading={serveStatus.isLoading}
           stopping={serveStop.isPending}
           onStop={() =>
@@ -300,6 +302,7 @@ function ServeStatusPanel({
   message,
   logsAvailable,
   logPath,
+  logLines,
   loading,
   stopping,
   onStop,
@@ -310,11 +313,13 @@ function ServeStatusPanel({
   message: string | null;
   logsAvailable: boolean;
   logPath: string | null;
+  logLines: string[];
   loading: boolean;
   stopping: boolean;
   onStop: () => void;
 }) {
   const running = state === "running" || state === "starting" || state === "unhealthy";
+  const latestLog = logLines.filter(Boolean).slice(-1)[0] ?? null;
   const tone = state === "running" ? "success" : state === "starting" ? "warning" : state === "unhealthy" || state === "exited" ? "danger" : "neutral";
   const label =
     state === "running"
@@ -353,6 +358,11 @@ function ServeStatusPanel({
                 {logsAvailable && logPath ? (
                   <span className="font-mono text-fg-subtle"> · logs: {logPath}</span>
                 ) : null}
+              </div>
+            ) : null}
+            {latestLog ? (
+              <div className="mt-1 truncate font-mono text-[11px] text-fg-disabled">
+                {latestLog}
               </div>
             ) : null}
           </div>

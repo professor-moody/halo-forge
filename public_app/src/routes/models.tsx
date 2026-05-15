@@ -488,6 +488,11 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               {serveStatus.data?.model} is already serving. Stop it in Playground before switching models.
             </div>
           ) : null}
+          {servingThis ? (
+            <div className="rounded-sm border border-success/30 bg-success-bg px-2 py-1.5 text-[11px] text-success">
+              Ready in Playground at <span className="font-mono">{serveStatus.data?.url}</span>.
+            </div>
+          ) : null}
           {serveError ? (
             <div className="rounded-sm border border-danger/30 bg-danger-bg px-2 py-1.5 text-[11px] text-danger">
               {serveError}
@@ -518,6 +523,11 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             {servingThis ? <Square className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />}
             {servingThis ? "Serving" : "Serve"}
           </Button>
+          {servingThis ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="/playground">Open Playground</Link>
+            </Button>
+          ) : null}
           {startGoal ? (
             <Button asChild size="sm" variant="primary">
               <Link to="/start" search={{ goal: startGoal }}>

@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type BackendInfo,
@@ -189,21 +189,32 @@ export function useServeStatus() {
 }
 
 export function useServeStart() {
+  const queryClient = useQueryClient();
   return useMutation<ServeStatus, Error, ServeStartPayload>({
     mutationFn: (payload) => api.serveStart(payload),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.serve });
+      queryClient.invalidateQueries({ queryKey: queryKeys.serveLogs(80) });
+    },
   });
 }
 
 export function useServeStop() {
+  const queryClient = useQueryClient();
   return useMutation<ServeStatus, Error, void>({
     mutationFn: () => api.serveStop(),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.serve });
+      queryClient.invalidateQueries({ queryKey: queryKeys.serveLogs(80) });
+    },
   });
 }
 
-export function useServeLogs(tail = 200) {
+export function useServeLogs(tail = 200, enabled = false) {
   return useQuery<ServeLogs>({
     queryKey: queryKeys.serveLogs(tail),
     queryFn: () => api.serveLogs(tail),
-    enabled: false,
+    enabled,
+    refetchInterval: enabled ? 3_000 : false,
   });
 }

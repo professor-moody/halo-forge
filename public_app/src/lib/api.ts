@@ -376,6 +376,7 @@ export type PlaygroundChatResponse = {
 export type ServeStatus = {
   running: boolean;
   state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string;
+  active_action?: "loading_model" | "serving" | "check_logs" | "review_logs" | string | null;
   pid: number | null;
   model: string | null;
   backend: string | null;
@@ -387,6 +388,7 @@ export type ServeStatus = {
   log_path: string | null;
   logs_available: boolean;
   last_error: string | null;
+  error_hint?: string | null;
   healthy: boolean;
   message: string;
 };

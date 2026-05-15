@@ -50,6 +50,7 @@ class ManagedServeProcess:
         return {
             "running": running,
             "state": state,
+            "active_action": self._active_action(state),
             "pid": proc.pid if proc is not None and running else None,
             "model": self._model,
             "backend": self._backend,
@@ -61,6 +62,7 @@ class ManagedServeProcess:
             "log_path": str(self._log_path) if self._log_path else None,
             "logs_available": bool(self._log_path and self._log_path.exists()),
             "last_error": self._last_error,
+            "error_hint": self._error_hint(state=state, exit_code=exit_code),
             "healthy": healthy,
             "message": self._message(state=state, exit_code=exit_code),
         }
@@ -72,11 +74,13 @@ class ManagedServeProcess:
     def start(self, request: ServeStartRequest) -> dict[str, Any]:
         current = self.status()
         if current["running"]:
+            self._last_error = "A local model is already being served."
             raise ValueError("A local model is already being served. Stop it before starting another.")
         model = str(request.model or "").strip()
         if not model:
             raise ValueError("model is required")
         if not self._port_available(request.host, int(request.port)):
+            self._last_error = f"{request.host}:{int(request.port)} is already in use."
             raise ValueError(
                 f"{request.host}:{int(request.port)} is already in use. "
                 "Stop the process on that port or choose another local serve port."
@@ -134,6 +138,7 @@ class ManagedServeProcess:
         self._close_log_handle()
         self._proc = None
         self._started_at = None
+        self._last_error = None
         return self.status()
 
     def logs(self, *, tail: int = 200) -> dict[str, Any]:
@@ -174,7 +179,7 @@ class ManagedServeProcess:
         if state == "idle":
             return "No local model is being served."
         if state == "starting":
-            return "Starting local model server."
+            return "Starting local model server. This can take a minute while the model loads."
         if state == "running":
             return "Local model server is ready."
         if state == "unhealthy":
@@ -182,6 +187,28 @@ class ManagedServeProcess:
         if state == "exited":
             return f"Local model server exited with code {exit_code}."
         return "Local serving status is unknown."
+
+    def _active_action(self, state: str) -> str | None:
+        if state == "starting":
+            return "loading_model"
+        if state == "running":
+            return "serving"
+        if state == "unhealthy":
+            return "check_logs"
+        if state == "exited":
+            return "review_logs"
+        return None
+
+    def _error_hint(self, *, state: str, exit_code: int | None) -> str | None:
+        if state == "idle":
+            return None
+        if self._last_error:
+            return self._last_error
+        if state == "unhealthy":
+            return "The process is still running, but /v1/models is not healthy. Review the serving log."
+        if state == "exited":
+            return f"The local serve process exited with code {exit_code}. Review the serving log before retrying."
+        return None
 
     def _port_available(self, host: str, port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

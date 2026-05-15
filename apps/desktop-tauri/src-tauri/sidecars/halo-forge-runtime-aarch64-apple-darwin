@@ -7,6 +7,21 @@ if [ -z "$REPO_ROOT" ]; then
   REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." 2>/dev/null && pwd || printf '%s' "")
 fi
 
+if [ -n "${HALO_FORGE_REPO_ROOT:-}" ]; then
+  if [ ! -x "$REPO_ROOT/.venv/bin/python" ]; then
+    echo "Halo Forge desktop dev runtime error: missing $REPO_ROOT/.venv/bin/python" >&2
+    echo "Create the repo virtualenv before launching this dev desktop build." >&2
+    exit 78
+  fi
+  "$REPO_ROOT/.venv/bin/python" - <<'PY'
+import sys
+if not ((3, 10) <= sys.version_info < (3, 14)):
+    raise SystemExit(f"Halo Forge requires Python >=3.10,<3.14; found {sys.version.split()[0]}")
+import halo_forge.cli
+PY
+  exec "$REPO_ROOT/.venv/bin/python" -m halo_forge.cli "$@"
+fi
+
 if [ -n "$REPO_ROOT" ] && [ -x "$REPO_ROOT/.venv/bin/python" ]; then
   exec "$REPO_ROOT/.venv/bin/python" -m halo_forge.cli "$@"
 fi

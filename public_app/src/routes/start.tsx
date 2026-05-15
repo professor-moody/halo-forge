@@ -321,15 +321,32 @@ function StartRoute() {
                     <div className="mt-1 font-mono text-[11px] text-success">{runId}</div>
                     {payload ? (
                       <div className="mt-1 text-[11px] text-fg-muted">
-                        {String(payload.model)} · {String(payload.dataset)} · {String(payload.output_dir)}
+                        {String(payload.model)} · {String(payload.dataset)}
+                      </div>
+                    ) : null}
+                    {payload?.output_dir ? (
+                      <div className="mt-1 text-[11px] text-fg-muted">
+                        Local output path: <span className="font-mono text-fg-subtle">{String(payload.output_dir)}</span>
                       </div>
                     ) : null}
                   </div>
-                  <Button asChild size="sm" variant="ghost">
-                    <Link to="/runs/$runId" params={{ runId }}>
-                      Open run <ArrowRight />
-                    </Link>
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm" variant="primary">
+                      <Link to="/runs/$runId" params={{ runId }}>
+                        Open run <ArrowRight />
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost">
+                      <Link to="/runs">
+                        View runs
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost">
+                      <Link to="/results">
+                        Serve when complete
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : null}

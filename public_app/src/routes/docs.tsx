@@ -153,6 +153,14 @@ function RemotePanel() {
         <code className="block rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 font-mono text-[11px] text-fg">
           halo-forge token create dashboard
         </code>
+        <div className="grid gap-2 md:grid-cols-2">
+          <Pill label="Workstation" value="dashboard --host 0.0.0.0" />
+          <Pill label="Client" value="paste token in Connection" />
+        </div>
+        <p>
+          Manual two-machine QA: verify token-required access, invalid-token recovery,
+          runs list, run monitor, and Playground from the client machine.
+        </p>
       </CardContent>
     </Card>
   );
