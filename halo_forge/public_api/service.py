@@ -77,6 +77,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "prompts",
         "output_dir",
         "accelerator",
+        "verifier",
         "cycles",
         "samples_per_prompt",
         "keep_percent",
@@ -154,10 +155,12 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "output_dir",
         "cycles",
         "limit",
+        "task",
         "samples_per_prompt",
         "keep_percent",
         "reward_threshold",
         "temperature",
+        "allow_prototype_train",
         "no_caffeinate",
     },
     "audio": {
@@ -171,6 +174,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "reward_threshold",
         "temperature",
         "task",
+        "allow_prototype_train",
         "no_caffeinate",
     },
     "reasoning": {
@@ -183,6 +187,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "temperature",
         "learning_rate",
+        "allow_prototype_train",
         "no_caffeinate",
     },
     "agentic": {
@@ -195,6 +200,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "temperature",
         "learning_rate",
+        "allow_prototype_train",
         "no_caffeinate",
     },
 }

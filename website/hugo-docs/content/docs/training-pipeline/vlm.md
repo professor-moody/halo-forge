@@ -13,7 +13,7 @@ Open **Train**, choose **Vision**, then choose **Vision-language**. Some VLM fam
 ## CLI
 
 ```bash
-halo-forge vlm train --dataset textvqa --model Qwen/Qwen2.5-VL-3B-Instruct --output ~/.halo-forge/runs/vlm-textvqa
+halo-forge vlm train --dataset textvqa --model Qwen/Qwen2-VL-2B-Instruct --output ~/.halo-forge/runs/vlm-textvqa
 ```
 
 Use custom JSONL when your task needs local image paths or structured expected answers.

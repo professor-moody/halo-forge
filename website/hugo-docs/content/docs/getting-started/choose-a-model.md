@@ -41,7 +41,7 @@ The Start goals map to conservative datasets:
 | Fast code smoke | `Qwen/Qwen2.5-Coder-0.5B` | Small enough for quick validation |
 | Preference tuning | `Qwen/Qwen2.5-3B-Instruct` | Good DPO/RM default |
 | Reasoning | `Qwen/Qwen2.5-1.5B-Instruct` or `Qwen/Qwen2.5-Math-1.5B` | Small reasoning-friendly baselines |
-| VLM | `Qwen/Qwen2-VL-2B-Instruct` or `Qwen/Qwen2.5-VL-3B-Instruct` | Safest current VLM adapter path |
+| VLM | `Qwen/Qwen2-VL-2B-Instruct` | Safest current dashboard VLM adapter path |
 | Audio | `openai/whisper-small` | Current Halo Forge audio path is Whisper-oriented |
 | Apple MLX | `mlx-community/Qwen2.5-0.5B-Instruct-bf16` for Start, `mlx-community/Qwen2.5-3B-Instruct-bf16` when memory allows | MLX-format models avoid HF conversion friction |
 | Liquid AI experiment | `LiquidAI/LFM2.5-350M` | Tiny structured-output/tool-use candidate |
