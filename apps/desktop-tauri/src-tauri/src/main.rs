@@ -3,6 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
+use std::process::Command as StdCommand;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -184,6 +185,7 @@ fn start_runtime(app: AppHandle) {
             }
         };
         let repo_root = dev_repo_root();
+        let bundled_runtime = bundled_runtime_dir_if_available(&app);
         let sidecar = match app.shell().sidecar("halo-forge-runtime") {
             Ok(sidecar) => sidecar,
             Err(err) => {
@@ -199,9 +201,13 @@ fn start_runtime(app: AppHandle) {
             }
         };
 
-        let spawn_result = sidecar
+        let mut sidecar_command = sidecar
             .env("HALO_FORGE_FRONTEND_DIST", frontend_dist)
-            .env("HALO_FORGE_REPO_ROOT", repo_root)
+            .env("HALO_FORGE_REPO_ROOT", repo_root);
+        if let Some(runtime_dir) = bundled_runtime {
+            sidecar_command = sidecar_command.env("HALO_FORGE_BUNDLED_RUNTIME", runtime_dir);
+        }
+        let spawn_result = sidecar_command
             .args([
                 "dashboard",
                 "--no-build",
@@ -296,15 +302,26 @@ fn validate_runtime_inputs(app: &AppHandle) -> Result<(), StartupError> {
         ));
     }
 
-    let python = dev_repo_root().join(".venv/bin/python");
-    if !python.is_file() {
-        return Err(StartupError::new(
-            "runtime_missing",
-            "Repo-local Python runtime is missing.",
-            format!("Expected {}", python.display()),
-        ));
+    let bundled_runtime = bundled_runtime_executable(app);
+    if bundled_runtime.is_file() {
+        run_bundled_self_check(&bundled_runtime, &frontend_dist)?;
+        return Ok(());
     }
-    Ok(())
+
+    let python = dev_repo_root().join(".venv/bin/python");
+    if python.is_file() {
+        return Ok(());
+    }
+
+    Err(StartupError::new(
+        "runtime_missing",
+        "Bundled Halo Forge runtime is missing.",
+        format!(
+            "Expected bundled runtime at {} or source dev runtime at {}",
+            bundled_runtime.display(),
+            python.display()
+        ),
+    ))
 }
 
 struct StartupError {
@@ -402,6 +419,59 @@ fn dev_repo_root() -> PathBuf {
                 .ok()
         })
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+}
+
+fn bundled_runtime_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|path| path.join("runtime/halo-forge-runtime"))
+}
+
+fn bundled_runtime_dir_if_available(app: &AppHandle) -> Option<PathBuf> {
+    let dir = bundled_runtime_dir(app)?;
+    if runtime_executable_in_dir(&dir).is_file() {
+        Some(dir)
+    } else {
+        None
+    }
+}
+
+fn bundled_runtime_executable(app: &AppHandle) -> PathBuf {
+    bundled_runtime_dir(app)
+        .map(|dir| runtime_executable_in_dir(&dir))
+        .unwrap_or_else(|| PathBuf::from("runtime/halo-forge-runtime/halo-forge-runtime"))
+}
+
+fn runtime_executable_in_dir(dir: &PathBuf) -> PathBuf {
+    dir.join("halo-forge-runtime")
+}
+
+fn run_bundled_self_check(
+    runtime_exe: &PathBuf,
+    frontend_dist: &PathBuf,
+) -> Result<(), StartupError> {
+    let output = StdCommand::new(runtime_exe)
+        .arg("--desktop-self-check")
+        .env("HALO_FORGE_FRONTEND_DIST", frontend_dist)
+        .output()
+        .map_err(|err| {
+            StartupError::new(
+                "runtime_self_check_failed",
+                "Could not check the bundled Halo Forge runtime.",
+                err.to_string(),
+            )
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(StartupError::new(
+        "runtime_self_check_failed",
+        "Bundled Halo Forge runtime failed its self-check.",
+        format!("stdout: {}\nstderr: {}", stdout.trim(), stderr.trim()),
+    ))
 }
 
 fn desktop_log_path() -> PathBuf {

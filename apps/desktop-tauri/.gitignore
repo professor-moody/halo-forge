@@ -1,3 +1,6 @@
 node_modules/
 src-tauri/gen/
 src-tauri/target/
+runtime/.venv-build/
+runtime/build/
+runtime/dist/

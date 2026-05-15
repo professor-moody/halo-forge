@@ -36,7 +36,8 @@
       "icons/icon.png"
     ],
     "resources": {
-      "../../../public_app/dist": "frontend"
+      "../../../public_app/dist": "frontend",
+      "../runtime/dist/halo-forge-runtime": "runtime/halo-forge-runtime"
     },
     "externalBin": ["sidecars/halo-forge-runtime"]
   }

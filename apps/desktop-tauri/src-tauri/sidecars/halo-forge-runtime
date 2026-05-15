@@ -2,6 +2,15 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+BUNDLED_RUNTIME=${HALO_FORGE_BUNDLED_RUNTIME:-}
+if [ -n "$BUNDLED_RUNTIME" ]; then
+  if [ -x "$BUNDLED_RUNTIME/halo-forge-runtime" ]; then
+    exec "$BUNDLED_RUNTIME/halo-forge-runtime" "$@"
+  fi
+  echo "Halo Forge bundled runtime error: missing $BUNDLED_RUNTIME/halo-forge-runtime" >&2
+  exit 78
+fi
+
 REPO_ROOT=${HALO_FORGE_REPO_ROOT:-}
 if [ -z "$REPO_ROOT" ]; then
   REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." 2>/dev/null && pwd || printf '%s' "")

@@ -559,13 +559,20 @@ def test_desktop_tauri_foundation_contract():
     assert '"url": "index.html"' in config
     assert '"targets": ["app", "dmg", "appimage", "deb"]' in config
     assert '"../../../public_app/dist": "frontend"' in config
+    assert '"../runtime/dist/halo-forge-runtime": "runtime/halo-forge-runtime"' in config
     assert '"externalBin": ["sidecars/halo-forge-runtime"]' in config
+    assert Path("halo_forge/desktop_runtime.py").exists()
+    assert Path("apps/desktop-tauri/scripts/build_runtime.py").exists()
+    assert Path("apps/desktop-tauri/runtime/desktop_runtime_entry.py").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime-aarch64-apple-darwin").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime-x86_64-unknown-linux-gnu").exists()
     assert ".sidecar(\"halo-forge-runtime\")" in main_rs
+    assert "HALO_FORGE_BUNDLED_RUNTIME" in main_rs
     assert "HALO_FORGE_FRONTEND_DIST" in main_rs
     assert "HALO_FORGE_REPO_ROOT" in main_rs
+    assert "runtime_self_check_failed" in main_rs
+    assert "run_bundled_self_check" in main_rs
     assert "fn dev_repo_root()" in main_rs
     assert "desktop_status" in main_rs
     assert "desktop_retry" in main_rs
@@ -588,9 +595,30 @@ def test_desktop_tauri_foundation_contract():
         "halo-forge-runtime-x86_64-unknown-linux-gnu",
     ]:
         sidecar_source = (tauri_dir / "sidecars" / sidecar_name).read_text(encoding="utf-8")
+        assert "HALO_FORGE_BUNDLED_RUNTIME" in sidecar_source
+        assert "bundled runtime error" in sidecar_source
         assert "HALO_FORGE_REPO_ROOT" in sidecar_source
         assert ".venv/bin/python" in sidecar_source
         assert "desktop dev runtime error" in sidecar_source
+
+
+def test_desktop_runtime_entrypoint_self_check_contract():
+    source = Path("halo_forge/desktop_runtime.py").read_text(encoding="utf-8")
+    build_script = Path("apps/desktop-tauri/scripts/build_runtime.py").read_text(encoding="utf-8")
+
+    assert "--desktop-self-check" in source
+    assert "HALO_FORGE_FRONTEND_DIST" in source
+    assert "halo_forge.public_api.app" in source
+    assert "mlx.nn" in source
+    assert '"-m", "halo_forge.cli"' in source
+    assert "PyInstaller" in build_script
+    assert "--onedir" in build_script
+    assert ".[mlx]" in build_script
+    assert "mlx_lm" in build_script
+    assert "mlx._reprlib_fix" in build_script
+    assert "mlx.metallib" in build_script
+    assert "libjaccl.dylib" in build_script
+    assert "halo-forge-runtime" in build_script
 
 
 def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
@@ -603,7 +631,12 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "desktop-unsigned-build" in ci
     assert "macos-14" in ci
     assert "ubuntu-latest" in ci
+    assert "Build bundled desktop runtime" in ci
+    assert "scripts/build_runtime.py" in ci
+    assert "tests/test_playground_proxy.py" in ci
+    assert "tests/test_serving.py" in ci
     assert "libwebkit2gtk-4.1-dev" in ci
+    assert "timeout-minutes: 60" in ci
     assert "tauri build" in Path("apps/desktop-tauri/package.json").read_text(encoding="utf-8")
 
 

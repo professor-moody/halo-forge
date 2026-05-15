@@ -11,19 +11,38 @@ The desktop app is intentionally thin:
 - it uses `127.0.0.1:8765` so it does not collide with the CLI default dashboard port
 - it targets macOS and Linux first
 
-## Dev runtime sidecar
+## Runtime paths
 
-The tracked sidecar scripts are dev-runtime entrypoints. In a source checkout they prefer the repo-local `.venv` and run:
+Halo Forge Desktop supports three runtime paths:
+
+- source development: the sidecar falls back to the repo-local `.venv`
+- bundled unsigned app: Tauri launches the PyInstaller `onedir` runtime resource
+- future distribution: the same bundled runtime will be signed/notarized with the app
+
+The tracked sidecar scripts are launchers. In a source checkout they can still run:
 
 ```bash
 python -m halo_forge.cli dashboard --no-build --host 127.0.0.1 --port 8765
 ```
 
-This is not yet a fully self-contained Python runtime. If `.venv` is missing, uses an unsupported Python version, or cannot import `halo_forge.cli`, the startup screen reports the error and points at the desktop runtime log.
+For bundled unsigned builds, generate the PyInstaller runtime first:
+
+```bash
+cd apps/desktop-tauri
+python3 scripts/build_runtime.py
+```
+
+This creates:
+
+```bash
+apps/desktop-tauri/runtime/dist/halo-forge-runtime/halo-forge-runtime
+```
+
+The desktop shell passes `HALO_FORGE_FRONTEND_DIST` and validates the runtime with `--desktop-self-check` before starting the dashboard. If bundled runtime validation fails, the startup screen reports the self-check error and points at the desktop runtime log.
 
 Tauri v2 expects target-suffixed sidecars for real builds, so macOS arm64 and Linux x86_64 scripts are tracked next to the generic `halo-forge-runtime` contract.
 
-Release packaging should replace these scripts with a bundled Python/Halo Forge runtime binary named `halo-forge-runtime` for each target platform.
+The app targets macOS arm64 + Linux unsigned builds in this branch. Signing, notarization, Windows, and auto-update remain later release work.
 
 Runtime logs for the dev desktop app are written to:
 
@@ -40,6 +59,7 @@ npm run build
 
 cd ../apps/desktop-tauri
 npm ci
+npm run build:runtime
 npm run build
 ```
 

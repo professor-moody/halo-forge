@@ -199,7 +199,9 @@ jobs:
         run: |
           pytest -q \
             tests/test_public_api_pivot.py \
-            tests/test_model_catalog.py
+            tests/test_model_catalog.py \
+            tests/test_playground_proxy.py \
+            tests/test_serving.py
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -217,7 +219,7 @@ jobs:
   desktop-unsigned-build:
     name: Desktop unsigned build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -240,6 +242,12 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -254,6 +262,10 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      - name: Build bundled desktop runtime
+        working-directory: apps/desktop-tauri
+        run: python3 scripts/build_runtime.py
 
       - name: Install desktop dependencies
         working-directory: apps/desktop-tauri
