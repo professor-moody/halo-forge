@@ -17,6 +17,7 @@ from ui.services.training_presentation import build_launch_presentation
 from ui.services.training_service import TrainingLaunchPreflight, TrainingService
 from ui.state import AppState, JobState, state as default_state
 
+from .serve_manager import ManagedServeProcess, ServeStartRequest
 from .views import (
     ActiveRunRowView,
     AttentionItemView,
@@ -173,6 +174,7 @@ class PublicApiService:
         results_service: ResultsService | None = None,
         readiness_service: OpsReadinessService | None = None,
         training_service: TrainingService | None = None,
+        serve_manager: ManagedServeProcess | None = None,
         base_path: Path | None = None,
     ) -> None:
         self.app_state = app_state or default_state
@@ -180,6 +182,7 @@ class PublicApiService:
         self.results_service = results_service or get_results_service()
         self.readiness_service = readiness_service or get_ops_readiness_service()
         self.training_service = training_service or TrainingService(self.app_state)
+        self.serve_manager = serve_manager or ManagedServeProcess(base_path=self.base_path)
 
     def _active_backend_name(self) -> str:
         """Return the active accelerator-kind name for cost / display use.
@@ -1293,6 +1296,28 @@ class PublicApiService:
                 return {"upstream_error": True, "status": resp.status_code, "detail": detail}
             return resp.json()
 
+    def serve_status(self) -> Dict[str, Any]:
+        return self.serve_manager.status()
+
+    def serve_start(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        request = ServeStartRequest(
+            model=str(payload.get("model") or ""),
+            backend=self._optional_str(payload.get("backend")),
+            host=str(payload.get("host") or "127.0.0.1"),
+            port=int(payload.get("port") or 8001),
+            trust_remote_code=bool(payload.get("trust_remote_code", False)),
+        )
+        return self.serve_manager.start(request)
+
+    def serve_stop(self) -> Dict[str, Any]:
+        return self.serve_manager.stop()
+
+    def serve_logs(self, *, tail: int = 200) -> Dict[str, Any]:
+        return self.serve_manager.logs(tail=tail)
+
+    def serve_health(self) -> Dict[str, Any]:
+        return self.serve_manager.health()
+
     # ----- run lineage (Track F-Q) -----------------------------------------
 
     def get_run_lineage(self, run_id: str) -> Dict[str, Any]:
@@ -1386,6 +1411,7 @@ class PublicApiService:
         Keeps the wire shape stable across the two endpoints so the
         run-list components don't have to branch on which fetched them.
         """
+        final_model = Path(record.output_dir) / "final_model" if record.output_dir else None
         return {
             "id": record.fs_id or record.run_id,
             "run_id": record.run_id,
@@ -1405,6 +1431,8 @@ class PublicApiService:
             "keep_rate": record.keep_rate,
             "top_issue": record.dominant_rejection_reason,
             "output_dir": record.output_dir,
+            "final_model_available": bool(final_model and final_model.exists()),
+            "artifact_path": str(final_model) if final_model and final_model.exists() else None,
         }
 
     def list_runs(

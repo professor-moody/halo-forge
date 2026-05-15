@@ -265,9 +265,7 @@ function ComputePanel() {
             <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-fg-subtle uppercase tracking-wider">
               <span>{data.capabilities.preferred_dtype_str}</span>
               <span>
-                {data.capabilities.supports_neural_accelerators
-                  ? "NA ready"
-                  : data.capabilities.preferred_attn_impl}
+                {data.mlx_readiness?.executable ? "MLX ready" : data.capabilities.preferred_attn_impl}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[10px] uppercase tracking-wider">

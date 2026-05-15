@@ -5,6 +5,9 @@ import {
   type DashboardSummary,
   type ModelCatalogResponse,
   type RunListItem,
+  type ServeLogs,
+  type ServeStartPayload,
+  type ServeStatus,
   type SuggestedModel,
   type TelemetrySample,
   type TrainingDataset,
@@ -33,6 +36,8 @@ export const queryKeys = {
     ["training", "models", params] as const,
   modelCatalog: (params?: Record<string, string | undefined>) =>
     ["models", params] as const,
+  serve: ["serve"] as const,
+  serveLogs: (tail: number) => ["serve", "logs", tail] as const,
 };
 
 /**
@@ -170,5 +175,35 @@ export function useRunSearch(params?: import("@/lib/api").RunSearchParams) {
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useServeStatus() {
+  return useQuery<ServeStatus>({
+    queryKey: queryKeys.serve,
+    queryFn: api.serveStatus,
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useServeStart() {
+  return useMutation<ServeStatus, Error, ServeStartPayload>({
+    mutationFn: (payload) => api.serveStart(payload),
+  });
+}
+
+export function useServeStop() {
+  return useMutation<ServeStatus, Error, void>({
+    mutationFn: () => api.serveStop(),
+  });
+}
+
+export function useServeLogs(tail = 200) {
+  return useQuery<ServeLogs>({
+    queryKey: queryKeys.serveLogs(tail),
+    queryFn: () => api.serveLogs(tail),
+    enabled: false,
   });
 }

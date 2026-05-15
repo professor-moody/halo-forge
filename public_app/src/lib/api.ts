@@ -196,8 +196,12 @@ export type RunListItem = {
   model_name: string;
   status?: string;
   created_at?: string | null;
+  timestamp?: string | null;
+  output_dir?: string | null;
   cycles_executed?: number;
   weights_updated?: boolean;
+  final_model_available?: boolean;
+  artifact_path?: string | null;
   final_train_loss?: number | null;
   effectiveness?: { verdict?: string };
   [key: string]: unknown;
@@ -367,6 +371,36 @@ export type PlaygroundChatResponse = {
   upstream_error?: boolean;
   status?: number;
   detail?: unknown;
+};
+
+export type ServeStatus = {
+  running: boolean;
+  pid: number | null;
+  model: string | null;
+  backend: string | null;
+  host: string;
+  port: number;
+  url: string;
+  started_at: number | null;
+  exit_code: number | null;
+  log_path: string | null;
+  last_error: string | null;
+  healthy: boolean;
+};
+
+export type ServeStartPayload = {
+  model: string;
+  backend?: string | null;
+  host?: string;
+  port?: number;
+  trust_remote_code?: boolean;
+};
+
+export type ServeLogs = {
+  available: boolean;
+  lines: string[];
+  path: string | null;
+  reason?: string;
 };
 
 /**
@@ -834,6 +868,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // ----- managed local serving ------------------------------------------
+  serveStatus: () => request<ServeStatus>("/serve/status"),
+  serveStart: (payload: ServeStartPayload) =>
+    request<ServeStatus>("/serve/start", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  serveStop: () =>
+    request<ServeStatus>("/serve/stop", {
+      method: "POST",
+    }),
+  serveLogs: (tail = 200) =>
+    request<ServeLogs>(`/serve/logs?tail=${encodeURIComponent(String(tail))}`),
+  serveHealth: () => request<ServeStatus>("/serve/health"),
 
   // ----- model registry (Track F-J) -------------------------------------
   listRegistry: () =>

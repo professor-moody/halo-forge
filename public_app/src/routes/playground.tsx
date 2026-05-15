@@ -1,11 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
   Loader2,
   Send,
+  Server,
   Settings,
+  Square,
   Trash2,
   User,
 } from "lucide-react";
@@ -15,6 +17,7 @@ import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardEyebrow, CardHeader, CardTitle } from "@/components/ui/card";
+import { queryKeys, useServeStatus, useServeStop } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/playground")({
@@ -40,13 +43,17 @@ type ChatMessage = PlaygroundMessage & { id: string };
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are a helpful assistant. Respond concisely and accurately.";
+const DEFAULT_SERVE_URL = "http://127.0.0.1:8001/v1";
 
 function PlaygroundRoute() {
+  const queryClient = useQueryClient();
+  const serveStatus = useServeStatus();
+  const serveStop = useServeStop();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [model, setModel] = useState("halo-forge");
-  const [serveUrl, setServeUrl] = useState("http://127.0.0.1:8001/v1");
+  const [serveUrl, setServeUrl] = useState(DEFAULT_SERVE_URL);
   const [apiKey, setApiKey] = useState("");
   const [maxTokens, setMaxTokens] = useState(256);
   const [temperature, setTemperature] = useState(0.7);
@@ -58,6 +65,14 @@ function PlaygroundRoute() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!serveStatus.data?.running || !serveStatus.data.url) return;
+    if (serveUrl === DEFAULT_SERVE_URL || serveUrl === serveStatus.data.url) {
+      setServeUrl(serveStatus.data.url);
+      setModel(serveStatus.data.model ?? "halo-forge");
+    }
+  }, [serveStatus.data?.running, serveStatus.data?.url, serveStatus.data?.model, serveUrl]);
 
   const chatMutation = useMutation({
     mutationFn: (req: PlaygroundChatRequest) => api.playgroundChat(req),
@@ -195,6 +210,20 @@ function PlaygroundRoute() {
           />
         ) : null}
 
+        <ServeStatusPanel
+          running={Boolean(serveStatus.data?.running)}
+          healthy={Boolean(serveStatus.data?.healthy)}
+          model={serveStatus.data?.model ?? null}
+          url={serveStatus.data?.url ?? DEFAULT_SERVE_URL}
+          loading={serveStatus.isLoading}
+          stopping={serveStop.isPending}
+          onStop={() =>
+            serveStop.mutate(undefined, {
+              onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }),
+            })
+          }
+        />
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -213,12 +242,10 @@ function PlaygroundRoute() {
               {messages.length === 0 ? (
                 <div className="text-center text-sm text-fg-muted py-10 max-w-[44ch] mx-auto">
                   <p>
-                    Start by running{" "}
-                    <span className="font-mono text-fg-subtle">halo-forge serve --model X</span>{" "}
-                    in another terminal, then send a message below.
+                    Start a local model from Models or Results, then send a message here.
                   </p>
                   <p className="text-[11px] text-fg-disabled mt-3">
-                    Cmd/Ctrl+Enter sends.
+                    Cmd/Ctrl+Enter sends. Settings can point this chat at an external endpoint.
                   </p>
                 </div>
               ) : (
@@ -261,6 +288,64 @@ function PlaygroundRoute() {
         </Card>
       </div>
     </>
+  );
+}
+
+function ServeStatusPanel({
+  running,
+  healthy,
+  model,
+  url,
+  loading,
+  stopping,
+  onStop,
+}: {
+  running: boolean;
+  healthy: boolean;
+  model: string | null;
+  url: string;
+  loading: boolean;
+  stopping: boolean;
+  onStop: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface">
+            <Server className="h-4 w-4 text-accent" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[13px] font-medium text-fg">Local serving</span>
+              {loading ? (
+                <Badge tone="neutral" size="sm">checking</Badge>
+              ) : running ? (
+                <Badge tone={healthy ? "success" : "warning"} dot size="sm">
+                  {healthy ? "ready" : "starting"}
+                </Badge>
+              ) : (
+                <Badge tone="neutral" size="sm">not running</Badge>
+              )}
+            </div>
+            <div className="mt-0.5 truncate font-mono text-[11px] text-fg-subtle">
+              {running ? `${model ?? "model"} · ${url}` : "Start serving from Models or completed Results."}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/models">Choose model</Link>
+          </Button>
+          {running ? (
+            <Button variant="ghost" size="sm" onClick={onStop} disabled={stopping}>
+              {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+              Stop
+            </Button>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

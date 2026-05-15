@@ -65,6 +65,42 @@ export const Route = createFileRoute("/train")({
  * ----------------------------------------------------------------------- */
 
 type Modality = "sft" | "raft";
+type TrainingSource = {
+  key: string;
+  description: string;
+  size_hint: string;
+  domain: string;
+  huggingface_id?: string;
+};
+
+const DEFAULT_SFT_DATASET = "codealpaca";
+const DEFAULT_RAFT_PROMPTS = "data/rlvr/humaneval_prompts.jsonl";
+const RAFT_PROMPT_SOURCES = [
+  {
+    key: "data/rlvr/humaneval_prompts.jsonl",
+    description: "HumanEval coding prompts for verifier-filtered RAFT.",
+    size_hint: "164 prompts",
+    domain: "code prompts",
+  },
+  {
+    key: "data/rlvr/mbpp_train_prompts.jsonl",
+    description: "MBPP training prompts for Python coding RAFT.",
+    size_hint: "374 prompts",
+    domain: "code prompts",
+  },
+  {
+    key: "data/samples/codeforces_cpp_500_prompts.jsonl",
+    description: "Codeforces C++ prompt-only sample set.",
+    size_hint: "500 prompts",
+    domain: "code prompts",
+  },
+];
+
+const RAFT_PROMPT_ALIASES: Record<string, string> = {
+  humaneval: "data/rlvr/humaneval_prompts.jsonl",
+  mbpp: "data/rlvr/mbpp_train_prompts.jsonl",
+  codeforces_cpp: "data/samples/codeforces_cpp_500_prompts.jsonl",
+};
 
 interface ConfigState {
   modality: Modality;
@@ -88,7 +124,7 @@ function defaultConfig(): ConfigState {
   return {
     modality: "sft",
     model: "",
-    dataset: "codealpaca",
+    dataset: DEFAULT_SFT_DATASET,
     customDatasetFile: "",
     accelerator: "",
     verifier: "gcc",
@@ -163,7 +199,7 @@ function TrainConfiguratorRoute() {
       modality: t.modality as Modality,
       model: t.model_hint || prev.model,
       dataset: t.dataset_hint && t.dataset_hint !== "@custom"
-        ? t.dataset_hint
+        ? normalizeSourceForMode(t.modality as Modality, t.dataset_hint)
         : prev.dataset,
       verifier: typeof t.verifier === "string" ? t.verifier : prev.verifier,
       epochs: typeof hp.epochs === "number" ? hp.epochs : prev.epochs,
@@ -396,7 +432,7 @@ function FirstRunPanel({
                 model: appleMlx
                   ? "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
                   : "Qwen/Qwen2.5-Coder-1.5B",
-                dataset: "codealpaca",
+                dataset: DEFAULT_RAFT_PROMPTS,
                 accelerator: appleMlx ? "mlx" : "",
                 verifier: "gcc",
                 cycles: appleMlx ? 1 : 2,
@@ -437,7 +473,20 @@ function ModalitySection({
       <CardContent>
         <RadioCardGroup
           value={config.modality}
-          onValueChange={(v) => setConfig((c) => ({ ...c, modality: v as Modality }))}
+          onValueChange={(v) =>
+            setConfig((c) => {
+              const modality = v as Modality;
+              const nextDataset =
+                modality === "raft"
+                  ? isRaftPromptSource(c.dataset)
+                    ? c.dataset
+                    : DEFAULT_RAFT_PROMPTS
+                  : isRaftPromptSource(c.dataset)
+                    ? DEFAULT_SFT_DATASET
+                    : c.dataset;
+              return { ...c, modality, dataset: nextDataset };
+            })
+          }
           className="grid grid-cols-1 md:grid-cols-2 gap-2"
         >
           <RadioCard
@@ -601,28 +650,34 @@ function DatasetSection({
 }: {
   config: ConfigState;
   setConfig: SetConfig;
-  datasets: { key: string; description: string; size_hint: string; domain: string }[];
+  datasets: TrainingSource[];
 }) {
+  const isRaft = config.modality === "raft";
+  const sourceLabel = isRaft ? "Prompt source" : "Dataset";
+  const selectLabel = isRaft ? "Pre-registered prompt files" : "Pre-registered datasets";
+  const customLabel = isRaft ? "Prompt JSONL file path" : "JSONL file path";
+  const customPlaceholder = isRaft ? "data/rlvr/humaneval_prompts.jsonl" : "/path/to/training.jsonl";
+  const sources: TrainingSource[] = isRaft ? RAFT_PROMPT_SOURCES : datasets;
   // Group by domain so the picker doesn't become a flat 30-item list.
   const grouped = useMemo(() => {
-    const out: Record<string, typeof datasets> = {};
-    for (const d of datasets) {
+    const out: Record<string, typeof sources> = {};
+    for (const d of sources) {
       (out[d.domain] ||= []).push(d);
     }
     return out;
-  }, [datasets]);
+  }, [sources]);
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <CardEyebrow>STEP 03</CardEyebrow>
-          <CardTitle>Dataset</CardTitle>
+          <CardTitle>{sourceLabel}</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="dataset">Pre-registered datasets</Label>
+          <Label htmlFor="dataset">{selectLabel}</Label>
           <Select
             value={config.dataset}
             onValueChange={(v) => setConfig((c) => ({ ...c, dataset: v }))}
@@ -653,23 +708,24 @@ function DatasetSection({
 
         {config.dataset === "__custom__" ? (
           <div className="space-y-1.5">
-            <Label htmlFor="dataset-file">JSONL file path</Label>
+            <Label htmlFor="dataset-file">{customLabel}</Label>
             <Input
               id="dataset-file"
               mono
-              placeholder="/path/to/training.jsonl"
+              placeholder={customPlaceholder}
               value={config.customDatasetFile}
               onChange={(e) =>
                 setConfig((c) => ({ ...c, customDatasetFile: e.target.value }))
               }
             />
             <p className="text-[11px] text-fg-subtle">
-              Each line should be a JSON object with `text` or `messages`. The MLX
-              path also accepts `prompt` + `completion`.
+              {isRaft
+                ? "Each line should provide a prompt. HumanEval and MBPP prompt files are included for first RAFT runs."
+                : "Each line should be a JSON object with `text` or `messages`. The MLX path also accepts `prompt` + `completion`."}
             </p>
           </div>
         ) : (
-          <DatasetSummary datasets={datasets} selected={config.dataset} />
+          <DatasetSummary datasets={sources} selected={config.dataset} />
         )}
       </CardContent>
     </Card>
@@ -1036,7 +1092,10 @@ function RunSummary({
     ["Mode", config.modality.toUpperCase()],
     ["Accelerator", config.accelerator || "auto"],
     ["Model", config.model || "not set"],
-    ["Dataset", config.dataset === "__custom__" ? config.customDatasetFile || "custom path needed" : config.dataset],
+    [
+      config.modality === "raft" ? "Prompts" : "Dataset",
+      config.dataset === "__custom__" ? config.customDatasetFile || "custom path needed" : config.dataset,
+    ],
     ["Memory", selectedModel?.estimated_memory_gb ? `${selectedModel.memory_tier || "unknown"} · ~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "unknown"],
     ["Output", `models/${config.modality}-${slug(config.model || "model")}`],
   ];
@@ -1108,7 +1167,7 @@ function buildLaunchPayload(c: ConfigState): Record<string, unknown> {
   return stripEmpty({
     mode: "raft",
     model: c.model,
-    prompts: isCustom ? c.customDatasetFile : c.dataset,
+    prompts: isCustom ? c.customDatasetFile : resolveRaftPrompts(c.dataset),
     output_dir: `models/raft-${slug(c.model)}`,
     accelerator: c.accelerator || (isMlxModel(c.model) ? "mlx" : undefined),
     cycles: c.cycles,
@@ -1134,6 +1193,21 @@ function slug(s: string): string {
 
 function isMlxModel(model: string | undefined): boolean {
   return Boolean(model && model.startsWith("mlx-community/"));
+}
+
+function resolveRaftPrompts(source: string): string {
+  return RAFT_PROMPT_ALIASES[source] ?? source;
+}
+
+function isRaftPromptSource(source: string): boolean {
+  if (!source) return false;
+  const resolved = resolveRaftPrompts(source);
+  return resolved.endsWith("_prompts.jsonl") || resolved.includes("/rlvr/");
+}
+
+function normalizeSourceForMode(mode: Modality, source: string): string {
+  if (mode === "raft") return resolveRaftPrompts(source);
+  return source;
 }
 
 function canLaunch(c: ConfigState): boolean {
@@ -1173,7 +1247,7 @@ function buildPreflightChecks(
       detail: config.model || "Type a HuggingFace or MLX repo id above",
     },
     {
-      label: "Dataset selected",
+      label: config.modality === "raft" ? "Prompt source selected" : "Dataset selected",
       status:
         config.dataset === "__custom__"
           ? config.customDatasetFile.trim()

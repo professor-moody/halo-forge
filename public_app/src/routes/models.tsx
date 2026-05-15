@@ -7,10 +7,13 @@ import {
   Cpu,
   FlaskConical,
   Loader2,
+  Server,
   Search,
   Sparkles,
   ScanEye,
+  Square,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +26,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useBackendInfo, useModelCatalog } from "@/lib/hooks";
+import { queryKeys, useBackendInfo, useModelCatalog, useServeStart, useServeStatus } from "@/lib/hooks";
 import type { ModelCatalogEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -106,31 +109,39 @@ function ModelsRoute() {
   const detectedBackend = backend.data?.name ?? "";
 
   const items = data?.items ?? [];
-  const filtered = useMemo(() => {
+  const filterResult = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return items.filter((item) => {
-      if (
-        backendScope === "detected" &&
-        detectedBackend &&
-        !item.backend_support.includes(detectedBackend)
-      ) {
-        return false;
-      }
-      if (provider !== "all" && item.provider !== provider) return false;
-      if (status !== "all" && item.status !== status) return false;
-      if (modality !== "all" && !item.modalities.includes(modality)) return false;
-      if (!q) return true;
-      return [
-        item.id,
-        item.label,
-        item.provider,
-        item.family,
-        item.recommended_use,
-        ...(item.tasks ?? []),
-        ...(item.trainer_support ?? []),
-      ].some((value) => String(value ?? "").toLowerCase().includes(q));
-    });
+    const base = items.filter((item) =>
+      modelMatchesFilters(item, {
+        q,
+        provider,
+        status,
+        modality,
+        backendScope,
+        detectedBackend,
+      }),
+    );
+    const withoutBackend = items.filter((item) =>
+      modelMatchesFilters(item, {
+        q,
+        provider,
+        status,
+        modality,
+        backendScope: "all",
+        detectedBackend,
+      }),
+    );
+    const usingFallback =
+      backendScope === "detected" &&
+      detectedBackend &&
+      base.length === 0 &&
+      withoutBackend.length > 0;
+    return {
+      visible: usingFallback ? withoutBackend : base,
+      usingFallback,
+    };
   }, [backendScope, detectedBackend, items, modality, provider, query, status]);
+  const filtered = filterResult.visible;
 
   return (
     <>
@@ -248,6 +259,12 @@ function ModelsRoute() {
                 All catalog models
               </button>
             </div>
+            {filterResult.usingFallback ? (
+              <div className="rounded-sm border border-warning/30 bg-warning-bg px-3 py-2 text-[12px] text-warning">
+                No catalog entries matched the detected {detectedBackend} filter, so Halo Forge is
+                showing all catalog models that match the other filters.
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -272,6 +289,41 @@ function ModelsRoute() {
       </div>
     </>
   );
+}
+
+function modelMatchesFilters(
+  item: ModelCatalogEntry,
+  opts: {
+    q: string;
+    provider: string;
+    status: string;
+    modality: string;
+    backendScope: "detected" | "all";
+    detectedBackend: string;
+  },
+): boolean {
+  if (
+    opts.backendScope === "detected" &&
+    opts.detectedBackend &&
+    !item.backend_support.includes(opts.detectedBackend)
+  ) {
+    return false;
+  }
+  if (opts.provider !== "all" && item.provider !== opts.provider) return false;
+  if (opts.status !== "all" && item.status !== opts.status) return false;
+  if (opts.modality !== "all" && !item.modalities.includes(opts.modality)) return false;
+  if (!opts.q) return true;
+  return [
+    item.id,
+    item.label,
+    item.provider,
+    item.family,
+    item.recommended_use,
+    item.mlx_variant,
+    ...(item.tasks ?? []),
+    ...(item.trainer_support ?? []),
+    ...(item.fit_notes ?? []),
+  ].some((value) => String(value ?? "").toLowerCase().includes(opts.q));
 }
 
 function IntentBar({
@@ -337,10 +389,16 @@ function FilterSelect({
 }
 
 function ModelRow({ model }: { model: ModelCatalogEntry }) {
+  const queryClient = useQueryClient();
+  const serveStatus = useServeStatus();
+  const serveStart = useServeStart();
   const caveats = model.known_caveats ?? [];
   const fitNotes = model.fit_notes ?? [];
   const caveated = caveats.length > 0 || model.trust_remote_code_required;
   const startGoal = startGoalForModel(model);
+  const serveModel = model.mlx_variant ?? model.id;
+  const servingThis = serveStatus.data?.running && serveStatus.data.model === serveModel;
+  const serveDisabled = serveStart.isPending || Boolean(serveStatus.data?.running && !servingThis);
 
   return (
     <Card>
@@ -425,6 +483,29 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+          <Button
+            size="sm"
+            variant={servingThis ? "ghost" : "primary"}
+            onClick={() =>
+              serveStart.mutate(
+                {
+                  model: serveModel,
+                  backend: model.mlx_variant ? "mlx" : undefined,
+                  trust_remote_code: model.trust_remote_code_required,
+                },
+                { onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }) },
+              )
+            }
+            disabled={serveDisabled}
+            title={
+              serveStatus.data?.running && !servingThis
+                ? "Stop the current local serve before starting another model."
+                : `Serve ${serveModel}`
+            }
+          >
+            {servingThis ? <Square className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />}
+            {servingThis ? "Serving" : "Serve"}
+          </Button>
           {startGoal ? (
             <Button asChild size="sm" variant="primary">
               <Link to="/start" search={{ goal: startGoal }}>

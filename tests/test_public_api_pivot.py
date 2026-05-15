@@ -230,7 +230,9 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "accelerator" in train_source
     assert "Run detail view" in run_source
     assert 'label="STATUS"' in run_source
-    assert "Results view in progress" in results_source
+    assert "Run results" in results_source
+    assert "Serve model" in results_source
+    assert "No completed results yet" in results_source
     assert "First guided run" in docs_source
     assert "Remote workstation" in docs_source
     assert "CLI reference" in docs_source
@@ -269,6 +271,9 @@ def test_public_frontend_friendly_workstation_contract():
     start_source = Path("public_app/src/routes/start.tsx").read_text(encoding="utf-8")
     run_source = Path("public_app/src/routes/runs.$runId.tsx").read_text(encoding="utf-8")
     models_source = Path("public_app/src/routes/models.tsx").read_text(encoding="utf-8")
+    playground_source = Path("public_app/src/routes/playground.tsx").read_text(encoding="utf-8")
+    overview_source = Path("public_app/src/routes/index.tsx").read_text(encoding="utf-8")
+    main_source = Path("public_app/src/main.tsx").read_text(encoding="utf-8")
     api_source = Path("public_app/src/lib/api.ts").read_text(encoding="utf-8")
     logs_source = Path("public_app/src/components/run/logs-panel.tsx").read_text(
         encoding="utf-8"
@@ -289,8 +294,15 @@ def test_public_frontend_friendly_workstation_contract():
     assert "plainRunStatus" in run_source
     assert "Reconnecting to logs" in logs_source
     assert "Fits ${detectedBackend}" in models_source
+    assert "showing all catalog models" in models_source
+    assert "useServeStart" in models_source
     assert "Use in Start" in models_source
     assert "startGoalForModel" in models_source
+    assert "export type ServeStatus" in api_source
+    assert "serveStart:" in api_source
+    assert "ServeStatusPanel" in playground_source
+    assert "Apple Neural Accelerators (experimental)" in overview_source
+    assert "installChunkLoadRecovery" in main_source
 
 
 def test_public_api_transport_exposes_public_workflows():
@@ -301,6 +313,9 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/train/launch" in api_source
     assert "/runs/{run_id}/live" in api_source
     assert "/runs/{run_id}/guided-recovery" in api_source
+    assert "/serve/status" in api_source
+    assert "/serve/start" in api_source
+    assert "/serve/stop" in api_source
     assert "/readiness" in api_source
     assert "/docs" in api_source
     assert "find_frontend_dist" in api_source
@@ -330,14 +345,99 @@ def test_public_api_serves_built_frontend_with_spa_fallback(tmp_path):
         missing_api = client.get("/api/not-a-dashboard-route")
 
     assert root.status_code == 200
+    assert root.headers["cache-control"].startswith("no-store")
     assert "Halo Forge" in root.text
     assert nested.status_code == 200
+    assert nested.headers["cache-control"].startswith("no-store")
     assert "Halo Forge" in nested.text
     assert logo.status_code == 200
+    assert "max-age=31536000" in logo.headers["cache-control"]
     assert logo.content == b"png"
     assert asset.status_code == 200
+    assert "immutable" in asset.headers["cache-control"]
     assert "console.log" in asset.text
     assert missing_api.status_code == 404
+
+
+def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
+    class FakeServeManager:
+        def __init__(self):
+            self.running = False
+            self.model = None
+
+        def status(self):
+            return {
+                "running": self.running,
+                "pid": 123 if self.running else None,
+                "model": self.model,
+                "backend": "mlx",
+                "host": "127.0.0.1",
+                "port": 8001,
+                "url": "http://127.0.0.1:8001/v1",
+                "started_at": 1.0 if self.running else None,
+                "exit_code": None,
+                "log_path": None,
+                "last_error": None,
+                "healthy": self.running,
+            }
+
+        def start(self, request):
+            if self.running:
+                raise ValueError("already being served")
+            assert request.model == "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+            assert request.host == "127.0.0.1"
+            assert request.port == 8001
+            self.running = True
+            self.model = request.model
+            return self.status()
+
+        def stop(self):
+            self.running = False
+            return self.status()
+
+        def logs(self, *, tail=200):
+            return {"available": True, "lines": ["ready"], "path": "serve.log"}
+
+        def health(self):
+            return self.status()
+
+    fake_serve = FakeServeManager()
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=_fake_readiness_service(),
+        training_service=TrainingService(AppState()),
+        base_path=tmp_path,
+        serve_manager=fake_serve,
+    )
+
+    started = service.serve_start(
+        {"model": "mlx-community/Qwen2.5-0.5B-Instruct-bf16", "backend": "mlx"}
+    )
+
+    assert started["running"] is True
+    assert service.serve_status()["model"] == "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+    with pytest.raises(ValueError, match="already being served"):
+        service.serve_start({"model": "Qwen/Qwen2.5-1.5B-Instruct"})
+    assert service.serve_logs()["lines"] == ["ready"]
+    assert service.serve_stop()["running"] is False
+
+
+def test_desktop_tauri_foundation_contract():
+    tauri_dir = Path("apps/desktop-tauri/src-tauri")
+    config = (tauri_dir / "tauri.conf.json").read_text(encoding="utf-8")
+    main_rs = (tauri_dir / "src" / "main.rs").read_text(encoding="utf-8")
+    capabilities = (tauri_dir / "capabilities" / "default.json").read_text(encoding="utf-8")
+
+    assert '"identifier": "ai.haloforge.desktop"' in config
+    assert '"targets": ["app", "dmg", "appimage", "deb"]' in config
+    assert '"externalBin": ["sidecars/halo-forge-runtime"]' in config
+    assert (tauri_dir / "sidecars" / "halo-forge-runtime").exists()
+    assert ".sidecar(\"halo-forge-runtime\")" in main_rs
+    assert '"serve-public", "--host", "127.0.0.1", "--port", "8000"' in main_rs
+    assert "GET /api/public/health HTTP/1.1" in main_rs
+    assert "child.kill()" in main_rs
+    assert '"shell:allow-spawn"' in capabilities
 
 
 @pytest.mark.parametrize(
@@ -535,6 +635,10 @@ def test_public_train_client_uses_mode_specific_payloads_and_labels():
     assert "buildLaunchPayload(config)" in train_client_source
     assert 'if (c.modality === "sft")' in train_client_source
     assert 'mode: "raft"' in train_client_source
+    assert "DEFAULT_RAFT_PROMPTS" in train_client_source
+    assert "RAFT_PROMPT_SOURCES" in train_client_source
+    assert "resolveRaftPrompts(c.dataset)" in train_client_source
+    assert "Prompt source selected" in train_client_source
     assert "stripEmpty" in train_client_source
     assert "VerifierSection" in train_client_source
 
