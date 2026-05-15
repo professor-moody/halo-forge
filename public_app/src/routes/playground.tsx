@@ -211,10 +211,12 @@ function PlaygroundRoute() {
         ) : null}
 
         <ServeStatusPanel
-          running={Boolean(serveStatus.data?.running)}
-          healthy={Boolean(serveStatus.data?.healthy)}
+          state={serveStatus.data?.state ?? "idle"}
           model={serveStatus.data?.model ?? null}
           url={serveStatus.data?.url ?? DEFAULT_SERVE_URL}
+          message={serveStatus.data?.message ?? null}
+          logsAvailable={Boolean(serveStatus.data?.logs_available)}
+          logPath={serveStatus.data?.log_path ?? null}
           loading={serveStatus.isLoading}
           stopping={serveStop.isPending}
           onStop={() =>
@@ -292,22 +294,38 @@ function PlaygroundRoute() {
 }
 
 function ServeStatusPanel({
-  running,
-  healthy,
+  state,
   model,
   url,
+  message,
+  logsAvailable,
+  logPath,
   loading,
   stopping,
   onStop,
 }: {
-  running: boolean;
-  healthy: boolean;
+  state: string;
   model: string | null;
   url: string;
+  message: string | null;
+  logsAvailable: boolean;
+  logPath: string | null;
   loading: boolean;
   stopping: boolean;
   onStop: () => void;
 }) {
+  const running = state === "running" || state === "starting" || state === "unhealthy";
+  const tone = state === "running" ? "success" : state === "starting" ? "warning" : state === "unhealthy" || state === "exited" ? "danger" : "neutral";
+  const label =
+    state === "running"
+      ? "ready"
+      : state === "starting"
+        ? "starting"
+        : state === "unhealthy"
+          ? "unhealthy"
+          : state === "exited"
+            ? "exited"
+            : "idle";
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
@@ -320,17 +338,23 @@ function ServeStatusPanel({
               <span className="text-[13px] font-medium text-fg">Local serving</span>
               {loading ? (
                 <Badge tone="neutral" size="sm">checking</Badge>
-              ) : running ? (
-                <Badge tone={healthy ? "success" : "warning"} dot size="sm">
-                  {healthy ? "ready" : "starting"}
-                </Badge>
               ) : (
-                <Badge tone="neutral" size="sm">not running</Badge>
+                <Badge tone={tone} dot={state !== "idle"} size="sm">
+                  {label}
+                </Badge>
               )}
             </div>
             <div className="mt-0.5 truncate font-mono text-[11px] text-fg-subtle">
               {running ? `${model ?? "model"} · ${url}` : "Start serving from Models or completed Results."}
             </div>
+            {message ? (
+              <div className="mt-1 text-[11px] text-fg-muted">
+                {message}
+                {logsAvailable && logPath ? (
+                  <span className="font-mono text-fg-subtle"> · logs: {logPath}</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -174,3 +174,101 @@ jobs:
           assert 'HSA_OVERRIDE_GFX_VERSION' not in env, 'ROCm vars must not leak on macOS'
           print('strix_halo helpers correctly no-op on macOS')
           "
+
+  public-dashboard-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install focused Python deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest fastapi uvicorn httpx
+          python -m pip install --no-deps -e .
+
+      - name: Focused public API and model tests
+        run: |
+          pytest -q \
+            tests/test_public_api_pivot.py \
+            tests/test_model_catalog.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: public_app/package-lock.json
+
+      - name: Build public dashboard
+        working-directory: public_app
+        run: |
+          npm ci
+          npm run build
+
+  desktop-unsigned-build:
+    name: Desktop unsigned build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            public_app/package-lock.json
+            apps/desktop-tauri/package-lock.json
+
+      - name: Build public dashboard assets
+        working-directory: public_app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop-tauri
+        run: npm ci
+
+      - name: Cargo check desktop shell
+        run: cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
+
+      - name: Build unsigned desktop app
+        working-directory: apps/desktop-tauri
+        run: npm run build -- --ci
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-forge-desktop-${{ matrix.os }}
+          path: apps/desktop-tauri/src-tauri/target/release/bundle/**
+          if-no-files-found: error

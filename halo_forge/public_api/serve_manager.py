@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -25,6 +26,8 @@ class ServeStartRequest:
 class ManagedServeProcess:
     """Own one local OpenAI-compatible serve process."""
 
+    STARTING_GRACE_SECONDS = 20.0
+
     def __init__(self, *, base_path: Path | None = None, log_dir: Path | None = None) -> None:
         self.base_path = (base_path or Path.cwd()).resolve()
         self.log_dir = (log_dir or Path.home() / ".halo-forge" / "serve").expanduser()
@@ -42,8 +45,11 @@ class ManagedServeProcess:
         proc = self._proc
         running = proc is not None and proc.poll() is None
         exit_code = None if proc is None else proc.poll()
+        healthy = self.is_healthy()
+        state = self._state(running=running, healthy=healthy, exit_code=exit_code)
         return {
             "running": running,
+            "state": state,
             "pid": proc.pid if proc is not None and running else None,
             "model": self._model,
             "backend": self._backend,
@@ -53,8 +59,10 @@ class ManagedServeProcess:
             "started_at": self._started_at,
             "exit_code": exit_code,
             "log_path": str(self._log_path) if self._log_path else None,
+            "logs_available": bool(self._log_path and self._log_path.exists()),
             "last_error": self._last_error,
-            "healthy": self.is_healthy(),
+            "healthy": healthy,
+            "message": self._message(state=state, exit_code=exit_code),
         }
 
     @property
@@ -68,6 +76,11 @@ class ManagedServeProcess:
         model = str(request.model or "").strip()
         if not model:
             raise ValueError("model is required")
+        if not self._port_available(request.host, int(request.port)):
+            raise ValueError(
+                f"{request.host}:{int(request.port)} is already in use. "
+                "Stop the process on that port or choose another local serve port."
+            )
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -119,6 +132,8 @@ class ManagedServeProcess:
                 proc.kill()
                 proc.wait(timeout=3)
         self._close_log_handle()
+        self._proc = None
+        self._started_at = None
         return self.status()
 
     def logs(self, *, tail: int = 200) -> dict[str, Any]:
@@ -143,6 +158,35 @@ class ManagedServeProcess:
                 return 200 <= int(resp.status) < 300
         except (OSError, urllib.error.URLError, TimeoutError):
             return False
+
+    def _state(self, *, running: bool, healthy: bool, exit_code: int | None) -> str:
+        if self._proc is None:
+            return "idle"
+        if not running:
+            return "exited"
+        if healthy:
+            return "running"
+        if self._started_at and time.time() - self._started_at <= self.STARTING_GRACE_SECONDS:
+            return "starting"
+        return "unhealthy"
+
+    def _message(self, *, state: str, exit_code: int | None) -> str:
+        if state == "idle":
+            return "No local model is being served."
+        if state == "starting":
+            return "Starting local model server."
+        if state == "running":
+            return "Local model server is ready."
+        if state == "unhealthy":
+            return "Local model server is running but health checks are failing."
+        if state == "exited":
+            return f"Local model server exited with code {exit_code}."
+        return "Local serving status is unknown."
+
+    def _port_available(self, host: str, port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            return sock.connect_ex((host, port)) != 0
 
     def _close_log_handle(self) -> None:
         if self._log_handle is not None:

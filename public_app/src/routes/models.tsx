@@ -399,6 +399,8 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   const serveModel = model.mlx_variant ?? model.id;
   const servingThis = serveStatus.data?.running && serveStatus.data.model === serveModel;
   const serveDisabled = serveStart.isPending || Boolean(serveStatus.data?.running && !servingThis);
+  const anotherModelServing = Boolean(serveStatus.data?.running && !servingThis);
+  const serveError = serveStart.error?.message;
 
   return (
     <Card>
@@ -480,6 +482,16 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
                 <li key={caveat}>{caveat}</li>
               ))}
             </ul>
+          ) : null}
+          {anotherModelServing ? (
+            <div className="rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
+              {serveStatus.data?.model} is already serving. Stop it in Playground before switching models.
+            </div>
+          ) : null}
+          {serveError ? (
+            <div className="rounded-sm border border-danger/30 bg-danger-bg px-2 py-1.5 text-[11px] text-danger">
+              {serveError}
+            </div>
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">

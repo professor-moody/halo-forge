@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import socket
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from halo_forge.public_api.service import PublicApiService
+from halo_forge.public_api.serve_manager import ManagedServeProcess, ServeStartRequest
 from ui.services.results_service import ResultsService
 from ui.services.training_service import TrainingService
 from ui.state import AppState
@@ -271,6 +273,7 @@ def test_public_frontend_friendly_workstation_contract():
     start_source = Path("public_app/src/routes/start.tsx").read_text(encoding="utf-8")
     run_source = Path("public_app/src/routes/runs.$runId.tsx").read_text(encoding="utf-8")
     models_source = Path("public_app/src/routes/models.tsx").read_text(encoding="utf-8")
+    results_source = Path("public_app/src/routes/results.tsx").read_text(encoding="utf-8")
     playground_source = Path("public_app/src/routes/playground.tsx").read_text(encoding="utf-8")
     overview_source = Path("public_app/src/routes/index.tsx").read_text(encoding="utf-8")
     main_source = Path("public_app/src/main.tsx").read_text(encoding="utf-8")
@@ -299,8 +302,11 @@ def test_public_frontend_friendly_workstation_contract():
     assert "Use in Start" in models_source
     assert "startGoalForModel" in models_source
     assert "export type ServeStatus" in api_source
+    assert 'state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string' in api_source
     assert "serveStart:" in api_source
     assert "ServeStatusPanel" in playground_source
+    assert "Results files" in results_source
+    assert "View logs" in results_source
     assert "Apple Neural Accelerators (experimental)" in overview_source
     assert "installChunkLoadRecovery" in main_source
 
@@ -366,8 +372,10 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
             self.model = None
 
         def status(self):
+            state = "running" if self.running else "idle"
             return {
                 "running": self.running,
+                "state": state,
                 "pid": 123 if self.running else None,
                 "model": self.model,
                 "backend": "mlx",
@@ -377,8 +385,10 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
                 "started_at": 1.0 if self.running else None,
                 "exit_code": None,
                 "log_path": None,
+                "logs_available": self.running,
                 "last_error": None,
                 "healthy": self.running,
+                "message": "Local model server is ready." if self.running else "No local model is being served.",
             }
 
         def start(self, request):
@@ -416,11 +426,32 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
     )
 
     assert started["running"] is True
+    assert started["state"] == "running"
     assert service.serve_status()["model"] == "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
     with pytest.raises(ValueError, match="already being served"):
         service.serve_start({"model": "Qwen/Qwen2.5-1.5B-Instruct"})
     assert service.serve_logs()["lines"] == ["ready"]
     assert service.serve_stop()["running"] is False
+
+
+def test_managed_serve_rejects_busy_port_before_spawn(tmp_path):
+    manager = ManagedServeProcess(base_path=tmp_path, log_dir=tmp_path / "serve-logs")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        port = sock.getsockname()[1]
+
+        with pytest.raises(ValueError, match="already in use"):
+            manager.start(
+                ServeStartRequest(
+                    model="mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+                    backend="mlx",
+                    host="127.0.0.1",
+                    port=port,
+                )
+            )
+
+    assert manager.status()["state"] == "idle"
 
 
 def test_desktop_tauri_foundation_contract():
@@ -430,14 +461,31 @@ def test_desktop_tauri_foundation_contract():
     capabilities = (tauri_dir / "capabilities" / "default.json").read_text(encoding="utf-8")
 
     assert '"identifier": "ai.haloforge.desktop"' in config
+    assert '"frontendDist": "../../../public_app/dist"' in config
     assert '"targets": ["app", "dmg", "appimage", "deb"]' in config
     assert '"externalBin": ["sidecars/halo-forge-runtime"]' in config
     assert (tauri_dir / "sidecars" / "halo-forge-runtime").exists()
+    assert (tauri_dir / "sidecars" / "halo-forge-runtime-aarch64-apple-darwin").exists()
+    assert (tauri_dir / "sidecars" / "halo-forge-runtime-x86_64-unknown-linux-gnu").exists()
     assert ".sidecar(\"halo-forge-runtime\")" in main_rs
     assert '"serve-public", "--host", "127.0.0.1", "--port", "8000"' in main_rs
     assert "GET /api/public/health HTTP/1.1" in main_rs
     assert "child.kill()" in main_rs
     assert '"shell:allow-spawn"' in capabilities
+
+
+def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "public-dashboard-regression" in ci
+    assert "tests/test_public_api_pivot.py" in ci
+    assert "tests/test_model_catalog.py" in ci
+    assert "npm run build" in ci
+    assert "desktop-unsigned-build" in ci
+    assert "macos-14" in ci
+    assert "ubuntu-latest" in ci
+    assert "libwebkit2gtk-4.1-dev" in ci
+    assert "tauri build" in Path("apps/desktop-tauri/package.json").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

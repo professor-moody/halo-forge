@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "frontendDist": "../../public_app/dist",
+    "frontendDist": "../../../public_app/dist",
     "devUrl": "http://127.0.0.1:8000"
   },
   "app": {

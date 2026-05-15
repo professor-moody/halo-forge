@@ -160,7 +160,7 @@ pip install vllm                # for --rollout-engine vllm (CUDA/ROCm)
 
 ## Web UI
 
-A Vite + React 19 + Tanstack Router frontend lives in [`public_app/`](public_app/). It is the user-facing local or remote workstation surface for guided launch, monitoring, results, model selection, docs, and token-based remote access.
+A Vite + React 19 + Tanstack Router frontend lives in [`public_app/`](public_app/). It is the user-facing local or remote workstation surface for guided launch, monitoring, results, model selection, dashboard-managed serving, docs, and token-based remote access.
 
 Start the app:
 
@@ -206,6 +206,14 @@ cd public_app
 npm run qa:visual
 ```
 
+Serve a local model from the dashboard:
+
+1. Open **Models** and click **Serve** on a small catalog model.
+2. Open **Playground** and wait for **Local serving** to show `ready`.
+3. Chat with the model, then click **Stop** before serving a different one.
+
+Desktop app development starts from [`apps/desktop-tauri/`](apps/desktop-tauri/). The current branch targets macOS arm64 and Linux unsigned dev builds; signing and notarization are later release work.
+
 The public app surfaces:
 
 - **Telemetry strip** — live GPU util / VRAM / power / throughput across MPS / MLX / ROCm / CUDA
@@ -214,6 +222,7 @@ The public app surfaces:
 - **Live run view** — cycle-by-cycle loss + reward charts, scrubber, log tail, sample inspector, cancel button
 - **Multi-run comparison** — pin up to 6 runs, overlay loss/reward, side-by-side config diff
 - **Run search** — DB-backed filter chips for modality / status / model / has-eval
+- **Dashboard-managed serving** — one local `halo-forge serve` process with Playground defaults
 - **Energy & spend card** — kWh + $/kWh per run
 - **Remote workstation connection** — paste a `halo-forge token create dashboard` token when accessing a non-loopback host
 

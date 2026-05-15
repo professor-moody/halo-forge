@@ -6,6 +6,7 @@ import {
   FileText,
   GitCompareArrows,
   Loader2,
+  ScrollText,
   Server,
 } from "lucide-react";
 import { Topbar } from "@/components/shell";
@@ -160,6 +161,21 @@ function ResultRow({ run }: { run: RunListItem }) {
           <Link to="/runs/$runId" params={{ runId: run.run_id }}>
             Open run
           </Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost">
+          <Link to="/runs/$runId" params={{ runId: run.run_id }}>
+            <ScrollText className="h-3.5 w-3.5" />
+            View logs
+          </Link>
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!outputDir}
+          title={outputDir ? outputDir : "No result files were indexed for this run."}
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Results files
         </Button>
         <Button
           size="sm"

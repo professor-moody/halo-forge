@@ -1,2 +1,15 @@
 #!/usr/bin/env sh
-exec halo-forge "$@"
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." 2>/dev/null && pwd || printf '%s' "")
+
+if [ -n "$REPO_ROOT" ] && [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+  exec "$REPO_ROOT/.venv/bin/python" -m halo_forge.cli "$@"
+fi
+
+if command -v halo-forge >/dev/null 2>&1; then
+  exec halo-forge "$@"
+fi
+
+exec python3 -m halo_forge.cli "$@"
