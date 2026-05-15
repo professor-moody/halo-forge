@@ -16,7 +16,7 @@ import pytest
 from halo_forge.public_api.service import PublicApiService
 from halo_forge.public_api.serve_manager import ManagedServeProcess, ServeStartRequest
 from ui.services.results_service import ResultsService
-from ui.services.training_service import TrainingService
+from ui.services.training_service import TrainingLaunchPreflight, TrainingService
 from ui.state import AppState
 
 
@@ -290,6 +290,9 @@ def test_public_frontend_friendly_workstation_contract():
     assert '"gsm8k_sft"' in start_source
     assert '"xlam_sft"' in start_source
     assert "Run started" in start_source
+    assert "useWorkspaceInfo" in start_source
+    assert "default_run_root" in start_source
+    assert "models/start-" not in start_source
     assert "export type RunLive" in api_source
     assert "runLive:" in api_source
     assert "/events" in run_source
@@ -308,7 +311,10 @@ def test_public_frontend_friendly_workstation_contract():
     assert "serveStart:" in api_source
     assert "ServeStatusPanel" in playground_source
     assert "useServeLogs" in playground_source
+    assert "formatUpstreamError" in playground_source
+    assert "This model requires Hugging Face access" in playground_source
     assert "Open Playground" in models_source
+    assert "Serving may require Hugging Face authentication" in models_source
     assert "Results files" in results_source
     assert "View logs" in results_source
     assert "Local workstation path" in results_source
@@ -323,6 +329,7 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/dashboard" in api_source
     assert "/train/preflight" in api_source
     assert "/train/launch" in api_source
+    assert "/workspace" in api_source
     assert "/runs/{run_id}/live" in api_source
     assert "/runs/{run_id}/guided-recovery" in api_source
     assert "/serve/status" in api_source
@@ -332,6 +339,65 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/docs" in api_source
     assert "find_frontend_dist" in api_source
     assert "_mount_frontend" in api_source
+
+
+def test_public_workspace_defaults_to_writable_run_root(tmp_path, monkeypatch):
+    run_root = tmp_path / "halo-runs"
+    monkeypatch.setenv("HALO_FORGE_RUN_ROOT", str(run_root))
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=_fake_readiness_service(),
+        training_service=TrainingService(AppState()),
+        base_path=tmp_path / "repo",
+    )
+
+    info = service.get_workspace_info()
+
+    assert info["default_run_root"] == str(run_root.resolve())
+    assert info["writable"] is True
+    assert run_root.is_dir()
+
+
+def test_public_preflight_recommends_default_run_root_for_output_permissions(tmp_path, monkeypatch):
+    run_root = tmp_path / "halo-runs"
+    monkeypatch.setenv("HALO_FORGE_RUN_ROOT", str(run_root))
+
+    class FakeTrainingService:
+        def preflight_sft_launch(self, **kwargs):
+            return TrainingLaunchPreflight(
+                ok=False,
+                errors=[
+                    f"output_dir cannot be created from current permissions: {kwargs['output_dir']}"
+                ],
+                warnings=[],
+                resolved_paths={"output_dir": kwargs["output_dir"]},
+                suggested_fixes=["Choose an output_dir under a writable path."],
+                quality_outlook={},
+            )
+
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=_fake_readiness_service(),
+        training_service=FakeTrainingService(),
+        base_path=tmp_path / "installed-app-cwd",
+    )
+
+    result = service.preflight_training(
+        {
+            "mode": "sft",
+            "model": "Qwen/Qwen2.5-Coder-0.5B",
+            "dataset": "codealpaca",
+            "output_dir": "models/start-code-qwen",
+        }
+    )
+
+    assert result["ok"] is False
+    assert result["errors"] == [
+        "Halo Forge could not write to this folder: models/start-code-qwen"
+    ]
+    assert result["suggested_fixes"][0] == f"Use the default run folder: {run_root.resolve()}"
 
 
 def test_public_api_serves_built_frontend_with_spa_fallback(tmp_path):

@@ -25,6 +25,7 @@ import {
   useTrainingLaunch,
   useTrainingModels,
   useTrainingPreflight,
+  useWorkspaceInfo,
 } from "@/lib/hooks";
 import type { BackendInfo, ModelCatalogEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,7 @@ const START_GOALS: StartGoal[] = [
 function StartRoute() {
   const search = Route.useSearch();
   const backend = useBackendInfo();
+  const workspace = useWorkspaceInfo();
   const datasets = useTrainingDatasets();
   const models = useTrainingModels({ mode: "sft" });
   const mlxModels = useModelCatalog({ mode: "sft", backend: "mlx" });
@@ -148,12 +150,15 @@ function StartRoute() {
     selectedGoal.dataset;
   const payload = useMemo(
     () =>
-      backend.data && recommended && dataset
+      backend.data && workspace.data && recommended && dataset
         ? {
             mode: selectedGoal.mode,
             model: recommended.id,
             dataset,
-            output_dir: `models/start-${selectedGoal.outputPrefix}-${slug(recommended.id)}`,
+            output_dir: joinPath(
+              workspace.data.default_run_root,
+              `start-${selectedGoal.outputPrefix}-${slug(recommended.id)}`,
+            ),
             accelerator: selectedGoal.id === "apple-silicon" && mlxReady ? "mlx" : undefined,
             epochs: 1,
             batch_size:
@@ -165,9 +170,9 @@ function StartRoute() {
                 : 2,
             learning_rate: 2e-4,
             max_samples: 200,
-          }
+        }
         : null,
-    [backend.data, dataset, mlxReady, recommended, selectedGoal],
+    [backend.data, dataset, mlxReady, recommended, selectedGoal, workspace.data],
   );
 
   const payloadKey = payload ? JSON.stringify(payload) : "";
@@ -195,6 +200,23 @@ function StartRoute() {
       : preflight.isPending
         ? "Checking..."
         : `Launch ${selectedGoal.title.toLowerCase()} run`;
+  const workspaceBlocked = Boolean(workspace.data && !workspace.data.writable);
+  const preflightBody = workspace.isLoading
+    ? "Finding writable run folder"
+    : workspaceBlocked
+      ? workspace.data?.message ?? "Default run folder is not writable"
+      : preflight.isError
+        ? (preflight.error as Error).message
+        : preflight.isSuccess
+          ? preflight.data.ok
+            ? "Launch checks passed"
+            : firstPreflightIssue(preflight.data) ?? "Preflight found launch issues"
+          : "Waiting for generated launch payload";
+  const preflightTone = workspaceBlocked || preflight.isError || preflightBlocked
+    ? "danger"
+    : ready
+      ? "success"
+      : "neutral";
 
   return (
     <>
@@ -289,17 +311,9 @@ function StartRoute() {
             step={appleSilicon ? "04" : "03"}
             title="Preflight"
             ready={ready}
-            loading={preflight.isPending}
-            body={
-              preflight.isError
-                ? (preflight.error as Error).message
-                : preflight.isSuccess
-                  ? preflight.data.ok
-                    ? "Launch checks passed"
-                    : firstPreflightIssue(preflight.data) ?? "Preflight found launch issues"
-                  : "Waiting for generated launch payload"
-            }
-            tone={preflight.isError || preflightBlocked ? "danger" : ready ? "success" : "neutral"}
+            loading={preflight.isPending || workspace.isLoading}
+            body={preflightBody}
+            tone={preflightTone}
           />
         </div>
 
@@ -582,4 +596,8 @@ function extractRunId(data: unknown): string | null {
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+}
+
+function joinPath(root: string, child: string): string {
+  return `${root.replace(/\/+$/, "")}/${child.replace(/^\/+/, "")}`;
 }

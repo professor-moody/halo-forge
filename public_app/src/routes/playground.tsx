@@ -116,7 +116,7 @@ function PlaygroundRoute() {
           {
             id: `${Date.now()}-e`,
             role: "assistant",
-            content: `[upstream error ${resp.status ?? "?"}] ${JSON.stringify(resp.detail)}`,
+            content: formatUpstreamError(resp),
           },
         ]);
         return;
@@ -153,9 +153,24 @@ function PlaygroundRoute() {
     }
   }
 
-  function clearChat() {
+function clearChat() {
     setMessages([]);
+}
+
+function formatUpstreamError(resp: { status?: number; message?: string; error_kind?: string; detail?: unknown }): string {
+  if (resp.message) return resp.message;
+  if (resp.error_kind === "gated_model") {
+    return "This model requires Hugging Face access. Choose an open model, log in with a token, or use a local artifact.";
   }
+  if (resp.detail && typeof resp.detail === "object" && "detail" in resp.detail) {
+    const detail = (resp.detail as { detail?: unknown }).detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object" && "message" in detail) {
+      return String((detail as { message?: unknown }).message);
+    }
+  }
+  return `The model server returned an error${resp.status ? ` (${resp.status})` : ""}. Check the serve logs for details.`;
+}
 
   return (
     <>

@@ -169,6 +169,13 @@ export type BackendInfo = {
   mlx_readiness: MLXReadiness;
 };
 
+export type WorkspaceInfo = {
+  default_run_root: string;
+  runs_dir: string;
+  writable: boolean;
+  message: string;
+};
+
 export type MLXReadiness = {
   status: "ready" | "unavailable" | "error";
   executable: boolean;
@@ -371,6 +378,8 @@ export type PlaygroundChatResponse = {
   upstream_error?: boolean;
   status?: number;
   detail?: unknown;
+  message?: string;
+  error_kind?: string;
 };
 
 export type ServeStatus = {
@@ -730,6 +739,7 @@ export type RunSamples = {
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
   backendInfo: () => request<BackendInfo>("/backend"),
+  workspaceInfo: () => request<WorkspaceInfo>("/workspace"),
   telemetry: () => request<TelemetrySample>("/telemetry"),
   dashboard: () => request<DashboardSummary>("/dashboard"),
   runCancel: (runId: string) =>

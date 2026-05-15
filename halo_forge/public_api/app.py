@@ -94,6 +94,10 @@ def create_app(
     async def backend_info() -> Dict[str, Any]:
         return service.get_backend_info()
 
+    @router.get("/workspace")
+    async def workspace_info() -> Dict[str, Any]:
+        return service.get_workspace_info()
+
     @router.get("/telemetry")
     async def telemetry() -> Dict[str, Any]:
         return service.get_telemetry()

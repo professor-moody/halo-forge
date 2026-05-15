@@ -13,6 +13,7 @@ import {
   type TrainingDataset,
   type TrainingPreflight,
   type TrainingVerifier,
+  type WorkspaceInfo,
 } from "@/lib/api";
 
 /**
@@ -23,6 +24,7 @@ import {
 
 export const queryKeys = {
   backend: ["backend-info"] as const,
+  workspace: ["workspace-info"] as const,
   telemetry: ["telemetry"] as const,
   dashboard: ["dashboard"] as const,
   runs: (params?: { limit?: number; modality?: string }) =>
@@ -48,6 +50,15 @@ export function useBackendInfo() {
   return useQuery<BackendInfo>({
     queryKey: queryKeys.backend,
     queryFn: api.backendInfo,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+}
+
+export function useWorkspaceInfo() {
+  return useQuery<WorkspaceInfo>({
+    queryKey: queryKeys.workspace,
+    queryFn: api.workspaceInfo,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });

@@ -395,6 +395,10 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   const caveats = model.known_caveats ?? [];
   const fitNotes = model.fit_notes ?? [];
   const caveated = caveats.length > 0 || model.trust_remote_code_required;
+  const gatedAccess = Boolean(
+    model.license_note ||
+      caveats.some((caveat) => /license|gated|access|restricted/i.test(caveat)),
+  );
   const startGoal = startGoalForModel(model);
   const serveModel = model.mlx_variant ?? model.id;
   const servingThis = serveStatus.data?.running && serveStatus.data.model === serveModel;
@@ -476,6 +480,11 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               ) : null}
             </div>
           ) : null}
+          {gatedAccess ? (
+            <div className="rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
+              Serving may require Hugging Face authentication. Open Qwen/MLX models are the safest first serve.
+            </div>
+          ) : null}
           {caveats.length ? (
             <ul className="space-y-1 text-[11px] text-warning">
               {caveats.map((caveat) => (
@@ -517,6 +526,8 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             title={
               serveStatus.data?.running && !servingThis
                 ? "Stop the current local serve before starting another model."
+                : gatedAccess
+                  ? "This model may require Hugging Face access before it can load."
                 : `Serve ${serveModel}`
             }
           >

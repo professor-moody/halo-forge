@@ -340,6 +340,33 @@ def test_mlx_no_metal_maps_to_503(monkeypatch):
     assert "Metal GPU" in r.json()["detail"]
 
 
+def test_gated_huggingface_model_error_maps_to_friendly_403(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from halo_forge.serving.app import create_serving_app
+
+    def fail(*args, **kwargs):
+        raise RuntimeError(
+            "401 Client Error: Cannot access gated repo for url "
+            "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct/resolve/main/config.json. "
+            "Please log in."
+        )
+
+    monkeypatch.setattr("halo_forge.serving.app.build_serving_adapter", fail)
+    app = create_serving_app(model_name="meta-llama/Llama-3.2-3B-Instruct", backend_name="cpu")
+    with TestClient(app) as c:
+        r = c.post("/v1/completions", json={"model": "meta-llama/Llama-3.2-3B-Instruct", "prompt": "hi"})
+
+    assert r.status_code == 403
+    detail = r.json()["detail"]
+    assert detail["error_kind"] == "gated_model"
+    assert detail["message"] == (
+        "This model requires Hugging Face access. Choose an open model, log in with a token, "
+        "or use a local artifact."
+    )
+    assert detail["model"] == "meta-llama/Llama-3.2-3B-Instruct"
+
+
 def test_unexpected_adapter_load_error_maps_to_500(monkeypatch):
     from fastapi.testclient import TestClient
 

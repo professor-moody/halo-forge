@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +40,11 @@ from .views import (
 
 
 TRAINING_MODALITIES = ("sft", "raft", "vlm", "audio", "reasoning", "agentic")
+DEFAULT_RUN_ROOT_ENV = "HALO_FORGE_RUN_ROOT"
+GATED_MODEL_MESSAGE = (
+    "This model requires Hugging Face access. Choose an open model, log in with a token, "
+    "or use a local artifact."
+)
 
 PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
     "sft": {
@@ -235,6 +241,26 @@ class PublicApiService:
             "training_defaults": backend.training_defaults(),
             "inference_defaults": backend.inference_defaults(),
             "mlx_readiness": mlx_readiness,
+        }
+
+    def get_workspace_info(self) -> Dict[str, Any]:
+        """Return local workstation defaults for dashboard-managed runs."""
+        root = _default_run_root()
+        writable = False
+        message = "Halo Forge will save guided runs here."
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            probe = root / ".halo-forge-write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            writable = True
+        except OSError as exc:
+            message = f"Halo Forge could not write to the default run folder: {exc}"
+        return {
+            "default_run_root": str(root),
+            "runs_dir": str(root),
+            "writable": writable,
+            "message": message,
         }
 
     @staticmethod
@@ -793,6 +819,7 @@ class PublicApiService:
             )
 
         self._augment_mlx_preflight(payload=payload, preflight=preflight)
+        self._augment_output_dir_preflight(payload=payload, preflight=preflight)
         return to_dict(self._build_preflight_view(mode=mode, preflight=preflight))
 
     async def launch_training(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -922,6 +949,40 @@ class PublicApiService:
         if isinstance(fixes, list):
             preflight.suggested_fixes.extend(str(item) for item in fixes if item)
         preflight.quality_outlook.setdefault("mlx_readiness", readiness)
+
+    def _augment_output_dir_preflight(
+        self,
+        *,
+        payload: Dict[str, Any],
+        preflight: TrainingLaunchPreflight,
+    ) -> None:
+        """Make output path failures actionable in the public dashboard."""
+        if not preflight.errors:
+            return
+        output_dir = str(payload.get("output_dir") or preflight.resolved_paths.get("output_dir") or "").strip()
+        default_root = str(_default_run_root())
+
+        def friendly(message: str) -> str:
+            lower = message.lower()
+            if "output_dir" in lower and (
+                "not writable" in lower
+                or "cannot be created" in lower
+                or "current permissions" in lower
+                or "parent is not writable" in lower
+            ):
+                return f"Halo Forge could not write to this folder: {output_dir or 'the selected folder'}"
+            return message
+
+        preflight.errors[:] = [friendly(str(message)) for message in preflight.errors]
+        if any(message.startswith("Halo Forge could not write to this folder:") for message in preflight.errors):
+            preflight.suggested_fixes[:] = [
+                str(fix)
+                for fix in preflight.suggested_fixes
+                if "output_dir" not in str(fix).lower() and "output parent" not in str(fix).lower()
+            ]
+            fix = f"Use the default run folder: {default_root}"
+            if fix not in preflight.suggested_fixes:
+                preflight.suggested_fixes.insert(0, fix)
 
     async def apply_guided_recovery(
         self,
@@ -1293,7 +1354,12 @@ class PublicApiService:
                     detail = resp.json()
                 except Exception:
                     detail = {"error": resp.text}
-                return {"upstream_error": True, "status": resp.status_code, "detail": detail}
+                return {
+                    "upstream_error": True,
+                    "status": resp.status_code,
+                    "detail": detail,
+                    **_friendly_upstream_error(detail),
+                }
             return resp.json()
 
     def serve_status(self) -> Dict[str, Any]:
@@ -2510,6 +2576,66 @@ def _coerce_optional_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _default_run_root() -> Path:
+    configured = str(os.environ.get(DEFAULT_RUN_ROOT_ENV) or "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".halo-forge" / "runs").expanduser().resolve()
+
+
+def _friendly_upstream_error(detail: Any) -> Dict[str, Any]:
+    text = _error_text(detail)
+    if _looks_like_gated_hf_error(text):
+        return {
+            "error_kind": "gated_model",
+            "message": GATED_MODEL_MESSAGE,
+        }
+    if text:
+        return {"message": _one_line_error(text)}
+    return {"message": "The local model server returned an error. Check the serve logs for details."}
+
+
+def _error_text(detail: Any) -> str:
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict):
+        parts: list[str] = []
+        for key in ("message", "detail", "error", "error_description"):
+            value = detail.get(key)
+            if value is not None:
+                parts.append(_error_text(value))
+        if not parts:
+            parts.extend(_error_text(value) for value in detail.values())
+        return " ".join(part for part in parts if part)
+    if isinstance(detail, list):
+        return " ".join(_error_text(item) for item in detail)
+    return str(detail or "")
+
+
+def _looks_like_gated_hf_error(text: str) -> bool:
+    lower = text.lower()
+    gated_markers = (
+        "gated repo",
+        "cannot access gated repo",
+        "restricted",
+        "please log in",
+        "401 client error",
+        "repository not found",
+        "private repository",
+    )
+    return any(marker in lower for marker in gated_markers) and (
+        "huggingface.co" in lower
+        or "hugging face" in lower
+        or "hf.co" in lower
+        or "repo" in lower
+    )
+
+
+def _one_line_error(text: str) -> str:
+    line = " ".join(part.strip() for part in str(text).splitlines() if part.strip())
+    return line[:500] if len(line) > 500 else line
 
 
 def _extract_output_dir_and_run_id(

@@ -160,6 +160,33 @@ def test_playground_chat_upstream_error_passthrough(client, monkeypatch):
     assert body["status"] == 500
 
 
+def test_playground_chat_gated_model_error_is_friendly(client, monkeypatch):
+    raw = (
+        "failed to load serving adapter: You are trying to access a gated repo. "
+        "401 Client Error for url https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct. "
+        "Cannot access gated repo. Please log in."
+    )
+    _patch_httpx(
+        monkeypatch,
+        status_code=403,
+        body={"detail": raw},
+    )
+    r = client.post(
+        "/api/public/playground/chat",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["upstream_error"] is True
+    assert body["error_kind"] == "gated_model"
+    assert body["message"] == (
+        "This model requires Hugging Face access. Choose an open model, log in with a token, "
+        "or use a local artifact."
+    )
+    assert "Cannot access gated repo" in body["detail"]["detail"]
+
+
 def test_playground_chat_empty_messages_400(client):
     r = client.post(
         "/api/public/playground/chat",

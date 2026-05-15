@@ -40,6 +40,11 @@ from halo_forge.serving.adapter import (
 
 logger = logging.getLogger(__name__)
 
+GATED_MODEL_MESSAGE = (
+    "This model requires Hugging Face access. Choose an open model, log in with a token, "
+    "or use a local artifact."
+)
+
 
 # ----- request / response models -------------------------------------------
 
@@ -225,7 +230,36 @@ def _load_error_to_http_exception(exc: Exception, *, model_name: str) -> HTTPExc
     missing_path = _missing_local_model_detail(model_name)
     if missing_path is not None:
         return HTTPException(status_code=400, detail=missing_path)
+    if _looks_like_gated_hf_error(text):
+        return HTTPException(
+            status_code=403,
+            detail={
+                "error_kind": "gated_model",
+                "message": GATED_MODEL_MESSAGE,
+                "model": model_name,
+                "hint": "Open an ungated Qwen/MLX model, run `huggingface-cli login`, set HF_TOKEN, or serve a local artifact.",
+            },
+        )
     return HTTPException(status_code=500, detail=f"failed to load serving adapter: {text}")
+
+
+def _looks_like_gated_hf_error(text: str) -> bool:
+    lower = str(text or "").lower()
+    gated_markers = (
+        "gated repo",
+        "cannot access gated repo",
+        "restricted",
+        "please log in",
+        "401 client error",
+        "repository not found",
+        "private repository",
+    )
+    return any(marker in lower for marker in gated_markers) and (
+        "huggingface.co" in lower
+        or "hugging face" in lower
+        or "hf.co" in lower
+        or "repo" in lower
+    )
 
 
 # ----- app factory ---------------------------------------------------------
