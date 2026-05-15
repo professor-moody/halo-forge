@@ -275,8 +275,14 @@ jobs:
         run: cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
 
       - name: Build unsigned desktop app
+        if: runner.os != 'Linux'
         working-directory: apps/desktop-tauri
         run: npm run build -- --ci
+
+      - name: Build unsigned desktop app (Linux deb)
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop-tauri
+        run: npm run build -- --bundles deb --ci
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v4
