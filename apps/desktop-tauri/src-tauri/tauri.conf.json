@@ -7,7 +7,7 @@
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
     "frontendDist": "../../../public_app/dist",
-    "devUrl": "http://127.0.0.1:8000"
+    "devUrl": "http://127.0.0.1:8765"
   },
   "app": {
     "windows": [
@@ -17,7 +17,7 @@
         "height": 920,
         "minWidth": 1100,
         "minHeight": 720,
-        "url": "http://127.0.0.1:8000"
+        "url": "http://127.0.0.1:8765"
       }
     ],
     "security": {
@@ -34,6 +34,9 @@
       "icons/512x512.png",
       "icons/icon.png"
     ],
+    "resources": {
+      "../../../public_app/dist": "frontend"
+    },
     "externalBin": ["sidecars/halo-forge-runtime"]
   }
 }

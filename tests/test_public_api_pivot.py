@@ -365,6 +365,21 @@ def test_public_api_serves_built_frontend_with_spa_fallback(tmp_path):
     assert missing_api.status_code == 404
 
 
+def test_public_api_finds_desktop_bundled_frontend_dist(tmp_path, monkeypatch):
+    from halo_forge.public_api.app import find_frontend_dist
+
+    desktop_frontend = tmp_path / "frontend"
+    desktop_frontend.mkdir()
+    (desktop_frontend / "index.html").write_text(
+        '<html><body><div id="root">Halo Forge Desktop</div></body></html>',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("HALO_FORGE_FRONTEND_DIST", str(desktop_frontend))
+
+    assert find_frontend_dist() == desktop_frontend.resolve()
+
+
 def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
     class FakeServeManager:
         def __init__(self):
@@ -462,16 +477,32 @@ def test_desktop_tauri_foundation_contract():
 
     assert '"identifier": "ai.haloforge.desktop"' in config
     assert '"frontendDist": "../../../public_app/dist"' in config
+    assert '"devUrl": "http://127.0.0.1:8765"' in config
+    assert '"url": "http://127.0.0.1:8765"' in config
     assert '"targets": ["app", "dmg", "appimage", "deb"]' in config
+    assert '"../../../public_app/dist": "frontend"' in config
     assert '"externalBin": ["sidecars/halo-forge-runtime"]' in config
     assert (tauri_dir / "sidecars" / "halo-forge-runtime").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime-aarch64-apple-darwin").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime-x86_64-unknown-linux-gnu").exists()
     assert ".sidecar(\"halo-forge-runtime\")" in main_rs
-    assert '"serve-public", "--host", "127.0.0.1", "--port", "8000"' in main_rs
+    assert "HALO_FORGE_FRONTEND_DIST" in main_rs
+    assert "HALO_FORGE_REPO_ROOT" in main_rs
+    assert "fn dev_repo_root()" in main_rs
+    assert 'const DASHBOARD_PORT: u16 = 8765' in main_rs
+    assert '"dashboard"' in main_rs
+    assert '"--no-build"' in main_rs
     assert "GET /api/public/health HTTP/1.1" in main_rs
     assert "child.kill()" in main_rs
     assert '"shell:allow-spawn"' in capabilities
+    for sidecar_name in [
+        "halo-forge-runtime",
+        "halo-forge-runtime-aarch64-apple-darwin",
+        "halo-forge-runtime-x86_64-unknown-linux-gnu",
+    ]:
+        sidecar_source = (tauri_dir / "sidecars" / sidecar_name).read_text(encoding="utf-8")
+        assert "HALO_FORGE_REPO_ROOT" in sidecar_source
+        assert ".venv/bin/python" in sidecar_source
 
 
 def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():

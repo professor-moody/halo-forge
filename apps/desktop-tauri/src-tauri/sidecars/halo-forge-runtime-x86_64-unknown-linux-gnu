@@ -2,7 +2,10 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." 2>/dev/null && pwd || printf '%s' "")
+REPO_ROOT=${HALO_FORGE_REPO_ROOT:-}
+if [ -z "$REPO_ROOT" ]; then
+  REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." 2>/dev/null && pwd || printf '%s' "")
+fi
 
 if [ -n "$REPO_ROOT" ] && [ -x "$REPO_ROOT/.venv/bin/python" ]; then
   exec "$REPO_ROOT/.venv/bin/python" -m halo_forge.cli "$@"

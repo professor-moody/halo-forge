@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +26,8 @@ def find_frontend_dist(frontend_dist: str | Path | None = None) -> Path | None:
     candidates: list[Path] = []
     if frontend_dist is not None:
         candidates.append(Path(frontend_dist))
+    if env_dist := os.environ.get("HALO_FORGE_FRONTEND_DIST"):
+        candidates.append(Path(env_dist))
 
     public_api_dir = Path(__file__).resolve().parent
     candidates.extend(
