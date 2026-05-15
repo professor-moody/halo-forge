@@ -765,7 +765,7 @@ def _profile_commands(module: str, *, profile: str, seed: int) -> List[List[str]
         ],
         # ui_ops module: the legacy NiceGUI command (`halo-forge ui`) was
         # retired with the React SPA migration. The replacement surface
-        # is `halo-forge serve-public` (FastAPI dashboard API) — but
+        # is `halo-forge dashboard` (app + FastAPI dashboard API) — but
         # binding a port during a fixture-driven burn-in is unreliable
         # under shared CI workers, so we substitute a no-bind health
         # probe via `info` instead. The contract that this module is

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .service import PublicApiService
@@ -11,14 +12,39 @@ FASTAPI_IMPORT_ERROR: Exception | None = None
 try:
     from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import FileResponse, StreamingResponse
+    from fastapi.staticfiles import StaticFiles
 except ImportError as exc:  # pragma: no cover - exercised in environments without FastAPI
     FASTAPI_IMPORT_ERROR = exc
     APIRouter = Depends = FastAPI = HTTPException = Query = Request = StreamingResponse = None  # type: ignore[assignment]
     CORSMiddleware = None  # type: ignore[assignment]
+    FileResponse = StaticFiles = None  # type: ignore[assignment]
 
 
-def create_app() -> "FastAPI":
+def find_frontend_dist(frontend_dist: str | Path | None = None) -> Path | None:
+    """Return the built dashboard asset directory when it is available."""
+    candidates: list[Path] = []
+    if frontend_dist is not None:
+        candidates.append(Path(frontend_dist))
+
+    public_api_dir = Path(__file__).resolve().parent
+    candidates.extend(
+        [
+            public_api_dir / "frontend",
+            public_api_dir.parent.parent / "public_app" / "dist",
+        ]
+    )
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate.resolve()
+    return None
+
+
+def create_app(
+    *,
+    frontend_dist: str | Path | None = None,
+    serve_frontend: bool = True,
+) -> "FastAPI":
     """Create the standalone public API app."""
     if FastAPI is None:
         raise RuntimeError(
@@ -506,7 +532,43 @@ def create_app() -> "FastAPI":
             backend_info=backend,
         )
 
+    if serve_frontend:
+        dist = find_frontend_dist(frontend_dist)
+        if dist is not None:
+            _mount_frontend(api, dist)
+
     return api
+
+
+def _mount_frontend(api: "FastAPI", frontend_dist: Path) -> None:
+    """Serve the built React app with SPA fallback routes."""
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.is_dir():
+        api.mount(
+            "/assets",
+            StaticFiles(directory=str(assets_dir)),
+            name="frontend-assets",
+        )
+
+    index_file = frontend_dist / "index.html"
+
+    @api.get("/", include_in_schema=False)
+    async def serve_frontend_index() -> "FileResponse":
+        return FileResponse(index_file)
+
+    @api.get("/{path:path}", include_in_schema=False)
+    async def serve_frontend_path(path: str) -> "FileResponse":
+        if path.startswith("api/") or path == "metrics" or path.startswith("metrics/"):
+            raise HTTPException(status_code=404, detail="not found")
+
+        requested = (frontend_dist / path).resolve()
+        try:
+            requested.relative_to(frontend_dist)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="not found") from exc
+        if requested.is_file():
+            return FileResponse(requested)
+        return FileResponse(index_file)
 
 
 app = create_app() if FastAPI is not None else None

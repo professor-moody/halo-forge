@@ -162,7 +162,30 @@ pip install vllm                # for --rollout-engine vllm (CUDA/ROCm)
 
 A Vite + React 19 + Tanstack Router frontend lives in [`public_app/`](public_app/). It is the user-facing local or remote workstation surface for guided launch, monitoring, results, model selection, docs, and token-based remote access.
 
-Run locally with two terminals:
+Start the app:
+
+```bash
+halo-forge dashboard
+```
+
+Open `http://127.0.0.1:8000`. The `dashboard` command serves the FastAPI public API and the built React dashboard from one origin. If `public_app/dist` is missing in a source checkout, it builds the dashboard assets first. `halo-forge app` is the same command.
+
+For a no-bind startup check:
+
+```bash
+halo-forge dashboard --check
+```
+
+For trusted-network remote access, run the app on the workstation and open the same port from the other machine:
+
+```bash
+halo-forge token create dashboard
+halo-forge dashboard --host 0.0.0.0 --port 8000
+```
+
+Open `http://<workstation-host>:8000` and paste the `hfk_...` token in **Connection**.
+
+For frontend development, run the API and Vite separately:
 
 ```bash
 # Terminal 1: dashboard API
@@ -175,25 +198,6 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:3000`. Vite proxies `/api/*` to the dashboard API at `http://127.0.0.1:8000`.
-
-For a no-bind startup check:
-
-```bash
-halo-forge serve-public --check
-```
-
-For trusted-network remote access, run both processes on the workstation and open the app port from the other machine:
-
-```bash
-halo-forge token create dashboard
-halo-forge serve-public --host 0.0.0.0 --port 8000
-
-cd public_app
-npm install
-npm run dev -- --host 0.0.0.0
-```
-
-Open `http://<workstation-host>:3000` and paste the `hfk_...` token in **Connection**.
 
 For repeatable screenshot QA:
 

@@ -40,6 +40,8 @@ halo-forge
 │   └── full
 ├── eval                 # lm-evaluation-harness (mmlu / gsm8k / humaneval / ifeval / ...)
 ├── probe                # mid-training small-benchmark + baseline diff
+├── dashboard            # user-facing dashboard app (alias: app)
+├── serve-public         # dashboard API only, for frontend development
 ├── serve                # OpenAI-compatible /v1/chat/completions endpoint
 ├── convert              # HF ↔ MLX ↔ GGUF with normalized quant vocabulary
 ├── merge                # adapter bake / multi-adapter combine

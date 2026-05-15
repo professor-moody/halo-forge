@@ -23,9 +23,11 @@ if '--experimental-attention' in sys.argv:
 
 import argparse
 import json
+import subprocess
 import time
 import shutil
 import tempfile
+import webbrowser
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -1402,6 +1404,7 @@ def cmd_serve_public(args):
     print(f"  health:      http://{args.host}:{args.port}/api/public/health")
     print(f"  local app:   cd public_app && npm run dev")
     print(f"  open app:    http://127.0.0.1:3000")
+    print(f"  app command: halo-forge dashboard")
     if not is_loopback:
         print(f"  remote app:  cd public_app && npm run dev -- --host 0.0.0.0")
         print(f"  remote URL:  http://{remote_app_host}:3000")
@@ -1430,6 +1433,104 @@ def cmd_serve_public(args):
 
     app = create_app()
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def _dashboard_is_loopback(host: str) -> bool:
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _dashboard_open_url(host: str, port: int) -> str:
+    display_host = "<workstation-host>" if host == "0.0.0.0" else host
+    return f"http://{display_host}:{port}"
+
+
+def _public_app_source_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "public_app"
+
+
+def _build_public_app() -> bool:
+    app_dir = _public_app_source_dir()
+    package_json = app_dir / "package.json"
+    if not package_json.is_file():
+        print(f"{RED}Dashboard source not found at {app_dir}.{NC}")
+        return False
+    if shutil.which("npm") is None:
+        print(f"{RED}npm is required to build the dashboard assets, but it was not found.{NC}")
+        print("Install Node.js/npm, then run:")
+        print("  cd public_app && npm install && npm run build")
+        return False
+
+    node_modules = app_dir / "node_modules"
+    if not node_modules.is_dir():
+        print(f"{CYAN}Installing dashboard dependencies...{NC}")
+        install = subprocess.run(["npm", "install"], cwd=app_dir)
+        if install.returncode != 0:
+            return False
+
+    print(f"{CYAN}Building dashboard assets...{NC}")
+    build = subprocess.run(["npm", "run", "build"], cwd=app_dir)
+    return build.returncode == 0
+
+
+def cmd_dashboard(args):
+    """Run the user-facing dashboard as a single app command."""
+    from halo_forge.public_api.app import create_app, find_frontend_dist
+
+    host = str(args.host)
+    port = int(args.port)
+    is_loopback = _dashboard_is_loopback(host)
+    app_url = _dashboard_open_url(host, port)
+    dist = find_frontend_dist()
+
+    print_banner()
+    print(f"{GREEN}halo-forge dashboard{NC} — workstation app")
+    print("=" * 60)
+    print(f"  bind:        {host}:{port}")
+    print(f"  open app:    {app_url}")
+    print(f"  health:      http://{host}:{port}/api/public/health")
+    print(f"  remote auth: {'loopback bypass' if is_loopback else 'required'}")
+    if dist is None:
+        print("  app assets:  missing; will build from public_app/")
+        print("  build:       cd public_app && npm install && npm run build")
+    else:
+        print(f"  app assets:  {dist}")
+    print()
+
+    if getattr(args, "check", False):
+        print(f"{GREEN}Dashboard preflight OK.{NC} No server started.")
+        return
+
+    if dist is None:
+        if getattr(args, "no_build", False):
+            print(f"{RED}Dashboard assets are not built.{NC}")
+            print("Run `cd public_app && npm install && npm run build`, then rerun `halo-forge dashboard`.")
+            sys.exit(2)
+        if not _build_public_app():
+            print(f"{RED}Could not build dashboard assets.{NC}")
+            sys.exit(2)
+        dist = find_frontend_dist()
+        if dist is None:
+            print(f"{RED}Dashboard build finished, but public_app/dist/index.html was not found.{NC}")
+            sys.exit(2)
+
+    if not is_loopback:
+        print("Remote workstation:")
+        print("  Create a dashboard token first: halo-forge token create dashboard")
+        print(f"  Open from another machine:     {app_url}")
+        print("  Paste the hfk_... token in Connection.")
+    else:
+        print(f"Open {app_url}")
+    print()
+
+    if getattr(args, "open", False) and is_loopback:
+        webbrowser.open(app_url)
+    elif getattr(args, "open", False):
+        print("Skipping --open for non-loopback host; open the URL from the remote browser.")
+
+    import uvicorn
+
+    app = create_app(frontend_dist=dist, serve_frontend=True)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 def cmd_rm_train(args):
@@ -5562,10 +5663,27 @@ def main():
     serve_parser.add_argument('--check', action='store_true',
                               help='Validate serving configuration and print endpoints without binding a port')
 
+    # dashboard command — user-facing app, API + built React dashboard on one origin.
+    dashboard_parser = subparsers.add_parser(
+        'dashboard',
+        aliases=['app'],
+        help='Run the Halo Forge dashboard app',
+    )
+    dashboard_parser.add_argument('--host', default='127.0.0.1',
+                                  help='Bind host (default: 127.0.0.1; use 0.0.0.0 for trusted-network access)')
+    dashboard_parser.add_argument('--port', type=int, default=8000,
+                                  help='Bind port (default: 8000)')
+    dashboard_parser.add_argument('--check', action='store_true',
+                                  help='Print dashboard startup details without binding a port')
+    dashboard_parser.add_argument('--no-build', action='store_true',
+                                  help='Do not auto-build public_app/dist when dashboard assets are missing')
+    dashboard_parser.add_argument('--open', action='store_true',
+                                  help='Open the dashboard URL in the default browser for loopback launches')
+
     # serve-public — dashboard FastAPI (the API the public_app SPA talks to)
     serve_public_parser = subparsers.add_parser(
         'serve-public',
-        help='Run the dashboard FastAPI (the API the public_app SPA talks to)',
+        help='Run only the dashboard FastAPI for frontend development',
     )
     serve_public_parser.add_argument('--host', default='127.0.0.1',
                                      help='Bind host (default: 127.0.0.1; loopback skips bearer auth)')
@@ -6769,6 +6887,8 @@ def _dispatch_commands(args):
             cmd_rm_train(args)
     elif args.command == 'serve':
         cmd_serve(args)
+    elif args.command in {'dashboard', 'app'}:
+        cmd_dashboard(args)
     elif args.command == 'serve-public':
         cmd_serve_public(args)
     elif args.command == 'convert':

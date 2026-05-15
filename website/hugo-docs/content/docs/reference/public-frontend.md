@@ -11,6 +11,20 @@ Use it for guided first runs, advanced SFT/RAFT launches, live run monitoring, r
 ## Run locally
 
 ```bash
+halo-forge dashboard
+```
+
+Open `http://127.0.0.1:8000`. The `dashboard` command serves the public API and built React dashboard from one origin. If `public_app/dist` is missing in a source checkout, it builds the dashboard assets first. `halo-forge app` is an alias.
+
+For a no-bind check:
+
+```bash
+halo-forge dashboard --check
+```
+
+For frontend development, run the API and Vite separately:
+
+```bash
 # Terminal 1: dashboard API
 halo-forge serve-public
 
@@ -50,14 +64,16 @@ Remote v1 means one Halo Forge machine with the accelerator is exposed to a trus
 ```bash
 # On the training workstation
 halo-forge token create dashboard
-halo-forge serve-public --host 0.0.0.0 --port 8000
+halo-forge dashboard --host 0.0.0.0 --port 8000
 ```
 
 Save the token when it is printed. Halo Forge stores only a hash in `~/.halo-forge/tokens.json`; the bearer secret is shown once.
 
-Run the app on the same workstation so browser requests stay same-origin through the Vite proxy:
+For frontend development against a remote workstation, use the two-process dev setup instead:
 
 ```bash
+halo-forge serve-public --host 0.0.0.0 --port 8000
+
 cd public_app
 npm install
 npm run dev -- --host 0.0.0.0
@@ -65,7 +81,7 @@ npm run dev -- --host 0.0.0.0
 
 ### Browser setup
 
-1. Open `http://<workstation-host>:3000` from the remote device.
+1. Open `http://<workstation-host>:8000` from the remote device.
 2. Go to **Connection**.
 3. Paste the `hfk_...` token.
 4. Click **Save and test**.

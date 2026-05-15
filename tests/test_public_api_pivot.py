@@ -303,6 +303,41 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/runs/{run_id}/guided-recovery" in api_source
     assert "/readiness" in api_source
     assert "/docs" in api_source
+    assert "find_frontend_dist" in api_source
+    assert "_mount_frontend" in api_source
+
+
+def test_public_api_serves_built_frontend_with_spa_fallback(tmp_path):
+    from fastapi.testclient import TestClient
+    from halo_forge.public_api.app import create_app
+
+    dist = tmp_path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text(
+        '<html><body><div id="root">Halo Forge</div></body></html>',
+        encoding="utf-8",
+    )
+    (dist / "logo.png").write_bytes(b"png")
+    (assets / "app.js").write_text("console.log('halo')", encoding="utf-8")
+
+    app = create_app(frontend_dist=dist)
+    with TestClient(app) as client:
+        root = client.get("/")
+        nested = client.get("/start")
+        logo = client.get("/logo.png")
+        asset = client.get("/assets/app.js")
+        missing_api = client.get("/api/not-a-dashboard-route")
+
+    assert root.status_code == 200
+    assert "Halo Forge" in root.text
+    assert nested.status_code == 200
+    assert "Halo Forge" in nested.text
+    assert logo.status_code == 200
+    assert logo.content == b"png"
+    assert asset.status_code == 200
+    assert "console.log" in asset.text
+    assert missing_api.status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -538,11 +573,12 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     assert "halo-forge serve --host 0.0.0.0 --port 8000" not in docs_text
     assert "halo-forge serve-public" in public_frontend_doc
     assert "halo-forge serve-public --check" in public_frontend_doc
+    assert "halo-forge dashboard" in public_frontend_doc
+    assert "halo-forge app" in public_frontend_doc
     assert "npm run qa:visual" in public_frontend_doc
     assert "npm run dev -- --host 0.0.0.0" in public_frontend_doc
-    assert "http://<workstation-host>:3000" in public_frontend_doc
-    assert "http://<workstation-host>:8000" not in public_frontend_doc
-    assert "halo-forge serve-public" in quickstart_doc
+    assert "http://<workstation-host>:8000" in public_frontend_doc
+    assert "halo-forge dashboard" in quickstart_doc
     assert "Start keeps the model, dataset, sample count, and output path conservative." in docs_text
     assert "Use in Start" in docs_text
 
@@ -573,6 +609,37 @@ def test_serve_public_check_prints_dashboard_launch_recipe(monkeypatch, capsys):
     assert "remote auth: loopback bypass" in out
     assert "Dashboard API preflight OK" in out
     assert "No server started." in out
+
+
+def test_dashboard_check_prints_single_command_app_recipe(monkeypatch, capsys):
+    import halo_forge.cli as cli_mod
+
+    monkeypatch.setattr(sys, "argv", ["halo-forge", "dashboard", "--check"])
+
+    cli_mod.main()
+
+    out = capsys.readouterr().out
+    assert "halo-forge dashboard" in out
+    assert "workstation app" in out
+    assert "bind:        127.0.0.1:8000" in out
+    assert "open app:    http://127.0.0.1:8000" in out
+    assert "http://127.0.0.1:8000/api/public/health" in out
+    assert "remote auth: loopback bypass" in out
+    assert "Dashboard preflight OK" in out
+    assert "No server started." in out
+
+
+def test_app_alias_check_prints_dashboard_recipe(monkeypatch, capsys):
+    import halo_forge.cli as cli_mod
+
+    monkeypatch.setattr(sys, "argv", ["halo-forge", "app", "--check"])
+
+    cli_mod.main()
+
+    out = capsys.readouterr().out
+    assert "halo-forge dashboard" in out
+    assert "open app:    http://127.0.0.1:8000" in out
+    assert "Dashboard preflight OK" in out
 
 
 def test_serve_public_check_prints_remote_workstation_recipe(monkeypatch, capsys):
