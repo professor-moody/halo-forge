@@ -227,7 +227,7 @@ function StartRoute() {
         actions={
           <Button asChild variant="ghost" size="sm">
             <Link to="/train">
-              Advanced training <ArrowRight />
+              Train <ArrowRight />
             </Link>
           </Button>
         }

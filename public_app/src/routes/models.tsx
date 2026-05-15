@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { queryKeys, useBackendInfo, useModelCatalog, useServeStart, useServeStatus } from "@/lib/hooks";
-import type { ModelCatalogEntry } from "@/lib/api";
+import type { ModelCatalogEntry, TrainingMode } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/models")({
@@ -458,11 +458,15 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             ))}
           </div>
           <div className="flex flex-wrap gap-1.5">
+            <span className="font-mono text-[10px] text-fg-disabled">usable for</span>
             {(model.trainer_support ?? []).map((mode) => (
               <span key={mode} className="font-mono text-[10px] text-fg-disabled">
                 {mode}
               </span>
             ))}
+            {(model.tasks ?? []).includes("serving") || (model.backend_support ?? []).length ? (
+              <span className="font-mono text-[10px] text-fg-disabled">serve</span>
+            ) : null}
           </div>
           {fitNotes.length ? (
             <div className="space-y-1 text-[11px] text-fg-subtle">
@@ -548,7 +552,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
           <Button asChild size="sm" variant={startGoal ? "ghost" : "primary"}>
             <Link to="/train" search={{ model: model.id, mode: preferredTrainMode(model) }}>
-              Use in Advanced
+              Use in Train
             </Link>
           </Button>
           {model.mlx_variant ? (
@@ -608,6 +612,9 @@ function startGoalForModel(model: ModelCatalogEntry): "code" | "reasoning" | "to
   return null;
 }
 
-function preferredTrainMode(model: ModelCatalogEntry): "sft" | "raft" {
-  return (model.trainer_support ?? []).includes("raft") ? "raft" : "sft";
+function preferredTrainMode(model: ModelCatalogEntry): TrainingMode {
+  const preferred = ["sft", "raft", "dpo", "orpo", "rm", "grpo", "vlm", "audio", "reasoning", "agentic"].find((mode) =>
+    (model.trainer_support ?? []).includes(mode),
+  );
+  return (preferred ?? "sft") as TrainingMode;
 }

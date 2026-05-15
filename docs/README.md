@@ -8,6 +8,8 @@ Full documentation is available at **[halo-forge.io/docs](https://halo-forge.io/
 |---------|-------------|
 | [Quick Start](https://halo-forge.io/docs/getting-started/quickstart/) | Get running in 30 minutes |
 | [How to Train](https://halo-forge.io/docs/training-pipeline/how-to-train/) | Complete step-by-step guide |
+| [Choose a Training Method](https://halo-forge.io/docs/training-pipeline/methods/) | SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic guide |
+| [Dashboard Training](https://halo-forge.io/docs/reference/dashboard-training/) | Goal-first dashboard launch workflow |
 | [Command Index](https://halo-forge.io/docs/reference/command-index/) | Every command and flag |
 | [Public Frontend](https://halo-forge.io/docs/reference/public-frontend/) | Local/remote training, monitor, results, docs, and connection surface |
 | [Verifiers](https://halo-forge.io/docs/verifiers/) | Verification options |

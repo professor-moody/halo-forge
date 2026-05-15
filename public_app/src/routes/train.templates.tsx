@@ -44,12 +44,9 @@ export const Route = createFileRoute("/train/templates")({
  * underlying modality + model + dataset + hyperparams in one click.
  *
  * Two affordances per card:
- *   - "Use template" → for sft/raft, deep-link into /train with the
- *     template applied. The configurator picks up the values via the
- *     ?template= search param.
- *   - "Show CLI" → for modalities the configurator doesn't yet cover
- *     (dpo/grpo/rm/vlm/audio/reasoning/agentic), reveal the
- *     halo-forge CLI invocation in a copy-paste block.
+ *   - "Use template" -> deep-link into /train with the template applied.
+ *     The configurator picks up the values via the ?template= search param.
+ *   - "Show CLI" -> reveal the matching halo-forge invocation for CLI parity.
  */
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -61,7 +58,18 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
   agentic: Wrench,
 };
 
-const FORM_SUPPORTED: ReadonlySet<string> = new Set(["sft", "raft"]);
+const FORM_SUPPORTED: ReadonlySet<string> = new Set([
+  "sft",
+  "raft",
+  "dpo",
+  "orpo",
+  "rm",
+  "grpo",
+  "vlm",
+  "audio",
+  "reasoning",
+  "agentic",
+]);
 
 function TemplatesGalleryRoute() {
   const { data, isLoading, isError } = useQuery({
@@ -194,14 +202,19 @@ function TemplateCard({ tpl }: { tpl: TrainingTemplate }) {
               </a>
             </Button>
           ) : null}
-          {!formSupported ? (
-            <span className="ml-auto text-[10px] text-fg-disabled tracking-tight">
-              UI launch coming soon
-            </span>
-          ) : null}
+          {!formSupported ? null : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowCli((v) => !v)}
+            >
+              <Terminal className="h-3 w-3" />
+              {showCli ? "Hide CLI" : "Show CLI"}
+            </Button>
+          )}
         </div>
 
-        {showCli && !formSupported ? <CliBlock templateId={tpl.id} /> : null}
+        {showCli ? <CliBlock templateId={tpl.id} /> : null}
       </CardContent>
     </Card>
   );

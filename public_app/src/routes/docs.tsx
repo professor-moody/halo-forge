@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   Terminal,
+  Wrench,
 } from "lucide-react";
 import { Topbar } from "@/components/shell";
 import { Card, CardContent, CardHeader, CardTitle, CardEyebrow } from "@/components/ui/card";
@@ -49,6 +50,20 @@ const INTENT_LINKS = [
     body: "Catalog guidance by task, backend, memory tier, and first-run risk.",
     to: "https://halo-forge.io/docs/getting-started/choose-a-model/",
     action: "Choose model",
+  },
+  {
+    icon: Wrench,
+    title: "Training methods",
+    body: "Choose between SFT, RAFT, DPO, ORPO, reward models, GRPO, VLM, audio, reasoning, and agentic runs.",
+    to: "https://halo-forge.io/docs/training-pipeline/methods/",
+    action: "Choose method",
+  },
+  {
+    icon: Play,
+    title: "Dashboard training",
+    body: "Use Train for goal-first launches across every supported method.",
+    to: "https://halo-forge.io/docs/reference/dashboard-training/",
+    action: "Train from dashboard",
   },
   {
     icon: ShieldCheck,
@@ -127,7 +142,7 @@ function IntroPanel() {
           on the workstation you control.
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
-          <Pill label="Train" value="SFT / RAFT" />
+          <Pill label="Train" value="SFT / RAFT / DPO / GRPO / VLM / audio" />
           <Pill label="Check" value="Eval / verifiers" />
           <Pill label="Ship" value="Serve / export" />
         </div>

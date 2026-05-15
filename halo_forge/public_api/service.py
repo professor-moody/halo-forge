@@ -39,7 +39,18 @@ from .views import (
 )
 
 
-TRAINING_MODALITIES = ("sft", "raft", "vlm", "audio", "reasoning", "agentic")
+TRAINING_MODALITIES = (
+    "sft",
+    "raft",
+    "dpo",
+    "orpo",
+    "rm",
+    "grpo",
+    "vlm",
+    "audio",
+    "reasoning",
+    "agentic",
+)
 DEFAULT_RUN_ROOT_ENV = "HALO_FORGE_RUN_ROOT"
 GATED_MODEL_MESSAGE = (
     "This model requires Hugging Face access. Choose an open model, log in with a token, "
@@ -71,6 +82,69 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "reward_threshold",
         "temperature",
+        "no_caffeinate",
+    },
+    "dpo": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "beta",
+        "loss_type",
+        "reference_free",
+        "no_caffeinate",
+    },
+    "orpo": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "beta",
+        "no_caffeinate",
+    },
+    "rm": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "no_caffeinate",
+    },
+    "grpo": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "beta",
+        "reference_free",
+        "verifier",
+        "num_generations",
+        "epsilon",
+        "temperature",
+        "reward_threshold",
         "no_caffeinate",
     },
     "vlm": {
@@ -128,6 +202,10 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
 PUBLIC_TRAIN_REQUIRED_TEXT_FIELDS: dict[str, tuple[str, ...]] = {
     "sft": ("model", "dataset", "output_dir"),
     "raft": ("model", "prompts", "output_dir"),
+    "dpo": ("model", "dataset", "output_dir"),
+    "orpo": ("model", "dataset", "output_dir"),
+    "rm": ("model", "dataset", "output_dir"),
+    "grpo": ("model", "dataset", "output_dir", "verifier"),
     "vlm": ("model", "dataset", "output_dir"),
     "audio": ("model", "dataset", "output_dir", "task"),
     "reasoning": ("model", "dataset", "output_dir"),
@@ -801,6 +879,34 @@ class PublicApiService:
                 max_new_tokens=int(payload.get("max_new_tokens") or 512),
                 checkpoint=self._optional_str(payload.get("checkpoint")),
             )
+        elif mode in {"dpo", "orpo", "rm", "grpo"}:
+            default_lr = {
+                "dpo": 5e-6,
+                "orpo": 8e-6,
+                "rm": 1e-5,
+                "grpo": 1e-6,
+            }[mode]
+            default_batch = 4 if mode == "rm" else 1
+            default_grad_accum = 4 if mode == "rm" else 16
+            preflight = self.training_service.preflight_preference_launch(
+                mode=mode,
+                model=str(payload.get("model") or ""),
+                dataset=str(payload.get("dataset") or ""),
+                output_dir=str(payload.get("output_dir") or ""),
+                epochs=int(payload.get("epochs") or 1),
+                batch_size=int(payload.get("batch_size") or default_batch),
+                gradient_accumulation_steps=int(payload.get("gradient_accumulation_steps") or default_grad_accum),
+                learning_rate=float(payload.get("learning_rate") or default_lr),
+                max_samples=self._optional_int(payload.get("max_samples")),
+                beta=self._optional_float(payload.get("beta")),
+                loss_type=self._optional_str(payload.get("loss_type")),
+                reference_free=bool(payload.get("reference_free", False)),
+                verifier=self._optional_str(payload.get("verifier")),
+                num_generations=self._optional_int(payload.get("num_generations")),
+                epsilon=self._optional_float(payload.get("epsilon")),
+                temperature=self._optional_float(payload.get("temperature")),
+                reward_threshold=self._optional_float(payload.get("reward_threshold")),
+            )
         else:
             preflight = self.training_service.preflight_modality_train_launch(
                 modality=mode,
@@ -853,6 +959,37 @@ class PublicApiService:
                 reward_threshold=float(self._value_or_default(payload.get("reward_threshold"), 0.5)),
                 min_samples=int(self._value_or_default(payload.get("min_samples"), 1)),
                 max_new_tokens=int(self._value_or_default(payload.get("max_new_tokens"), 512)),
+                no_caffeinate=bool(payload.get("no_caffeinate", False)),
+                accelerator=self._optional_str(payload.get("accelerator")),
+                source_ui_page="/public/train",
+            )
+        elif mode in {"dpo", "orpo", "rm", "grpo"}:
+            default_lr = {
+                "dpo": 5e-6,
+                "orpo": 8e-6,
+                "rm": 1e-5,
+                "grpo": 1e-6,
+            }[mode]
+            default_batch = 4 if mode == "rm" else 1
+            default_grad_accum = 4 if mode == "rm" else 16
+            job_id = await self.training_service.launch_preference_train(
+                mode=mode,
+                model=str(payload.get("model") or ""),
+                dataset=str(payload.get("dataset") or ""),
+                output_dir=str(payload.get("output_dir") or ""),
+                epochs=int(self._value_or_default(payload.get("epochs"), 1)),
+                batch_size=int(self._value_or_default(payload.get("batch_size"), default_batch)),
+                gradient_accumulation_steps=int(self._value_or_default(payload.get("gradient_accumulation_steps"), default_grad_accum)),
+                learning_rate=float(self._value_or_default(payload.get("learning_rate"), default_lr)),
+                max_samples=self._optional_int(payload.get("max_samples")),
+                beta=self._optional_float(payload.get("beta")),
+                loss_type=self._optional_str(payload.get("loss_type")),
+                reference_free=bool(payload.get("reference_free", False)),
+                verifier=self._optional_str(payload.get("verifier")),
+                num_generations=self._optional_int(payload.get("num_generations")),
+                epsilon=self._optional_float(payload.get("epsilon")),
+                temperature=self._optional_float(payload.get("temperature")),
+                reward_threshold=self._optional_float(payload.get("reward_threshold")),
                 no_caffeinate=bool(payload.get("no_caffeinate", False)),
                 accelerator=self._optional_str(payload.get("accelerator")),
                 source_ui_page="/public/train",

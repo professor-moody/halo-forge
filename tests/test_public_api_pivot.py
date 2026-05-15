@@ -678,6 +678,75 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
         ),
         (
             {
+                "mode": "dpo",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "ultrafeedback",
+                "output_dir": "models/dpo_public_run",
+                "epochs": 1,
+                "batch_size": 1,
+                "gradient_accumulation_steps": 16,
+                "learning_rate": 5e-6,
+                "max_samples": 64,
+                "beta": 0.1,
+                "loss_type": "sigmoid",
+                "reference_free": True,
+            },
+            "dpo",
+            {"beta": 0.1, "loss_type": "sigmoid", "reference_free": True},
+            {"prompts", "limit", "samples_per_prompt"},
+        ),
+        (
+            {
+                "mode": "orpo",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "ultrafeedback",
+                "output_dir": "models/orpo_public_run",
+                "epochs": 1,
+                "batch_size": 1,
+                "gradient_accumulation_steps": 16,
+                "learning_rate": 8e-6,
+                "beta": 0.1,
+            },
+            "orpo",
+            {"beta": 0.1, "learning_rate": 8e-6},
+            {"loss_type", "prompts", "verifier"},
+        ),
+        (
+            {
+                "mode": "rm",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "ultrafeedback",
+                "output_dir": "models/rm_public_run",
+                "epochs": 1,
+                "batch_size": 4,
+                "gradient_accumulation_steps": 4,
+                "learning_rate": 1e-5,
+            },
+            "rm",
+            {"batch_size": 4, "gradient_accumulation_steps": 4},
+            {"beta", "loss_type", "verifier"},
+        ),
+        (
+            {
+                "mode": "grpo",
+                "model": "Qwen/Qwen2.5-1.5B-Instruct",
+                "dataset": "gsm8k",
+                "output_dir": "models/grpo_public_run",
+                "epochs": 1,
+                "batch_size": 1,
+                "gradient_accumulation_steps": 16,
+                "learning_rate": 1e-6,
+                "verifier": "json_schema",
+                "num_generations": 4,
+                "beta": 0.04,
+                "reward_threshold": 0.0,
+            },
+            "grpo",
+            {"verifier": "json_schema", "num_generations": 4, "beta": 0.04},
+            {"prompts", "samples_per_prompt", "task"},
+        ),
+        (
+            {
                 "mode": "vlm",
                 "model": "Qwen/Qwen2-VL-2B-Instruct",
                 "dataset": "textvqa",
@@ -759,6 +828,10 @@ def test_public_api_launch_is_mode_strict(payload, expected_method, expected_pai
             self.calls.append(("raft", kwargs))
             return "job-raft"
 
+        async def launch_preference_train(self, **kwargs):
+            self.calls.append((kwargs["mode"], kwargs))
+            return f"job-{kwargs['mode']}"
+
         async def launch_modality_train(self, **kwargs):
             self.calls.append((kwargs["modality"], kwargs))
             return f"job-{kwargs['modality']}"
@@ -828,19 +901,63 @@ def test_public_api_rejects_unsupported_mode_specific_fields(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    ("mode", "extra", "expected_tokens"),
+    [
+        ("dpo", {"beta": 0.1, "loss_type": "sigmoid", "reference_free": True}, ["dpo", "train", "--loss-type", "sigmoid", "--reference-free"]),
+        ("orpo", {"beta": 0.1}, ["orpo", "train", "--beta", "0.1"]),
+        ("rm", {}, ["rm", "train", "--batch-size", "4"]),
+        ("grpo", {"verifier": "json_schema", "num_generations": 4, "beta": 0.04}, ["grpo", "train", "--verifier", "json_schema", "--num-generations", "4"]),
+    ],
+)
+def test_training_service_builds_preference_method_commands(mode, extra, expected_tokens, tmp_path, monkeypatch):
+    state = AppState()
+    service = TrainingService(state)
+    captured: dict[str, list[str]] = {}
+
+    async def fake_launch(job_id, cmd, on_log=None, *, no_caffeinate=False):
+        captured["cmd"] = cmd
+
+    monkeypatch.setattr(service, "_launch_process_with_runtime_options", fake_launch)
+
+    job_id = asyncio.run(
+        service.launch_preference_train(
+            mode=mode,
+            model="Qwen/Qwen2.5-1.5B-Instruct",
+            dataset="ultrafeedback" if mode != "grpo" else "gsm8k",
+            output_dir=str(tmp_path / mode),
+            epochs=1,
+            batch_size=4 if mode == "rm" else 1,
+            gradient_accumulation_steps=4 if mode == "rm" else 16,
+            learning_rate=1e-5 if mode == "rm" else 5e-6,
+            **extra,
+        )
+    )
+
+    assert job_id
+    cmd = captured["cmd"]
+    for token in expected_tokens:
+        assert token in cmd
+    assert (tmp_path / mode / "launch_context.json").exists()
+
+
 def test_public_train_client_uses_mode_specific_payloads_and_labels():
-    """Public train client should build mode-safe payloads and expose audio/VLM-specific labels."""
+    """Public train client should build mode-safe payloads for every dashboard method."""
     train_client_source = Path("public_app/src/routes/train.tsx").read_text(encoding="utf-8")
 
-    assert "buildLaunchPayload(config)" in train_client_source
+    assert "buildLaunchPayload(config, workspace.data?.default_run_root)" in train_client_source
     assert 'if (c.modality === "sft")' in train_client_source
-    assert 'mode: "raft"' in train_client_source
+    assert 'if (c.modality === "raft")' in train_client_source
+    for mode in ["dpo", "orpo", "rm", "grpo", "vlm", "audio", "reasoning", "agentic"]:
+        assert f'"{mode}"' in train_client_source
     assert "DEFAULT_RAFT_PROMPTS" in train_client_source
     assert "RAFT_PROMPT_SOURCES" in train_client_source
-    assert "resolveRaftPrompts(c.dataset)" in train_client_source
-    assert "Prompt source selected" in train_client_source
+    assert "resolveRaftPrompts(source)" in train_client_source
+    assert "Prompt source" in train_client_source
     assert "stripEmpty" in train_client_source
-    assert "VerifierSection" in train_client_source
+    assert "Verifier toolchain" in train_client_source
+    assert "GoalSection" in train_client_source
+    assert "MethodSection" in train_client_source
 
 
 def test_public_docs_reference_split_between_public_frontend_and_internal_console():
@@ -885,6 +1002,10 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     assert "halo-forge dashboard" in quickstart_doc
     assert "Start keeps the model, dataset, sample count, and output path conservative." in docs_text
     assert "Use in Start" in docs_text
+    for method in ["SFT", "RAFT", "DPO", "ORPO", "RM", "GRPO", "VLM", "audio", "reasoning", "agentic"]:
+        assert method in docs_text
+    assert "/docs/training-pipeline/methods/" in docs_text
+    assert "/docs/reference/dashboard-training/" in docs_text
 
     missing: list[str] = []
     for path in docs_root.rglob("*.md"):

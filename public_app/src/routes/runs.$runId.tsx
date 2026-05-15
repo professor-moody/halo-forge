@@ -288,6 +288,7 @@ function LiveSummary({
       : streamStatus === "error"
         ? "warning"
         : "neutral";
+  const methodSummary = summaryForMethod(String(data.modality ?? ""), data);
 
   return (
     <Card className="bg-surface/90">
@@ -305,14 +306,14 @@ function LiveSummary({
             </Badge>
           </div>
           <p className="mt-1 max-w-[72ch] text-[12.5px] leading-5 text-fg-muted">
-            {nextStep}
+            {methodSummary} {nextStep}
           </p>
         </div>
         <div className="grid min-w-[360px] grid-cols-2 gap-2 lg:grid-cols-4">
+          <LiveMetric label="Method" value={String(data.modality ?? "-")} />
           <LiveMetric label="Loss" value={fmt(loss, 4)} />
           <LiveMetric label="Steps" value={formatProgress(steps, totalSteps)} />
-          <LiveMetric label="Cycles" value={formatProgress(cycles, totalCycles)} />
-          <LiveMetric label="Artifact" value={data.details?.final_model_available ? "saved" : "pending"} />
+          <LiveMetric label={cycleLikeMethod(String(data.modality ?? "")) ? "Cycles" : "Artifact"} value={cycleLikeMethod(String(data.modality ?? "")) ? formatProgress(cycles, totalCycles) : data.details?.final_model_available ? "saved" : "pending"} />
         </div>
       </CardContent>
     </Card>
@@ -939,7 +940,7 @@ function CycleTable({
   modality: string;
 }) {
   if (!cycles.length) return null;
-  const isRaft = modality === "raft";
+  const isRewarded = ["raft", "grpo", "vlm", "audio", "reasoning", "agentic"].includes(modality);
 
   return (
     <Card>
@@ -957,9 +958,9 @@ function CycleTable({
               <Th>Cycle</Th>
               <Th align="right">Train loss</Th>
               <Th align="right">Eval loss</Th>
-              {isRaft ? <Th align="right">Avg reward</Th> : null}
-              {isRaft ? <Th align="right">Kept</Th> : null}
-              {isRaft ? <Th align="right">Success</Th> : null}
+              {isRewarded ? <Th align="right">Avg reward</Th> : null}
+              {isRewarded ? <Th align="right">Kept</Th> : null}
+              {isRewarded ? <Th align="right">Success</Th> : null}
               <Th align="right">Steps</Th>
               <Th align="right">Duration</Th>
             </tr>
@@ -977,19 +978,19 @@ function CycleTable({
                 <Td align="right" mono>
                   {fmt(c.eval_loss, 4)}
                 </Td>
-                {isRaft ? (
+                {isRewarded ? (
                   <Td align="right" mono>
                     {fmt(c.avg_reward, 3)}
                   </Td>
                 ) : null}
-                {isRaft ? (
+                {isRewarded ? (
                   <Td align="right" mono className="text-fg-muted">
                     {c.samples_kept != null && c.samples_seen != null
                       ? `${c.samples_kept}/${c.samples_seen}`
                       : "—"}
                   </Td>
                 ) : null}
-                {isRaft ? (
+                {isRewarded ? (
                   <Td align="right" mono>
                     {c.success_rate != null
                       ? `${(c.success_rate * 100).toFixed(1)}%`
@@ -1114,6 +1115,24 @@ function ReadoutSep() {
 function fmt(v: number | null | undefined, digits: number): string {
   if (v == null || Number.isNaN(v)) return "—";
   return v.toFixed(digits);
+}
+
+function summaryForMethod(modality: string, data: RunDetail): string {
+  const mode = modality.toLowerCase();
+  if (mode === "sft") return "SFT tracks labeled-example loss and final artifact availability.";
+  if (mode === "raft") return "RAFT tracks generated, verified, kept, and trained samples by cycle.";
+  if (mode === "grpo") return "GRPO tracks verifier reward, group updates, and policy loss.";
+  if (mode === "dpo" || mode === "orpo") return "Preference tuning tracks chosen/rejected pair loss and final adapter availability.";
+  if (mode === "rm") return "Reward-model training tracks scorer quality and reward-margin signal.";
+  if (mode === "vlm") return "VLM training tracks vision-language cycles, reward signal, and artifacts.";
+  if (mode === "audio") return "Audio training tracks task-specific cycles, verifier signal, and artifacts.";
+  if (mode === "reasoning") return "Reasoning training tracks math/data yield, cycles, and final artifact availability.";
+  if (mode === "agentic") return "Agentic training tracks tool-call format quality, cycles, and artifacts.";
+  return data.details?.final_model_available ? "Final artifact is available." : "Run artifacts will appear as training progresses.";
+}
+
+function cycleLikeMethod(modality: string): boolean {
+  return ["raft", "grpo", "vlm", "audio", "reasoning", "agentic"].includes(modality.toLowerCase());
 }
 
 function fmtDuration(seconds: number | null | undefined): string {

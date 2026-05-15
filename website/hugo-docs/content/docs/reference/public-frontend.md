@@ -6,7 +6,7 @@ weight: 6
 
 The public Halo Forge frontend is the default product surface for normal training work. It is a Vite + React + TanStack Router app in `public_app/`, backed by the FastAPI public API under `/api/public/*`.
 
-Use it for guided first runs, advanced SFT/RAFT launches, live run monitoring, results review, model selection, verifier browsing, playground checks, and remote workstation access.
+Use it for guided first runs, full Train launches across every supported method, live run monitoring, results review, model selection, verifier browsing, playground checks, and remote workstation access.
 
 ## Run locally
 
@@ -49,7 +49,7 @@ npm run qa:visual
 ## Product flow
 
 - **Start**: goal-based first run for Code, Reasoning, Tool use, or Apple Silicon with safe SFT defaults and preflight.
-- **Advanced training**: direct SFT/RAFT configuration for users who already know the knobs.
+- **Train**: goal-first launch surface for SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic methods.
 - **Runs**: live progress, plain-language status, logs, samples, cancellation, recovery actions, and comparison pins.
 - **Results**: completed run outcomes, output paths, logs, comparison, and serve-ready artifact actions.
 - **Models**: catalog fit labels and a **Serve** action for one local model at a time.
@@ -136,6 +136,6 @@ Use the public frontend for default product workflows. Use internal tools only f
 
 - One primary action per state.
 - Plain-language status first, research detail second.
-- Start is the first-run path; Advanced training is for RAFT, VLM, audio, preference tuning, and direct configuration.
+- Start is the first-run path; Train is for RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, agentic, and direct configuration.
 - Remote v1 controls one workstation and uses bearer tokens.
 - Capability copy should follow backend/readiness truth, not hand-written claims.

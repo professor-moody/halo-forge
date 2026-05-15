@@ -538,6 +538,24 @@ export type TrainingDataset = {
   default_split: string;
 };
 
+export type TrainingMode =
+  | "sft"
+  | "raft"
+  | "dpo"
+  | "orpo"
+  | "rm"
+  | "grpo"
+  | "vlm"
+  | "audio"
+  | "reasoning"
+  | "agentic";
+
+export type TrainingLaunchPayload =
+  | ({ mode: "sft"; model: string; dataset: string; output_dir: string } & Record<string, unknown>)
+  | ({ mode: "raft"; model: string; prompts: string; output_dir: string } & Record<string, unknown>)
+  | ({ mode: "dpo" | "orpo" | "rm" | "grpo"; model: string; dataset: string; output_dir: string } & Record<string, unknown>)
+  | ({ mode: "vlm" | "audio" | "reasoning" | "agentic"; model: string; dataset: string; output_dir: string } & Record<string, unknown>);
+
 export type TrainingVerifier = {
   key: string;
   label: string;
