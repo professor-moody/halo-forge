@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   Terminal,
+  Wrench,
 } from "lucide-react";
 import { Topbar } from "@/components/shell";
 import { Card, CardContent, CardHeader, CardTitle, CardEyebrow } from "@/components/ui/card";
@@ -49,6 +50,20 @@ const INTENT_LINKS = [
     body: "Catalog guidance by task, backend, memory tier, and first-run risk.",
     to: "https://halo-forge.io/docs/getting-started/choose-a-model/",
     action: "Choose model",
+  },
+  {
+    icon: Wrench,
+    title: "Training methods",
+    body: "Choose between SFT, RAFT, DPO, ORPO, reward models, GRPO, VLM, audio, reasoning, and agentic runs.",
+    to: "https://halo-forge.io/docs/training-pipeline/methods/",
+    action: "Choose method",
+  },
+  {
+    icon: Play,
+    title: "Dashboard training",
+    body: "Use Train for goal-first launches across every supported method.",
+    to: "https://halo-forge.io/docs/reference/dashboard-training/",
+    action: "Train from dashboard",
   },
   {
     icon: ShieldCheck,
@@ -127,7 +142,7 @@ function IntroPanel() {
           on the workstation you control.
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
-          <Pill label="Train" value="SFT / RAFT" />
+          <Pill label="Train" value="SFT / RAFT / DPO / GRPO / VLM / audio" />
           <Pill label="Check" value="Eval / verifiers" />
           <Pill label="Ship" value="Serve / export" />
         </div>
@@ -153,6 +168,14 @@ function RemotePanel() {
         <code className="block rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 font-mono text-[11px] text-fg">
           halo-forge token create dashboard
         </code>
+        <div className="grid gap-2 md:grid-cols-2">
+          <Pill label="Workstation" value="dashboard --host 0.0.0.0" />
+          <Pill label="Client" value="paste token in Connection" />
+        </div>
+        <p>
+          Manual two-machine QA: verify token-required access, invalid-token recovery,
+          runs list, run monitor, and Playground from the client machine.
+        </p>
       </CardContent>
     </Card>
   );

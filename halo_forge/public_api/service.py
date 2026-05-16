@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from ui.services.training_presentation import build_launch_presentation
 from ui.services.training_service import TrainingLaunchPreflight, TrainingService
 from ui.state import AppState, JobState, state as default_state
 
+from .serve_manager import ManagedServeProcess, ServeStartRequest
 from .views import (
     ActiveRunRowView,
     AttentionItemView,
@@ -37,7 +39,23 @@ from .views import (
 )
 
 
-TRAINING_MODALITIES = ("sft", "raft", "vlm", "audio", "reasoning", "agentic")
+TRAINING_MODALITIES = (
+    "sft",
+    "raft",
+    "dpo",
+    "orpo",
+    "rm",
+    "grpo",
+    "vlm",
+    "audio",
+    "reasoning",
+    "agentic",
+)
+DEFAULT_RUN_ROOT_ENV = "HALO_FORGE_RUN_ROOT"
+GATED_MODEL_MESSAGE = (
+    "This model requires Hugging Face access. Choose an open model, log in with a token, "
+    "or use a local artifact."
+)
 
 PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
     "sft": {
@@ -59,11 +77,75 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "prompts",
         "output_dir",
         "accelerator",
+        "verifier",
         "cycles",
         "samples_per_prompt",
         "keep_percent",
         "reward_threshold",
         "temperature",
+        "no_caffeinate",
+    },
+    "dpo": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "beta",
+        "loss_type",
+        "reference_free",
+        "no_caffeinate",
+    },
+    "orpo": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "beta",
+        "no_caffeinate",
+    },
+    "rm": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "no_caffeinate",
+    },
+    "grpo": {
+        "mode",
+        "model",
+        "dataset",
+        "output_dir",
+        "accelerator",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "max_samples",
+        "beta",
+        "reference_free",
+        "verifier",
+        "num_generations",
+        "epsilon",
+        "temperature",
+        "reward_threshold",
         "no_caffeinate",
     },
     "vlm": {
@@ -73,10 +155,12 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "output_dir",
         "cycles",
         "limit",
+        "task",
         "samples_per_prompt",
         "keep_percent",
         "reward_threshold",
         "temperature",
+        "allow_prototype_train",
         "no_caffeinate",
     },
     "audio": {
@@ -90,6 +174,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "reward_threshold",
         "temperature",
         "task",
+        "allow_prototype_train",
         "no_caffeinate",
     },
     "reasoning": {
@@ -102,6 +187,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "temperature",
         "learning_rate",
+        "allow_prototype_train",
         "no_caffeinate",
     },
     "agentic": {
@@ -114,6 +200,7 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
         "keep_percent",
         "temperature",
         "learning_rate",
+        "allow_prototype_train",
         "no_caffeinate",
     },
 }
@@ -121,6 +208,10 @@ PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
 PUBLIC_TRAIN_REQUIRED_TEXT_FIELDS: dict[str, tuple[str, ...]] = {
     "sft": ("model", "dataset", "output_dir"),
     "raft": ("model", "prompts", "output_dir"),
+    "dpo": ("model", "dataset", "output_dir"),
+    "orpo": ("model", "dataset", "output_dir"),
+    "rm": ("model", "dataset", "output_dir"),
+    "grpo": ("model", "dataset", "output_dir", "verifier"),
     "vlm": ("model", "dataset", "output_dir"),
     "audio": ("model", "dataset", "output_dir", "task"),
     "reasoning": ("model", "dataset", "output_dir"),
@@ -173,6 +264,7 @@ class PublicApiService:
         results_service: ResultsService | None = None,
         readiness_service: OpsReadinessService | None = None,
         training_service: TrainingService | None = None,
+        serve_manager: ManagedServeProcess | None = None,
         base_path: Path | None = None,
     ) -> None:
         self.app_state = app_state or default_state
@@ -180,6 +272,7 @@ class PublicApiService:
         self.results_service = results_service or get_results_service()
         self.readiness_service = readiness_service or get_ops_readiness_service()
         self.training_service = training_service or TrainingService(self.app_state)
+        self.serve_manager = serve_manager or ManagedServeProcess(base_path=self.base_path)
 
     def _active_backend_name(self) -> str:
         """Return the active accelerator-kind name for cost / display use.
@@ -232,6 +325,26 @@ class PublicApiService:
             "training_defaults": backend.training_defaults(),
             "inference_defaults": backend.inference_defaults(),
             "mlx_readiness": mlx_readiness,
+        }
+
+    def get_workspace_info(self) -> Dict[str, Any]:
+        """Return local workstation defaults for dashboard-managed runs."""
+        root = _default_run_root()
+        writable = False
+        message = "Halo Forge will save guided runs here."
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            probe = root / ".halo-forge-write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            writable = True
+        except OSError as exc:
+            message = f"Halo Forge could not write to the default run folder: {exc}"
+        return {
+            "default_run_root": str(root),
+            "runs_dir": str(root),
+            "writable": writable,
+            "message": message,
         }
 
     @staticmethod
@@ -772,6 +885,34 @@ class PublicApiService:
                 max_new_tokens=int(payload.get("max_new_tokens") or 512),
                 checkpoint=self._optional_str(payload.get("checkpoint")),
             )
+        elif mode in {"dpo", "orpo", "rm", "grpo"}:
+            default_lr = {
+                "dpo": 5e-6,
+                "orpo": 8e-6,
+                "rm": 1e-5,
+                "grpo": 1e-6,
+            }[mode]
+            default_batch = 4 if mode == "rm" else 1
+            default_grad_accum = 4 if mode == "rm" else 16
+            preflight = self.training_service.preflight_preference_launch(
+                mode=mode,
+                model=str(payload.get("model") or ""),
+                dataset=str(payload.get("dataset") or ""),
+                output_dir=str(payload.get("output_dir") or ""),
+                epochs=int(payload.get("epochs") or 1),
+                batch_size=int(payload.get("batch_size") or default_batch),
+                gradient_accumulation_steps=int(payload.get("gradient_accumulation_steps") or default_grad_accum),
+                learning_rate=float(payload.get("learning_rate") or default_lr),
+                max_samples=self._optional_int(payload.get("max_samples")),
+                beta=self._optional_float(payload.get("beta")),
+                loss_type=self._optional_str(payload.get("loss_type")),
+                reference_free=bool(payload.get("reference_free", False)),
+                verifier=self._optional_str(payload.get("verifier")),
+                num_generations=self._optional_int(payload.get("num_generations")),
+                epsilon=self._optional_float(payload.get("epsilon")),
+                temperature=self._optional_float(payload.get("temperature")),
+                reward_threshold=self._optional_float(payload.get("reward_threshold")),
+            )
         else:
             preflight = self.training_service.preflight_modality_train_launch(
                 modality=mode,
@@ -790,6 +931,7 @@ class PublicApiService:
             )
 
         self._augment_mlx_preflight(payload=payload, preflight=preflight)
+        self._augment_output_dir_preflight(payload=payload, preflight=preflight)
         return to_dict(self._build_preflight_view(mode=mode, preflight=preflight))
 
     async def launch_training(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -823,6 +965,37 @@ class PublicApiService:
                 reward_threshold=float(self._value_or_default(payload.get("reward_threshold"), 0.5)),
                 min_samples=int(self._value_or_default(payload.get("min_samples"), 1)),
                 max_new_tokens=int(self._value_or_default(payload.get("max_new_tokens"), 512)),
+                no_caffeinate=bool(payload.get("no_caffeinate", False)),
+                accelerator=self._optional_str(payload.get("accelerator")),
+                source_ui_page="/public/train",
+            )
+        elif mode in {"dpo", "orpo", "rm", "grpo"}:
+            default_lr = {
+                "dpo": 5e-6,
+                "orpo": 8e-6,
+                "rm": 1e-5,
+                "grpo": 1e-6,
+            }[mode]
+            default_batch = 4 if mode == "rm" else 1
+            default_grad_accum = 4 if mode == "rm" else 16
+            job_id = await self.training_service.launch_preference_train(
+                mode=mode,
+                model=str(payload.get("model") or ""),
+                dataset=str(payload.get("dataset") or ""),
+                output_dir=str(payload.get("output_dir") or ""),
+                epochs=int(self._value_or_default(payload.get("epochs"), 1)),
+                batch_size=int(self._value_or_default(payload.get("batch_size"), default_batch)),
+                gradient_accumulation_steps=int(self._value_or_default(payload.get("gradient_accumulation_steps"), default_grad_accum)),
+                learning_rate=float(self._value_or_default(payload.get("learning_rate"), default_lr)),
+                max_samples=self._optional_int(payload.get("max_samples")),
+                beta=self._optional_float(payload.get("beta")),
+                loss_type=self._optional_str(payload.get("loss_type")),
+                reference_free=bool(payload.get("reference_free", False)),
+                verifier=self._optional_str(payload.get("verifier")),
+                num_generations=self._optional_int(payload.get("num_generations")),
+                epsilon=self._optional_float(payload.get("epsilon")),
+                temperature=self._optional_float(payload.get("temperature")),
+                reward_threshold=self._optional_float(payload.get("reward_threshold")),
                 no_caffeinate=bool(payload.get("no_caffeinate", False)),
                 accelerator=self._optional_str(payload.get("accelerator")),
                 source_ui_page="/public/train",
@@ -919,6 +1092,40 @@ class PublicApiService:
         if isinstance(fixes, list):
             preflight.suggested_fixes.extend(str(item) for item in fixes if item)
         preflight.quality_outlook.setdefault("mlx_readiness", readiness)
+
+    def _augment_output_dir_preflight(
+        self,
+        *,
+        payload: Dict[str, Any],
+        preflight: TrainingLaunchPreflight,
+    ) -> None:
+        """Make output path failures actionable in the public dashboard."""
+        if not preflight.errors:
+            return
+        output_dir = str(payload.get("output_dir") or preflight.resolved_paths.get("output_dir") or "").strip()
+        default_root = str(_default_run_root())
+
+        def friendly(message: str) -> str:
+            lower = message.lower()
+            if "output_dir" in lower and (
+                "not writable" in lower
+                or "cannot be created" in lower
+                or "current permissions" in lower
+                or "parent is not writable" in lower
+            ):
+                return f"Halo Forge could not write to this folder: {output_dir or 'the selected folder'}"
+            return message
+
+        preflight.errors[:] = [friendly(str(message)) for message in preflight.errors]
+        if any(message.startswith("Halo Forge could not write to this folder:") for message in preflight.errors):
+            preflight.suggested_fixes[:] = [
+                str(fix)
+                for fix in preflight.suggested_fixes
+                if "output_dir" not in str(fix).lower() and "output parent" not in str(fix).lower()
+            ]
+            fix = f"Use the default run folder: {default_root}"
+            if fix not in preflight.suggested_fixes:
+                preflight.suggested_fixes.insert(0, fix)
 
     async def apply_guided_recovery(
         self,
@@ -1290,8 +1497,35 @@ class PublicApiService:
                     detail = resp.json()
                 except Exception:
                     detail = {"error": resp.text}
-                return {"upstream_error": True, "status": resp.status_code, "detail": detail}
+                return {
+                    "upstream_error": True,
+                    "status": resp.status_code,
+                    "detail": detail,
+                    **_friendly_upstream_error(detail),
+                }
             return resp.json()
+
+    def serve_status(self) -> Dict[str, Any]:
+        return self.serve_manager.status()
+
+    def serve_start(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        request = ServeStartRequest(
+            model=str(payload.get("model") or ""),
+            backend=self._optional_str(payload.get("backend")),
+            host=str(payload.get("host") or "127.0.0.1"),
+            port=int(payload.get("port") or 8001),
+            trust_remote_code=bool(payload.get("trust_remote_code", False)),
+        )
+        return self.serve_manager.start(request)
+
+    def serve_stop(self) -> Dict[str, Any]:
+        return self.serve_manager.stop()
+
+    def serve_logs(self, *, tail: int = 200) -> Dict[str, Any]:
+        return self.serve_manager.logs(tail=tail)
+
+    def serve_health(self) -> Dict[str, Any]:
+        return self.serve_manager.health()
 
     # ----- run lineage (Track F-Q) -----------------------------------------
 
@@ -1386,6 +1620,7 @@ class PublicApiService:
         Keeps the wire shape stable across the two endpoints so the
         run-list components don't have to branch on which fetched them.
         """
+        final_model = Path(record.output_dir) / "final_model" if record.output_dir else None
         return {
             "id": record.fs_id or record.run_id,
             "run_id": record.run_id,
@@ -1405,6 +1640,8 @@ class PublicApiService:
             "keep_rate": record.keep_rate,
             "top_issue": record.dominant_rejection_reason,
             "output_dir": record.output_dir,
+            "final_model_available": bool(final_model and final_model.exists()),
+            "artifact_path": str(final_model) if final_model and final_model.exists() else None,
         }
 
     def list_runs(
@@ -1740,7 +1977,36 @@ class PublicApiService:
 
     def list_readiness(self) -> Dict[str, Any]:
         """Return public-safe readiness for training modalities."""
-        report = self.readiness_service.load_qualification_report(force_refresh=True)
+        try:
+            report = self.readiness_service.load_qualification_report(force_refresh=True)
+        except Exception as exc:
+            items = [
+                ModalityReadinessView(
+                    modality=module,
+                    readiness_tier="experimental",
+                    production_ready=False,
+                    status="warn",
+                    caveat="Readiness report is not available in this runtime.",
+                    next_step="Run readiness checks from a source checkout or continue with documented method caveats.",
+                    eval_metric_name="",
+                    baseline_value=None,
+                    final_value=None,
+                    delta=None,
+                    details={
+                        "errors": [],
+                        "warnings": [str(exc)],
+                        "weights_updated": False,
+                        "optimizer_steps": 0,
+                        "samples_kept": 0,
+                    },
+                )
+                for module in TRAINING_MODALITIES
+            ]
+            return {
+                "generated_at": None,
+                "aggregate_tier": "experimental",
+                "items": [to_dict(item) for item in items],
+            }
         items: list[ModalityReadinessView] = []
         counts = {"experimental": 0, "qualified": 0, "production_ready": 0}
         for module in TRAINING_MODALITIES:
@@ -2482,6 +2748,66 @@ def _coerce_optional_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _default_run_root() -> Path:
+    configured = str(os.environ.get(DEFAULT_RUN_ROOT_ENV) or "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".halo-forge" / "runs").expanduser().resolve()
+
+
+def _friendly_upstream_error(detail: Any) -> Dict[str, Any]:
+    text = _error_text(detail)
+    if _looks_like_gated_hf_error(text):
+        return {
+            "error_kind": "gated_model",
+            "message": GATED_MODEL_MESSAGE,
+        }
+    if text:
+        return {"message": _one_line_error(text)}
+    return {"message": "The local model server returned an error. Check the serve logs for details."}
+
+
+def _error_text(detail: Any) -> str:
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict):
+        parts: list[str] = []
+        for key in ("message", "detail", "error", "error_description"):
+            value = detail.get(key)
+            if value is not None:
+                parts.append(_error_text(value))
+        if not parts:
+            parts.extend(_error_text(value) for value in detail.values())
+        return " ".join(part for part in parts if part)
+    if isinstance(detail, list):
+        return " ".join(_error_text(item) for item in detail)
+    return str(detail or "")
+
+
+def _looks_like_gated_hf_error(text: str) -> bool:
+    lower = text.lower()
+    gated_markers = (
+        "gated repo",
+        "cannot access gated repo",
+        "restricted",
+        "please log in",
+        "401 client error",
+        "repository not found",
+        "private repository",
+    )
+    return any(marker in lower for marker in gated_markers) and (
+        "huggingface.co" in lower
+        or "hugging face" in lower
+        or "hf.co" in lower
+        or "repo" in lower
+    )
+
+
+def _one_line_error(text: str) -> str:
+    line = " ".join(part.strip() for part in str(text).splitlines() if part.strip())
+    return line[:500] if len(line) > 500 else line
 
 
 def _extract_output_dir_and_run_id(

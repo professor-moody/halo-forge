@@ -103,7 +103,7 @@ The dashboard is the easiest way to avoid a bad first launch:
 4. Watch **Preflight** before launching. It distinguishes missing inputs, backend detection, and server-side launch checks.
 5. Press **Launch** when the checks pass, then open the run monitor from the success state.
 
-Use **Advanced training** after the first clean SFT run when you want RAFT, VLM, audio, preference tuning, or direct knob control.
+Use **Train** after the first clean SFT run when you want RAFT, DPO, ORPO, reward models, GRPO, VLM, audio, reasoning, agentic training, or direct knob control.
 
 For model exploration, open **Models** first and use the workstation filter plus intent filters: **First run**, **Code RAFT**, **Apple Silicon**, **VLM**, **Audio**, and **Liquid AI**.
 
@@ -131,6 +131,7 @@ For Apple Silicon, use `--accelerator mlx` for MLX-native inference paths and ML
 ## What To Read Next
 
 - [Choose a Model](/docs/getting-started/choose-a-model/) - model family and backend guidance.
+- [Choose a Training Method](/docs/training-pipeline/methods/) - decide between SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic runs.
 - [Usage Scenarios](/docs/getting-started/scenarios/) - complete recipes by goal.
 - [Hardware Notes](/docs/getting-started/hardware/) - backend-specific setup.
 - [Command Index](/docs/reference/command-index/) - full CLI reference.

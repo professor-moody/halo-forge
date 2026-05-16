@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -13,12 +14,11 @@ try:
     from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, StreamingResponse
-    from fastapi.staticfiles import StaticFiles
 except ImportError as exc:  # pragma: no cover - exercised in environments without FastAPI
     FASTAPI_IMPORT_ERROR = exc
     APIRouter = Depends = FastAPI = HTTPException = Query = Request = StreamingResponse = None  # type: ignore[assignment]
     CORSMiddleware = None  # type: ignore[assignment]
-    FileResponse = StaticFiles = None  # type: ignore[assignment]
+    FileResponse = None  # type: ignore[assignment]
 
 
 def find_frontend_dist(frontend_dist: str | Path | None = None) -> Path | None:
@@ -26,6 +26,8 @@ def find_frontend_dist(frontend_dist: str | Path | None = None) -> Path | None:
     candidates: list[Path] = []
     if frontend_dist is not None:
         candidates.append(Path(frontend_dist))
+    if env_dist := os.environ.get("HALO_FORGE_FRONTEND_DIST"):
+        candidates.append(Path(env_dist))
 
     public_api_dir = Path(__file__).resolve().parent
     candidates.extend(
@@ -91,6 +93,10 @@ def create_app(
     @router.get("/backend")
     async def backend_info() -> Dict[str, Any]:
         return service.get_backend_info()
+
+    @router.get("/workspace")
+    async def workspace_info() -> Dict[str, Any]:
+        return service.get_workspace_info()
 
     @router.get("/telemetry")
     async def telemetry() -> Dict[str, Any]:
@@ -312,6 +318,29 @@ def create_app(
             serve_url=payload.get("serve_url"),
             api_key=payload.get("api_key"),
         )
+
+    @router.get("/serve/status")
+    async def serve_status() -> Dict[str, Any]:
+        return service.serve_status()
+
+    @router.post("/serve/start")
+    async def serve_start(payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return service.serve_start(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/serve/stop")
+    async def serve_stop() -> Dict[str, Any]:
+        return service.serve_stop()
+
+    @router.get("/serve/logs")
+    async def serve_logs(tail: int = Query(default=200, ge=1, le=5000)) -> Dict[str, Any]:
+        return service.serve_logs(tail=tail)
+
+    @router.get("/serve/health")
+    async def serve_health() -> Dict[str, Any]:
+        return service.serve_health()
 
     @router.get("/registry")
     async def list_registry() -> Dict[str, Any]:
@@ -543,18 +572,24 @@ def create_app(
 def _mount_frontend(api: "FastAPI", frontend_dist: Path) -> None:
     """Serve the built React app with SPA fallback routes."""
     assets_dir = frontend_dist / "assets"
-    if assets_dir.is_dir():
-        api.mount(
-            "/assets",
-            StaticFiles(directory=str(assets_dir)),
-            name="frontend-assets",
-        )
-
     index_file = frontend_dist / "index.html"
+    index_headers = {"Cache-Control": "no-store, max-age=0"}
+    asset_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+    @api.get("/assets/{path:path}", include_in_schema=False)
+    async def serve_frontend_asset(path: str) -> "FileResponse":
+        requested = (assets_dir / path).resolve()
+        try:
+            requested.relative_to(assets_dir)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="not found") from exc
+        if not requested.is_file():
+            raise HTTPException(status_code=404, detail="not found")
+        return FileResponse(requested, headers=asset_headers)
 
     @api.get("/", include_in_schema=False)
     async def serve_frontend_index() -> "FileResponse":
-        return FileResponse(index_file)
+        return FileResponse(index_file, headers=index_headers)
 
     @api.get("/{path:path}", include_in_schema=False)
     async def serve_frontend_path(path: str) -> "FileResponse":
@@ -567,8 +602,8 @@ def _mount_frontend(api: "FastAPI", frontend_dist: Path) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail="not found") from exc
         if requested.is_file():
-            return FileResponse(requested)
-        return FileResponse(index_file)
+            return FileResponse(requested, headers=asset_headers)
+        return FileResponse(index_file, headers=index_headers)
 
 
 app = create_app() if FastAPI is not None else None

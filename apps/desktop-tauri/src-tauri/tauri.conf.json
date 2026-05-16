@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Halo Forge",
+  "version": "0.1.0",
+  "identifier": "ai.haloforge.desktop",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "frontendDist": "../startup",
+    "devUrl": "http://127.0.0.1:8765"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Halo Forge",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1100,
+        "minHeight": 720,
+        "url": "index.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/512x512.png",
+      "icons/icon.png"
+    ],
+    "resources": {
+      "../../../public_app/dist": "frontend",
+      "../runtime/dist/halo-forge-runtime": "runtime/halo-forge-runtime"
+    },
+    "externalBin": ["sidecars/halo-forge-runtime"]
+  }
+}

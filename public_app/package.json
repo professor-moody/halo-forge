@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build && tsc -b",
     "preview": "vite preview",
     "lint": "tsc -b --noEmit",
     "qa:visual": "node scripts/visual-qa.mjs"

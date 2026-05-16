@@ -6,7 +6,7 @@ weight: 6
 
 The public Halo Forge frontend is the default product surface for normal training work. It is a Vite + React + TanStack Router app in `public_app/`, backed by the FastAPI public API under `/api/public/*`.
 
-Use it for guided first runs, advanced SFT/RAFT launches, live run monitoring, results review, model selection, verifier browsing, playground checks, and remote workstation access.
+Use it for guided first runs, full Train launches across every supported method, live run monitoring, results review, model selection, verifier browsing, playground checks, and remote workstation access.
 
 ## Run locally
 
@@ -49,11 +49,48 @@ npm run qa:visual
 ## Product flow
 
 - **Start**: goal-based first run for Code, Reasoning, Tool use, or Apple Silicon with safe SFT defaults and preflight.
-- **Advanced training**: direct SFT/RAFT configuration for users who already know the knobs.
+- **Train**: goal-first launch surface for SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic methods.
 - **Runs**: live progress, plain-language status, logs, samples, cancellation, recovery actions, and comparison pins.
-- **Results**: completed run outcomes and readiness-oriented follow-up.
+- **Results**: completed run outcomes, output paths, logs, comparison, and serve-ready artifact actions.
+- **Models**: catalog fit labels and a **Serve** action for one local model at a time.
+- **Playground**: chat against the dashboard-managed local serve by default, with external endpoint settings available when needed.
 - **Docs**: intent-based links for first run, remote setup, models, hardware, verifiers, CLI, and troubleshooting.
 - **Connection**: token entry and connection test for remote workstation access.
+
+## Serve from the dashboard
+
+Serving v1 manages one local `halo-forge serve` process at a time on `127.0.0.1:8001`.
+
+1. Open **Models**.
+2. Pick a small model such as `mlx-community/Qwen2.5-0.5B-Instruct-bf16`.
+3. Click **Serve**.
+4. Open **Playground** and wait for **Local serving** to show `ready`.
+5. Send a message.
+6. Click **Stop** before serving a different model.
+
+Completed runs with a final model artifact also expose **Serve model** from **Results**. If another model is already serving, the dashboard blocks the second launch and tells you to stop the current server first.
+
+## Desktop app development
+
+The desktop app shell lives in `apps/desktop-tauri`. It is a Tauri v2 wrapper around the same dashboard, with a dev sidecar that starts:
+
+```bash
+halo-forge serve-public --host 127.0.0.1 --port 8000
+```
+
+Local smoke:
+
+```bash
+cd public_app
+npm ci
+npm run build
+
+cd ../apps/desktop-tauri
+npm ci
+npm run build
+```
+
+macOS arm64 and Linux are the v1 desktop targets. Windows, signing, and notarization are out of scope for the current desktop-ui branch.
 
 ## Remote workstation
 
@@ -99,6 +136,6 @@ Use the public frontend for default product workflows. Use internal tools only f
 
 - One primary action per state.
 - Plain-language status first, research detail second.
-- Start is the first-run path; Advanced training is for RAFT, VLM, audio, preference tuning, and direct configuration.
+- Start is the first-run path; Train is for RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, agentic, and direct configuration.
 - Remote v1 controls one workstation and uses bearer tokens.
 - Capability copy should follow backend/readiness truth, not hand-written claims.

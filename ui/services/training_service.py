@@ -27,6 +27,7 @@ from .launch_contracts import (
     SFT_LAUNCH_CONTRACT,
     RAFT_LAUNCH_CONTRACT,
     MODALITY_TRAIN_LAUNCH_CONTRACTS,
+    PREFERENCE_TRAIN_LAUNCH_CONTRACTS,
     validate_launch_payload,
     ensure_local_path_exists_if_pathlike,
 )
@@ -276,6 +277,62 @@ class TrainingService:
             normalized["dataset"],
             normalized["output_dir"],
             parsed_seed,
+        )
+
+    def _validate_preference_launch_payload(
+        self,
+        *,
+        mode: str,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        epochs: int,
+        batch_size: int,
+        gradient_accumulation_steps: int,
+        learning_rate: float,
+        max_samples: Optional[int] = None,
+        beta: Optional[float] = None,
+        verifier: Optional[str] = None,
+        num_generations: Optional[int] = None,
+        epsilon: Optional[float] = None,
+        temperature: Optional[float] = None,
+        reward_threshold: Optional[float] = None,
+    ) -> tuple[str, str, str]:
+        """Validate public preference/RL launch payloads."""
+        if mode not in PREFERENCE_TRAIN_LAUNCH_CONTRACTS:
+            raise ValueError(f"Unsupported preference training mode: {mode}")
+        payload: dict[str, Any] = {
+            "model": model,
+            "dataset": dataset,
+            "output_dir": output_dir,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "learning_rate": learning_rate,
+            "max_samples": max_samples,
+        }
+        if mode in {"dpo", "orpo"}:
+            payload["beta"] = beta if beta is not None else 0.1
+        if mode == "grpo":
+            payload.update(
+                {
+                    "verifier": verifier,
+                    "num_generations": num_generations if num_generations is not None else 4,
+                    "beta": beta if beta is not None else 0.04,
+                    "epsilon": epsilon if epsilon is not None else 0.2,
+                    "temperature": temperature if temperature is not None else 0.9,
+                    "reward_threshold": reward_threshold if reward_threshold is not None else 0.0,
+                }
+            )
+        normalized = validate_launch_payload(
+            payload,
+            PREFERENCE_TRAIN_LAUNCH_CONTRACTS[mode],
+        )
+        ensure_local_path_exists_if_pathlike(normalized["dataset"], "dataset")
+        return (
+            normalized["model"],
+            normalized["dataset"],
+            normalized["output_dir"],
         )
 
     def _build_lifecycle_metadata(
@@ -637,6 +694,128 @@ class TrainingService:
             warnings=warnings,
             suggestions=suggestions,
             artifact_notes=self.expected_output_artifacts(modality),
+        )
+
+    def _quality_outlook_for_preference(
+        self,
+        *,
+        mode_key: str,
+        output_dir: str,
+        epochs: int,
+        batch_size: int,
+        max_samples: Optional[int],
+        num_generations: Optional[int] = None,
+    ) -> dict[str, Any]:
+        warnings: list[str] = []
+        suggestions: list[str] = []
+        if max_samples is not None and max_samples < 32:
+            warnings.append("Sample budget is very small and may produce a weak preference signal.")
+            suggestions.append("Use at least 32-64 examples for a more useful smoke run.")
+        if mode_key == "grpo" and num_generations is not None and num_generations < 2:
+            warnings.append("GRPO needs more than one generation per prompt for a group-relative signal.")
+            suggestions.append("Use num_generations of 4 for a conservative first GRPO run.")
+        if batch_size > 2 and mode_key in {"dpo", "orpo", "grpo"}:
+            suggestions.append("Preference and RL runs use more memory than SFT; lower batch size if launch fails.")
+        previous_status = self._read_previous_quality_status(output_dir)
+        if previous_status in {"low_yield", "no_signal"}:
+            warnings.append("This output directory previously ended with low signal.")
+            suggestions.append("Use a fresh output directory or raise sample supply before relaunching.")
+        return self._build_quality_outlook(
+            mode_key=mode_key,
+            output_dir=output_dir,
+            warnings=warnings,
+            suggestions=suggestions,
+            artifact_notes=self.expected_output_artifacts(mode_key),
+        )
+
+    def preflight_preference_launch(
+        self,
+        *,
+        mode: str,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        epochs: int,
+        batch_size: int,
+        gradient_accumulation_steps: int,
+        learning_rate: float,
+        max_samples: Optional[int] = None,
+        beta: Optional[float] = None,
+        loss_type: Optional[str] = None,
+        reference_free: bool = False,
+        verifier: Optional[str] = None,
+        num_generations: Optional[int] = None,
+        epsilon: Optional[float] = None,
+        temperature: Optional[float] = None,
+        reward_threshold: Optional[float] = None,
+    ) -> TrainingLaunchPreflight:
+        """Run structured preflight checks for DPO/ORPO/RM/GRPO launch."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        resolved_paths: dict[str, str] = {}
+        suggested_fixes: list[str] = []
+        mode_key = str(mode or "").strip().lower()
+
+        try:
+            model, dataset, output_dir = self._validate_preference_launch_payload(
+                mode=mode_key,
+                model=model,
+                dataset=dataset,
+                output_dir=output_dir,
+                epochs=epochs,
+                batch_size=batch_size,
+                gradient_accumulation_steps=gradient_accumulation_steps,
+                learning_rate=learning_rate,
+                max_samples=max_samples,
+                beta=beta,
+                verifier=verifier,
+                num_generations=num_generations,
+                epsilon=epsilon,
+                temperature=temperature,
+                reward_threshold=reward_threshold,
+            )
+        except ValueError as e:
+            errors.append(str(e))
+            return TrainingLaunchPreflight(
+                ok=False,
+                errors=errors,
+                warnings=warnings,
+                resolved_paths=resolved_paths,
+                suggested_fixes=["Fix required inputs before launch."],
+                quality_outlook={},
+            )
+
+        resolved_paths["model"] = model
+        resolved_paths["dataset"] = dataset
+        if Path(dataset).expanduser().exists():
+            resolved_paths["dataset"] = str(Path(dataset).expanduser())
+        if loss_type and mode_key == "dpo":
+            resolved_paths["loss_type"] = str(loss_type)
+        if reference_free and mode_key in {"dpo", "grpo"}:
+            resolved_paths["reference_free"] = "true"
+        if verifier and mode_key == "grpo":
+            resolved_paths["verifier"] = str(verifier)
+        self._preflight_output_dir(
+            output_dir,
+            resolved_paths=resolved_paths,
+            warnings=warnings,
+            errors=errors,
+            suggested_fixes=suggested_fixes,
+        )
+        return TrainingLaunchPreflight(
+            ok=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            resolved_paths=resolved_paths,
+            suggested_fixes=suggested_fixes,
+            quality_outlook=self._quality_outlook_for_preference(
+                mode_key=mode_key,
+                output_dir=output_dir,
+                epochs=epochs,
+                batch_size=batch_size,
+                max_samples=max_samples,
+                num_generations=num_generations,
+            ),
         )
 
     def preflight_sft_launch(
@@ -1354,6 +1533,180 @@ class TrainingService:
             no_caffeinate=no_caffeinate,
         )
         
+        return job.id
+
+    async def launch_preference_train(
+        self,
+        *,
+        mode: str,
+        model: str,
+        dataset: str,
+        output_dir: str,
+        epochs: int = 1,
+        batch_size: int = 1,
+        gradient_accumulation_steps: int = 16,
+        learning_rate: float = 5e-6,
+        max_samples: Optional[int] = None,
+        beta: Optional[float] = None,
+        loss_type: Optional[str] = None,
+        reference_free: bool = False,
+        verifier: Optional[str] = None,
+        num_generations: Optional[int] = None,
+        epsilon: Optional[float] = None,
+        temperature: Optional[float] = None,
+        reward_threshold: Optional[float] = None,
+        on_log: Optional[Callable[[str], None]] = None,
+        source_ui_page: str = "/training",
+        origin_job_id: Optional[str] = None,
+        relaunch: bool = False,
+        resume_strategy: Optional[str] = None,
+        guided_recovery: Optional[dict[str, Any]] = None,
+        no_caffeinate: bool = False,
+        accelerator: Optional[str] = None,
+    ) -> str:
+        """Launch DPO/ORPO/RM/GRPO training through the normal CLI subprocess path."""
+        mode_key = str(mode or "").strip().lower()
+        model, dataset, output_dir = self._validate_preference_launch_payload(
+            mode=mode_key,
+            model=model,
+            dataset=dataset,
+            output_dir=output_dir,
+            epochs=epochs,
+            batch_size=batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            learning_rate=learning_rate,
+            max_samples=max_samples,
+            beta=beta,
+            verifier=verifier,
+            num_generations=num_generations,
+            epsilon=epsilon,
+            temperature=temperature,
+            reward_threshold=reward_threshold,
+        )
+
+        job = self.state.create_job(
+            job_type=mode_key,
+            name=f"{mode_key.upper()}: {Path(model).name} on {dataset}",
+            output_dir=Path(output_dir),
+        )
+        job.total_epochs = epochs
+
+        cmd = [sys.executable, "-m", "halo_forge.cli"]
+        if accelerator and accelerator != "auto":
+            cmd.extend(["--accelerator", accelerator])
+        cmd.extend([mode_key, "train", "--model", model])
+        if dataset and Path(dataset).expanduser().exists():
+            cmd.extend(["--data", dataset])
+        else:
+            cmd.extend(["--dataset", dataset])
+        cmd.extend(
+            [
+                "--output", output_dir,
+                "--epochs", str(epochs),
+                "--batch-size", str(batch_size),
+                "--gradient-accumulation", str(gradient_accumulation_steps),
+                "--learning-rate", str(learning_rate),
+            ]
+        )
+        if max_samples is not None and max_samples > 0:
+            cmd.extend(["--max-samples", str(max_samples)])
+        if mode_key in {"dpo", "orpo"} and beta is not None:
+            cmd.extend(["--beta", str(beta)])
+        if mode_key == "dpo" and loss_type:
+            cmd.extend(["--loss-type", str(loss_type)])
+        if mode_key == "dpo" and reference_free:
+            cmd.append("--reference-free")
+        if mode_key == "grpo":
+            cmd.extend(
+                [
+                    "--verifier", str(verifier or "execution"),
+                    "--num-generations", str(num_generations or 4),
+                    "--beta", str(beta if beta is not None else 0.04),
+                    "--epsilon", str(epsilon if epsilon is not None else 0.2),
+                    "--temperature", str(temperature if temperature is not None else 0.9),
+                    "--reward-threshold", str(reward_threshold if reward_threshold is not None else 0.0),
+                ]
+            )
+            if reference_free:
+                cmd.append("--reference-free")
+        if no_caffeinate:
+            cmd.append("--no-caffeinate")
+
+        launch_args = {
+            "model": model,
+            "dataset": dataset,
+            "output_dir": output_dir,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "learning_rate": learning_rate,
+            "max_samples": max_samples,
+            "beta": beta,
+            "loss_type": loss_type,
+            "reference_free": reference_free,
+            "verifier": verifier,
+            "num_generations": num_generations,
+            "epsilon": epsilon,
+            "temperature": temperature,
+            "reward_threshold": reward_threshold,
+            "accelerator": accelerator,
+            "no_caffeinate": no_caffeinate,
+        }
+        launch_context_file = None
+        try:
+            launch_context_file = persist_launch_context(
+                output_dir=output_dir,
+                job_type=mode_key,
+                service="training",
+                source_ui_page=source_ui_page,
+                command=cmd,
+                args=launch_args,
+                relaunch_capabilities={
+                    "can_relaunch": True,
+                    "can_clone": True,
+                    "can_resume_latest": False,
+                },
+                metadata=self._build_launch_context_metadata(guided_recovery),
+            )
+        except Exception as e:
+            print(f"[TrainingService] Failed to persist launch context: {e}")
+        lifecycle_metadata = self._build_lifecycle_metadata(
+            origin_job_id=origin_job_id,
+            relaunch=relaunch,
+            launch_context_file=launch_context_file,
+            resume_strategy=resume_strategy,
+            guided_recovery=guided_recovery,
+        )
+        job.launch_context_file = launch_context_file
+        job.launch_args = launch_args
+        job.lifecycle_metadata = lifecycle_metadata
+
+        created_transition = {
+            "from_status": None,
+            "to_status": "pending",
+            "applied": True,
+            "source": f"training_service.launch_{mode_key}_train",
+            "reason": "job_created",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": self._merge_transition_metadata(job, {"job_type": mode_key}),
+        }
+        get_event_bus().emit_sync(Event(
+            type=EventType.JOB_CREATED,
+            job_id=job.id,
+            data=build_transition_payload(
+                created_transition,
+                name=job.name,
+                type=mode_key,
+                **self._event_extra_fields(job),
+            ),
+        ))
+
+        await self._launch_process_with_runtime_options(
+            job.id,
+            cmd,
+            on_log,
+            no_caffeinate=no_caffeinate,
+        )
         return job.id
 
     async def launch_modality_train(

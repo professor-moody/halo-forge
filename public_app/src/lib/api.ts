@@ -169,6 +169,13 @@ export type BackendInfo = {
   mlx_readiness: MLXReadiness;
 };
 
+export type WorkspaceInfo = {
+  default_run_root: string;
+  runs_dir: string;
+  writable: boolean;
+  message: string;
+};
+
 export type MLXReadiness = {
   status: "ready" | "unavailable" | "error";
   executable: boolean;
@@ -196,8 +203,12 @@ export type RunListItem = {
   model_name: string;
   status?: string;
   created_at?: string | null;
+  timestamp?: string | null;
+  output_dir?: string | null;
   cycles_executed?: number;
   weights_updated?: boolean;
+  final_model_available?: boolean;
+  artifact_path?: string | null;
   final_train_loss?: number | null;
   effectiveness?: { verdict?: string };
   [key: string]: unknown;
@@ -367,6 +378,43 @@ export type PlaygroundChatResponse = {
   upstream_error?: boolean;
   status?: number;
   detail?: unknown;
+  message?: string;
+  error_kind?: string;
+};
+
+export type ServeStatus = {
+  running: boolean;
+  state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string;
+  active_action?: "loading_model" | "serving" | "check_logs" | "review_logs" | string | null;
+  pid: number | null;
+  model: string | null;
+  backend: string | null;
+  host: string;
+  port: number;
+  url: string;
+  started_at: number | null;
+  exit_code: number | null;
+  log_path: string | null;
+  logs_available: boolean;
+  last_error: string | null;
+  error_hint?: string | null;
+  healthy: boolean;
+  message: string;
+};
+
+export type ServeStartPayload = {
+  model: string;
+  backend?: string | null;
+  host?: string;
+  port?: number;
+  trust_remote_code?: boolean;
+};
+
+export type ServeLogs = {
+  available: boolean;
+  lines: string[];
+  path: string | null;
+  reason?: string;
 };
 
 /**
@@ -489,6 +537,24 @@ export type TrainingDataset = {
   size_hint: string;
   default_split: string;
 };
+
+export type TrainingMode =
+  | "sft"
+  | "raft"
+  | "dpo"
+  | "orpo"
+  | "rm"
+  | "grpo"
+  | "vlm"
+  | "audio"
+  | "reasoning"
+  | "agentic";
+
+export type TrainingLaunchPayload =
+  | ({ mode: "sft"; model: string; dataset: string; output_dir: string } & Record<string, unknown>)
+  | ({ mode: "raft"; model: string; prompts: string; output_dir: string } & Record<string, unknown>)
+  | ({ mode: "dpo" | "orpo" | "rm" | "grpo"; model: string; dataset: string; output_dir: string } & Record<string, unknown>)
+  | ({ mode: "vlm" | "audio" | "reasoning" | "agentic"; model: string; dataset: string; output_dir: string } & Record<string, unknown>);
 
 export type TrainingVerifier = {
   key: string;
@@ -691,6 +757,7 @@ export type RunSamples = {
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
   backendInfo: () => request<BackendInfo>("/backend"),
+  workspaceInfo: () => request<WorkspaceInfo>("/workspace"),
   telemetry: () => request<TelemetrySample>("/telemetry"),
   dashboard: () => request<DashboardSummary>("/dashboard"),
   runCancel: (runId: string) =>
@@ -834,6 +901,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // ----- managed local serving ------------------------------------------
+  serveStatus: () => request<ServeStatus>("/serve/status"),
+  serveStart: (payload: ServeStartPayload) =>
+    request<ServeStatus>("/serve/start", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  serveStop: () =>
+    request<ServeStatus>("/serve/stop", {
+      method: "POST",
+    }),
+  serveLogs: (tail = 200) =>
+    request<ServeLogs>(`/serve/logs?tail=${encodeURIComponent(String(tail))}`),
+  serveHealth: () => request<ServeStatus>("/serve/health"),
 
   // ----- model registry (Track F-J) -------------------------------------
   listRegistry: () =>

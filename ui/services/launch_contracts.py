@@ -66,6 +66,27 @@ AGENTIC_TRAIN_LAUNCH_CONTRACT = LaunchContract(
     optional_positive_int_fields=("limit",),
 )
 
+PREFERENCE_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "output_dir"),
+    positive_int_fields=("epochs", "batch_size", "gradient_accumulation_steps"),
+    optional_positive_int_fields=("max_samples",),
+    non_negative_float_fields=("learning_rate", "beta"),
+)
+
+RM_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "output_dir"),
+    positive_int_fields=("epochs", "batch_size", "gradient_accumulation_steps"),
+    optional_positive_int_fields=("max_samples",),
+    non_negative_float_fields=("learning_rate",),
+)
+
+GRPO_TRAIN_LAUNCH_CONTRACT = LaunchContract(
+    required_text_fields=("model", "dataset", "output_dir", "verifier"),
+    positive_int_fields=("epochs", "batch_size", "gradient_accumulation_steps", "num_generations"),
+    optional_positive_int_fields=("max_samples",),
+    non_negative_float_fields=("learning_rate", "beta", "epsilon", "temperature", "reward_threshold"),
+)
+
 MODULE_OPS_LAUNCH_CONTRACT = LaunchContract(
     required_text_fields=("module", "execution_mode", "output_root"),
 )
@@ -87,6 +108,13 @@ MODALITY_TRAIN_LAUNCH_CONTRACTS: dict[str, LaunchContract] = {
     "agentic": AGENTIC_TRAIN_LAUNCH_CONTRACT,
 }
 
+PREFERENCE_TRAIN_LAUNCH_CONTRACTS: dict[str, LaunchContract] = {
+    "dpo": PREFERENCE_TRAIN_LAUNCH_CONTRACT,
+    "orpo": PREFERENCE_TRAIN_LAUNCH_CONTRACT,
+    "rm": RM_TRAIN_LAUNCH_CONTRACT,
+    "grpo": GRPO_TRAIN_LAUNCH_CONTRACT,
+}
+
 UTILITY_MODULE_TYPES: tuple[str, ...] = ("config", "data", "info", "plot")
 UTILITY_EXECUTION_MODES: tuple[str, ...] = ("contract", "live")
 
@@ -94,6 +122,10 @@ UTILITY_EXECUTION_MODES: tuple[str, ...] = ("contract", "live")
 UI_SUPPORTED_TRAINING_MODES: tuple[str, ...] = (
     "sft",
     "raft",
+    "dpo",
+    "orpo",
+    "rm",
+    "grpo",
     "vlm",
     "audio",
     "reasoning",

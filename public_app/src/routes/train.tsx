@@ -1,22 +1,27 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
 import {
   AlertTriangle,
+  AudioLines,
   BookOpen,
+  Brain,
   CheckCircle2,
-  ChevronRight,
   CircleDashed,
-  ClipboardList,
-  FileQuestion,
+  Code2,
+  Eye,
   Loader2,
   Play,
   Settings2,
+  ShieldCheck,
   Sparkles,
+  Wrench,
   XCircle,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { api } from "@/lib/api";
 import { Topbar } from "@/components/shell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardEyebrow, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -42,8 +47,9 @@ import {
   useTrainingModels,
   useTrainingPreflight,
   useTrainingVerifiers,
+  useWorkspaceInfo,
 } from "@/lib/hooks";
-import type { BackendInfo, ModelCatalogEntry } from "@/lib/api";
+import type { BackendInfo, ModelCatalogEntry, TrainingMode, TrainingTemplate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/train")({
@@ -55,56 +61,258 @@ export const Route = createFileRoute("/train")({
   }),
 });
 
-/* -------------------------------------------------------------------------
- * Configurator state.
- *
- * Single-page, single-form design. Stripe / Vercel pattern: every
- * setting is visible at once, with the preflight panel on the right
- * giving live feedback. No wizard transitions — engineering tools
- * don't make you click "Next →" through dialogs.
- * ----------------------------------------------------------------------- */
+type GoalKey = "code" | "reasoning" | "tool-use" | "vision" | "audio" | "preferences";
+type Accelerator = "auto" | "mlx";
+type TrainingSource = {
+  key: string;
+  description: string;
+  size_hint: string;
+  domain: string;
+  huggingface_id?: string;
+};
 
-type Modality = "sft" | "raft";
+const TRAINING_MODES: TrainingMode[] = [
+  "sft",
+  "raft",
+  "dpo",
+  "orpo",
+  "rm",
+  "grpo",
+  "vlm",
+  "audio",
+  "reasoning",
+  "agentic",
+];
+
+const DEFAULT_RAFT_PROMPTS = "data/rlvr/humaneval_prompts.jsonl";
+
+const GOALS: Array<{
+  key: GoalKey;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  modes: TrainingMode[];
+}> = [
+  {
+    key: "code",
+    label: "Code",
+    description: "Instruction tuning, compiler-filtered RAFT, or verifier RL for programming tasks.",
+    icon: Code2,
+    modes: ["sft", "raft", "grpo"],
+  },
+  {
+    key: "reasoning",
+    label: "Reasoning",
+    description: "Math and multi-step tasks using SFT, reasoning adapters, or GRPO.",
+    icon: Brain,
+    modes: ["sft", "reasoning", "grpo"],
+  },
+  {
+    key: "tool-use",
+    label: "Tool use",
+    description: "Function calling, structured outputs, schema checks, and agent traces.",
+    icon: Wrench,
+    modes: ["sft", "agentic", "grpo"],
+  },
+  {
+    key: "vision",
+    label: "Vision",
+    description: "Vision-language fine-tuning for VQA, documents, charts, and extraction.",
+    icon: Eye,
+    modes: ["vlm"],
+  },
+  {
+    key: "audio",
+    label: "Audio",
+    description: "Speech and audio training paths for Whisper-class models.",
+    icon: AudioLines,
+    modes: ["audio"],
+  },
+  {
+    key: "preferences",
+    label: "Preferences",
+    description: "Chosen/rejected pair training: DPO, ORPO, reward models, then GRPO.",
+    icon: ShieldCheck,
+    modes: ["dpo", "orpo", "rm", "grpo"],
+  },
+];
+
+const METHOD_COPY: Record<TrainingMode, { label: string; description: string; caveat?: string }> = {
+  sft: {
+    label: "SFT",
+    description: "Learn from labeled examples. Best first step for almost every project.",
+  },
+  raft: {
+    label: "RAFT",
+    description: "Generate, verify, keep, train. Simple verifier-grounded improvement.",
+  },
+  dpo: {
+    label: "DPO",
+    description: "Preference tuning from prompt/chosen/rejected pairs.",
+  },
+  orpo: {
+    label: "ORPO",
+    description: "Reference-free preference tuning from the same pair data as DPO.",
+  },
+  rm: {
+    label: "Reward model",
+    description: "Train a scorer on chosen/rejected pairs for later RL or ranking.",
+  },
+  grpo: {
+    label: "GRPO",
+    description: "Verifier-grounded RL with group-relative advantages.",
+    caveat: "Needs a verifier and more memory than SFT.",
+  },
+  vlm: {
+    label: "Vision-language",
+    description: "Domain training for image plus text datasets.",
+    caveat: "May require prototype capability approval depending on model family.",
+  },
+  audio: {
+    label: "Audio",
+    description: "Speech/audio training with task-specific processors.",
+    caveat: "Requires audio dependencies and task selection.",
+  },
+  reasoning: {
+    label: "Reasoning",
+    description: "Reasoning-specific RAFT-style training and math datasets.",
+  },
+  agentic: {
+    label: "Agentic",
+    description: "Tool-use and function-calling traces with structured verification.",
+  },
+};
+
+const DEFAULTS: Record<TrainingMode, Partial<ConfigState>> = {
+  sft: { dataset: "codealpaca", epochs: 1, batchSize: 2, learningRate: "2e-4", maxSamples: 200 },
+  raft: { dataset: DEFAULT_RAFT_PROMPTS, cycles: 1, samplesPerPrompt: 4, verifier: "execution" },
+  dpo: { dataset: "ultrafeedback", epochs: 1, batchSize: 1, learningRate: "5e-6", beta: "0.1", lossType: "sigmoid" },
+  orpo: { dataset: "ultrafeedback", epochs: 1, batchSize: 1, learningRate: "8e-6", beta: "0.1" },
+  rm: { dataset: "ultrafeedback", epochs: 1, batchSize: 4, learningRate: "1e-5" },
+  grpo: { dataset: "gsm8k", epochs: 1, batchSize: 1, learningRate: "1e-6", beta: "0.04", verifier: "json_schema", numGenerations: 4 },
+  vlm: { dataset: "textvqa", cycles: 1, samplesPerPrompt: 2, maxSamples: 24 },
+  audio: { dataset: "librispeech", cycles: 1, samplesPerPrompt: 2, task: "asr" },
+  reasoning: { dataset: "gsm8k", cycles: 1, maxSamples: 64, learningRate: "1e-5" },
+  agentic: { dataset: "xlam_sft", cycles: 1, maxSamples: 64, learningRate: "5e-5" },
+};
+
+const RAFT_PROMPT_ALIASES: Record<string, string> = {
+  humaneval: "data/rlvr/humaneval_prompts.jsonl",
+  mbpp: "data/rlvr/mbpp_train_prompts.jsonl",
+  codeforces_cpp: "data/samples/codeforces_cpp_500_prompts.jsonl",
+};
+
+const RAFT_PROMPT_SOURCES: TrainingSource[] = [
+  {
+    key: DEFAULT_RAFT_PROMPTS,
+    description: "HumanEval coding prompts for verifier-filtered RAFT.",
+    size_hint: "164 prompts",
+    domain: "code prompts",
+  },
+  {
+    key: "data/rlvr/mbpp_train_prompts.jsonl",
+    description: "MBPP training prompts for Python coding RAFT.",
+    size_hint: "374 prompts",
+    domain: "code prompts",
+  },
+  {
+    key: "data/samples/codeforces_cpp_500_prompts.jsonl",
+    description: "Codeforces C++ prompt-only sample set.",
+    size_hint: "500 prompts",
+    domain: "code prompts",
+  },
+];
+
+const PREFERENCE_SOURCES: TrainingSource[] = [
+  { key: "ultrafeedback", description: "General preference pairs for chat quality.", size_hint: "large", domain: "preference" },
+  { key: "ultrafeedback-binarized", description: "Binarized chosen/rejected UltraFeedback pairs.", size_hint: "large", domain: "preference" },
+  { key: "orca_dpo", description: "ORCA-style preference pairs.", size_hint: "medium", domain: "preference" },
+  { key: "hh_rlhf", description: "Helpful/harmless preference pairs.", size_hint: "medium", domain: "preference" },
+  { key: "py_dpo", description: "Python/code preference pairs.", size_hint: "small", domain: "preference" },
+];
+
+const MODALITY_SOURCES: Record<TrainingMode, TrainingSource[]> = {
+  sft: [],
+  raft: RAFT_PROMPT_SOURCES,
+  dpo: PREFERENCE_SOURCES,
+  orpo: PREFERENCE_SOURCES,
+  rm: PREFERENCE_SOURCES,
+  grpo: [
+    { key: "gsm8k", description: "Math prompts for answer-verifier GRPO.", size_hint: "small", domain: "reasoning" },
+    ...RAFT_PROMPT_SOURCES,
+  ],
+  vlm: [
+    { key: "textvqa", description: "Image question answering.", size_hint: "medium", domain: "vision" },
+    { key: "docvqa", description: "Document visual question answering.", size_hint: "medium", domain: "vision" },
+    { key: "vqa-rad", description: "Medical VQA smoke dataset.", size_hint: "small", domain: "vision" },
+  ],
+  audio: [
+    { key: "librispeech", description: "Speech-to-text ASR data.", size_hint: "large", domain: "audio" },
+    { key: "librispeech-clean", description: "Clean audiobook ASR subset.", size_hint: "medium", domain: "audio" },
+  ],
+  reasoning: [
+    { key: "gsm8k", description: "Math word problems.", size_hint: "small", domain: "reasoning" },
+    { key: "gsm8k_sft", description: "SFT-formatted GSM8K examples.", size_hint: "small", domain: "reasoning" },
+  ],
+  agentic: [
+    { key: "xlam_sft", description: "Tool-use and function-calling examples.", size_hint: "small", domain: "agentic" },
+    { key: "glaive_sft", description: "Function-calling instruction examples.", size_hint: "medium", domain: "agentic" },
+  ],
+};
 
 interface ConfigState {
-  modality: Modality;
+  goal: GoalKey;
+  modality: TrainingMode;
   model: string;
   dataset: string;
-  customDatasetFile: string; // when dataset === "__custom__"
-  accelerator: "" | "mlx";
-  verifier: string; // RAFT only
-  // hyperparameters
+  customDatasetFile: string;
+  accelerator: Accelerator;
+  verifier: string;
+  task: string;
   epochs: number;
   batchSize: number;
-  learningRate: string; // string so the user can type "2e-4" without coercion fights
-  loraRank: number;
-  loraAlpha: number;
-  maxSeqLength: number;
-  cycles: number; // RAFT only
-  samplesPerPrompt: number; // RAFT only
+  learningRate: string;
+  cycles: number;
+  samplesPerPrompt: number;
+  maxSamples: number;
+  beta: string;
+  lossType: string;
+  referenceFree: boolean;
+  numGenerations: number;
+  rewardThreshold: string;
+  allowPrototypeTrain: boolean;
+  templateId: string | null;
 }
 
 function defaultConfig(): ConfigState {
   return {
+    goal: "code",
     modality: "sft",
     model: "",
     dataset: "codealpaca",
     customDatasetFile: "",
-    accelerator: "",
-    verifier: "gcc",
-    epochs: 3,
+    accelerator: "auto",
+    verifier: "execution",
+    task: "asr",
+    epochs: 1,
     batchSize: 2,
     learningRate: "2e-4",
-    loraRank: 16,
-    loraAlpha: 32,
-    maxSeqLength: 2048,
-    cycles: 3,
-    samplesPerPrompt: 8,
+    cycles: 1,
+    samplesPerPrompt: 4,
+    maxSamples: 200,
+    beta: "0.1",
+    lossType: "sigmoid",
+    referenceFree: false,
+    numGenerations: 4,
+    rewardThreshold: "0.0",
+    allowPrototypeTrain: false,
+    templateId: null,
   };
 }
 
 function TrainConfiguratorRoute() {
   const backend = useBackendInfo();
+  const workspace = useWorkspaceInfo();
   const datasets = useTrainingDatasets();
   const verifiers = useTrainingVerifiers();
   const preflight = useTrainingPreflight();
@@ -113,7 +321,7 @@ function TrainConfiguratorRoute() {
 
   const [config, setConfig] = useState<ConfigState>(defaultConfig);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [templateApplied, setTemplateApplied] = useState<string | null>(null);
+  const [launchedRun, setLaunchedRun] = useState<Record<string, unknown> | null>(null);
   const models = useTrainingModels({ mode: config.modality });
   const mlxModels = useModelCatalog({ mode: config.modality, backend: "mlx" });
   const mlxReadiness = backend.data?.mlx_readiness;
@@ -131,61 +339,34 @@ function TrainConfiguratorRoute() {
     [allCatalogModels, config.model],
   );
   const currentPreflightStatus = preflightStatus(preflight, config);
+  const payload = useMemo(
+    () => buildLaunchPayload(config, workspace.data?.default_run_root),
+    [config, workspace.data?.default_run_root],
+  );
 
-  useEffect(() => {
-    if (!modelId) return;
-    setConfig((prev) => ({
-      ...prev,
-      model: modelId,
-      modality: mode === "raft" || mode === "sft" ? mode : prev.modality,
-      accelerator: isMlxModel(modelId) ? "mlx" : prev.accelerator,
-    }));
-  }, [modelId, mode]);
-
-  // Pull the template if the user landed via /train?template=<id>.
-  // Only fetch on demand to keep the no-template path zero-cost.
   const templateQuery = useQuery({
     queryKey: ["training-template", templateId],
     queryFn: () => api.trainingTemplate(templateId!),
     enabled: Boolean(templateId),
   });
 
-  // Apply template defaults the moment the data arrives. Only sft/raft
-  // are honored here — other modalities can't be launched from this
-  // form yet, so the gallery directs them to the CLI instead.
   useEffect(() => {
-    if (!templateQuery.data || templateApplied === templateQuery.data.id) return;
-    const t = templateQuery.data;
-    if (t.modality !== "sft" && t.modality !== "raft") return;
-    const hp = t.hyperparams as Record<string, unknown>;
+    if (!modelId) return;
     setConfig((prev) => ({
       ...prev,
-      modality: t.modality as Modality,
-      model: t.model_hint || prev.model,
-      dataset: t.dataset_hint && t.dataset_hint !== "@custom"
-        ? t.dataset_hint
-        : prev.dataset,
-      verifier: typeof t.verifier === "string" ? t.verifier : prev.verifier,
-      epochs: typeof hp.epochs === "number" ? hp.epochs : prev.epochs,
-      batchSize: typeof hp.batch_size === "number" ? hp.batch_size : prev.batchSize,
-      accelerator: hp.accelerator === "mlx" || isMlxModel(t.model_hint) ? "mlx" : prev.accelerator,
-      learningRate: typeof hp.learning_rate === "number"
-        ? hp.learning_rate.toString()
-        : prev.learningRate,
-      loraRank: typeof hp.lora_rank === "number" ? hp.lora_rank : prev.loraRank,
-      cycles: typeof hp.cycles === "number" ? hp.cycles : prev.cycles,
-      samplesPerPrompt: typeof hp.samples_per_prompt === "number"
-        ? hp.samples_per_prompt
-        : prev.samplesPerPrompt,
+      model: modelId,
+      modality: isTrainingMode(mode) ? mode : prev.modality,
+      accelerator: isMlxModel(modelId) ? "mlx" : prev.accelerator,
     }));
-    setTemplateApplied(t.id);
-  }, [templateQuery.data, templateApplied]);
+  }, [modelId, mode]);
 
-  // Auto-populate the model field from the backend's first suggestion
-  // once the suggestion list arrives. Don't overwrite a user-typed value
-  // and don't overwrite a template-supplied value.
   useEffect(() => {
-    if (modelId || config.model || !modelSuggestions.length || templateApplied) return;
+    if (!templateQuery.data || config.templateId === templateQuery.data.id) return;
+    setConfig((prev) => applyTemplate(prev, templateQuery.data));
+  }, [templateQuery.data, config.templateId]);
+
+  useEffect(() => {
+    if (modelId || config.model || !modelSuggestions.length || config.templateId) return;
     const first = modelSuggestions[0].id;
     setConfig((prev) => ({
       ...prev,
@@ -193,18 +374,14 @@ function TrainConfiguratorRoute() {
       accelerator: mlxReady && isMlxModel(first) ? "mlx" : prev.accelerator,
       batchSize: mlxReady && isMlxModel(first) ? 1 : prev.batchSize,
     }));
-  }, [modelSuggestions, config.model, templateApplied, modelId, mlxReady]);
+  }, [modelSuggestions, config.model, config.templateId, modelId, mlxReady]);
 
-  // Live preflight: 400ms debounce on form changes. The mutation status
-  // gives us loading / success / error states to render in the side panel.
   useEffect(() => {
-    if (!config.model) return;
+    if (!canLaunch(config)) return;
     const t = window.setTimeout(() => {
-      preflight.mutate(buildLaunchPayload(config));
+      preflight.mutate(buildLaunchPayload(config, workspace.data?.default_run_root));
     }, 400);
     return () => window.clearTimeout(t);
-    // We intentionally only watch the values that affect preflight, not
-    // the entire mutation reference (which would trigger an infinite loop).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     config.modality,
@@ -213,14 +390,28 @@ function TrainConfiguratorRoute() {
     config.customDatasetFile,
     config.accelerator,
     config.verifier,
+    config.task,
+    config.epochs,
+    config.batchSize,
+    config.learningRate,
+    config.cycles,
+    config.samplesPerPrompt,
+    config.maxSamples,
+    config.beta,
+    config.lossType,
+    config.referenceFree,
+    config.numGenerations,
+    config.rewardThreshold,
+    config.allowPrototypeTrain,
+    workspace.data?.default_run_root,
   ]);
 
   return (
     <>
       <Topbar
         eyebrow="Workspace"
-        title="Advanced training"
-        subtitle="Configure RAFT or SFT runs directly after the guided Start flow."
+        title="Train"
+        subtitle="Choose a goal and method; Halo Forge generates a conservative launch you can inspect."
         actions={
           <>
             <Button asChild variant="ghost" size="sm">
@@ -232,7 +423,10 @@ function TrainConfiguratorRoute() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setConfig(defaultConfig())}
+              onClick={() => {
+                setConfig(defaultConfig());
+                setLaunchedRun(null);
+              }}
               type="button"
             >
               Reset
@@ -241,665 +435,481 @@ function TrainConfiguratorRoute() {
         }
         statusBar={
           <>
-            <ReadoutItem label="MODE" value={config.modality.toUpperCase()} />
+            <ReadoutItem label="GOAL" value={goalLabel(config.goal)} />
             <ReadoutSep />
-          <ReadoutItem label="BACKEND" value={backend.data?.name ?? "—"} />
-          <ReadoutSep />
-          <ReadoutItem label="MLX" value={mlxReady ? "READY" : mlxReadiness?.status?.toUpperCase() ?? "—"} />
-          <ReadoutSep />
-          <ReadoutItem
-              label="MODEL"
-              value={config.model ? truncate(config.model, 28) : "—"}
-            />
+            <ReadoutItem label="METHOD" value={config.modality.toUpperCase()} />
+            <ReadoutSep />
+            <ReadoutItem label="BACKEND" value={backend.data?.name ?? "-"} />
+            <ReadoutSep />
+            <ReadoutItem label="MLX" value={mlxReady ? "READY" : mlxReadiness?.status?.toUpperCase() ?? "-"} />
           </>
         }
       />
 
       <div className="px-5 py-5 space-y-4">
-        <FirstRunPanel
-          backendName={backend.data?.name}
-          mlxReadiness={mlxReadiness}
-          onApply={(next) => setConfig((prev) => ({ ...prev, ...next }))}
-        />
-
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-          {/* LEFT: form */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
           <div className="space-y-4">
-            <ModalitySection config={config} setConfig={setConfig} />
-            <ModelSection
+            <GoalSection
               config={config}
-              setConfig={setConfig}
-              models={modelSuggestions}
-              selectedModel={selectedModel}
-              mlxReady={mlxReady}
+              onChange={(goal) =>
+                setConfig((prev) => {
+                  const nextMode = GOALS.find((item) => item.key === goal)?.modes[0] ?? "sft";
+                  return withModeDefaults({ ...prev, goal }, nextMode);
+                })
+              }
             />
-            <DatasetSection
+            <MethodSection
+              config={config}
+              onChange={(mode) => setConfig((prev) => withModeDefaults(prev, mode))}
+            />
+            <LaunchInputs
               config={config}
               setConfig={setConfig}
               datasets={datasets.data?.items ?? []}
+              verifiers={verifiers.data?.items ?? []}
+              modelSuggestions={modelSuggestions}
+              selectedModel={selectedModel}
+              mlxReady={mlxReady}
             />
-            {config.modality === "raft" ? (
-              <VerifierSection
-                config={config}
-                setConfig={setConfig}
-                verifiers={verifiers.data?.items ?? []}
-              />
-            ) : null}
-            <AdvancedSection
+            <AdvancedOptions
               config={config}
               setConfig={setConfig}
               open={advancedOpen}
               onOpenChange={setAdvancedOpen}
             />
+            {launchedRun ? <LaunchSuccess data={launchedRun} payload={payload} /> : null}
           </div>
 
-          {/* RIGHT: preflight + launch (sticky) */}
-          <div className="lg:sticky lg:top-4 self-start space-y-3">
+          <div className="xl:sticky xl:top-4 self-start space-y-3">
             <PreflightPanel
               preflightStatus={currentPreflightStatus}
               checks={buildPreflightChecks(config, preflight, backend.data?.name, mlxReadiness)}
             />
             <LaunchPanel
               config={config}
+              payload={payload}
               selectedModel={selectedModel}
-              disabled={!canLaunch(config) || currentPreflightStatus !== "ok" || launch.isPending}
-              launching={launch.isPending}
-              onLaunch={() => launch.mutate(buildLaunchPayload(config))}
-              launchedRunId={launch.data?.run_id as string | undefined}
-              error={(launch.error as Error | null)?.message ?? undefined}
+              preflight={preflight}
+              launch={launch}
+              onLaunched={(data) => setLaunchedRun(data)}
             />
           </div>
         </div>
       </div>
-      </>
+    </>
   );
 }
 
-/* -------------------------------------------------------------------------
- * Sections
- * ----------------------------------------------------------------------- */
-
-function FirstRunPanel({
-  backendName,
-  mlxReadiness,
-  onApply,
-}: {
-  backendName?: string;
-  mlxReadiness?: BackendInfo["mlx_readiness"];
-  onApply: (partial: Partial<ConfigState>) => void;
-}) {
-  const mlxReady = mlxReadiness?.executable === true;
-  const appleMlx = backendName === "mlx" || mlxReady;
-  const appleTorch = backendName === "mps";
-  const firstModel = appleMlx
-    ? "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
-    : "Qwen/Qwen2.5-Coder-1.5B";
-  const statusText = mlxReady
-    ? "MLX ready"
-    : mlxReadiness?.status
-      ? `MLX ${mlxReadiness.status}`
-      : "MLX checking";
-
-  return (
-    <div className="rounded-lg border border-border bg-surface px-4 py-3">
-      <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
-              First successful run
-            </span>
-            <span className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-fg-disabled">
-              {backendName ? `backend:${backendName}` : "detecting backend"}
-            </span>
-            <span
-              className={cn(
-                "rounded-sm border px-1.5 py-0.5 font-mono text-[10px]",
-                mlxReady
-                  ? "border-success/40 text-success"
-                  : "border-border-subtle text-fg-disabled",
-              )}
-            >
-              {statusText}
-            </span>
-          </div>
-          <p className="mt-1 text-[13px] text-fg-muted">
-            Start with a small catalog model, a known dataset, and conservative defaults.
-            Switch to RAFT once SFT and preflight are clean.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() =>
-              onApply({
-                modality: "sft",
-                model: firstModel,
-                dataset: "codealpaca",
-                accelerator: appleMlx ? "mlx" : "",
-                epochs: 1,
-                batchSize: appleMlx || appleTorch ? 1 : 2,
-              })
-            }
-          >
-            <CheckCircle2 />
-            Safe SFT
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() =>
-              onApply({
-                modality: "raft",
-                model: appleMlx
-                  ? "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
-                  : "Qwen/Qwen2.5-Coder-1.5B",
-                dataset: "codealpaca",
-                accelerator: appleMlx ? "mlx" : "",
-                verifier: "gcc",
-                cycles: appleMlx ? 1 : 2,
-                samplesPerPrompt: appleMlx ? 2 : 4,
-              })
-            }
-          >
-            <ClipboardList />
-            Code RAFT
-          </Button>
-          <Button asChild size="sm" variant="ghost">
-            <Link to="/models">
-              <BookOpen />
-              Catalog
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ModalitySection({
-  config,
-  setConfig,
-}: {
-  config: ConfigState;
-  setConfig: SetConfig;
-}) {
+function GoalSection({ config, onChange }: { config: ConfigState; onChange: (goal: GoalKey) => void }) {
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <CardEyebrow>STEP 01</CardEyebrow>
-          <CardTitle>Modality</CardTitle>
+          <CardTitle>Goal</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
         <RadioCardGroup
-          value={config.modality}
-          onValueChange={(v) => setConfig((c) => ({ ...c, modality: v as Modality }))}
-          className="grid grid-cols-1 md:grid-cols-2 gap-2"
+          value={config.goal}
+          onValueChange={(value) => onChange(value as GoalKey)}
+          className="grid gap-2 md:grid-cols-2 xl:grid-cols-3"
         >
-          <RadioCard
-            value="sft"
-            title="SFT"
-            description="Supervised fine-tuning on a labelled dataset. Single pass, deterministic, fastest."
-          />
-          <RadioCard
-            value="raft"
-            title="RAFT"
-            description="Reward-ranked fine-tuning. Generate, verify, filter, train; iterate across cycles."
-          />
+          {GOALS.map((goal) => (
+            <RadioCard
+              key={goal.key}
+              value={goal.key}
+              title={goal.label}
+              description={
+                <span className="flex gap-2">
+                  <goal.icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                  <span>{goal.description}</span>
+                </span>
+              }
+            />
+          ))}
         </RadioCardGroup>
       </CardContent>
     </Card>
   );
 }
 
-function ModelSection({
-  config,
-  setConfig,
-  models,
-  selectedModel,
-  mlxReady,
-}: {
-  config: ConfigState;
-  setConfig: SetConfig;
-  models: ModelCatalogEntry[];
-  selectedModel: ModelCatalogEntry | null;
-  mlxReady: boolean;
-}) {
+function MethodSection({ config, onChange }: { config: ConfigState; onChange: (mode: TrainingMode) => void }) {
+  const activeGoal = GOALS.find((goal) => goal.key === config.goal) ?? GOALS[0];
+  const modes = activeGoal.modes;
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <CardEyebrow>STEP 02</CardEyebrow>
-          <CardTitle>Base model</CardTitle>
+          <CardTitle>Training method</CardTitle>
         </div>
+        <Button asChild variant="ghost" size="sm">
+          <a href="https://halo-forge.io/docs/training-pipeline/methods/" target="_blank" rel="noreferrer">
+            <BookOpen />
+            Method guide
+          </a>
+        </Button>
       </CardHeader>
-      <CardContent className="space-y-2.5">
-        <Label htmlFor="model-id">Model identifier (HuggingFace or MLX-format repo)</Label>
-        <Input
-          id="model-id"
-          mono
-          placeholder="Qwen/Qwen2.5-Coder-3B"
-          value={config.model}
-          onChange={(e) =>
-            setConfig((c) => ({
-              ...c,
-              model: e.target.value,
-              accelerator: isMlxModel(e.target.value) && mlxReady ? "mlx" : c.accelerator,
-              batchSize: isMlxModel(e.target.value) && mlxReady ? 1 : c.batchSize,
-            }))
-          }
-        />
-        {models.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            <span className="text-[11px] uppercase tracking-wider text-fg-disabled font-medium pr-1">
-              Suggestions
-            </span>
-            {models.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() =>
-                  setConfig((c) => ({
-                    ...c,
-                    model: m.id,
-                    accelerator: isMlxModel(m.id) && mlxReady ? "mlx" : c.accelerator,
-                    batchSize: isMlxModel(m.id) && mlxReady ? 1 : c.batchSize,
-                  }))
-                }
-                title={(m.known_caveats ?? []).length ? (m.known_caveats ?? []).join(" ") : m.recommended_use}
-                className={cn(
-                  "px-2 py-0.5 rounded-sm border text-[11px] font-mono transition-colors",
-                  m.id === config.model
-                    ? "border-accent bg-accent-bg text-accent"
-                    : "border-border-subtle text-fg-muted hover:border-border-strong hover:bg-surface",
-                )}
-              >
-                {m.id}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {selectedModel ? <SelectedModelInsight model={selectedModel} /> : null}
+      <CardContent>
+        <RadioCardGroup
+          value={config.modality}
+          onValueChange={(value) => onChange(value as TrainingMode)}
+          className="grid gap-2 md:grid-cols-2"
+        >
+          {modes.map((mode) => (
+            <RadioCard
+              key={mode}
+              value={mode}
+              title={METHOD_COPY[mode].label}
+              badge={<Badge size="sm" tone={mode === "sft" ? "success" : "neutral"}>{mode}</Badge>}
+              description={
+                <span>
+                  {METHOD_COPY[mode].description}
+                  {METHOD_COPY[mode].caveat ? (
+                    <span className="mt-1 block text-warning">{METHOD_COPY[mode].caveat}</span>
+                  ) : null}
+                </span>
+              }
+            />
+          ))}
+        </RadioCardGroup>
       </CardContent>
     </Card>
   );
 }
 
-function SelectedModelInsight({ model }: { model: ModelCatalogEntry }) {
-  const caveats = [
-    ...(model.known_caveats ?? []),
-    ...(model.trust_remote_code_required ? ["Requires explicit trust_remote_code opt-in."] : []),
-  ];
-  const fitNotes = model.fit_notes ?? [];
-
-  return (
-    <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-medium text-[12px] text-fg">{model.label || model.id}</span>
-        <span className="font-mono text-[10px] text-fg-disabled">{model.parameter_count || "size unknown"}</span>
-        <span className="font-mono text-[10px] text-fg-disabled">{model.memory_tier || "memory unknown"}</span>
-        {model.estimated_memory_gb ? (
-          <span className="font-mono text-[10px] text-fg-disabled">
-            ~{model.estimated_memory_gb}GB
-          </span>
-        ) : null}
-        <span className="font-mono text-[10px] text-fg-disabled">{model.status || "catalog"}</span>
-        {model.recommended_first_run ? (
-          <span className="font-mono text-[10px] text-success">first-run</span>
-        ) : null}
-      </div>
-      <p className="mt-1 text-[12px] text-fg-muted">
-        {model.recommended_use || "Catalog metadata is still loading for this suggestion."}
-      </p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {(model.backend_support ?? []).map((backend) => (
-          <span
-            key={backend}
-            className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
-          >
-            {backend}
-          </span>
-        ))}
-      </div>
-      {model.mlx_variant ? (
-        <div className="mt-2 font-mono text-[10.5px] text-fg-subtle">
-          MLX variant: {model.mlx_variant}
-        </div>
-      ) : null}
-      {fitNotes.length ? (
-        <div className="mt-2 space-y-1 text-[11px] text-fg-subtle">
-          {fitNotes.map((note) => (
-            <div key={note}>{note}</div>
-          ))}
-        </div>
-      ) : null}
-      {model.license_note || model.download_note ? (
-        <div className="mt-2 space-y-1 text-[11px] text-warning">
-          {model.license_note ? <div>{model.license_note}</div> : null}
-          {model.download_note ? <div>{model.download_note}</div> : null}
-        </div>
-      ) : null}
-      {caveats.length ? (
-        <div className="mt-2 space-y-1 text-[11px] text-warning">
-          {caveats.map((caveat) => (
-            <div key={caveat}>{caveat}</div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DatasetSection({
+function LaunchInputs({
   config,
   setConfig,
   datasets,
+  verifiers,
+  modelSuggestions,
+  selectedModel,
+  mlxReady,
 }: {
   config: ConfigState;
-  setConfig: SetConfig;
-  datasets: { key: string; description: string; size_hint: string; domain: string }[];
+  setConfig: (updater: (c: ConfigState) => ConfigState) => void;
+  datasets: TrainingSource[];
+  verifiers: Array<{ key: string; label: string; toolchain: string }>;
+  modelSuggestions: ModelCatalogEntry[];
+  selectedModel: ModelCatalogEntry | null;
+  mlxReady: boolean;
 }) {
-  // Group by domain so the picker doesn't become a flat 30-item list.
-  const grouped = useMemo(() => {
-    const out: Record<string, typeof datasets> = {};
-    for (const d of datasets) {
-      (out[d.domain] ||= []).push(d);
-    }
-    return out;
-  }, [datasets]);
+  const sources = sourcesForMode(config.modality, datasets);
+  const isCustom = config.dataset === "__custom__";
+  const needsVerifier = config.modality === "raft" || config.modality === "grpo";
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <CardEyebrow>STEP 03</CardEyebrow>
-          <CardTitle>Dataset</CardTitle>
+          <CardTitle>Generated launch</CardTitle>
         </div>
+        {selectedModel ? <Badge tone="info" size="sm">{selectedModel.memory_tier}</Badge> : null}
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="dataset">Pre-registered datasets</Label>
-          <Select
-            value={config.dataset}
-            onValueChange={(v) => setConfig((c) => ({ ...c, dataset: v }))}
-          >
-            <SelectTrigger id="dataset">
-              <SelectValue placeholder="Select a dataset" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(grouped).map(([domain, items]) => (
-                <div key={domain}>
-                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-fg-disabled font-medium">
-                    {domain}
-                  </div>
-                  {items.map((d) => (
-                    <SelectItem key={d.key} value={d.key}>
-                      <span className="flex items-center gap-2">
-                        <span className="font-mono text-[12px]">{d.key}</span>
-                        <span className="text-fg-subtle text-[11px]">· {d.size_hint}</span>
-                      </span>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <FormField label="Base model">
+            <Input
+              value={config.model}
+              onChange={(event) => setConfig((prev) => ({ ...prev, model: event.target.value }))}
+              placeholder="Qwen/Qwen2.5-1.5B-Instruct"
+            />
+          </FormField>
+          <FormField label="accelerator">
+            <Select
+              value={config.accelerator}
+              onValueChange={(value) => setConfig((prev) => ({ ...prev, accelerator: value as Accelerator }))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
+                <SelectItem value="mlx">MLX</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
+        </div>
+
+        {modelSuggestions.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {modelSuggestions.slice(0, 4).map((model) => (
+              <button
+                key={model.id}
+                type="button"
+                onClick={() =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    model: model.id,
+                    accelerator: mlxReady && isMlxModel(model.id) ? "mlx" : prev.accelerator,
+                  }))
+                }
+                className={cn(
+                  "rounded-sm border px-2 py-1 font-mono text-[11px]",
+                  config.model === model.id
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border-subtle text-fg-subtle hover:text-fg",
+                )}
+              >
+                {model.id}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <FormField label={sourceLabel(config.modality)}>
+            <Select
+              value={config.dataset}
+              onValueChange={(value) => setConfig((prev) => ({ ...prev, dataset: value }))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {sources.map((source) => (
+                  <SelectItem key={source.key} value={source.key}>
+                    {source.key}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">Custom local file</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
+          {isCustom ? (
+            <FormField label="Local JSONL path">
+              <Input
+                value={config.customDatasetFile}
+                onChange={(event) => setConfig((prev) => ({ ...prev, customDatasetFile: event.target.value }))}
+                placeholder="/path/to/training.jsonl"
+              />
+            </FormField>
+          ) : (
+            <FormField label="Dataset note">
+              <div className="min-h-9 rounded-md border border-border bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
+                {sources.find((source) => source.key === config.dataset)?.description ?? "Registered dataset or source."}
+              </div>
+            </FormField>
+          )}
+        </div>
+
+        {needsVerifier ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <FormField label="Verifier">
+              <Select
+                value={config.verifier}
+                onValueChange={(value) => setConfig((prev) => ({ ...prev, verifier: value }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {verifiers.map((verifier) => (
+                    <SelectItem key={verifier.key} value={verifier.key}>
+                      {verifier.key}
                     </SelectItem>
                   ))}
-                </div>
-              ))}
-              <SelectItem value="__custom__">Custom JSONL file…</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {config.dataset === "__custom__" ? (
-          <div className="space-y-1.5">
-            <Label htmlFor="dataset-file">JSONL file path</Label>
-            <Input
-              id="dataset-file"
-              mono
-              placeholder="/path/to/training.jsonl"
-              value={config.customDatasetFile}
-              onChange={(e) =>
-                setConfig((c) => ({ ...c, customDatasetFile: e.target.value }))
-              }
-            />
-            <p className="text-[11px] text-fg-subtle">
-              Each line should be a JSON object with `text` or `messages`. The MLX
-              path also accepts `prompt` + `completion`.
-            </p>
+                  <SelectItem value="json_schema">json_schema</SelectItem>
+                  <SelectItem value="llm_judge">llm_judge</SelectItem>
+                </SelectContent>
+              </Select>
+            </FormField>
+            <FormField label="Verifier note">
+              <div className="min-h-9 rounded-md border border-border bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
+                {config.modality === "grpo"
+                  ? "GRPO uses the verifier as the reward function."
+                  : "RAFT verifies generations before training on kept samples."}
+              </div>
+            </FormField>
           </div>
-        ) : (
-          <DatasetSummary datasets={datasets} selected={config.dataset} />
-        )}
+        ) : null}
+
+        {config.modality === "audio" ? (
+          <FormField label="Audio task">
+            <Select
+              value={config.task}
+              onValueChange={(value) => setConfig((prev) => ({ ...prev, task: value }))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asr">ASR</SelectItem>
+                <SelectItem value="classification">Classification</SelectItem>
+                <SelectItem value="tts">TTS</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function DatasetSummary({
-  datasets,
-  selected,
-}: {
-  datasets: { key: string; description: string; size_hint: string; huggingface_id?: string }[];
-  selected: string;
-}) {
-  const ds = datasets.find((d) => d.key === selected);
-  if (!ds) return null;
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2 text-[12px]">
-      <div className="text-fg">{ds.description}</div>
-      {ds.huggingface_id ? (
-        <div className="font-mono text-[11px] text-fg-subtle mt-0.5">
-          {ds.huggingface_id} · {ds.size_hint}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function VerifierSection({
-  config,
-  setConfig,
-  verifiers,
-}: {
-  config: ConfigState;
-  setConfig: SetConfig;
-  verifiers: { key: string; label: string; toolchain: string }[];
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardEyebrow>STEP 04</CardEyebrow>
-          <CardTitle>Verifier</CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-1.5">
-        <Label htmlFor="verifier">RAFT verifier toolchain</Label>
-        <Select
-          value={config.verifier}
-          onValueChange={(v) => setConfig((c) => ({ ...c, verifier: v }))}
-        >
-          <SelectTrigger id="verifier">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {verifiers.map((v) => (
-              <SelectItem key={v.key} value={v.key}>
-                <span className="flex items-center gap-2">
-                  <span className="font-mono text-[12px]">{v.key}</span>
-                  <span className="text-fg-subtle text-[11px]">· {v.label}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-[11px] text-fg-subtle pt-1">
-          The verifier scores generated samples; only those passing the reward
-          threshold flow into the SFT-on-accepted-samples step.
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function AdvancedSection({
+function AdvancedOptions({
   config,
   setConfig,
   open,
   onOpenChange,
 }: {
   config: ConfigState;
-  setConfig: SetConfig;
+  setConfig: (updater: (c: ConfigState) => ConfigState) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Card>
-      <Collapsible open={open} onOpenChange={onOpenChange}>
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <Card>
         <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="flex w-full items-center justify-between border-b border-border-subtle px-4 py-3 hover:bg-surface-hover/30 transition-colors"
-          >
+          <CardHeader className="cursor-pointer hover:bg-surface-hover/30">
             <div className="flex items-center gap-2">
               <CardEyebrow>OPTIONAL</CardEyebrow>
-              <CardTitle>Hyperparameters</CardTitle>
-              <Settings2 className="h-3.5 w-3.5 text-fg-subtle ml-1" />
+              <CardTitle>Advanced drawer</CardTitle>
             </div>
-            <ChevronRight
-              className={cn(
-                "h-4 w-4 text-fg-subtle transition-transform",
-                open && "rotate-90",
-              )}
-            />
-          </button>
+            <Settings2 className="h-4 w-4 text-fg-subtle" />
+          </CardHeader>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
-            <Field
-              label="Epochs"
-              value={config.epochs}
-              onChange={(v) => setConfig((c) => ({ ...c, epochs: v as number }))}
-              type="number"
-            />
-            <Field
-              label="Batch size"
-              value={config.batchSize}
-              onChange={(v) => setConfig((c) => ({ ...c, batchSize: v as number }))}
-              type="number"
-            />
-            <Field
-              label="Learning rate"
-              value={config.learningRate}
-              onChange={(v) =>
-                setConfig((c) => ({ ...c, learningRate: String(v) }))
-              }
-              type="text"
-              hint="e.g. 2e-4"
-            />
-            <Field
-              label="LoRA rank"
-              value={config.loraRank}
-              onChange={(v) => setConfig((c) => ({ ...c, loraRank: v as number }))}
-              type="number"
-            />
-            <Field
-              label="LoRA alpha"
-              value={config.loraAlpha}
-              onChange={(v) => setConfig((c) => ({ ...c, loraAlpha: v as number }))}
-              type="number"
-            />
-            <Field
-              label="Max seq length"
-              value={config.maxSeqLength}
-              onChange={(v) => setConfig((c) => ({ ...c, maxSeqLength: v as number }))}
-              type="number"
-            />
-            {config.modality === "raft" ? (
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <NumberField label="Epochs" value={config.epochs} onChange={(value) => setConfig((prev) => ({ ...prev, epochs: value }))} />
+            <NumberField label="Batch size" value={config.batchSize} onChange={(value) => setConfig((prev) => ({ ...prev, batchSize: value }))} />
+            <FormField label="Learning rate">
+              <Input value={config.learningRate} onChange={(event) => setConfig((prev) => ({ ...prev, learningRate: event.target.value }))} />
+            </FormField>
+            <NumberField label="Max samples / limit" value={config.maxSamples} onChange={(value) => setConfig((prev) => ({ ...prev, maxSamples: value }))} />
+            {cycleMode(config.modality) ? (
               <>
-                <Field
-                  label="Cycles"
-                  value={config.cycles}
-                  onChange={(v) => setConfig((c) => ({ ...c, cycles: v as number }))}
-                  type="number"
-                />
-                <Field
-                  label="Samples / prompt"
-                  value={config.samplesPerPrompt}
-                  onChange={(v) =>
-                    setConfig((c) => ({ ...c, samplesPerPrompt: v as number }))
-                  }
-                  type="number"
-                />
+                <NumberField label="Cycles" value={config.cycles} onChange={(value) => setConfig((prev) => ({ ...prev, cycles: value }))} />
+                <NumberField label="Samples per prompt" value={config.samplesPerPrompt} onChange={(value) => setConfig((prev) => ({ ...prev, samplesPerPrompt: value }))} />
               </>
+            ) : null}
+            {preferenceMode(config.modality) || config.modality === "grpo" ? (
+              <FormField label="Beta">
+                <Input value={config.beta} onChange={(event) => setConfig((prev) => ({ ...prev, beta: event.target.value }))} />
+              </FormField>
+            ) : null}
+            {config.modality === "dpo" ? (
+              <FormField label="DPO loss">
+                <Select value={config.lossType} onValueChange={(value) => setConfig((prev) => ({ ...prev, lossType: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sigmoid">sigmoid</SelectItem>
+                    <SelectItem value="ipo">ipo</SelectItem>
+                    <SelectItem value="hinge">hinge</SelectItem>
+                    <SelectItem value="kto_pair">kto_pair</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+            ) : null}
+            {config.modality === "grpo" ? (
+              <>
+                <NumberField label="Generations" value={config.numGenerations} onChange={(value) => setConfig((prev) => ({ ...prev, numGenerations: value }))} />
+                <FormField label="Reward threshold">
+                  <Input value={config.rewardThreshold} onChange={(event) => setConfig((prev) => ({ ...prev, rewardThreshold: event.target.value }))} />
+                </FormField>
+              </>
+            ) : null}
+            {(config.modality === "dpo" || config.modality === "grpo") ? (
+              <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={config.referenceFree}
+                  onChange={(event) => setConfig((prev) => ({ ...prev, referenceFree: event.target.checked }))}
+                />
+                Reference-free
+              </label>
+            ) : null}
+            {["vlm", "audio", "reasoning", "agentic"].includes(config.modality) ? (
+              <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={config.allowPrototypeTrain}
+                  onChange={(event) => setConfig((prev) => ({ ...prev, allowPrototypeTrain: event.target.checked }))}
+                />
+                Allow prototype train gate
+              </label>
             ) : null}
           </CardContent>
         </CollapsibleContent>
-      </Collapsible>
+      </Card>
+    </Collapsible>
+  );
+}
+
+function LaunchPanel({
+  config,
+  payload,
+  selectedModel,
+  preflight,
+  launch,
+  onLaunched,
+}: {
+  config: ConfigState;
+  payload: Record<string, unknown>;
+  selectedModel: ModelCatalogEntry | null;
+  preflight: ReturnType<typeof useTrainingPreflight>;
+  launch: ReturnType<typeof useTrainingLaunch>;
+  onLaunched: (data: Record<string, unknown>) => void;
+}) {
+  const disabled = !canLaunch(config) || launch.isPending || (preflight.isSuccess && !preflight.data.ok);
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardEyebrow>LAUNCH</CardEyebrow>
+          <CardTitle>Launch summary</CardTitle>
+        </div>
+        <Badge tone={preflight.isSuccess && preflight.data.ok ? "success" : "neutral"} size="sm">
+          {config.modality}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <SummaryRows
+          rows={[
+            ["method", config.modality],
+            ["model", String(payload.model ?? "-")],
+            [sourceLabel(config.modality).toLowerCase(), String(payload.dataset ?? payload.prompts ?? "-")],
+            ["output", String(payload.output_dir ?? "-")],
+            ["memory", selectedModel?.estimated_memory_gb ? `~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "-"],
+          ]}
+        />
+        {selectedModel?.known_caveats?.length ? (
+          <div className="rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
+            {selectedModel.known_caveats[0]}
+          </div>
+        ) : null}
+        {launch.isError ? (
+          <div className="rounded-sm border border-danger/30 bg-danger-bg px-2 py-1.5 text-[11px] text-danger">
+            {(launch.error as Error).message}
+          </div>
+        ) : null}
+        <Button
+          variant="primary"
+          size="lg"
+          className="w-full"
+          disabled={disabled}
+          onClick={() => {
+            launch.mutate(payload, {
+              onSuccess: (data) => onLaunched(data as Record<string, unknown>),
+            });
+          }}
+        >
+          {launch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          Launch {METHOD_COPY[config.modality].label}
+        </Button>
+      </CardContent>
     </Card>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  type,
-  hint,
-}: {
-  label: string;
-  value: string | number;
-  onChange: (v: string | number) => void;
-  type: "text" | "number";
-  hint?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input
-        mono
-        type={type}
-        value={value}
-        onChange={(e) =>
-          onChange(type === "number" ? Number(e.target.value) || 0 : e.target.value)
-        }
-      />
-      {hint ? (
-        <span className="font-mono text-[10px] text-fg-disabled">{hint}</span>
-      ) : null}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------
- * Preflight + launch panels
- * ----------------------------------------------------------------------- */
-
-interface PreflightCheck {
+type PreflightCheck = {
   label: string;
   status: "ok" | "warning" | "error" | "loading" | "pending";
-  detail?: string;
-}
+  detail: string;
+};
 
 function PreflightPanel({
-  checks,
   preflightStatus,
+  checks,
 }: {
-  checks: PreflightCheck[];
   preflightStatus: "idle" | "loading" | "ok" | "error";
+  checks: PreflightCheck[];
 }) {
-  const overallTone =
-    preflightStatus === "loading"
-      ? "loading"
-      : checks.some((c) => c.status === "error")
-        ? "error"
-        : checks.some((c) => c.status === "warning")
-          ? "warning"
-          : preflightStatus === "ok"
-            ? "ok"
-            : "pending";
-
   return (
     <Card>
       <CardHeader>
@@ -907,17 +917,22 @@ function PreflightPanel({
           <CardEyebrow>STATUS</CardEyebrow>
           <CardTitle>Preflight</CardTitle>
         </div>
-        <PreflightOverall tone={overallTone} />
+        <Badge
+          tone={preflightStatus === "ok" ? "success" : preflightStatus === "error" ? "danger" : "neutral"}
+          size="sm"
+        >
+          {preflightStatus}
+        </Badge>
       </CardHeader>
-      <CardContent className="p-0 divide-y divide-border-subtle">
-        {checks.map((c) => (
-          <div key={c.label} className="flex items-center gap-2.5 px-4 py-2">
-            <CheckIcon status={c.status} />
-            <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] text-fg leading-tight">{c.label}</div>
-              {c.detail ? (
-                <div className="text-[11px] text-fg-subtle truncate">{c.detail}</div>
-              ) : null}
+      <CardContent className="space-y-0 p-0">
+        {checks.map((check) => (
+          <div key={check.label} className="grid grid-cols-[20px_1fr] gap-2 border-b border-border-subtle px-4 py-3 last:border-0">
+            <StatusIcon status={check.status} />
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium text-fg">{check.label}</div>
+              <div className="mt-0.5 truncate text-[12px] text-fg-muted" title={check.detail}>
+                {check.detail}
+              </div>
             </div>
           </div>
         ))}
@@ -926,232 +941,188 @@ function PreflightPanel({
   );
 }
 
-function PreflightOverall({
-  tone,
-}: {
-  tone: "ok" | "loading" | "error" | "warning" | "pending";
-}) {
-  const map = {
-    ok: { Icon: CheckCircle2, color: "text-success", label: "Ready" },
-    loading: { Icon: Loader2, color: "text-fg-subtle animate-spin", label: "Checking" },
-    error: { Icon: XCircle, color: "text-danger", label: "Issues" },
-    warning: { Icon: AlertTriangle, color: "text-warning", label: "Caution" },
-    pending: { Icon: CircleDashed, color: "text-fg-disabled", label: "Idle" },
-  } as const;
-  const { Icon, color, label } = map[tone];
+function LaunchSuccess({ data, payload }: { data: Record<string, unknown>; payload: Record<string, unknown> }) {
+  const runId = String(data.run_id ?? data.id ?? "");
   return (
-    <div className={cn("flex items-center gap-1.5 text-[11px] font-medium", color)}>
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </div>
-  );
-}
-
-function CheckIcon({ status }: { status: PreflightCheck["status"] }) {
-  switch (status) {
-    case "ok":
-      return <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />;
-    case "warning":
-      return <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0" />;
-    case "error":
-      return <XCircle className="h-3.5 w-3.5 text-danger shrink-0" />;
-    case "loading":
-      return <Loader2 className="h-3.5 w-3.5 text-fg-subtle shrink-0 animate-spin" />;
-    case "pending":
-    default:
-      return <CircleDashed className="h-3.5 w-3.5 text-fg-disabled shrink-0" />;
-  }
-}
-
-function LaunchPanel({
-  config,
-  selectedModel,
-  disabled,
-  launching,
-  onLaunch,
-  launchedRunId,
-  error,
-}: {
-  config: ConfigState;
-  selectedModel: ModelCatalogEntry | null;
-  disabled: boolean;
-  launching: boolean;
-  onLaunch: () => void;
-  launchedRunId?: string;
-  error?: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-2.5 p-4">
-        <Button
-          variant="primary"
-          size="lg"
-          className="w-full"
-          disabled={disabled}
-          onClick={onLaunch}
-        >
-          {launching ? (
-            <>
-              <Loader2 className="animate-spin" />
-              Launching…
-            </>
-          ) : (
-            <>
-              <Play />
-              Launch run
-            </>
-          )}
-        </Button>
-        {launchedRunId ? (
-          <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success-bg px-3 py-2">
-            <Sparkles className="h-3.5 w-3.5 text-success" />
-            <span className="font-mono text-[11px] text-success">
-              Started {launchedRunId}
-            </span>
-          </div>
-        ) : null}
-        {error ? (
-          <div className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11.5px] text-danger">
-            {error}
-          </div>
-        ) : null}
-        <div className="rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2 text-[11px] text-fg-subtle leading-relaxed">
-          <FileQuestion className="h-3 w-3 inline mr-1 -mt-0.5 text-fg-disabled" />
-          Cost + duration estimates land in phase D once live runs are wired.
+    <Card className="border-success/40">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-success" />
+          <CardTitle>Run started</CardTitle>
         </div>
-        <RunSummary config={config} selectedModel={selectedModel} />
+        <Badge tone="success" size="sm">running</Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <SummaryRows
+          rows={[
+            ["run id", runId || "-"],
+            ["model", String(payload.model ?? "-")],
+            ["source", String(payload.dataset ?? payload.prompts ?? "-")],
+            ["output", String(payload.output_dir ?? "-")],
+          ]}
+        />
+        <div className="flex flex-wrap gap-2">
+          {runId ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="/runs/$runId" params={{ runId }}>Open run</Link>
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant="ghost">
+            <Link to="/runs">View runs</Link>
+          </Button>
+          <Button asChild size="sm" variant="ghost">
+            <Link to="/results">Serve when complete</Link>
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function RunSummary({
-  config,
-  selectedModel,
-}: {
-  config: ConfigState;
-  selectedModel: ModelCatalogEntry | null;
-}) {
-  const rows = [
-    ["Mode", config.modality.toUpperCase()],
-    ["Accelerator", config.accelerator || "auto"],
-    ["Model", config.model || "not set"],
-    ["Dataset", config.dataset === "__custom__" ? config.customDatasetFile || "custom path needed" : config.dataset],
-    ["Memory", selectedModel?.estimated_memory_gb ? `${selectedModel.memory_tier || "unknown"} · ~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "unknown"],
-    ["Output", `models/${config.modality}-${slug(config.model || "model")}`],
-  ];
-
-  if (config.modality === "raft") {
-    rows.splice(
-      3,
-      0,
-      ["Verifier", config.verifier],
-      ["Cycles", String(config.cycles)],
-      ["Samples", `${config.samplesPerPrompt}/prompt`],
-    );
-  }
-
+function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle/50">
-      <div className="border-b border-border-subtle px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-fg-disabled">
-        Launch summary
-      </div>
-      <dl className="divide-y divide-border-subtle">
-        {rows.map(([label, value]) => (
-          <div key={label} className="grid grid-cols-[72px_1fr] gap-2 px-3 py-1.5">
-            <dt className="text-[10.5px] uppercase tracking-wider text-fg-disabled">{label}</dt>
-            <dd className="truncate font-mono text-[11px] text-fg-subtle" title={value}>
-              {value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+    <div className="space-y-1.5">
+      <Label className="text-[11px] uppercase tracking-wider text-fg-subtle">{label}</Label>
+      {children}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------------
- * Helpers
- * ----------------------------------------------------------------------- */
+function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <FormField label={label}>
+      <Input
+        type="number"
+        min={0}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </FormField>
+  );
+}
 
-type SetConfig = (updater: (c: ConfigState) => ConfigState) => void;
+function StatusIcon({ status }: { status: PreflightCheck["status"] }) {
+  if (status === "ok") return <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />;
+  if (status === "warning") return <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />;
+  if (status === "error") return <XCircle className="mt-0.5 h-4 w-4 text-danger" />;
+  if (status === "loading") return <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-fg-subtle" />;
+  return <CircleDashed className="mt-0.5 h-4 w-4 text-fg-disabled" />;
+}
 
-function buildLaunchPayload(c: ConfigState): Record<string, unknown> {
-  // The public API enforces a tight allow-list of fields per modality
-  // (PUBLIC_TRAIN_ALLOWED_FIELDS in halo_forge/public_api/service.py).
-  // Any unsupported key triggers a 400. We only forward fields the
-  // backend accepts; the rest of the configurator state lives on the
-  // client until phase E broadens the API.
-  const lr = parseFloat(c.learningRate);
+function SummaryRows({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <dl className="divide-y divide-border-subtle rounded-md border border-border-subtle bg-bg-subtle/40">
+      {rows.map(([label, value]) => (
+        <div key={label} className="grid grid-cols-[86px_1fr] gap-2 px-3 py-1.5">
+          <dt className="text-[10.5px] uppercase tracking-wider text-fg-disabled">{label}</dt>
+          <dd className="truncate font-mono text-[11px] text-fg-subtle" title={value}>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function buildLaunchPayload(c: ConfigState, runRoot?: string): Record<string, unknown> {
+  const root = runRoot || "~/.halo-forge/runs";
+  const outputDir = `${root}/${c.modality}-${c.templateId ?? c.goal}-${slug(c.model || "model")}`;
   const isCustom = c.dataset === "__custom__";
+  const source = isCustom ? c.customDatasetFile : c.dataset;
+  const lr = parseFloat(c.learningRate);
+  const beta = parseFloat(c.beta);
+  const rewardThreshold = parseFloat(c.rewardThreshold);
+  const accelerator = c.accelerator === "mlx" || isMlxModel(c.model) ? "mlx" : undefined;
+  const common = {
+    mode: c.modality,
+    model: c.model,
+    output_dir: outputDir,
+    accelerator,
+    no_caffeinate: true,
+  };
 
   if (c.modality === "sft") {
     return stripEmpty({
-      mode: "sft",
-      model: c.model,
-      // SFT: registered dataset key OR custom path. The training service
-      // accepts either string in `dataset`; the path is detected by
-      // suffix (.jsonl) and routed to load_local_dataset internally.
-      dataset: isCustom ? c.customDatasetFile : c.dataset,
-      output_dir: `models/sft-${slug(c.model)}`,
-      accelerator: c.accelerator || (isMlxModel(c.model) ? "mlx" : undefined),
+      ...common,
+      dataset: source,
       epochs: c.epochs,
       batch_size: c.batchSize,
       learning_rate: Number.isFinite(lr) ? lr : undefined,
+      max_samples: c.maxSamples,
     });
   }
-
-  // RAFT: the backend takes `prompts` (a file path), not `dataset`. We
-  // surface this in the UI as the same dataset/file picker; registered
-  // datasets are forwarded as their HF id (the launch service knows how
-  // to convert), custom files are forwarded directly.
-  return stripEmpty({
-    mode: "raft",
-    model: c.model,
-    prompts: isCustom ? c.customDatasetFile : c.dataset,
-    output_dir: `models/raft-${slug(c.model)}`,
-    accelerator: c.accelerator || (isMlxModel(c.model) ? "mlx" : undefined),
-    cycles: c.cycles,
-    samples_per_prompt: c.samplesPerPrompt,
-    temperature: undefined, // wired in advanced section in a future iteration
-  });
-}
-
-function stripEmpty(o: Record<string, unknown>): Record<string, unknown> {
-  // Drop keys whose value is undefined / "" — keeps the payload tight
-  // and matches the backend's `_has_public_value` filter.
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(o)) {
-    if (v === undefined || v === null || v === "") continue;
-    out[k] = v;
+  if (c.modality === "raft") {
+    return stripEmpty({
+      ...common,
+      prompts: resolveRaftPrompts(source),
+      verifier: c.verifier,
+      cycles: c.cycles,
+      samples_per_prompt: c.samplesPerPrompt,
+      keep_percent: 0.5,
+      reward_threshold: 0.5,
+    });
   }
-  return out;
-}
-
-function slug(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
-}
-
-function isMlxModel(model: string | undefined): boolean {
-  return Boolean(model && model.startsWith("mlx-community/"));
-}
-
-function canLaunch(c: ConfigState): boolean {
-  if (!c.model.trim()) return false;
-  if (c.dataset === "__custom__" && !c.customDatasetFile.trim()) return false;
-  if (!c.dataset) return false;
-  return true;
-}
-
-function preflightStatus(
-  preflight: ReturnType<typeof useTrainingPreflight>,
-  config: ConfigState,
-): "idle" | "loading" | "ok" | "error" {
-  if (!config.model) return "idle";
-  if (preflight.isPending) return "loading";
-  if (preflight.isError) return "error";
-  if (preflight.isSuccess) return preflight.data.ok ? "ok" : "error";
-  return "idle";
+  if (c.modality === "dpo") {
+    return stripEmpty({
+      ...common,
+      dataset: source,
+      epochs: c.epochs,
+      batch_size: c.batchSize,
+      learning_rate: Number.isFinite(lr) ? lr : undefined,
+      max_samples: c.maxSamples,
+      beta: Number.isFinite(beta) ? beta : undefined,
+      loss_type: c.lossType,
+      reference_free: c.referenceFree,
+    });
+  }
+  if (c.modality === "orpo") {
+    return stripEmpty({
+      ...common,
+      dataset: source,
+      epochs: c.epochs,
+      batch_size: c.batchSize,
+      learning_rate: Number.isFinite(lr) ? lr : undefined,
+      max_samples: c.maxSamples,
+      beta: Number.isFinite(beta) ? beta : undefined,
+    });
+  }
+  if (c.modality === "rm") {
+    return stripEmpty({
+      ...common,
+      dataset: source,
+      epochs: c.epochs,
+      batch_size: c.batchSize,
+      learning_rate: Number.isFinite(lr) ? lr : undefined,
+      max_samples: c.maxSamples,
+    });
+  }
+  if (c.modality === "grpo") {
+    return stripEmpty({
+      ...common,
+      dataset: source,
+      epochs: c.epochs,
+      batch_size: c.batchSize,
+      learning_rate: Number.isFinite(lr) ? lr : undefined,
+      max_samples: c.maxSamples,
+      beta: Number.isFinite(beta) ? beta : undefined,
+      reference_free: c.referenceFree,
+      verifier: c.verifier,
+      num_generations: c.numGenerations,
+      epsilon: 0.2,
+      temperature: 0.9,
+      reward_threshold: Number.isFinite(rewardThreshold) ? rewardThreshold : 0,
+    });
+  }
+  return stripEmpty({
+    ...common,
+    dataset: source,
+    cycles: c.cycles,
+    samples_per_prompt: c.modality === "vlm" || c.modality === "audio" ? c.samplesPerPrompt : undefined,
+    limit: c.modality === "vlm" || c.modality === "reasoning" || c.modality === "agentic" ? c.maxSamples : undefined,
+    keep_percent: c.modality === "vlm" || c.modality === "audio" ? 0.5 : undefined,
+    reward_threshold: c.modality === "vlm" || c.modality === "audio" ? 0.5 : undefined,
+    task: c.modality === "audio" ? c.task : undefined,
+    learning_rate: c.modality === "reasoning" || c.modality === "agentic" ? lr : undefined,
+    allow_prototype_train: c.allowPrototypeTrain,
+  });
 }
 
 function buildPreflightChecks(
@@ -1165,7 +1136,7 @@ function buildPreflightChecks(
     {
       label: "Backend connected",
       status: backendName ? "ok" : "loading",
-      detail: backendName ? `Active accelerator: ${backendName}` : "Detecting…",
+      detail: backendName ? `Active accelerator: ${backendName}` : "Detecting...",
     },
     {
       label: "Model identifier set",
@@ -1173,7 +1144,7 @@ function buildPreflightChecks(
       detail: config.model || "Type a HuggingFace or MLX repo id above",
     },
     {
-      label: "Dataset selected",
+      label: sourceLabel(config.modality),
       status:
         config.dataset === "__custom__"
           ? config.customDatasetFile.trim()
@@ -1199,42 +1170,168 @@ function buildPreflightChecks(
     });
   }
 
-  if (config.modality === "raft") {
+  if (config.modality === "raft" || config.modality === "grpo") {
     checks.push({
       label: "Verifier toolchain",
       status: config.verifier ? "ok" : "pending",
-      detail: config.verifier
-        ? `${config.verifier} (preflight will check binary on the host)`
-        : "Pick a verifier above",
+      detail: config.verifier || "Pick a verifier",
+    });
+  }
+
+  if (["vlm", "audio", "reasoning", "agentic"].includes(config.modality) && !config.allowPrototypeTrain) {
+    checks.push({
+      label: "Capability gate",
+      status: "warning",
+      detail: "Some model families may need the prototype train gate in Advanced.",
     });
   }
 
   if (preflight.isPending) {
-    checks.push({ label: "Server preflight", status: "loading", detail: "Validating launch…" });
+    checks.push({ label: "Server preflight", status: "loading", detail: "Validating launch..." });
   } else if (preflight.isError) {
-    const msg = (preflight.error as Error | null)?.message ?? "Preflight failed";
-    checks.push({ label: "Server preflight", status: "error", detail: msg });
+    checks.push({ label: "Server preflight", status: "error", detail: (preflight.error as Error).message });
   } else if (preflight.isSuccess && preflight.data) {
-    const data = preflight.data;
-    const issue = data.errors[0] ?? data.suggested_fixes[0];
-    const summary =
-      issue ??
-      data.user_summary?.headline ??
-      (data.ok ? "All checks passed" : "Preflight found launch issues");
+    const issue = preflight.data.errors[0] ?? preflight.data.suggested_fixes[0];
     checks.push({
       label: "Server preflight",
-      status: data.ok ? (data.warnings.length ? "warning" : "ok") : "error",
-      detail: summary,
+      status: preflight.data.ok ? (preflight.data.warnings.length ? "warning" : "ok") : "error",
+      detail: issue ?? preflight.data.user_summary?.headline ?? "All checks passed",
     });
   } else {
-    checks.push({
-      label: "Server preflight",
-      status: "pending",
-      detail: "Runs automatically as you edit the form",
-    });
+    checks.push({ label: "Server preflight", status: "pending", detail: "Runs automatically as you edit the form" });
   }
-
   return checks;
+}
+
+function applyTemplate(prev: ConfigState, template: TrainingTemplate): ConfigState {
+  if (!isTrainingMode(template.modality)) return prev;
+  const hp = template.hyperparams;
+  const goal = goalForTemplate(template);
+  const next = withModeDefaults({ ...prev, goal }, template.modality);
+  return {
+    ...next,
+    templateId: template.id,
+    model: template.model_hint || next.model,
+    dataset: template.dataset_hint && template.dataset_hint !== "@custom"
+      ? normalizeSourceForMode(template.modality, template.dataset_hint)
+      : template.dataset_hint === "@custom"
+        ? "__custom__"
+        : next.dataset,
+    verifier: typeof template.verifier === "string" ? template.verifier : next.verifier,
+    epochs: numberFrom(hp.epochs, next.epochs),
+    batchSize: numberFrom(hp.batch_size, next.batchSize),
+    learningRate: stringFrom(hp.learning_rate, next.learningRate),
+    cycles: numberFrom(hp.cycles, next.cycles),
+    samplesPerPrompt: numberFrom(hp.samples_per_prompt, next.samplesPerPrompt),
+    maxSamples: numberFrom(hp.max_samples, next.maxSamples),
+    beta: stringFrom(hp.beta, next.beta),
+    lossType: typeof hp.loss_type === "string" ? hp.loss_type : next.lossType,
+    numGenerations: numberFrom(hp.group_size ?? hp.num_generations, next.numGenerations),
+    accelerator: hp.accelerator === "mlx" || isMlxModel(template.model_hint) ? "mlx" : next.accelerator,
+  };
+}
+
+function withModeDefaults(config: ConfigState, modality: TrainingMode): ConfigState {
+  const defaults = DEFAULTS[modality] ?? {};
+  return {
+    ...config,
+    ...defaults,
+    modality,
+    templateId: null,
+    accelerator: config.accelerator === "mlx" ? "mlx" : (defaults.accelerator as Accelerator | undefined) ?? "auto",
+  };
+}
+
+function sourcesForMode(mode: TrainingMode, datasets: TrainingSource[]): TrainingSource[] {
+  if (mode === "sft") return datasets.length ? datasets : [{ key: "codealpaca", description: "Code instruction data.", size_hint: "small", domain: "code" }];
+  return MODALITY_SOURCES[mode] ?? [];
+}
+
+function sourceLabel(mode: TrainingMode): string {
+  if (mode === "raft") return "Prompt source";
+  if (mode === "grpo") return "Prompt dataset";
+  if (preferenceMode(mode) || mode === "rm") return "Preference dataset";
+  return "Dataset";
+}
+
+function cycleMode(mode: TrainingMode): boolean {
+  return ["raft", "vlm", "audio", "reasoning", "agentic"].includes(mode);
+}
+
+function preferenceMode(mode: TrainingMode): boolean {
+  return mode === "dpo" || mode === "orpo";
+}
+
+function goalLabel(goal: GoalKey): string {
+  return GOALS.find((item) => item.key === goal)?.label ?? goal;
+}
+
+function goalForTemplate(template: TrainingTemplate): GoalKey {
+  if (template.category === "vision") return "vision";
+  if (template.category === "audio") return "audio";
+  if (template.category === "preference") return "preferences";
+  if (template.category === "agentic") return "tool-use";
+  if (template.category === "reasoning") return "reasoning";
+  return "code";
+}
+
+function resolveRaftPrompts(source: string): string {
+  return RAFT_PROMPT_ALIASES[source] ?? source;
+}
+
+function normalizeSourceForMode(mode: TrainingMode, source: string): string {
+  if (mode === "raft") return resolveRaftPrompts(source);
+  return source;
+}
+
+function stripEmpty(o: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v === "boolean" && v === false) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function canLaunch(c: ConfigState): boolean {
+  if (!c.model.trim()) return false;
+  if (c.dataset === "__custom__" && !c.customDatasetFile.trim()) return false;
+  if (!c.dataset) return false;
+  if (c.modality === "grpo" && !c.verifier) return false;
+  if (c.modality === "audio" && !c.task) return false;
+  return true;
+}
+
+function preflightStatus(
+  preflight: ReturnType<typeof useTrainingPreflight>,
+  config: ConfigState,
+): "idle" | "loading" | "ok" | "error" {
+  if (!canLaunch(config)) return "idle";
+  if (preflight.isPending) return "loading";
+  if (preflight.isError) return "error";
+  if (preflight.isSuccess) return preflight.data.ok ? "ok" : "error";
+  return "idle";
+}
+
+function isTrainingMode(value: unknown): value is TrainingMode {
+  return typeof value === "string" && TRAINING_MODES.includes(value as TrainingMode);
+}
+
+function isMlxModel(model: string | undefined): boolean {
+  return Boolean(model && model.startsWith("mlx-community/"));
+}
+
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+}
+
+function numberFrom(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringFrom(value: unknown, fallback: string): string {
+  return typeof value === "number" || typeof value === "string" ? String(value) : fallback;
 }
 
 function ReadoutItem({ label, value }: { label: string; value: string }) {
@@ -1247,9 +1344,5 @@ function ReadoutItem({ label, value }: { label: string; value: string }) {
 }
 
 function ReadoutSep() {
-  return <span className="text-fg-disabled select-none">·</span>;
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+  return <span className="text-fg-disabled">·</span>;
 }

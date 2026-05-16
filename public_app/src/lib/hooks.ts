@@ -1,15 +1,19 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type BackendInfo,
   type DashboardSummary,
   type ModelCatalogResponse,
   type RunListItem,
+  type ServeLogs,
+  type ServeStartPayload,
+  type ServeStatus,
   type SuggestedModel,
   type TelemetrySample,
   type TrainingDataset,
   type TrainingPreflight,
   type TrainingVerifier,
+  type WorkspaceInfo,
 } from "@/lib/api";
 
 /**
@@ -20,6 +24,7 @@ import {
 
 export const queryKeys = {
   backend: ["backend-info"] as const,
+  workspace: ["workspace-info"] as const,
   telemetry: ["telemetry"] as const,
   dashboard: ["dashboard"] as const,
   runs: (params?: { limit?: number; modality?: string }) =>
@@ -33,6 +38,8 @@ export const queryKeys = {
     ["training", "models", params] as const,
   modelCatalog: (params?: Record<string, string | undefined>) =>
     ["models", params] as const,
+  serve: ["serve"] as const,
+  serveLogs: (tail: number) => ["serve", "logs", tail] as const,
 };
 
 /**
@@ -43,6 +50,15 @@ export function useBackendInfo() {
   return useQuery<BackendInfo>({
     queryKey: queryKeys.backend,
     queryFn: api.backendInfo,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+}
+
+export function useWorkspaceInfo() {
+  return useQuery<WorkspaceInfo>({
+    queryKey: queryKeys.workspace,
+    queryFn: api.workspaceInfo,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
@@ -170,5 +186,46 @@ export function useRunSearch(params?: import("@/lib/api").RunSearchParams) {
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useServeStatus() {
+  return useQuery<ServeStatus>({
+    queryKey: queryKeys.serve,
+    queryFn: api.serveStatus,
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useServeStart() {
+  const queryClient = useQueryClient();
+  return useMutation<ServeStatus, Error, ServeStartPayload>({
+    mutationFn: (payload) => api.serveStart(payload),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.serve });
+      queryClient.invalidateQueries({ queryKey: queryKeys.serveLogs(80) });
+    },
+  });
+}
+
+export function useServeStop() {
+  const queryClient = useQueryClient();
+  return useMutation<ServeStatus, Error, void>({
+    mutationFn: () => api.serveStop(),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.serve });
+      queryClient.invalidateQueries({ queryKey: queryKeys.serveLogs(80) });
+    },
+  });
+}
+
+export function useServeLogs(tail = 200, enabled = false) {
+  return useQuery<ServeLogs>({
+    queryKey: queryKeys.serveLogs(tail),
+    queryFn: () => api.serveLogs(tail),
+    enabled,
+    refetchInterval: enabled ? 3_000 : false,
   });
 }

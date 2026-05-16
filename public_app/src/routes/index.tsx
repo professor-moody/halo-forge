@@ -371,9 +371,14 @@ function SystemCard() {
             <SysRow label="Default dtype" value={data.capabilities.preferred_dtype_str} mono />
             <SysRow label="Attention" value={data.capabilities.preferred_attn_impl} mono />
             <SysRow
-              label="Neural Accelerators"
+              label="MLX runtime"
+              tone={data.mlx_readiness?.executable ? "success" : "neutral"}
+              value={data.mlx_readiness?.executable ? "ready" : data.mlx_readiness?.status ?? "unavailable"}
+            />
+            <SysRow
+              label="Apple Neural Accelerators (experimental)"
               tone={data.capabilities.supports_neural_accelerators ? "success" : "neutral"}
-              value={data.capabilities.supports_neural_accelerators ? "available" : "unavailable"}
+              value={data.capabilities.supports_neural_accelerators ? "available" : "not used by MPS/MLX"}
             />
             <SysRow
               label="4-bit quant"

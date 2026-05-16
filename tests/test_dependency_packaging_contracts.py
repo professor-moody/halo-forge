@@ -72,5 +72,6 @@ def test_packaging_contract_has_no_legacy_tui_entry_points():
     """Packaging metadata should not publish legacy TUI scripts/modules."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
-    assert set(scripts.keys()) == {"halo-forge"}
+    assert set(scripts.keys()) == {"halo-forge", "halo-forge-desktop-runtime"}
+    assert scripts["halo-forge-desktop-runtime"] == "halo_forge.desktop_runtime:main"
     assert all("tui" not in value.lower() for value in scripts.values())

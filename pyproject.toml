@@ -116,6 +116,7 @@ all = [
 
 [project.scripts]
 halo-forge = "halo_forge.cli:main"
+halo-forge-desktop-runtime = "halo_forge.desktop_runtime:main"
 
 [project.urls]
 Homepage = "https://github.com/professor-moody/halo-forge"

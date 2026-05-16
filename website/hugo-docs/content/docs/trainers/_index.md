@@ -5,16 +5,22 @@ weight: 10
 ---
 
 
-Halo-forge ships four post-training algorithms. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it.
+Halo-forge ships a broad post-training surface. The dashboard exposes these as goal-first methods in **Train**, while the CLI keeps the exact command surface for automation. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it.
 
 | Algorithm | What it does | When to use | CLI |
 |---|---|---|---|
 | **SFT** | Supervised finetuning on instruction/response pairs. | Adapting a base to a domain or task; first step in every recipe. | `halo-forge sft train` |
 | **DPO** | Preference optimization from `(prompt, chosen, rejected)` triples. | Alignment without RL. The default published format on HF. | `halo-forge dpo train` |
+| **ORPO** | Reference-free preference tuning from chosen/rejected pairs. | Lower-memory preference pass when DPO's reference model is too expensive. | `halo-forge orpo train` |
+| **RM** | Bradley-Terry reward model from preference pairs. | Build a reusable scorer for ranking or later RL. | `halo-forge rm train` |
 | **GRPO** | Verifier-grounded policy gradient with group-relative advantages. | RLVR — code execution, math, tool calling, anything with a programmatic reward. | `halo-forge grpo train` |
 | **RAFT** | Rejection-sampling RL: sample N, verify, SFT on the kept ones. | The simplest RLVR; works without KL terms or ratio clipping. | `halo-forge raft train` |
+| **VLM** | Vision-language training. | Image Q&A, document extraction, screenshots, charts. | `halo-forge vlm train` |
+| **Audio** | Audio/speech training. | ASR, classification, and audio-language tasks. | `halo-forge audio train` |
+| **Reasoning** | Reasoning-specific training loop. | Math and multi-step answers. | `halo-forge reasoning train` |
+| **Agentic** | Tool-use/function-calling training. | Structured outputs and tool traces. | `halo-forge agentic train` |
 
-The post-training triad is **SFT → DPO → GRPO** (plus optional RAFT). Run them in order; each builds on the previous artifact.
+The post-training triad is **SFT -> DPO/ORPO -> GRPO** (plus optional RAFT and RM). Run them in order; each builds on the previous artifact.
 
 ## Backend dispatch
 
