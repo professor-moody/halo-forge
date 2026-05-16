@@ -1977,7 +1977,36 @@ class PublicApiService:
 
     def list_readiness(self) -> Dict[str, Any]:
         """Return public-safe readiness for training modalities."""
-        report = self.readiness_service.load_qualification_report(force_refresh=True)
+        try:
+            report = self.readiness_service.load_qualification_report(force_refresh=True)
+        except Exception as exc:
+            items = [
+                ModalityReadinessView(
+                    modality=module,
+                    readiness_tier="experimental",
+                    production_ready=False,
+                    status="warn",
+                    caveat="Readiness report is not available in this runtime.",
+                    next_step="Run readiness checks from a source checkout or continue with documented method caveats.",
+                    eval_metric_name="",
+                    baseline_value=None,
+                    final_value=None,
+                    delta=None,
+                    details={
+                        "errors": [],
+                        "warnings": [str(exc)],
+                        "weights_updated": False,
+                        "optimizer_steps": 0,
+                        "samples_kept": 0,
+                    },
+                )
+                for module in TRAINING_MODALITIES
+            ]
+            return {
+                "generated_at": None,
+                "aggregate_tier": "experimental",
+                "items": [to_dict(item) for item in items],
+            }
         items: list[ModalityReadinessView] = []
         counts = {"experimental": 0, "qualified": 0, "production_ready": 0}
         for module in TRAINING_MODALITIES:

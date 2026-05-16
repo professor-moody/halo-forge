@@ -137,6 +137,29 @@ def test_public_api_readiness_uses_qualification_truth(tmp_path):
     assert payload["items"][1]["next_step"] == "Finish deterministic eval coverage."
 
 
+def test_public_api_readiness_falls_back_when_report_missing(tmp_path):
+    readiness_service = SimpleNamespace(
+        load_qualification_report=lambda force_refresh=True: (_ for _ in ()).throw(
+            FileNotFoundError("qualification report missing")
+        )
+    )
+    service = PublicApiService(
+        app_state=AppState(),
+        results_service=ResultsService(base_path=tmp_path),
+        readiness_service=readiness_service,
+        training_service=TrainingService(AppState()),
+        base_path=tmp_path,
+    )
+
+    payload = service.list_readiness()
+
+    assert payload["aggregate_tier"] == "experimental"
+    assert payload["generated_at"] is None
+    assert {item["modality"] for item in payload["items"]} >= {"sft", "raft", "vlm", "audio"}
+    assert all(item["status"] == "warn" for item in payload["items"])
+    assert "not available" in payload["items"][0]["caveat"]
+
+
 def test_public_api_dashboard_summary_exposes_workstation_queues(tmp_path):
     output_dir = tmp_path / "models" / "raft_attention_run"
     output_dir.mkdir(parents=True)

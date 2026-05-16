@@ -7,7 +7,7 @@ use std::process::Command as StdCommand;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -48,7 +48,7 @@ struct DesktopState(Mutex<RuntimeState>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(DesktopState(Mutex::new(RuntimeState {
             child: None,
@@ -70,8 +70,14 @@ pub fn run() {
                 stop_owned_sidecar(window.app_handle());
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Halo Forge desktop app");
+        .build(tauri::generate_context!())
+        .expect("error while building Halo Forge desktop app");
+
+    app.run(|app_handle, event| {
+        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+            stop_owned_sidecar(app_handle);
+        }
+    });
 }
 
 fn main() {
@@ -350,16 +356,21 @@ fn record_sidecar_event(app: &AppHandle, log_path: &PathBuf, event: CommandEvent
                 "Runtime exited with code {:?} signal {:?}.",
                 payload.code, payload.signal
             );
-            if !health_ok() {
-                set_status(
-                    app,
-                    "backend_exited",
-                    "Halo Forge runtime exited.",
-                    Some(detail.clone()),
-                    Some(log_path.clone()),
+            clear_child(app);
+            if health_ok() {
+                append_log(
+                    log_path,
+                    "Runtime parent exited while the dashboard still answers; stopping owned dashboard listener.",
                 );
-                clear_child(app);
+                stop_dashboard_listener();
             }
+            set_status(
+                app,
+                "backend_exited",
+                "Halo Forge runtime exited.",
+                Some(detail.clone()),
+                Some(log_path.clone()),
+            );
             detail
         }
         _ => "sidecar event".to_string(),
@@ -405,8 +416,106 @@ fn stop_owned_sidecar(app: &AppHandle) {
         guard.child.take()
     };
     if let Some(child) = child {
+        let pid = child.pid();
+        stop_descendant_processes(pid);
         let _ = child.kill();
+        if wait_for_dashboard_to_stop(Duration::from_secs(2)) {
+            return;
+        }
+        stop_dashboard_listener();
+        let _ = wait_for_dashboard_to_stop(Duration::from_secs(2));
     }
+}
+
+#[cfg(unix)]
+fn stop_descendant_processes(root_pid: u32) {
+    let mut descendants = collect_descendant_pids(root_pid);
+    descendants.reverse();
+    signal_pids(&descendants, "TERM");
+    thread::sleep(Duration::from_millis(300));
+    signal_pids(&descendants, "KILL");
+}
+
+#[cfg(not(unix))]
+fn stop_descendant_processes(_root_pid: u32) {}
+
+#[cfg(unix)]
+fn collect_descendant_pids(parent_pid: u32) -> Vec<u32> {
+    let mut descendants = Vec::new();
+    let Ok(output) = StdCommand::new("pgrep")
+        .arg("-P")
+        .arg(parent_pid.to_string())
+        .output()
+    else {
+        return descendants;
+    };
+    if !output.status.success() {
+        return descendants;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        if let Ok(pid) = line.trim().parse::<u32>() {
+            descendants.push(pid);
+            descendants.extend(collect_descendant_pids(pid));
+        }
+    }
+    descendants
+}
+
+#[cfg(unix)]
+fn signal_pids(pids: &[u32], signal: &str) {
+    if pids.is_empty() {
+        return;
+    }
+    let mut command = StdCommand::new("kill");
+    command.arg(format!("-{signal}"));
+    for pid in pids {
+        command.arg(pid.to_string());
+    }
+    let _ = command.status();
+}
+
+fn wait_for_dashboard_to_stop(timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !port_is_in_use(DASHBOARD_HOST, DASHBOARD_PORT) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    !port_is_in_use(DASHBOARD_HOST, DASHBOARD_PORT)
+}
+
+#[cfg(unix)]
+fn stop_dashboard_listener() {
+    let mut pids = dashboard_listener_pids();
+    pids.sort_unstable();
+    pids.dedup();
+    signal_pids(&pids, "TERM");
+    thread::sleep(Duration::from_millis(300));
+    if port_is_in_use(DASHBOARD_HOST, DASHBOARD_PORT) {
+        signal_pids(&pids, "KILL");
+    }
+}
+
+#[cfg(not(unix))]
+fn stop_dashboard_listener() {}
+
+#[cfg(unix)]
+fn dashboard_listener_pids() -> Vec<u32> {
+    let lsof_query = format!("TCP:{DASHBOARD_PORT}");
+    let Ok(output) = StdCommand::new("lsof")
+        .args(["-nP", "-t", "-i", &lsof_query, "-sTCP:LISTEN"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect()
 }
 
 fn dev_repo_root() -> PathBuf {
