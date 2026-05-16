@@ -11,13 +11,13 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { api, type PlaygroundChatRequest, type PlaygroundMessage } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, type ModelCatalogEntry, type PlaygroundChatRequest, type PlaygroundMessage } from "@/lib/api";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardEyebrow, CardHeader, CardTitle } from "@/components/ui/card";
-import { queryKeys, useServeLogs, useServeStatus, useServeStop } from "@/lib/hooks";
+import { queryKeys, useModelCatalog, useServeLogs, useServeStart, useServeStatus, useServeStop } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/playground")({
@@ -44,12 +44,41 @@ type ChatMessage = PlaygroundMessage & { id: string; kind?: "normal" | "error" }
 const DEFAULT_SYSTEM_PROMPT =
   "You are a helpful assistant. Respond concisely and accurately.";
 const DEFAULT_SERVE_URL = "http://127.0.0.1:8001/v1";
+const FALLBACK_SAFE_SERVE_MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-bf16";
+
+type QuickServeModel = {
+  model: string;
+  label: string;
+  backend?: string;
+  trustRemoteCode?: boolean;
+};
+
+function pickQuickServeModel(items: ModelCatalogEntry[]): QuickServeModel {
+  const safePick =
+    items.find((item) => item.id === FALLBACK_SAFE_SERVE_MODEL) ??
+    items.find((item) => item.recommended_first_run && item.risk_level === "safe" && (item.backend_support ?? []).includes("mlx")) ??
+    items.find((item) => item.recommended_first_run && item.risk_level === "safe") ??
+    null;
+  const model = safePick?.mlx_variant ?? safePick?.id ?? FALLBACK_SAFE_SERVE_MODEL;
+  return {
+    model,
+    label: shortModelName(model),
+    backend: model.startsWith("mlx-community/") || safePick?.mlx_variant ? "mlx" : undefined,
+    trustRemoteCode: safePick?.trust_remote_code_required,
+  };
+}
+
+function shortModelName(model: string): string {
+  return model.replace(/^mlx-community\//, "").replace(/^Qwen\//, "").replace(/-Instruct-bf16$/, "");
+}
 
 function PlaygroundRoute() {
   const queryClient = useQueryClient();
   const serveStatus = useServeStatus();
+  const serveStart = useServeStart();
   const serveStop = useServeStop();
-  const serveLogs = useServeLogs(80, Boolean(serveStatus.data?.logs_available));
+  const serveLogs = useServeLogs(80, Boolean(serveStatus.data?.logs_available && serveStatus.data?.state !== "idle"));
+  const quickModels = useModelCatalog({ backend: "mlx" });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
@@ -62,6 +91,18 @@ function PlaygroundRoute() {
   const [showSettings, setShowSettings] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const serveState = serveStatus.data?.state ?? "idle";
+  const localReady = Boolean(serveStatus.data?.running && serveState === "running");
+  const managedUrl = serveStatus.data?.url ?? DEFAULT_SERVE_URL;
+  const usingManagedEndpoint = serveUrl === DEFAULT_SERVE_URL || serveUrl === managedUrl;
+  const externalEndpoint = Boolean(serveUrl.trim() && !usingManagedEndpoint);
+  const canChat = localReady || externalEndpoint;
+  const activeChatModel = canChat ? model : "No model serving";
+  const activeChatUrl = canChat ? serveUrl : "Start a model to chat";
+  const quickServeModel = useMemo(
+    () => pickQuickServeModel(quickModels.data?.items ?? []),
+    [quickModels.data?.items],
+  );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -75,6 +116,12 @@ function PlaygroundRoute() {
     }
   }, [serveStatus.data?.running, serveStatus.data?.url, serveStatus.data?.model, serveUrl]);
 
+  useEffect(() => {
+    if (!serveStatus.data || serveStatus.data.running || !usingManagedEndpoint) return;
+    setServeUrl(DEFAULT_SERVE_URL);
+    setModel("halo-forge");
+  }, [serveStatus.data, usingManagedEndpoint]);
+
   const chatMutation = useMutation({
     mutationFn: (req: PlaygroundChatRequest) => api.playgroundChat(req),
   });
@@ -82,6 +129,18 @@ function PlaygroundRoute() {
   async function send() {
     const text = input.trim();
     if (!text || chatMutation.isPending) return;
+    if (!canChat) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-e`,
+          role: "assistant",
+          kind: "error",
+          content: "Start a local model first, or open Settings and enter an external endpoint.",
+        },
+      ]);
+      return;
+    }
 
     const userMsg: ChatMessage = {
       id: `${Date.now()}-u`,
@@ -182,6 +241,25 @@ function friendlyChatFailure(exc: unknown): string {
   return "The chat request failed. Check local serving status and logs, then try again.";
 }
 
+  function startQuickModel() {
+    if (!quickServeModel) return;
+    serveStart.mutate(
+      {
+        model: quickServeModel.model,
+        backend: quickServeModel.backend,
+        trust_remote_code: Boolean(quickServeModel.trustRemoteCode),
+      },
+      {
+        onSuccess: (status) => {
+          setMessages([]);
+          if (status.url) setServeUrl(status.url);
+          if (status.model) setModel(status.model);
+        },
+        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }),
+      },
+    );
+  }
+
   return (
     <>
       <Topbar
@@ -245,7 +323,12 @@ function friendlyChatFailure(exc: unknown): string {
           logPath={serveStatus.data?.log_path ?? null}
           logLines={serveLogs.data?.lines ?? []}
           loading={serveStatus.isLoading}
+          quickModelLabel={quickServeModel?.label ?? null}
+          quickModelLoading={quickModels.isLoading}
+          quickModelStarting={serveStart.isPending}
+          quickModelError={serveStart.error?.message ?? null}
           stopping={serveStop.isPending}
+          onStartQuick={startQuickModel}
           onStop={() =>
             serveStop.mutate(undefined, {
               onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }),
@@ -257,24 +340,24 @@ function friendlyChatFailure(exc: unknown): string {
           <CardHeader>
             <div className="flex items-center gap-2">
               <CardEyebrow>CHAT</CardEyebrow>
-              <CardTitle>{model}</CardTitle>
+              <CardTitle>{activeChatModel}</CardTitle>
               <span className="font-mono text-[10px] text-fg-disabled truncate ml-1">
-                {serveUrl.replace(/^https?:\/\//, "")}
+                {activeChatUrl.replace(/^https?:\/\//, "")}
               </span>
             </div>
-            <Badge tone="neutral" size="sm">
-              t={temperature.toFixed(2)} · top_p={topP.toFixed(2)} · max={maxTokens}
+            <Badge tone={canChat ? "neutral" : "warning"} size="sm">
+              {canChat ? `t=${temperature.toFixed(2)} · top_p=${topP.toFixed(2)} · max=${maxTokens}` : "start a model first"}
             </Badge>
           </CardHeader>
           <CardContent className="p-0">
             <div className="px-4 py-4 space-y-3 min-h-[280px] max-h-[60vh] overflow-y-auto">
               {messages.length === 0 ? (
                 <div className="text-center text-sm text-fg-muted py-10 max-w-[44ch] mx-auto">
-                  <p>
-                    Start a local model from Models or Results, then send a message here.
-                  </p>
+                  <p>{canChat ? "Send a message to the active model." : "Start a local model to unlock chat."}</p>
                   <p className="text-[11px] text-fg-disabled mt-3">
-                    Cmd/Ctrl+Enter sends. Settings can point this chat at an external endpoint.
+                    {canChat
+                      ? "Cmd/Ctrl+Enter sends. Settings can point this chat at an external endpoint."
+                      : "Use the safe-model button above, or choose a model from Models or Results."}
                   </p>
                 </div>
               ) : (
@@ -294,15 +377,16 @@ function friendlyChatFailure(exc: unknown): string {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Send a message…"
+                placeholder={canChat ? "Send a message…" : "Start a model before chatting…"}
+                disabled={!canChat}
                 rows={3}
-                className="flex-1 bg-bg border border-border-subtle rounded-md px-2.5 py-2 text-[13px] focus:outline-none focus:border-accent resize-y"
+                className="flex-1 bg-bg border border-border-subtle rounded-md px-2.5 py-2 text-[13px] focus:outline-none focus:border-accent resize-y disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <Button
                 variant="primary"
                 size="sm"
                 onClick={send}
-                disabled={!input.trim() || chatMutation.isPending}
+                disabled={!canChat || !input.trim() || chatMutation.isPending}
                 title="Send (Cmd/Ctrl+Enter)"
               >
                 {chatMutation.isPending ? (
@@ -329,7 +413,12 @@ function ServeStatusPanel({
   logPath,
   logLines,
   loading,
+  quickModelLabel,
+  quickModelLoading,
+  quickModelStarting,
+  quickModelError,
   stopping,
+  onStartQuick,
   onStop,
 }: {
   state: string;
@@ -340,11 +429,17 @@ function ServeStatusPanel({
   logPath: string | null;
   logLines: string[];
   loading: boolean;
+  quickModelLabel: string | null;
+  quickModelLoading: boolean;
+  quickModelStarting: boolean;
+  quickModelError: string | null;
   stopping: boolean;
+  onStartQuick: () => void;
   onStop: () => void;
 }) {
   const running = state === "running" || state === "starting" || state === "unhealthy";
-  const latestLogs = logLines.filter(Boolean).slice(-3);
+  const showLogContext = state !== "idle";
+  const latestLogs = showLogContext ? logLines.filter(Boolean).slice(-3) : [];
   const tone = state === "running" ? "success" : state === "starting" || state === "stopping" ? "warning" : state === "unhealthy" || state === "exited" ? "danger" : "neutral";
   const label =
     state === "running"
@@ -381,10 +476,15 @@ function ServeStatusPanel({
             </div>
             <div className="mt-1 text-[11px] text-fg-muted">
               {servingStateCopy(state, message)}
-              {logsAvailable && logPath ? (
+              {showLogContext && logsAvailable && logPath ? (
                 <span className="font-mono text-fg-subtle"> · logs: {logPath}</span>
               ) : null}
             </div>
+            {quickModelError ? (
+              <div className="mt-1 rounded-sm border border-danger/30 bg-danger-bg px-2 py-1 text-[11px] text-danger">
+                {quickModelError}
+              </div>
+            ) : null}
             {latestLogs.length ? (
               <div className="mt-1 max-w-[86ch] space-y-0.5">
                 {latestLogs.map((line, index) => (
@@ -397,6 +497,18 @@ function ServeStatusPanel({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!running ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onStartQuick}
+              disabled={!quickModelLabel || quickModelLoading || quickModelStarting}
+              title={quickModelLabel ? `Start ${quickModelLabel}` : "Loading safe model picks"}
+            >
+              {quickModelStarting || quickModelLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Server className="h-3.5 w-3.5" />}
+              {quickModelLabel ? `Start ${quickModelLabel}` : "Start safe model"}
+            </Button>
+          ) : null}
           <Button asChild variant="ghost" size="sm">
             <Link to="/models">Choose model</Link>
           </Button>
@@ -413,13 +525,13 @@ function ServeStatusPanel({
 }
 
 function servingStateCopy(state: string, message: string | null): string {
-  if (message) return message;
+  if (state !== "idle" && message) return message;
   if (state === "running") return "Local model server is ready. Send a message below.";
   if (state === "starting") return "Loading the model. This can take a minute on the first run.";
   if (state === "unhealthy") return "Local serving needs attention. Check logs, stop, or choose another model.";
   if (state === "exited") return "The local model server exited. Logs are kept for review.";
   if (state === "stopping") return "Stopping the local model server.";
-  return "No local model is serving yet.";
+  return "No model is running. Start the safe local model or choose another model.";
 }
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {

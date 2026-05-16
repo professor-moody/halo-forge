@@ -336,6 +336,10 @@ def test_public_frontend_friendly_workstation_contract():
     assert "useServeLogs" in playground_source
     assert "formatUpstreamError" in playground_source
     assert "This model requires Hugging Face access" in playground_source
+    assert "Start safe model" in playground_source
+    assert "No model serving" in playground_source
+    assert "Start a local model to unlock chat" in playground_source
+    assert "Start a model before chatting" in playground_source
     assert "Open Playground" in models_source
     assert "Serving may require Hugging Face authentication" in models_source
     assert "Results files" in results_source
