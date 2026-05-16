@@ -59,7 +59,7 @@ The current DMG/app bundle is a developer-test artifact, not a finished public i
 - Start, Train, Models, Playground, Results, and Docs load without the source dev server
 - quitting the app stops only the desktop-owned service
 
-Known release gaps remain deliberate: the app is unsigned/not notarized, the bundled runtime is large, Linux is still a smoke/contract target, and model downloads or gated Hugging Face repos still require the normal local credentials. Use open Qwen/MLX models for first serving tests.
+Known release gaps remain deliberate: the app is unsigned/not notarized, the bundled runtime is large, and Linux is still a smoke/contract target. Gated or private Hugging Face repos can be connected from **Connection → Hugging Face access**; `HF_TOKEN` in the desktop runtime environment still takes precedence for ops workflows. Use open Qwen/MLX models for first serving tests.
 
 ## Local smoke
 
@@ -84,6 +84,7 @@ Remote v1 means one Halo Forge workstation controlled over the network:
 2. Start the dashboard on a trusted interface: `halo-forge dashboard --host 0.0.0.0 --port 8000`.
 3. Open `http://<workstation-host>:8000` from another machine on the same trusted network.
 4. Paste the `hfk_...` token in Connection.
-5. Confirm Overview, Runs, Run monitor, and Playground are reachable.
+5. If the workstation will download gated/private Hugging Face models, connect the `hf_...` token in **Connection → Hugging Face access**. This is separate from the `hfk_...` API token and is stored server-side.
+6. Confirm Overview, Runs, Run monitor, and Playground are reachable.
 
 The desktop dev build itself remains loopback-local in this pass.

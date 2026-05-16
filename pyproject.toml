@@ -55,6 +55,7 @@ dependencies = [
     "rich",
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
+    "keyring>=25.0.0",
 ]
 
 [project.optional-dependencies]

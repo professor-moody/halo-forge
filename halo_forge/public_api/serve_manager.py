@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from halo_forge.huggingface_access import inject_huggingface_token
+
 
 @dataclass
 class ServeStartRequest:
@@ -109,6 +111,7 @@ class ManagedServeProcess:
 
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
+        inject_huggingface_token(env)
         self._proc = subprocess.Popen(
             cmd,
             cwd=self.base_path,

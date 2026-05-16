@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from halo_forge.huggingface_access import GATED_MODEL_ACTION, HuggingFaceAccessManager
 from halo_forge.training_recovery import build_recovery_guidance
 from ui.services.ops_readiness_service import OpsReadinessService, get_ops_readiness_service
 from ui.services.quickstart_presets import list_quickstart_presets
@@ -53,8 +54,8 @@ TRAINING_MODALITIES = (
 )
 DEFAULT_RUN_ROOT_ENV = "HALO_FORGE_RUN_ROOT"
 GATED_MODEL_MESSAGE = (
-    "This model requires Hugging Face access. Choose an open model, log in with a token, "
-    "or use a local artifact."
+    "This model requires Hugging Face access. Connect Hugging Face, accept the model license, "
+    "or choose an open model."
 )
 
 PUBLIC_TRAIN_ALLOWED_FIELDS: dict[str, set[str]] = {
@@ -265,6 +266,7 @@ class PublicApiService:
         readiness_service: OpsReadinessService | None = None,
         training_service: TrainingService | None = None,
         serve_manager: ManagedServeProcess | None = None,
+        huggingface_manager: HuggingFaceAccessManager | None = None,
         base_path: Path | None = None,
     ) -> None:
         self.app_state = app_state or default_state
@@ -273,6 +275,7 @@ class PublicApiService:
         self.readiness_service = readiness_service or get_ops_readiness_service()
         self.training_service = training_service or TrainingService(self.app_state)
         self.serve_manager = serve_manager or ManagedServeProcess(base_path=self.base_path)
+        self.huggingface_manager = huggingface_manager or HuggingFaceAccessManager()
 
     def _active_backend_name(self) -> str:
         """Return the active accelerator-kind name for cost / display use.
@@ -346,6 +349,18 @@ class PublicApiService:
             "writable": writable,
             "message": message,
         }
+
+    def huggingface_status(self) -> Dict[str, Any]:
+        return self.huggingface_manager.status(verify=True)
+
+    def huggingface_save_token(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.huggingface_manager.save(str(payload.get("token") or ""))
+
+    def huggingface_clear_token(self) -> Dict[str, Any]:
+        return self.huggingface_manager.clear()
+
+    def huggingface_check_model(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.huggingface_manager.check_model(str(payload.get("model_id") or ""))
 
     @staticmethod
     def _mlx_readiness_snapshot() -> dict[str, Any]:
@@ -2760,13 +2775,37 @@ def _default_run_root() -> Path:
 def _friendly_upstream_error(detail: Any) -> Dict[str, Any]:
     text = _error_text(detail)
     if _looks_like_gated_hf_error(text):
-        return {
+        result: Dict[str, Any] = {
             "error_kind": "gated_model",
             "message": GATED_MODEL_MESSAGE,
+            "action": GATED_MODEL_ACTION,
         }
+        model_id = _extract_model_id(detail)
+        if model_id:
+            result["model_id"] = model_id
+            result["model_url"] = f"https://huggingface.co/{model_id}"
+        return result
     if text:
         return {"message": _one_line_error(text)}
     return {"message": "The local model server returned an error. Check the serve logs for details."}
+
+
+def _extract_model_id(detail: Any) -> str | None:
+    if isinstance(detail, dict):
+        for key in ("model_id", "model", "repo_id"):
+            value = detail.get(key)
+            if isinstance(value, str) and "/" in value:
+                return value.strip()
+        for value in detail.values():
+            found = _extract_model_id(value)
+            if found:
+                return found
+    if isinstance(detail, list):
+        for item in detail:
+            found = _extract_model_id(item)
+            if found:
+                return found
+    return None
 
 
 def _error_text(detail: Any) -> str:

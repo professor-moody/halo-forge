@@ -107,6 +107,8 @@ def build_pyinstaller(py: Path, repo_root: Path, runtime_dir: Path) -> Path:
         "ui",
         "--collect-submodules",
         "mlx_lm",
+        "--collect-submodules",
+        "keyring",
         "--hidden-import",
         "uvicorn.loops.auto",
         "--hidden-import",

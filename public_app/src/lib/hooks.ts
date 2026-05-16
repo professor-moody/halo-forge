@@ -3,6 +3,8 @@ import {
   api,
   type BackendInfo,
   type DashboardSummary,
+  type HuggingFaceModelAccess,
+  type HuggingFaceStatus,
   type ModelCatalogResponse,
   type RunListItem,
   type ServeLogs,
@@ -40,6 +42,8 @@ export const queryKeys = {
     ["models", params] as const,
   serve: ["serve"] as const,
   serveLogs: (tail: number) => ["serve", "logs", tail] as const,
+  huggingFace: ["huggingface"] as const,
+  huggingFaceModel: (modelId: string) => ["huggingface", "model", modelId] as const,
 };
 
 /**
@@ -61,6 +65,40 @@ export function useWorkspaceInfo() {
     queryFn: api.workspaceInfo,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+  });
+}
+
+export function useHuggingFaceStatus() {
+  return useQuery<HuggingFaceStatus>({
+    queryKey: queryKeys.huggingFace,
+    queryFn: api.huggingFaceStatus,
+    staleTime: 60_000,
+  });
+}
+
+export function useHuggingFaceSaveToken() {
+  const queryClient = useQueryClient();
+  return useMutation<HuggingFaceStatus, Error, string>({
+    mutationFn: (token) => api.huggingFaceSaveToken(token),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.huggingFace });
+    },
+  });
+}
+
+export function useHuggingFaceClearToken() {
+  const queryClient = useQueryClient();
+  return useMutation<HuggingFaceStatus, Error, void>({
+    mutationFn: () => api.huggingFaceClearToken(),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.huggingFace });
+    },
+  });
+}
+
+export function useHuggingFaceCheckModel() {
+  return useMutation<HuggingFaceModelAccess, Error, string>({
+    mutationFn: (modelId) => api.huggingFaceCheckModel(modelId),
   });
 }
 

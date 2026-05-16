@@ -260,6 +260,7 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "No completed results yet" in results_source
     assert "First guided run" in docs_source
     assert "Remote workstation" in docs_source
+    assert "Hugging Face access" in docs_source
     assert "CLI reference" in docs_source
     assert "Training that stays understandable" not in home_source
     assert "Public workstation" not in shell_source
@@ -287,6 +288,9 @@ def test_public_frontend_remote_auth_regression_contract():
     assert 'navigate({ to: "/connect"' in shell_source
     assert "api.health()" in connect_source
     assert "setApiToken(nextToken)" in connect_source
+    assert "Hugging Face access" in connect_source
+    assert "useHuggingFaceSaveToken" in connect_source
+    assert "hf_" in connect_source
     assert 'TOKEN_STORAGE_KEY = "halo-forge:api-token"' in api_helper
     assert 'headers.Authorization = `Bearer ${token}`' in stream_source
     assert 'reportAuthRequired({ source: "stream"' in stream_source
@@ -332,6 +336,8 @@ def test_public_frontend_friendly_workstation_contract():
     assert "active_action" in api_source
     assert "error_hint" in api_source
     assert "serveStart:" in api_source
+    assert "huggingFaceStatus" in api_source
+    assert "huggingFaceCheckModel" in api_source
     assert "ServeStatusPanel" in playground_source
     assert "useServeLogs" in playground_source
     assert "formatUpstreamError" in playground_source
@@ -341,7 +347,10 @@ def test_public_frontend_friendly_workstation_contract():
     assert "Start a local model to unlock chat" in playground_source
     assert "Start a model before chatting" in playground_source
     assert "Open Playground" in models_source
-    assert "Serving may require Hugging Face authentication" in models_source
+    assert "Requires Hugging Face access" in models_source
+    assert "Connect Hugging Face" in models_source
+    assert "Check access" in models_source
+    assert "Choose open model" in playground_source
     assert "Results files" in results_source
     assert "View logs" in results_source
     assert "Local workstation path" in results_source
@@ -357,6 +366,9 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/train/preflight" in api_source
     assert "/train/launch" in api_source
     assert "/workspace" in api_source
+    assert "/huggingface/status" in api_source
+    assert "/huggingface/token" in api_source
+    assert "/huggingface/check-model" in api_source
     assert "/runs/{run_id}/live" in api_source
     assert "/runs/{run_id}/guided-recovery" in api_source
     assert "/serve/status" in api_source

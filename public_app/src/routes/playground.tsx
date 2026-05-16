@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
+  ExternalLink,
   Loader2,
   Send,
   Server,
@@ -39,7 +40,14 @@ export const Route = createFileRoute("/playground")({
  * to a hosted teacher stays single-auth-domain.
  */
 
-type ChatMessage = PlaygroundMessage & { id: string; kind?: "normal" | "error" };
+type ChatMessage = PlaygroundMessage & {
+  id: string;
+  kind?: "normal" | "error";
+  errorKind?: string;
+  action?: string;
+  modelId?: string;
+  modelUrl?: string;
+};
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are a helpful assistant. Respond concisely and accurately.";
@@ -177,6 +185,10 @@ function PlaygroundRoute() {
             role: "assistant",
             kind: "error",
             content: formatUpstreamError(resp),
+            errorKind: resp.error_kind,
+            action: resp.action,
+            modelId: resp.model_id ?? model,
+            modelUrl: resp.model_url,
           },
         ]);
         return;
@@ -221,7 +233,7 @@ function clearChat() {
 function formatUpstreamError(resp: { status?: number; message?: string; error_kind?: string; detail?: unknown }): string {
   if (resp.message) return resp.message;
   if (resp.error_kind === "gated_model") {
-    return "This model requires Hugging Face access. Choose an open model, log in with a token, or use a local artifact.";
+    return "This model requires Hugging Face access. Connect Hugging Face, accept the license, or choose an open model.";
   }
   if (resp.detail && typeof resp.detail === "object" && "detail" in resp.detail) {
     const detail = (resp.detail as { detail?: unknown }).detail;
@@ -537,6 +549,9 @@ function servingStateCopy(state: string, message: string | null): string {
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === "user";
   const isError = msg.kind === "error" || msg.content.startsWith("[error]") || msg.content.startsWith("[upstream error");
+  const gated = msg.action === "connect_huggingface" || msg.errorKind === "gated_model";
+  const modelId = msg.modelId && msg.modelId !== "halo-forge" ? msg.modelId : undefined;
+  const modelUrl = msg.modelUrl ?? (modelId ? `https://huggingface.co/${modelId}` : undefined);
   return (
     <div className={cn("flex gap-2.5", isUser ? "justify-end" : "justify-start")}>
       {!isUser ? (
@@ -558,7 +573,27 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               : "bg-surface text-fg border border-border-subtle",
         )}
       >
-        {msg.content}
+        <div>{msg.content}</div>
+        {gated ? (
+          <div className="mt-2 flex flex-wrap gap-2 border-t border-danger/20 pt-2">
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/connect" search={{ section: "huggingface", hfModel: modelId, from: "/playground" }}>
+                Connect Hugging Face
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/models">Choose open model</Link>
+            </Button>
+            {modelUrl ? (
+              <Button asChild size="sm" variant="ghost">
+                <a href={modelUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open model page
+                </a>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {isUser ? (
         <div className="shrink-0 mt-0.5 text-fg-disabled">

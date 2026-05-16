@@ -37,6 +37,7 @@ from .launch_context import (
     read_launch_context,
 )
 from halo_forge.capabilities import check_modality_train_capability
+from halo_forge.huggingface_access import inject_huggingface_token
 from halo_forge.utils.macos_runtime import caffeinate_command
 
 # Import notification helpers (only used when UI is running)
@@ -2000,6 +2001,7 @@ class TrainingService:
         
         # Get optimized environment
         env = self._get_strix_halo_env()
+        inject_huggingface_token(env)
         
         exec_cmd = caffeinate_command(cmd, enabled=not no_caffeinate)
 

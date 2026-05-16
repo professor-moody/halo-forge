@@ -41,8 +41,8 @@ from halo_forge.serving.adapter import (
 logger = logging.getLogger(__name__)
 
 GATED_MODEL_MESSAGE = (
-    "This model requires Hugging Face access. Choose an open model, log in with a token, "
-    "or use a local artifact."
+    "This model requires Hugging Face access. Connect Hugging Face, accept the model license, "
+    "or choose an open model."
 )
 
 
@@ -237,7 +237,10 @@ def _load_error_to_http_exception(exc: Exception, *, model_name: str) -> HTTPExc
                 "error_kind": "gated_model",
                 "message": GATED_MODEL_MESSAGE,
                 "model": model_name,
-                "hint": "Open an ungated Qwen/MLX model, run `huggingface-cli login`, set HF_TOKEN, or serve a local artifact.",
+                "model_id": model_name,
+                "action": "connect_huggingface",
+                "model_url": f"https://huggingface.co/{model_name}",
+                "hint": "Connect Hugging Face in the dashboard, accept the model license on Hugging Face, choose an open model, or serve a local artifact.",
             },
         )
     return HTTPException(status_code=500, detail=f"failed to load serving adapter: {text}")

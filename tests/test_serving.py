@@ -361,10 +361,11 @@ def test_gated_huggingface_model_error_maps_to_friendly_403(monkeypatch):
     detail = r.json()["detail"]
     assert detail["error_kind"] == "gated_model"
     assert detail["message"] == (
-        "This model requires Hugging Face access. Choose an open model, log in with a token, "
-        "or use a local artifact."
+        "This model requires Hugging Face access. Connect Hugging Face, accept the model license, "
+        "or choose an open model."
     )
     assert detail["model"] == "meta-llama/Llama-3.2-3B-Instruct"
+    assert detail["action"] == "connect_huggingface"
 
 
 def test_unexpected_adapter_load_error_maps_to_500(monkeypatch):

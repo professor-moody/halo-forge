@@ -380,6 +380,29 @@ export type PlaygroundChatResponse = {
   detail?: unknown;
   message?: string;
   error_kind?: string;
+  action?: string;
+  model_id?: string;
+  model_url?: string;
+};
+
+export type HuggingFaceStatus = {
+  present: boolean;
+  source: "env" | "keyring" | "file" | "none" | string;
+  verified: boolean;
+  username: string | null;
+  status: "not_connected" | "connected" | "needs_attention" | string;
+  message: string;
+  can_clear: boolean;
+};
+
+export type HuggingFaceModelAccess = {
+  model_id: string;
+  status: "available" | "gated" | "auth_required" | "missing" | "network_error" | string;
+  available: boolean;
+  message: string;
+  model_url?: string | null;
+  license_url?: string | null;
+  action?: string | null;
 };
 
 export type ServeStatus = {
@@ -758,6 +781,21 @@ export const api = {
   health: () => request<{ ok: boolean }>("/health"),
   backendInfo: () => request<BackendInfo>("/backend"),
   workspaceInfo: () => request<WorkspaceInfo>("/workspace"),
+  huggingFaceStatus: () => request<HuggingFaceStatus>("/huggingface/status"),
+  huggingFaceSaveToken: (token: string) =>
+    request<HuggingFaceStatus>("/huggingface/token", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  huggingFaceClearToken: () =>
+    request<HuggingFaceStatus>("/huggingface/token", {
+      method: "DELETE",
+    }),
+  huggingFaceCheckModel: (model_id: string) =>
+    request<HuggingFaceModelAccess>("/huggingface/check-model", {
+      method: "POST",
+      body: JSON.stringify({ model_id }),
+    }),
   telemetry: () => request<TelemetrySample>("/telemetry"),
   dashboard: () => request<DashboardSummary>("/dashboard"),
   runCancel: (runId: string) =>

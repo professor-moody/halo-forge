@@ -98,6 +98,28 @@ def create_app(
     async def workspace_info() -> Dict[str, Any]:
         return service.get_workspace_info()
 
+    @router.get("/huggingface/status")
+    async def huggingface_status() -> Dict[str, Any]:
+        return service.huggingface_status()
+
+    @router.post("/huggingface/token")
+    async def huggingface_save_token(payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return service.huggingface_save_token(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.delete("/huggingface/token")
+    async def huggingface_clear_token() -> Dict[str, Any]:
+        return service.huggingface_clear_token()
+
+    @router.post("/huggingface/check-model")
+    async def huggingface_check_model(payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return service.huggingface_check_model(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.get("/telemetry")
     async def telemetry() -> Dict[str, Any]:
         return service.get_telemetry()

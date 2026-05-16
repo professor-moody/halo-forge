@@ -181,9 +181,10 @@ def test_playground_chat_gated_model_error_is_friendly(client, monkeypatch):
     assert body["upstream_error"] is True
     assert body["error_kind"] == "gated_model"
     assert body["message"] == (
-        "This model requires Hugging Face access. Choose an open model, log in with a token, "
-        "or use a local artifact."
+        "This model requires Hugging Face access. Connect Hugging Face, accept the model license, "
+        "or choose an open model."
     )
+    assert body["action"] == "connect_huggingface"
     assert "Cannot access gated repo" in body["detail"]["detail"]
 
 

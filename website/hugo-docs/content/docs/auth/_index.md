@@ -37,6 +37,8 @@ The frontend at `public_app/` reads from `localStorage["halo-forge:api-token"]` 
 localStorage.setItem("halo-forge:api-token", "hfk_...")
 ```
 
+This is different from Hugging Face access. A Halo Forge API token (`hfk_...`) controls who can operate the workstation. A Hugging Face token (`hf_...`) lets the workstation download gated/private model artifacts. See [Hugging Face access](/docs/auth/hugging-face-access/).
+
 ## Single-token deployments
 
 For docker-secret / Kubernetes-secret style deployments, set `HALOFORGE_API_TOKEN` instead of using the file store:

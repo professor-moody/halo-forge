@@ -38,6 +38,14 @@ const INTENT_LINKS = [
     internal: true,
   },
   {
+    icon: ShieldCheck,
+    title: "Hugging Face access",
+    body: "Connect gated/private model downloads without storing HF tokens in the browser.",
+    to: "/connect",
+    action: "Connect HF",
+    internal: true,
+  },
+  {
     icon: Cpu,
     title: "Backend and hardware",
     body: "ROCm, CUDA, Apple MPS, MLX, CPU caveats, and feature coverage.",

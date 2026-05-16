@@ -1,10 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AudioLines,
   Boxes,
   ChevronRight,
   Code2,
   Cpu,
+  ExternalLink,
   FlaskConical,
   Loader2,
   Server,
@@ -26,8 +27,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { queryKeys, useBackendInfo, useModelCatalog, useServeStart, useServeStatus } from "@/lib/hooks";
-import type { ModelCatalogEntry, TrainingMode } from "@/lib/api";
+import {
+  queryKeys,
+  useBackendInfo,
+  useHuggingFaceCheckModel,
+  useModelCatalog,
+  useServeStart,
+  useServeStatus,
+} from "@/lib/hooks";
+import type { HuggingFaceModelAccess, ModelCatalogEntry, TrainingMode } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/models")({
@@ -389,9 +397,12 @@ function FilterSelect({
 }
 
 function ModelRow({ model }: { model: ModelCatalogEntry }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const serveStatus = useServeStatus();
   const serveStart = useServeStart();
+  const hfCheck = useHuggingFaceCheckModel();
+  const [hfAccess, setHfAccess] = useState<HuggingFaceModelAccess | null>(null);
   const caveats = model.known_caveats ?? [];
   const fitNotes = model.fit_notes ?? [];
   const caveated = caveats.length > 0 || model.trust_remote_code_required;
@@ -402,9 +413,44 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   const startGoal = startGoalForModel(model);
   const serveModel = model.mlx_variant ?? model.id;
   const servingThis = serveStatus.data?.running && serveStatus.data.model === serveModel;
-  const serveDisabled = serveStart.isPending || Boolean(serveStatus.data?.running && !servingThis);
+  const serveDisabled = serveStart.isPending || hfCheck.isPending || Boolean(serveStatus.data?.running && !servingThis);
   const anotherModelServing = Boolean(serveStatus.data?.running && !servingThis);
   const serveError = serveStart.error?.message;
+
+  async function handleServe() {
+    if (serveDisabled || servingThis) return;
+    if (gatedAccess) {
+      try {
+        const access = await hfCheck.mutateAsync(model.id);
+        setHfAccess(access);
+        if (!access.available) {
+          if (access.status === "auth_required" || access.status === "gated") {
+            navigate({
+              to: "/connect",
+              search: { section: "huggingface", hfModel: model.id, from: "/models" },
+            });
+          }
+          return;
+        }
+      } catch (err) {
+        setHfAccess({
+          model_id: model.id,
+          status: "network_error",
+          available: false,
+          message: err instanceof Error ? err.message : "Could not check Hugging Face access.",
+        });
+        return;
+      }
+    }
+    serveStart.mutate(
+      {
+        model: serveModel,
+        backend: model.mlx_variant ? "mlx" : undefined,
+        trust_remote_code: model.trust_remote_code_required,
+      },
+      { onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }) },
+    );
+  }
 
   return (
     <Card>
@@ -485,8 +531,41 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             </div>
           ) : null}
           {gatedAccess ? (
-            <div className="rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
-              Serving may require Hugging Face authentication. Open Qwen/MLX models are the safest first serve.
+            <div className="space-y-2 rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
+              <div>Requires Hugging Face access. Accept the license on Hugging Face, then connect a workstation token.</div>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild size="sm" variant="ghost">
+                  <Link to="/connect" search={{ section: "huggingface", hfModel: model.id, from: "/models" }}>
+                    Connect Hugging Face
+                  </Link>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={hfCheck.isPending}
+                  onClick={() =>
+                    hfCheck.mutate(model.id, {
+                      onSuccess: setHfAccess,
+                      onError: (err) =>
+                        setHfAccess({
+                          model_id: model.id,
+                          status: "network_error",
+                          available: false,
+                          message: err.message,
+                        }),
+                    })
+                  }
+                >
+                  Check access
+                </Button>
+                <Button asChild size="sm" variant="ghost">
+                  <a href={`https://huggingface.co/${model.id}`} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open model page
+                  </a>
+                </Button>
+              </div>
+              {hfAccess ? <div className="text-fg-muted">{hfAccess.message}</div> : null}
             </div>
           ) : null}
           {caveats.length ? (
@@ -516,16 +595,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           <Button
             size="sm"
             variant={servingThis ? "ghost" : "primary"}
-            onClick={() =>
-              serveStart.mutate(
-                {
-                  model: serveModel,
-                  backend: model.mlx_variant ? "mlx" : undefined,
-                  trust_remote_code: model.trust_remote_code_required,
-                },
-                { onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }) },
-              )
-            }
+            onClick={handleServe}
             disabled={serveDisabled}
             title={
               serveStatus.data?.running && !servingThis
@@ -536,7 +606,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             }
           >
             {servingThis ? <Square className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />}
-            {servingThis ? "Serving" : "Serve"}
+            {servingThis ? "Serving" : hfCheck.isPending ? "Checking..." : "Serve"}
           </Button>
           {servingThis ? (
             <Button asChild size="sm" variant="primary">
