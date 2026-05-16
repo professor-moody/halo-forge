@@ -50,6 +50,17 @@ Runtime logs for the dev desktop app are written to:
 ~/.halo-forge/desktop/runtime.log
 ```
 
+## Unsigned artifact status
+
+The current DMG/app bundle is a developer-test artifact, not a finished public installer. A successful smoke test means:
+
+- the app starts its own loopback dashboard on `127.0.0.1:8765`
+- `/api/public/health` returns ok
+- Start, Train, Models, Playground, Results, and Docs load without the source dev server
+- quitting the app stops only the desktop-owned service
+
+Known release gaps remain deliberate: the app is unsigned/not notarized, the bundled runtime is large, Linux is still a smoke/contract target, and model downloads or gated Hugging Face repos still require the normal local credentials. Use open Qwen/MLX models for first serving tests.
+
 ## Local smoke
 
 ```bash

@@ -39,7 +39,7 @@ export const Route = createFileRoute("/playground")({
  * to a hosted teacher stays single-auth-domain.
  */
 
-type ChatMessage = PlaygroundMessage & { id: string };
+type ChatMessage = PlaygroundMessage & { id: string; kind?: "normal" | "error" };
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are a helpful assistant. Respond concisely and accurately.";
@@ -116,6 +116,7 @@ function PlaygroundRoute() {
           {
             id: `${Date.now()}-e`,
             role: "assistant",
+            kind: "error",
             content: formatUpstreamError(resp),
           },
         ]);
@@ -138,7 +139,8 @@ function PlaygroundRoute() {
         {
           id: `${Date.now()}-e`,
           role: "assistant",
-          content: `[error] ${(exc as Error).message ?? "request failed"}`,
+          kind: "error",
+          content: friendlyChatFailure(exc),
         },
       ]);
     }
@@ -170,6 +172,14 @@ function formatUpstreamError(resp: { status?: number; message?: string; error_ki
     }
   }
   return `The model server returned an error${resp.status ? ` (${resp.status})` : ""}. Check the serve logs for details.`;
+}
+
+function friendlyChatFailure(exc: unknown): string {
+  const message = exc instanceof Error ? exc.message : String(exc ?? "");
+  if (/failed to fetch|network|ECONNREFUSED|timeout/i.test(message)) {
+    return "The dashboard could not reach the model server. Check local serving status and logs, then try again.";
+  }
+  return "The chat request failed. Check local serving status and logs, then try again.";
 }
 
   return (
@@ -334,18 +344,20 @@ function ServeStatusPanel({
   onStop: () => void;
 }) {
   const running = state === "running" || state === "starting" || state === "unhealthy";
-  const latestLog = logLines.filter(Boolean).slice(-1)[0] ?? null;
-  const tone = state === "running" ? "success" : state === "starting" ? "warning" : state === "unhealthy" || state === "exited" ? "danger" : "neutral";
+  const latestLogs = logLines.filter(Boolean).slice(-3);
+  const tone = state === "running" ? "success" : state === "starting" || state === "stopping" ? "warning" : state === "unhealthy" || state === "exited" ? "danger" : "neutral";
   const label =
     state === "running"
       ? "ready"
       : state === "starting"
         ? "starting"
-        : state === "unhealthy"
-          ? "unhealthy"
-          : state === "exited"
-            ? "exited"
-            : "idle";
+        : state === "stopping"
+          ? "stopping"
+          : state === "unhealthy"
+            ? "unhealthy"
+            : state === "exited"
+              ? "exited"
+              : "idle";
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
@@ -367,17 +379,19 @@ function ServeStatusPanel({
             <div className="mt-0.5 truncate font-mono text-[11px] text-fg-subtle">
               {running ? `${model ?? "model"} · ${url}` : "Start serving from Models or completed Results."}
             </div>
-            {message ? (
-              <div className="mt-1 text-[11px] text-fg-muted">
-                {message}
-                {logsAvailable && logPath ? (
-                  <span className="font-mono text-fg-subtle"> · logs: {logPath}</span>
-                ) : null}
-              </div>
-            ) : null}
-            {latestLog ? (
-              <div className="mt-1 truncate font-mono text-[11px] text-fg-disabled">
-                {latestLog}
+            <div className="mt-1 text-[11px] text-fg-muted">
+              {servingStateCopy(state, message)}
+              {logsAvailable && logPath ? (
+                <span className="font-mono text-fg-subtle"> · logs: {logPath}</span>
+              ) : null}
+            </div>
+            {latestLogs.length ? (
+              <div className="mt-1 max-w-[86ch] space-y-0.5">
+                {latestLogs.map((line, index) => (
+                  <div key={`${index}-${line}`} className="truncate font-mono text-[11px] text-fg-disabled" title={line}>
+                    {line}
+                  </div>
+                ))}
               </div>
             ) : null}
           </div>
@@ -398,9 +412,19 @@ function ServeStatusPanel({
   );
 }
 
+function servingStateCopy(state: string, message: string | null): string {
+  if (message) return message;
+  if (state === "running") return "Local model server is ready. Send a message below.";
+  if (state === "starting") return "Loading the model. This can take a minute on the first run.";
+  if (state === "unhealthy") return "Local serving needs attention. Check logs, stop, or choose another model.";
+  if (state === "exited") return "The local model server exited. Logs are kept for review.";
+  if (state === "stopping") return "Stopping the local model server.";
+  return "No local model is serving yet.";
+}
+
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === "user";
-  const isError = msg.content.startsWith("[error]") || msg.content.startsWith("[upstream error");
+  const isError = msg.kind === "error" || msg.content.startsWith("[error]") || msg.content.startsWith("[upstream error");
   return (
     <div className={cn("flex gap-2.5", isUser ? "justify-end" : "justify-start")}>
       {!isUser ? (

@@ -183,6 +183,49 @@ const METHOD_COPY: Record<TrainingMode, { label: string; description: string; ca
   },
 };
 
+const METHOD_GUIDANCE: Record<TrainingMode, { headline: string; detail: string }> = {
+  sft: {
+    headline: "Best default when you have examples.",
+    detail: "Halo Forge will train on the selected dataset and write the run under the workstation run folder.",
+  },
+  raft: {
+    headline: "Good when answers can be checked.",
+    detail: "The run generates candidate answers, verifies them, keeps the passing samples, then trains.",
+  },
+  dpo: {
+    headline: "Use when you have chosen/rejected pairs.",
+    detail: "DPO tunes the model toward preferred answers while comparing against a reference policy.",
+  },
+  orpo: {
+    headline: "Preference tuning without a reference model.",
+    detail: "ORPO uses the same pair format as DPO and is lighter to set up for many local runs.",
+  },
+  rm: {
+    headline: "Build a scorer before RL or ranking.",
+    detail: "The reward model learns to score chosen answers above rejected answers.",
+  },
+  grpo: {
+    headline: "Advanced verifier-grounded RL.",
+    detail: "Use this after a small SFT or RAFT run; it needs a verifier and usually more memory.",
+  },
+  vlm: {
+    headline: "Vision-language training path.",
+    detail: "Use image-plus-text datasets and keep the prototype gate enabled only when the backend asks for it.",
+  },
+  audio: {
+    headline: "Audio training path.",
+    detail: "Choose the audio task first; dependencies and model family determine whether launch is available.",
+  },
+  reasoning: {
+    headline: "Reasoning-specific training path.",
+    detail: "Use math or multi-step datasets when you want chain quality rather than general instruction following.",
+  },
+  agentic: {
+    headline: "Tool-use and function-calling path.",
+    detail: "Use structured traces and schema checks when the model needs to call tools reliably.",
+  },
+};
+
 const DEFAULTS: Record<TrainingMode, Partial<ConfigState>> = {
   sft: { dataset: "codealpaca", epochs: 1, batchSize: 2, learningRate: "2e-4", maxSamples: 200 },
   raft: { dataset: DEFAULT_RAFT_PROMPTS, cycles: 1, samplesPerPrompt: 4, verifier: "execution" },
@@ -537,6 +580,7 @@ function GoalSection({ config, onChange }: { config: ConfigState; onChange: (goa
 function MethodSection({ config, onChange }: { config: ConfigState; onChange: (mode: TrainingMode) => void }) {
   const activeGoal = GOALS.find((goal) => goal.key === config.goal) ?? GOALS[0];
   const modes = activeGoal.modes;
+  const guidance = METHOD_GUIDANCE[config.modality];
   return (
     <Card>
       <CardHeader>
@@ -574,6 +618,10 @@ function MethodSection({ config, onChange }: { config: ConfigState; onChange: (m
             />
           ))}
         </RadioCardGroup>
+        <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
+          <div className="text-[12px] font-medium text-fg">{guidance.headline}</div>
+          <div className="mt-1 text-[12px] text-fg-muted">{guidance.detail}</div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -759,13 +807,17 @@ function AdvancedOptions({
           <CardHeader className="cursor-pointer hover:bg-surface-hover/30">
             <div className="flex items-center gap-2">
               <CardEyebrow>OPTIONAL</CardEyebrow>
-              <CardTitle>Advanced drawer</CardTitle>
+              <CardTitle>Advanced settings</CardTitle>
             </div>
             <Settings2 className="h-4 w-4 text-fg-subtle" />
           </CardHeader>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <CardContent className="space-y-3">
+            <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
+              These are here for repeat runs and method experiments. The generated defaults are the safest first launch.
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <NumberField label="Epochs" value={config.epochs} onChange={(value) => setConfig((prev) => ({ ...prev, epochs: value }))} />
             <NumberField label="Batch size" value={config.batchSize} onChange={(value) => setConfig((prev) => ({ ...prev, batchSize: value }))} />
             <FormField label="Learning rate">
@@ -815,15 +867,16 @@ function AdvancedOptions({
               </label>
             ) : null}
             {["vlm", "audio", "reasoning", "agentic"].includes(config.modality) ? (
-              <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
+              <label className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning-bg px-3 py-2 text-[12px] text-warning">
                 <input
                   type="checkbox"
                   checked={config.allowPrototypeTrain}
                   onChange={(event) => setConfig((prev) => ({ ...prev, allowPrototypeTrain: event.target.checked }))}
                 />
-                Allow prototype train gate
+                Enable prototype method when the backend requires it
               </label>
             ) : null}
+            </div>
           </CardContent>
         </CollapsibleContent>
       </Card>
@@ -847,6 +900,7 @@ function LaunchPanel({
   onLaunched: (data: Record<string, unknown>) => void;
 }) {
   const disabled = !canLaunch(config) || launch.isPending || (preflight.isSuccess && !preflight.data.ok);
+  const launchCopy = launchHint(config.modality);
   return (
     <Card>
       <CardHeader>
@@ -868,6 +922,10 @@ function LaunchPanel({
             ["memory", selectedModel?.estimated_memory_gb ? `~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "-"],
           ]}
         />
+        <div className="rounded-sm border border-border-subtle bg-bg-subtle px-2 py-1.5">
+          <div className="text-[11px] font-medium text-fg">{launchCopy.headline}</div>
+          <div className="mt-0.5 text-[11px] text-fg-muted">{launchCopy.detail}</div>
+        </div>
         {selectedModel?.known_caveats?.length ? (
           <div className="rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
             {selectedModel.known_caveats[0]}
@@ -892,6 +950,11 @@ function LaunchPanel({
           {launch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           Launch {METHOD_COPY[config.modality].label}
         </Button>
+        {disabled && !launch.isPending ? (
+          <div className="text-[11px] text-fg-muted">
+            {disabledReason(config, preflight)}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -1301,6 +1364,58 @@ function canLaunch(c: ConfigState): boolean {
   if (c.modality === "grpo" && !c.verifier) return false;
   if (c.modality === "audio" && !c.task) return false;
   return true;
+}
+
+function disabledReason(
+  c: ConfigState,
+  preflight: ReturnType<typeof useTrainingPreflight>,
+): string {
+  if (!c.model.trim()) return "Choose or type a base model before launching.";
+  if (!c.dataset) return "Choose a dataset or source before launching.";
+  if (c.dataset === "__custom__" && !c.customDatasetFile.trim()) return "Add the local JSONL path for the custom dataset.";
+  if (c.modality === "grpo" && !c.verifier) return "Choose a verifier before launching GRPO.";
+  if (c.modality === "audio" && !c.task) return "Choose the audio task before launching.";
+  if (preflight.isSuccess && !preflight.data.ok) {
+    return preflight.data.suggested_fixes[0] ?? "Resolve the preflight issue above before launching.";
+  }
+  return "Waiting for launch requirements.";
+}
+
+function launchHint(mode: TrainingMode): { headline: string; detail: string } {
+  if (mode === "sft") {
+    return {
+      headline: "What happens next",
+      detail: "Halo Forge starts a conservative supervised run and keeps you here with links to the run monitor.",
+    };
+  }
+  if (mode === "raft") {
+    return {
+      headline: "What happens next",
+      detail: "Halo Forge samples answers, checks them with the verifier, and trains on the kept examples.",
+    };
+  }
+  if (mode === "dpo" || mode === "orpo") {
+    return {
+      headline: "What happens next",
+      detail: "Halo Forge launches preference tuning with the selected pair dataset and writes a complete launch context.",
+    };
+  }
+  if (mode === "rm") {
+    return {
+      headline: "What happens next",
+      detail: "Halo Forge trains a reward scorer from chosen/rejected pairs and records the output for later comparison.",
+    };
+  }
+  if (mode === "grpo") {
+    return {
+      headline: "What happens next",
+      detail: "Halo Forge runs verifier-grounded RL. Start small and watch the run monitor for reward and verifier signals.",
+    };
+  }
+  return {
+    headline: "What happens next",
+    detail: "Halo Forge launches the method-specific trainer and records artifacts under the workstation run folder.",
+  };
 }
 
 function preflightStatus(
