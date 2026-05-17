@@ -355,7 +355,11 @@ def test_public_frontend_friendly_workstation_contract():
     assert "Requires Hugging Face access" in models_source
     assert "Connect Hugging Face" in models_source
     assert "Check access" in models_source
+    assert "modelPageUrl" in models_source
+    assert "Open served repo" in models_source
     assert "Starting local serving for" in models_source
+    assert "UNIFIED MEM" in Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
+    assert "limited" in Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
     assert "Choose open model" in playground_source
     assert "Results files" in results_source
     assert "View logs" in results_source

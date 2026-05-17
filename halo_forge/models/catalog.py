@@ -51,6 +51,8 @@ class ModelCatalogEntry:
     estimated_memory_gb: Optional[float] = None
     license_note: Optional[str] = None
     download_note: Optional[str] = None
+    model_url: Optional[str] = None
+    license_url: Optional[str] = None
     fit_notes: tuple[str, ...] = ()
     risk_level: str = "safe"
     last_verified: str = "2026-05-09"
@@ -91,6 +93,8 @@ def _entry(
     estimated_memory_gb: Optional[float] = None,
     license_note: Optional[str] = None,
     download_note: Optional[str] = None,
+    model_url: Optional[str] = None,
+    license_url: Optional[str] = None,
     fit_notes: Iterable[str] = (),
     risk_level: Optional[str] = None,
 ) -> ModelCatalogEntry:
@@ -103,6 +107,10 @@ def _entry(
         license_note = "Accept the upstream model license before download."
     if download_note is None and trust_remote_code_required:
         download_note = "Requires explicit trust-remote-code opt-in where supported."
+    if model_url is None:
+        model_url = f"https://huggingface.co/{id}"
+    if license_url is None and license_note:
+        license_url = model_url
     return ModelCatalogEntry(
         id=id,
         label=label,
@@ -123,6 +131,8 @@ def _entry(
         estimated_memory_gb=estimated_memory_gb,
         license_note=license_note,
         download_note=download_note,
+        model_url=model_url,
+        license_url=license_url,
         fit_notes=tuple(fit_notes),
         risk_level=risk,
     )
@@ -422,9 +432,9 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         "Interesting tiny model for structured output, tool use, extraction, and edge experiments.",
         known_caveats=(
             "Liquid notes it is not recommended for knowledge-intensive tasks or programming.",
-            "Check Hugging Face access before serving; some Liquid repos may require accepted access or may not expose the listed MLX sibling publicly.",
+            "Liquid text models use LFM 1.0 terms; some format siblings are separate repositories, so check the exact served repo if loading fails.",
         ),
-        mlx_variant="LiquidAI/LFM2.5-350M-MLX",
+        mlx_variant="LiquidAI/LFM2.5-350M-MLX-4bit",
         status="experimental",
     ),
     _entry(
@@ -439,8 +449,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("cuda", "rocm_gfx1151", "rocm", "mps", "mlx"),
         "small",
         "Liquid's recommended LFM2.5 chat/instruction model; promising for small local agentic workflows.",
-        known_caveats=("Check Hugging Face access before serving; some Liquid repos may require accepted access or may not expose the listed MLX sibling publicly.",),
-        mlx_variant="LiquidAI/LFM2.5-1.2B-Instruct-MLX",
+        known_caveats=("Liquid text models use LFM 1.0 terms; use the explicit MLX precision repo for Apple Silicon serving.",),
+        mlx_variant="LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit",
         status="experimental",
     ),
     _entry(
@@ -455,8 +465,8 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("cuda", "rocm_gfx1151", "rocm", "mps", "mlx"),
         "small",
         "Liquid's reasoning-optimized small model for math and logic experiments.",
-        known_caveats=("Check Hugging Face access before serving; some Liquid repos may require accepted access or may not expose the listed MLX sibling publicly.",),
-        mlx_variant="LiquidAI/LFM2.5-1.2B-Thinking-MLX",
+        known_caveats=("Liquid text models use LFM 1.0 terms; use the explicit MLX precision repo for Apple Silicon serving.",),
+        mlx_variant="LiquidAI/LFM2.5-1.2B-Thinking-MLX-4bit",
         status="experimental",
     ),
     _entry(
@@ -471,8 +481,7 @@ _MODELS: tuple[ModelCatalogEntry, ...] = (
         ("cuda", "rocm_gfx1151", "rocm", "mps", "mlx"),
         "small",
         "Base Liquid checkpoint for custom fine-tuning experiments.",
-        known_caveats=("Check Hugging Face access before serving; some Liquid repos may require accepted access or may not expose the listed MLX sibling publicly.",),
-        mlx_variant="LiquidAI/LFM2.5-1.2B-Base-MLX",
+        known_caveats=("Liquid text models use LFM 1.0 terms; start from the base Hugging Face page if a quantized format repo is unavailable.",),
         status="experimental",
     ),
     _entry(

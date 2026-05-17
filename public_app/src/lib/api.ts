@@ -727,6 +727,8 @@ export type SuggestedModel = {
   estimated_memory_gb: number | null;
   license_note: string | null;
   download_note: string | null;
+  model_url: string | null;
+  license_url: string | null;
   fit_notes: string[];
   risk_level: "safe" | "caveated" | "experimental" | string;
   last_verified: string;

@@ -413,6 +413,10 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   );
   const startGoal = startGoalForModel(model);
   const serveModel = model.mlx_variant ?? model.id;
+  const modelPageUrl = model.model_url ?? `https://huggingface.co/${model.id}`;
+  const licenseUrl = model.license_url ?? modelPageUrl;
+  const servedRepoUrl = `https://huggingface.co/${serveModel}`;
+  const hasSeparateServedRepo = serveModel !== model.id;
   const servingThis = serveStatus.data?.running && serveStatus.data.model === serveModel;
   const servingThisStarting = Boolean(servingThis && serveStatus.data?.state === "starting");
   const serveDisabled = serveStart.isPending || hfCheck.isPending || Boolean(serveStatus.data?.running && !servingThis);
@@ -540,7 +544,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
           {gatedAccess ? (
             <div className="space-y-2 rounded-sm border border-warning/30 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
-              <div>Requires Hugging Face access. Accept the license on Hugging Face, then connect a workstation token.</div>
+              <div>Requires Hugging Face access. Open the model page to accept any provider terms, then connect a workstation token.</div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild size="sm" variant="ghost">
                   <Link to="/connect" search={{ section: "huggingface", hfModel: serveModel, from: "/models" }}>
@@ -567,11 +571,19 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
                   Check access
                 </Button>
                 <Button asChild size="sm" variant="ghost">
-                  <a href={`https://huggingface.co/${serveModel}`} target="_blank" rel="noreferrer">
+                  <a href={licenseUrl} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
                     Open model page
                   </a>
                 </Button>
+                {hasSeparateServedRepo ? (
+                  <Button asChild size="sm" variant="ghost">
+                    <a href={servedRepoUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open served repo
+                    </a>
+                  </Button>
+                ) : null}
               </div>
               {hfAccess ? <div className="text-fg-muted">{hfAccess.message}</div> : null}
             </div>
@@ -605,6 +617,12 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+          <Button asChild size="sm" variant="ghost">
+            <a href={modelPageUrl} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" />
+              Model page
+            </a>
+          </Button>
           <Button
             size="sm"
             variant={servingThis ? "ghost" : "primary"}

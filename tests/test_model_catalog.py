@@ -47,6 +47,10 @@ def test_public_api_model_catalog_shape():
     assert payload["items"]
     assert payload["facets"]["providers"] == ["Liquid AI"]
     assert "risk_levels" in payload["facets"]
+    instruct = next(item for item in payload["items"] if item["id"] == "LiquidAI/LFM2.5-1.2B-Instruct")
+    assert instruct["model_url"] == "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct"
+    assert instruct["mlx_variant"] == "LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit"
+    assert instruct["license_note"] is None
 
 
 def test_public_api_training_models_use_catalog(monkeypatch):

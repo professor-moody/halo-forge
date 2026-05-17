@@ -32,6 +32,17 @@ export function TelemetryStrip() {
     "/api/public/telemetry/stream",
   );
   const isLoading = data === null && status !== "error";
+  const appleTelemetry = isAppleTelemetry(data ?? undefined);
+  const gpuLimited = appleTelemetry && data?.gpu_util_percent == null && !isLoading;
+  const powerLimited = appleTelemetry && data?.power_watts == null && !isLoading;
+  const tempLimited = appleTelemetry && data?.temp_celsius == null && !isLoading;
+  const throughputIdle = data?.throughput_tokens_per_sec == null && !data?.active_run_id && !isLoading;
+  const cpuHint =
+    appleTelemetry && data?.chip
+      ? chipLabel(data.chip)
+      : data?.sys_mem_used_gb != null && data?.sys_mem_total_gb != null
+        ? `${data.sys_mem_used_gb.toFixed(1)} / ${data.sys_mem_total_gb.toFixed(0)} GB`
+        : undefined;
 
   return (
     <div className="border-b border-border bg-bg-subtle/40">
@@ -39,31 +50,34 @@ export function TelemetryStrip() {
         <Cell
           icon={Gauge}
           label="GPU UTIL"
-          value={fmtPercent(data?.gpu_util_percent)}
-          unit="%"
+          value={gpuLimited ? "limited" : fmtPercent(data?.gpu_util_percent)}
+          unit={gpuLimited ? undefined : "%"}
+          hint={gpuLimited ? "macOS" : undefined}
           loading={isLoading}
         />
         <VramCell sample={data ?? undefined} loading={isLoading} />
         <Cell
           icon={Zap}
           label="POWER"
-          value={fmtNum(data?.power_watts, 0)}
-          unit="W"
+          value={powerLimited ? "limited" : fmtNum(data?.power_watts, 0)}
+          unit={powerLimited ? undefined : "W"}
+          hint={powerLimited ? "sensor" : undefined}
           loading={isLoading}
         />
         <Cell
           icon={Thermometer}
           label="TEMP"
-          value={fmtNum(data?.temp_celsius, 0)}
-          unit="°C"
+          value={tempLimited ? "limited" : fmtNum(data?.temp_celsius, 0)}
+          unit={tempLimited ? undefined : "°C"}
+          hint={tempLimited ? "sensor" : undefined}
           loading={isLoading}
           tone={tempTone(data?.temp_celsius)}
         />
         <Cell
           icon={Activity}
           label="THROUGHPUT"
-          value={fmtNum(data?.throughput_tokens_per_sec, 0)}
-          unit="tok/s"
+          value={throughputIdle ? "idle" : fmtNum(data?.throughput_tokens_per_sec, 0)}
+          unit={throughputIdle ? undefined : "tok/s"}
           hint={data?.active_run_id ? data.active_run_id.slice(0, 12) : undefined}
           loading={isLoading}
         />
@@ -72,11 +86,7 @@ export function TelemetryStrip() {
           label="CPU"
           value={fmtPercent(data?.cpu_util_percent)}
           unit="%"
-          hint={
-            data?.sys_mem_used_gb != null && data?.sys_mem_total_gb != null
-              ? `${data.sys_mem_used_gb.toFixed(1)} / ${data.sys_mem_total_gb.toFixed(0)} GB`
-              : undefined
-          }
+          hint={cpuHint}
           loading={isLoading}
         />
         <MPSFallbackChip count={data?.mps_to_cpu_fallbacks_60s ?? 0} />
@@ -193,15 +203,19 @@ function VramCell({
   sample: TelemetrySample | undefined;
   loading: boolean;
 }) {
-  const used = sample?.vram_used_gb ?? null;
-  const total = sample?.vram_total_gb ?? null;
+  const appleTelemetry = isAppleTelemetry(sample);
+  const unifiedAvailable =
+    appleTelemetry && sample?.sys_mem_used_gb != null && sample?.sys_mem_total_gb != null;
+  const used = unifiedAvailable ? sample.sys_mem_used_gb : (sample?.vram_used_gb ?? null);
+  const total = unifiedAvailable ? sample.sys_mem_total_gb : (sample?.vram_total_gb ?? null);
+  const label = unifiedAvailable ? "UNIFIED MEM" : "VRAM";
   const ratio = used != null && total != null && total > 0 ? used / total : null;
 
   if (used == null) {
     return (
       <Cell
         icon={Cpu}
-        label="VRAM"
+        label={label}
         value="—"
         unit="GB"
         hint={total != null ? `of ${total.toFixed(0)}` : undefined}
@@ -228,7 +242,7 @@ function VramCell({
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-fg-disabled">
-            VRAM
+            {label}
           </span>
           {ratio != null ? (
             <span className="font-mono text-[10px] text-fg-subtle">
@@ -320,4 +334,19 @@ function tempTone(temp: number | null | undefined): "neutral" | "warning" | "dan
   if (temp >= 90) return "danger";
   if (temp >= 80) return "warning";
   return "neutral";
+}
+
+function isAppleTelemetry(sample: TelemetrySample | undefined): boolean {
+  if (!sample) return false;
+  const backend = String(sample.backend ?? "").toLowerCase();
+  return Boolean(sample.chip) || backend === "mps" || backend === "mlx";
+}
+
+function chipLabel(chip: NonNullable<TelemetrySample["chip"]>): string {
+  const variantName = chip.variant;
+  const variant = variantName ? ` ${variantName}` : "";
+  if (variantName && chip.brand.toLowerCase().includes(variantName.toLowerCase())) {
+    return chip.brand;
+  }
+  return `${chip.brand}${variant}`.trim();
 }
