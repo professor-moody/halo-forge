@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import time
+import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -47,8 +48,20 @@ class ManagedServeProcess:
         proc = self._proc
         running = proc is not None and proc.poll() is None
         exit_code = None if proc is None else proc.poll()
-        healthy = self.is_healthy()
-        state = self._state(running=running, healthy=healthy, exit_code=exit_code)
+        health_payload = self._health_payload() if running else None
+        load_error = (
+            health_payload.get("load_error")
+            if isinstance(health_payload, dict) and isinstance(health_payload.get("load_error"), dict)
+            else None
+        )
+        healthy = bool(health_payload and health_payload.get("ok"))
+        model_ready = bool(health_payload and health_payload.get("adapter_loaded"))
+        state = self._state(
+            running=running,
+            healthy=healthy,
+            exit_code=exit_code,
+            load_error=load_error,
+        )
         return {
             "running": running,
             "state": state,
@@ -64,9 +77,14 @@ class ManagedServeProcess:
             "log_path": str(self._log_path) if self._log_path else None,
             "logs_available": bool(self._log_path and self._log_path.exists()),
             "last_error": self._last_error,
-            "error_hint": self._error_hint(state=state, exit_code=exit_code),
+            "error_hint": self._error_hint(state=state, exit_code=exit_code, load_error=load_error),
             "healthy": healthy,
-            "message": self._message(state=state, exit_code=exit_code),
+            "model_ready": model_ready,
+            "adapter_loaded": model_ready,
+            "load_error": load_error,
+            "load_error_kind": load_error.get("error_kind") if load_error else None,
+            "load_error_message": load_error.get("message") if load_error else None,
+            "message": self._message(state=state, exit_code=exit_code, model_ready=model_ready, load_error=load_error),
         }
 
     @property
@@ -159,33 +177,61 @@ class ManagedServeProcess:
         return {**self.status(), "healthy": healthy}
 
     def is_healthy(self) -> bool:
-        if self._proc is None or self._proc.poll() is not None:
-            return False
-        try:
-            with urllib.request.urlopen(f"{self.base_url}/models", timeout=0.75) as resp:
-                return 200 <= int(resp.status) < 300
-        except (OSError, urllib.error.URLError, TimeoutError):
-            return False
+        payload = self._health_payload()
+        return bool(payload and payload.get("ok"))
 
-    def _state(self, *, running: bool, healthy: bool, exit_code: int | None) -> str:
+    def _health_payload(self) -> dict[str, Any] | None:
+        if self._proc is None or self._proc.poll() is not None:
+            return None
+        try:
+            with urllib.request.urlopen(f"http://{self._host}:{self._port}/health", timeout=0.75) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                if not (200 <= int(resp.status) < 300):
+                    return None
+                payload = json.loads(raw)
+                return payload if isinstance(payload, dict) else None
+        except (OSError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _state(
+        self,
+        *,
+        running: bool,
+        healthy: bool,
+        exit_code: int | None,
+        load_error: dict[str, Any] | None = None,
+    ) -> str:
         if self._proc is None:
             return "idle"
         if not running:
             return "exited"
+        if load_error:
+            return "unhealthy"
         if healthy:
             return "running"
         if self._started_at and time.time() - self._started_at <= self.STARTING_GRACE_SECONDS:
             return "starting"
         return "unhealthy"
 
-    def _message(self, *, state: str, exit_code: int | None) -> str:
+    def _message(
+        self,
+        *,
+        state: str,
+        exit_code: int | None,
+        model_ready: bool = False,
+        load_error: dict[str, Any] | None = None,
+    ) -> str:
         if state == "idle":
             return "No local model is being served."
         if state == "starting":
             return "Starting local model server. This can take a minute while the model loads."
         if state == "running":
-            return "Local model server is ready."
+            if model_ready:
+                return "Local model is loaded and ready to chat."
+            return "Local server is ready. The model will load on the first message."
         if state == "unhealthy":
+            if load_error and load_error.get("message"):
+                return str(load_error["message"])
             return "Local model server is running but health checks are failing."
         if state == "exited":
             return f"Local model server exited with code {exit_code}."
@@ -202,13 +248,21 @@ class ManagedServeProcess:
             return "review_logs"
         return None
 
-    def _error_hint(self, *, state: str, exit_code: int | None) -> str | None:
+    def _error_hint(
+        self,
+        *,
+        state: str,
+        exit_code: int | None,
+        load_error: dict[str, Any] | None = None,
+    ) -> str | None:
         if state == "idle":
             return None
         if self._last_error:
             return self._last_error
+        if load_error and load_error.get("hint"):
+            return str(load_error["hint"])
         if state == "unhealthy":
-            return "The process is still running, but /v1/models is not healthy. Review the serving log."
+            return "The process is still running, but the model did not load. Review the serving log."
         if state == "exited":
             return f"The local serve process exited with code {exit_code}. Review the serving log before retrying."
         return None

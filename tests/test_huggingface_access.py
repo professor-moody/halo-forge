@@ -115,7 +115,7 @@ def test_managed_serve_injects_hf_token(monkeypatch, tmp_path):
     monkeypatch.setenv(HF_TOKEN_ENV, "hf_process_secret")
     monkeypatch.setattr("halo_forge.public_api.serve_manager.subprocess.Popen", FakePopen)
     monkeypatch.setattr(ManagedServeProcess, "_port_available", lambda self, host, port: True)
-    monkeypatch.setattr(ManagedServeProcess, "is_healthy", lambda self: False)
+    monkeypatch.setattr(ManagedServeProcess, "_health_payload", lambda self: None)
 
     manager = ManagedServeProcess(base_path=tmp_path, log_dir=tmp_path / "logs")
     status = manager.start(ServeStartRequest(model="Qwen/Qwen2.5-0.5B-Instruct"))

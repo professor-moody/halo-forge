@@ -335,6 +335,8 @@ def test_public_frontend_friendly_workstation_contract():
     assert 'state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string' in api_source
     assert "active_action" in api_source
     assert "error_hint" in api_source
+    assert "model_ready" in api_source
+    assert "load_error" in api_source
     assert "serveStart:" in api_source
     assert "huggingFaceStatus" in api_source
     assert "huggingFaceCheckModel" in api_source
@@ -346,10 +348,14 @@ def test_public_frontend_friendly_workstation_contract():
     assert "No model serving" in playground_source
     assert "Start a local model to unlock chat" in playground_source
     assert "Start a model before chatting" in playground_source
+    assert "server ready" in playground_source
+    assert "Managed local serving uses Hugging Face access from Connection" in playground_source
+    assert "externalEndpoint ? apiKey" in playground_source
     assert "Open Playground" in models_source
     assert "Requires Hugging Face access" in models_source
     assert "Connect Hugging Face" in models_source
     assert "Check access" in models_source
+    assert "Starting local serving for" in models_source
     assert "Choose open model" in playground_source
     assert "Results files" in results_source
     assert "View logs" in results_source

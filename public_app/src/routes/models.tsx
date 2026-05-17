@@ -403,6 +403,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   const serveStart = useServeStart();
   const hfCheck = useHuggingFaceCheckModel();
   const [hfAccess, setHfAccess] = useState<HuggingFaceModelAccess | null>(null);
+  const [serveFeedback, setServeFeedback] = useState<string | null>(null);
   const caveats = model.known_caveats ?? [];
   const fitNotes = model.fit_notes ?? [];
   const caveated = caveats.length > 0 || model.trust_remote_code_required;
@@ -413,6 +414,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
   const startGoal = startGoalForModel(model);
   const serveModel = model.mlx_variant ?? model.id;
   const servingThis = serveStatus.data?.running && serveStatus.data.model === serveModel;
+  const servingThisStarting = Boolean(servingThis && serveStatus.data?.state === "starting");
   const serveDisabled = serveStart.isPending || hfCheck.isPending || Boolean(serveStatus.data?.running && !servingThis);
   const anotherModelServing = Boolean(serveStatus.data?.running && !servingThis);
   const serveError = serveStart.error?.message;
@@ -421,20 +423,21 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
     if (serveDisabled || servingThis) return;
     if (gatedAccess) {
       try {
-        const access = await hfCheck.mutateAsync(model.id);
+        setServeFeedback("Checking Hugging Face access before serving...");
+        const access = await hfCheck.mutateAsync(serveModel);
         setHfAccess(access);
         if (!access.available) {
           if (access.status === "auth_required" || access.status === "gated") {
             navigate({
               to: "/connect",
-              search: { section: "huggingface", hfModel: model.id, from: "/models" },
+              search: { section: "huggingface", hfModel: serveModel, from: "/models" },
             });
           }
           return;
         }
       } catch (err) {
         setHfAccess({
-          model_id: model.id,
+          model_id: serveModel,
           status: "network_error",
           available: false,
           message: err instanceof Error ? err.message : "Could not check Hugging Face access.",
@@ -442,13 +445,18 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
         return;
       }
     }
+    setServeFeedback(`Starting local serving for ${serveModel}...`);
     serveStart.mutate(
       {
         model: serveModel,
         backend: model.mlx_variant ? "mlx" : undefined,
         trust_remote_code: model.trust_remote_code_required,
       },
-      { onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }) },
+      {
+        onSuccess: () => setServeFeedback("Local server is starting. Open Playground to load and test the model."),
+        onError: (err) => setServeFeedback(err.message),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.serve }),
+      },
     );
   }
 
@@ -535,7 +543,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
               <div>Requires Hugging Face access. Accept the license on Hugging Face, then connect a workstation token.</div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild size="sm" variant="ghost">
-                  <Link to="/connect" search={{ section: "huggingface", hfModel: model.id, from: "/models" }}>
+                  <Link to="/connect" search={{ section: "huggingface", hfModel: serveModel, from: "/models" }}>
                     Connect Hugging Face
                   </Link>
                 </Button>
@@ -544,11 +552,11 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
                   variant="ghost"
                   disabled={hfCheck.isPending}
                   onClick={() =>
-                    hfCheck.mutate(model.id, {
+                    hfCheck.mutate(serveModel, {
                       onSuccess: setHfAccess,
                       onError: (err) =>
                         setHfAccess({
-                          model_id: model.id,
+                          model_id: serveModel,
                           status: "network_error",
                           available: false,
                           message: err.message,
@@ -559,7 +567,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
                   Check access
                 </Button>
                 <Button asChild size="sm" variant="ghost">
-                  <a href={`https://huggingface.co/${model.id}`} target="_blank" rel="noreferrer">
+                  <a href={`https://huggingface.co/${serveModel}`} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
                     Open model page
                   </a>
@@ -582,7 +590,12 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
           {servingThis ? (
             <div className="rounded-sm border border-success/30 bg-success-bg px-2 py-1.5 text-[11px] text-success">
-              Ready in Playground at <span className="font-mono">{serveStatus.data?.url}</span>.
+              {serveStatus.data?.model_ready ? "Loaded" : "Selected"} in Playground at <span className="font-mono">{serveStatus.data?.url}</span>.
+            </div>
+          ) : null}
+          {serveFeedback && !servingThis ? (
+            <div className="rounded-sm border border-accent/30 bg-accent/10 px-2 py-1.5 text-[11px] text-accent">
+              {serveFeedback}
             </div>
           ) : null}
           {serveError ? (
@@ -606,9 +619,9 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             }
           >
             {servingThis ? <Square className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />}
-            {servingThis ? "Serving" : hfCheck.isPending ? "Checking..." : "Serve"}
+            {servingThisStarting ? "Starting" : servingThis ? "Serving" : hfCheck.isPending ? "Checking..." : "Serve"}
           </Button>
-          {servingThis ? (
+          {servingThis || serveFeedback ? (
             <Button asChild size="sm" variant="primary">
               <Link to="/playground">Open Playground</Link>
             </Button>

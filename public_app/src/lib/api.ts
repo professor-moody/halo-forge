@@ -422,6 +422,21 @@ export type ServeStatus = {
   last_error: string | null;
   error_hint?: string | null;
   healthy: boolean;
+  model_ready?: boolean;
+  adapter_loaded?: boolean;
+  load_error?: {
+    status?: number;
+    error_kind?: string;
+    message?: string;
+    model?: string;
+    model_id?: string;
+    action?: string;
+    model_url?: string;
+    hint?: string;
+    detail?: unknown;
+  } | null;
+  load_error_kind?: string | null;
+  load_error_message?: string | null;
   message: string;
 };
 

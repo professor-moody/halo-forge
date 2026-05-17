@@ -287,12 +287,21 @@ def create_serving_app(
     app = FastAPI(title="halo-forge serving", version="0.1.0")
     started_at = int(time.time())
 
-    state: dict[str, Any] = {"adapter": adapter, "model_name": model_name}
+    state: dict[str, Any] = {
+        "adapter": adapter,
+        "model_name": model_name,
+        "load_error": None,
+    }
 
     def _get_adapter() -> ServingAdapter:
         if state["adapter"] is None:
             missing_path = _missing_local_model_detail(model_name)
             if missing_path is not None:
+                state["load_error"] = {
+                    "status": 400,
+                    "detail": missing_path,
+                    "message": missing_path,
+                }
                 raise HTTPException(status_code=400, detail=missing_path)
             try:
                 state["adapter"] = build_serving_adapter(
@@ -300,11 +309,15 @@ def create_serving_app(
                     backend_name=backend_name,
                     trust_remote_code=trust_remote_code,
                 )
-            except HTTPException:
+                state["load_error"] = None
+            except HTTPException as exc:
+                state["load_error"] = _http_exception_to_load_error(exc)
                 raise
             except Exception as exc:
                 logger.exception("Serving adapter load failed for model=%s", model_name)
-                raise _load_error_to_http_exception(exc, model_name=model_name) from exc
+                mapped = _load_error_to_http_exception(exc, model_name=model_name)
+                state["load_error"] = _http_exception_to_load_error(mapped)
+                raise mapped from exc
         return state["adapter"]
 
     @app.get("/v1/models", response_model=ModelList)
@@ -402,16 +415,32 @@ def create_serving_app(
     @app.get("/health")
     def health() -> dict[str, Any]:
         adapter = state.get("adapter")
+        load_error = state.get("load_error")
         return {
-            "ok": True,
+            "ok": load_error is None,
             "model": model_name,
             "backend": getattr(adapter, "backend_name", None) or backend_name or "auto",
             "adapter_loaded": adapter is not None,
+            "load_error": load_error,
             "started_at": started_at,
             "streaming_supported": True,
         }
 
     return app
+
+
+def _http_exception_to_load_error(exc: HTTPException) -> dict[str, Any]:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        return {
+            "status": exc.status_code,
+            **detail,
+        }
+    return {
+        "status": exc.status_code,
+        "detail": detail,
+        "message": str(detail or "Model failed to load."),
+    }
 
 
 __all__ = [

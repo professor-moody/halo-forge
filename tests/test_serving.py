@@ -356,6 +356,7 @@ def test_gated_huggingface_model_error_maps_to_friendly_403(monkeypatch):
     app = create_serving_app(model_name="meta-llama/Llama-3.2-3B-Instruct", backend_name="cpu")
     with TestClient(app) as c:
         r = c.post("/v1/completions", json={"model": "meta-llama/Llama-3.2-3B-Instruct", "prompt": "hi"})
+        health = c.get("/health").json()
 
     assert r.status_code == 403
     detail = r.json()["detail"]
@@ -366,6 +367,9 @@ def test_gated_huggingface_model_error_maps_to_friendly_403(monkeypatch):
     )
     assert detail["model"] == "meta-llama/Llama-3.2-3B-Instruct"
     assert detail["action"] == "connect_huggingface"
+    assert health["ok"] is False
+    assert health["load_error"]["error_kind"] == "gated_model"
+    assert health["load_error"]["action"] == "connect_huggingface"
 
 
 def test_unexpected_adapter_load_error_maps_to_500(monkeypatch):
