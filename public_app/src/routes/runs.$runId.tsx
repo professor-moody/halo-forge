@@ -202,6 +202,7 @@ function RunDetailRoute() {
       ) : (
         <div className="px-5 py-5 space-y-4">
           <LiveSummary data={data} live={live} streamStatus={liveStream.status} streamError={liveStream.error} />
+          {data.failure_summary ? <FailureSummaryCard data={data.failure_summary} /> : null}
           <StatRibbon data={data} />
 
           {/* Cycle scrubber — playback head for the charts below. */}
@@ -261,9 +262,11 @@ function LiveSummary({
   streamError: string | null;
 }) {
   const status = live?.status ?? data.status;
+  const normalizedStatus = String(status ?? "").toLowerCase();
   const isTerminal = ["completed", "failed", "stopped", "cancelled", "canceled"].includes(
-    String(status ?? "").toLowerCase(),
+    normalizedStatus,
   );
+  const failedTerminal = normalizedStatus === "failed";
   const loss = live?.latest_loss ?? data.metrics_summary?.final_train_loss ?? null;
   const steps = live?.current_step ?? data.metrics_summary?.update_steps ?? null;
   const totalSteps = live?.total_steps ?? null;
@@ -283,7 +286,9 @@ function LiveSummary({
     (isTerminal ? "Run finished" : "Run monitor");
   const streamLabel = plainRunStatus(status, streamStatus, streamError);
   const streamTone =
-    streamStatus === "open" || isTerminal
+    failedTerminal
+      ? "danger"
+      : streamStatus === "open" || isTerminal
       ? "success"
       : streamStatus === "error"
         ? "warning"
@@ -297,6 +302,8 @@ function LiveSummary({
           <div className="flex flex-wrap items-center gap-2">
             {streamTone === "success" ? (
               <CheckCircle2 className="h-4 w-4 text-success" />
+            ) : streamTone === "danger" ? (
+              <CircleAlert className="h-4 w-4 text-danger" />
             ) : (
               <CircleAlert className="h-4 w-4 text-warning" />
             )}
@@ -330,6 +337,64 @@ function LiveMetric({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </div>
+  );
+}
+
+function FailureSummaryCard({ data }: { data: NonNullable<RunDetail["failure_summary"]> }) {
+  const tail = data.log_tail?.filter(Boolean).slice(-8) ?? [];
+  return (
+    <Card className="border-danger/40 bg-danger-bg/20">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CircleAlert className="h-4 w-4 text-danger" />
+          <CardTitle>{data.headline}</CardTitle>
+        </div>
+        <Badge tone="danger" size="sm">{data.kind}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="max-w-[82ch] text-[13px] leading-5 text-fg-muted">
+          {data.message}
+        </p>
+        <div className="rounded-sm border border-danger/25 bg-bg/70 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-fg-disabled">Next action</div>
+          <div className="mt-1 text-[12px] text-fg">{data.next_action}</div>
+        </div>
+        {tail.length ? (
+          <div className="rounded-sm border border-border-subtle bg-bg-subtle/70">
+            <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
+              <span className="text-[10px] uppercase tracking-[0.14em] text-fg-disabled">Last useful log lines</span>
+              {data.log_path ? (
+                <span className="max-w-[56ch] truncate font-mono text-[10px] text-fg-disabled" title={data.log_path}>
+                  {data.log_path}
+                </span>
+              ) : null}
+            </div>
+            <div className="space-y-1 px-3 py-2">
+              {tail.map((line, index) => (
+                <div key={`${index}-${line}`} className="break-words font-mono text-[11px] leading-5 text-fg-muted">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {data.retry_route ? (
+            <Button asChild size="sm" variant="primary">
+              <a href={data.retry_route}>Retry in Train</a>
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant="ghost">
+            <Link to="/diagnostics">Open Diagnostics</Link>
+          </Button>
+          {data.docs_url ? (
+            <Button asChild size="sm" variant="ghost">
+              <a href={data.docs_url}>Open docs</a>
+            </Button>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
