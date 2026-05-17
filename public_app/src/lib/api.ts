@@ -176,6 +176,13 @@ export type WorkspaceInfo = {
   message: string;
 };
 
+export type VersionInfo = {
+  package_version: string;
+  display_version: string;
+  release_channel: string;
+  git_sha?: string;
+};
+
 export type MLXReadiness = {
   status: "ready" | "unavailable" | "error";
   executable: boolean;
@@ -796,6 +803,7 @@ export type RunSamples = {
 
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
+  versionInfo: () => request<VersionInfo>("/version"),
   backendInfo: () => request<BackendInfo>("/backend"),
   workspaceInfo: () => request<WorkspaceInfo>("/workspace"),
   huggingFaceStatus: () => request<HuggingFaceStatus>("/huggingface/status"),

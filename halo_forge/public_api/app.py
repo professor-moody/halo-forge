@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .service import PublicApiService
+from halo_forge.version import DISPLAY_VERSION
 
 FASTAPI_IMPORT_ERROR: Exception | None = None
 
@@ -56,7 +57,7 @@ def create_app(
     service = PublicApiService()
     api = FastAPI(
         title="halo-forge public API",
-        version="0.1.0",
+        version=DISPLAY_VERSION,
         docs_url="/api/public/docs",
         openapi_url="/api/public/openapi.json",
     )
@@ -89,6 +90,10 @@ def create_app(
     @router.get("/health")
     async def health() -> Dict[str, Any]:
         return {"ok": True}
+
+    @router.get("/version")
+    async def version() -> Dict[str, Any]:
+        return service.get_version_info()
 
     @router.get("/backend")
     async def backend_info() -> Dict[str, Any]:

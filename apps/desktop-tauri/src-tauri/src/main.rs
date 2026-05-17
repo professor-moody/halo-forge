@@ -16,6 +16,7 @@ use tauri_plugin_shell::{
 const DASHBOARD_HOST: &str = "127.0.0.1";
 const DASHBOARD_PORT: u16 = 8765;
 const DASHBOARD_URL: &str = "http://127.0.0.1:8765";
+const RELEASE_CHANNEL: &str = "alpha";
 
 #[derive(Clone, Serialize)]
 struct DesktopStatus {
@@ -24,6 +25,8 @@ struct DesktopStatus {
     detail: Option<String>,
     log_path: Option<String>,
     dashboard_url: String,
+    app_version: String,
+    release_channel: String,
 }
 
 impl DesktopStatus {
@@ -34,6 +37,8 @@ impl DesktopStatus {
             detail,
             log_path: log_path.map(|path| path.display().to_string()),
             dashboard_url: DASHBOARD_URL.to_string(),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            release_channel: RELEASE_CHANNEL.to_string(),
         }
     }
 }

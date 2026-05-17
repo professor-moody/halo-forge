@@ -330,6 +330,13 @@ class PublicApiService:
             "mlx_readiness": mlx_readiness,
         }
 
+    def get_version_info(self) -> Dict[str, Any]:
+        """Return public product/package version metadata."""
+
+        from halo_forge.version import version_info
+
+        return version_info()
+
     def get_workspace_info(self) -> Dict[str, Any]:
         """Return local workstation defaults for dashboard-managed runs."""
         root = _default_run_root()

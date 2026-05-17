@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { ApiError, connectionMode, getApiToken, isAuthRequiredError } from "@/lib/api";
-import { useBackendInfo } from "@/lib/hooks";
+import { useBackendInfo, useVersionInfo } from "@/lib/hooks";
 import { usePinnedRuns } from "@/lib/pinned-runs";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -206,6 +206,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function ComputePanel() {
   const { data, isLoading, isError, error } = useBackendInfo();
+  const version = useVersionInfo();
   const mode = connectionMode();
   const authNeeded = isAuthRequiredError(error);
   const tokenStored = Boolean(getApiToken());
@@ -282,6 +283,12 @@ function ComputePanel() {
                 {tokenStored ? "token" : "no token"}
               </Link>
             </div>
+            {version.data ? (
+              <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[10px] uppercase tracking-wider text-fg-disabled">
+                <span>{version.data.release_channel}</span>
+                <span>{version.data.display_version}</span>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

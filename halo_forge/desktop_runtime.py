@@ -56,6 +56,12 @@ def _self_check() -> int:
         "errors": errors,
         "warnings": warnings,
     }
+    try:
+        from halo_forge.version import version_info
+
+        payload["version"] = version_info()
+    except Exception as exc:
+        warnings.append(f"Could not read Halo Forge version metadata: {exc}")
     print(json.dumps(payload, sort_keys=True))
     return 0 if not errors else 78
 

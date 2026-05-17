@@ -243,11 +243,16 @@ def test_public_frontend_scaffold_references_public_workflows():
     docs_source = Path("public_app/src/routes/docs.tsx").read_text(encoding="utf-8")
     home_source = Path("public_app/src/routes/index.tsx").read_text(encoding="utf-8")
     shell_source = Path("public_app/src/components/shell/index.tsx").read_text(encoding="utf-8")
+    sidebar_source = Path("public_app/src/components/shell/sidebar.tsx").read_text(encoding="utf-8")
 
     assert 'const API_BASE = "/api/public"' in api_helper
+    assert "export type VersionInfo" in api_helper
+    assert 'versionInfo: () => request<VersionInfo>("/version")' in api_helper
     assert 'from "@/components/shell"' in home_source
     assert "SystemCard" in home_source
     assert "Topbar" in shell_source
+    assert "useVersionInfo" in sidebar_source
+    assert "display_version" in sidebar_source
     assert "Base model" in train_source
     assert "Launch summary" in train_source
     assert "MLX Ready" in start_source
@@ -372,6 +377,7 @@ def test_public_frontend_friendly_workstation_contract():
 def test_public_api_transport_exposes_public_workflows():
     api_source = Path("halo_forge/public_api/app.py").read_text(encoding="utf-8")
 
+    assert "/version" in api_source
     assert "/dashboard" in api_source
     assert "/train/preflight" in api_source
     assert "/train/launch" in api_source
@@ -388,6 +394,25 @@ def test_public_api_transport_exposes_public_workflows():
     assert "/docs" in api_source
     assert "find_frontend_dist" in api_source
     assert "_mount_frontend" in api_source
+
+
+def test_public_api_version_contract():
+    from fastapi.testclient import TestClient
+    from halo_forge import __display_version__, __version__
+    from halo_forge.public_api.app import create_app
+    from halo_forge.version import DISPLAY_VERSION, PACKAGE_VERSION, RELEASE_CHANNEL
+
+    assert __version__ == PACKAGE_VERSION == "2.0.0a1"
+    assert __display_version__ == DISPLAY_VERSION == "2.0.0-alpha-1"
+    assert RELEASE_CHANNEL == "alpha"
+
+    app = create_app(serve_frontend=False)
+    with TestClient(app) as client:
+        payload = client.get("/api/public/version").json()
+
+    assert payload["package_version"] == "2.0.0a1"
+    assert payload["display_version"] == "2.0.0-alpha-1"
+    assert payload["release_channel"] == "alpha"
 
 
 def test_public_workspace_defaults_to_writable_run_root(tmp_path, monkeypatch):
@@ -602,6 +627,7 @@ def test_desktop_tauri_foundation_contract():
     startup_html = Path("apps/desktop-tauri/startup/index.html").read_text(encoding="utf-8")
 
     assert '"identifier": "ai.haloforge.desktop"' in config
+    assert '"version": "2.0.0-alpha-1"' in config
     assert '"frontendDist": "../startup"' in config
     assert '"withGlobalTauri": true' in config
     assert '"devUrl": "http://127.0.0.1:8765"' in config
@@ -624,6 +650,8 @@ def test_desktop_tauri_foundation_contract():
     assert "run_bundled_self_check" in main_rs
     assert "fn dev_repo_root()" in main_rs
     assert "desktop_status" in main_rs
+    assert "app_version" in main_rs
+    assert 'const RELEASE_CHANNEL: &str = "alpha"' in main_rs
     assert "desktop_retry" in main_rs
     assert "port_conflict" in main_rs
     assert "health_timeout" in main_rs
@@ -636,6 +664,7 @@ def test_desktop_tauri_foundation_contract():
     assert "child.kill()" in main_rs
     assert '"shell:allow-spawn"' in capabilities
     assert "Starting Halo Forge" in startup_html
+    assert "2.0.0-alpha-1" in startup_html
     assert "desktop_status" in startup_html
     assert "desktop_retry" in startup_html
     for sidecar_name in [
@@ -1088,6 +1117,20 @@ def test_serve_public_check_prints_dashboard_launch_recipe(monkeypatch, capsys):
     assert "remote auth: loopback bypass" in out
     assert "Dashboard API preflight OK" in out
     assert "No server started." in out
+
+
+def test_cli_version_reports_alpha_identity(monkeypatch, capsys):
+    import halo_forge.cli as cli_mod
+
+    monkeypatch.setattr(sys, "argv", ["halo-forge", "--version"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_mod.main()
+
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "halo-forge 2.0.0-alpha-1" in out
+    assert "package 2.0.0a1" in out
 
 
 def test_dashboard_check_prints_single_command_app_recipe(monkeypatch, capsys):

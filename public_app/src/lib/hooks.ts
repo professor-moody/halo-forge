@@ -15,6 +15,7 @@ import {
   type TrainingDataset,
   type TrainingPreflight,
   type TrainingVerifier,
+  type VersionInfo,
   type WorkspaceInfo,
 } from "@/lib/api";
 
@@ -25,6 +26,7 @@ import {
  */
 
 export const queryKeys = {
+  version: ["version"] as const,
   backend: ["backend-info"] as const,
   workspace: ["workspace-info"] as const,
   telemetry: ["telemetry"] as const,
@@ -45,6 +47,15 @@ export const queryKeys = {
   huggingFace: ["huggingface"] as const,
   huggingFaceModel: (modelId: string) => ["huggingface", "model", modelId] as const,
 };
+
+export function useVersionInfo() {
+  return useQuery<VersionInfo>({
+    queryKey: queryKeys.version,
+    queryFn: api.versionInfo,
+    staleTime: 60 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+  });
+}
 
 /**
  * Backend identity + capabilities. Stable across a session so we cache for

@@ -5082,6 +5082,9 @@ def main():
         prog='halo-forge',
         description='Multi-backend RLVR training framework for AMD ROCm, Apple Silicon, and CUDA'
     )
+    from halo_forge.version import version_line
+
+    parser.add_argument('--version', action='version', version=version_line())
 
     # Global flags
     parser.add_argument('--quiet', '-q', action='store_true',

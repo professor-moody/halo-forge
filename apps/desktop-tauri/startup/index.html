@@ -172,6 +172,10 @@
 
       <section class="status" aria-live="polite">
         <div class="line">
+          <span class="label">Version</span>
+          <span id="version" class="badge">2.0.0-alpha-1</span>
+        </div>
+        <div class="line">
           <span class="label">Runtime</span>
           <span id="state" class="badge" data-tone="wait">starting</span>
         </div>
@@ -188,6 +192,7 @@
     <script>
       const title = document.querySelector("#title");
       const stateEl = document.querySelector("#state");
+      const versionEl = document.querySelector("#version");
       const detail = document.querySelector("#detail");
       const log = document.querySelector("#log");
       const retry = document.querySelector("#retry");
@@ -211,6 +216,7 @@
       function render(status) {
         const state = status?.state || "starting";
         title.textContent = state === "ready" ? "Halo Forge is ready" : status?.message || "Starting Halo Forge";
+        versionEl.textContent = status?.app_version || "2.0.0-alpha-1";
         stateEl.textContent = state.replaceAll("_", " ");
         stateEl.dataset.tone = toneFor(state);
         detail.textContent = status?.detail || status?.message || "Checking the dashboard service.";

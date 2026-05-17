@@ -1,6 +1,6 @@
 # Release Checklist
 
-Use this checklist for a 1.4.0 release-candidate pass. Generated outputs under
+Use this checklist for a 2.0.0-alpha-1 release-candidate pass. Generated outputs under
 `runs/*`, local datasets under `examples/datasets/*`, and `uv.lock` are local
 artifacts unless a release task explicitly says otherwise.
 
@@ -12,6 +12,7 @@ git diff --check
 .venv/bin/python -m pytest tests/test_serving.py -q
 .venv/bin/python -m pytest tests/test_mlx_readiness.py tests/test_mlx_smoke_summary_validator.py tests/test_mlx_grpo_reference_model_measurement.py -q
 .venv/bin/python -m pytest tests/test_grpo.py tests/test_mlx_terminal_smoke.py -q
+.venv/bin/python -m pytest tests/test_public_api_pivot.py tests/test_model_catalog.py tests/test_huggingface_access.py tests/test_serving.py tests/test_playground_proxy.py -q
 ```
 
 Or run the bundled harness:
@@ -29,6 +30,27 @@ cd public_app
 npm run lint
 npm run build
 ```
+
+## Alpha Dashboard/Desktop Acceptance
+
+For the 2.0.0-alpha-1 app-first pass:
+
+```bash
+cd apps/desktop-tauri
+npm run build:runtime
+npm run build
+```
+
+Install the unsigned macOS DMG and smoke these dashboard routes:
+
+- `/start` first-run goal chooser and writable output defaults.
+- `/train` method/goal workspace for SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic templates.
+- `/models` Hugging Face access checks, open-model defaults, and managed Serve action.
+- `/playground` managed local serving, chat, gated-model recovery, and Stop.
+- `/results` completed-run actions and local artifact paths.
+- `/connect` Halo Forge API token and workstation-scoped Hugging Face token flows.
+
+Expected desktop behavior: the app reports `2.0.0-alpha-1`, starts the local dashboard on `127.0.0.1:8765`, keeps logs under `~/.halo-forge/desktop/runtime.log`, and quits without killing unrelated Halo Forge processes.
 
 The release-confidence harness runs these automatically when dependencies are
 present. Use `--skip-frontend` only when documenting an unavailable frontend
@@ -66,7 +88,9 @@ gh run list --branch main --limit 5
 
 Before tagging or publishing, confirm:
 
-- `pyproject.toml` and `halo_forge.__version__` report `1.4.0`.
+- `pyproject.toml` and `halo_forge.__version__` report package version `2.0.0a1`.
+- `halo_forge.version.DISPLAY_VERSION` and `/api/public/version` report `2.0.0-alpha-1`.
+- `public_app/package.json`, Tauri config, and desktop package metadata report `2.0.0-alpha-1`.
 - `docs/MLX_ACCEPTANCE.md` records the latest Terminal MLX acceptance evidence.
 - GitHub Actions for the latest pushed commit are green.
 - No generated `runs/*`, local `examples/datasets/*`, or `uv.lock` artifacts are staged.
@@ -76,8 +100,8 @@ Before tagging or publishing, confirm:
 Only tag after the latest push CI and nightly qualification proof are green:
 
 ```bash
-git tag -a v1.4.0 -m "Halo Forge 1.4.0"
-git push origin v1.4.0
+git tag -a v2.0.0-alpha-1 -m "Halo Forge 2.0.0-alpha-1"
+git push origin v2.0.0-alpha-1
 ```
 
 Do not create a GitHub Release from this checklist unless the release task

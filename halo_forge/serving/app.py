@@ -37,6 +37,7 @@ from halo_forge.serving.adapter import (
     _truncate_at_stop,
     build_serving_adapter,
 )
+from halo_forge.version import DISPLAY_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +285,7 @@ def create_serving_app(
         adapter: Pre-built adapter (used by tests to inject a fake without
             loading a real model).
     """
-    app = FastAPI(title="halo-forge serving", version="0.1.0")
+    app = FastAPI(title="halo-forge serving", version=DISPLAY_VERSION)
     started_at = int(time.time())
 
     state: dict[str, Any] = {
