@@ -18,8 +18,8 @@ miserable. This module exposes:
   read.
 
 The "logs/" location and the launch-summary roots mirror
-``halo_forge.run_db.sync.DEFAULT_TRAINING_ROOTS`` — keep them in sync
-if either moves.
+``halo_forge.run_db.sync.DEFAULT_TRAINING_ROOTS`` plus the dashboard
+app-data run root — keep them in sync if either moves.
 """
 
 from __future__ import annotations
@@ -41,6 +41,45 @@ LAUNCH_ROOTS: tuple[str, ...] = ("models", "outputs", "results")
 LOGS_DIR_NAME = "logs"
 LAUNCH_FILENAME = "launch_context.json"
 SUMMARY_FILENAME = "training_summary.json"
+DEFAULT_RUN_ROOT_ENV = "HALO_FORGE_RUN_ROOT"
+DEFAULT_LOG_DIR_ENV = "HALO_FORGE_LOG_DIR"
+
+
+def _default_run_root() -> Path:
+    configured = str(os.environ.get(DEFAULT_RUN_ROOT_ENV) or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".halo-forge" / "runs"
+
+
+def _default_log_dir() -> Path:
+    configured = str(os.environ.get(DEFAULT_LOG_DIR_ENV) or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".halo-forge" / "logs"
+
+
+def _launch_roots(base_path: Path) -> list[Path]:
+    roots = [base_path / root_name for root_name in LAUNCH_ROOTS]
+    app_run_root = _default_run_root()
+    if not any(_same_resolved_path(root, app_run_root) for root in roots):
+        roots.append(app_run_root)
+    return roots
+
+
+def _log_roots(base_path: Path) -> list[Path]:
+    roots = [base_path / LOGS_DIR_NAME]
+    app_log_root = _default_log_dir()
+    if not any(_same_resolved_path(root, app_log_root) for root in roots):
+        roots.append(app_log_root)
+    return roots
+
+
+def _same_resolved_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return False
 
 
 @dataclass
@@ -98,8 +137,7 @@ def inventory_launches(base_path: Path) -> list[dict[str, Any]]:
     """
     base_path = base_path.resolve()
     entries: list[LaunchInventoryEntry] = []
-    for root_name in LAUNCH_ROOTS:
-        root = base_path / root_name
+    for root in _launch_roots(base_path):
         if not root.exists():
             continue
         for launch_path in root.rglob(LAUNCH_FILENAME):
@@ -153,21 +191,25 @@ def inventory_launches(base_path: Path) -> list[dict[str, Any]]:
 
 def inventory_logs(base_path: Path) -> list[dict[str, Any]]:
     """List `logs/*.log` ordered newest-first."""
-    logs_dir = (base_path / LOGS_DIR_NAME).resolve()
-    if not logs_dir.is_dir():
-        return []
     items: list[LogFileEntry] = []
-    for path in logs_dir.glob("*.log"):
+    for logs_dir in _log_roots(base_path):
         try:
-            stat = path.stat()
+            logs_dir = logs_dir.resolve()
         except OSError:
             continue
-        items.append(LogFileEntry(
-            name=path.name,
-            path=str(path),
-            size_bytes=int(stat.st_size),
-            mtime=float(stat.st_mtime),
-        ))
+        if not logs_dir.is_dir():
+            continue
+        for path in logs_dir.glob("*.log"):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            items.append(LogFileEntry(
+                name=path.name,
+                path=str(path),
+                size_bytes=int(stat.st_size),
+                mtime=float(stat.st_mtime),
+            ))
     items.sort(key=lambda e: e.mtime, reverse=True)
     return [e.__dict__ for e in items]
 
@@ -191,7 +233,15 @@ def tail_log(
     target = Path(requested_path)
     if not target.is_absolute():
         target = base / target
-    safe = _safe_resolve_under(base, target)
+    allowed_roots = [base, _default_run_root(), _default_log_dir()]
+    safe = next(
+        (
+            candidate
+            for root in allowed_roots
+            if (candidate := _safe_resolve_under(root, target)) is not None
+        ),
+        None,
+    )
     if safe is None or not safe.is_file():
         return {
             "available": False,
@@ -204,9 +254,17 @@ def tail_log(
     # Enforce that we only tail logs under LOGS_DIR_NAME or LAUNCH_ROOTS
     # — refuse arbitrary repo files even though the safe-resolve check
     # already prevents traversal escape.
-    rel = safe.relative_to(base)
-    head = rel.parts[0] if rel.parts else ""
-    if head not in (*LAUNCH_ROOTS, LOGS_DIR_NAME):
+    permitted = False
+    try:
+        rel = safe.relative_to(base)
+        head = rel.parts[0] if rel.parts else ""
+        permitted = head in (*LAUNCH_ROOTS, LOGS_DIR_NAME)
+    except ValueError:
+        permitted = any(
+            _safe_resolve_under(root, safe) is not None
+            for root in (_default_run_root(), _default_log_dir())
+        )
+    if not permitted:
         return {
             "available": False,
             "lines": [],

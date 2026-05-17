@@ -17,6 +17,12 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_app_data_roots(tmp_path, monkeypatch):
+    monkeypatch.setenv("HALO_FORGE_RUN_ROOT", str(tmp_path / "halo-runs-default"))
+    monkeypatch.setenv("HALO_FORGE_LOG_DIR", str(tmp_path / "halo-logs-default"))
+
+
 def _write_launch(dir_path: Path, *, with_summary: bool = False) -> None:
     dir_path.mkdir(parents=True, exist_ok=True)
     (dir_path / "launch_context.json").write_text(json.dumps({
@@ -81,6 +87,20 @@ def test_inventory_launches_returns_empty_when_no_runs(tmp_path):
     assert diagnostics.inventory_launches(tmp_path) == []
 
 
+def test_inventory_launches_includes_dashboard_run_root(tmp_path, monkeypatch):
+    from halo_forge.public_api import diagnostics
+
+    run_root = tmp_path / "halo-runs"
+    monkeypatch.setenv("HALO_FORGE_RUN_ROOT", str(run_root))
+    _write_launch(run_root / "start-code", with_summary=False)
+
+    items = diagnostics.inventory_launches(tmp_path / "readonly-app-cwd")
+
+    assert len(items) == 1
+    assert Path(items[0]["output_dir"]).name == "start-code"
+    assert items[0]["status"] == "orphan"
+
+
 # ---------- inventory_logs -----------------------------------------------
 
 
@@ -103,6 +123,20 @@ def test_inventory_logs_returns_empty_when_no_logs_dir(tmp_path):
     from halo_forge.public_api import diagnostics
 
     assert diagnostics.inventory_logs(tmp_path) == []
+
+
+def test_inventory_logs_includes_dashboard_log_root(tmp_path, monkeypatch):
+    from halo_forge.public_api import diagnostics
+
+    log_root = tmp_path / "halo-logs"
+    log_root.mkdir()
+    monkeypatch.setenv("HALO_FORGE_LOG_DIR", str(log_root))
+    (log_root / "sft_train.log").write_text("hello\n", encoding="utf-8")
+
+    items = diagnostics.inventory_logs(tmp_path / "readonly-app-cwd")
+
+    assert len(items) == 1
+    assert items[0]["name"] == "sft_train.log"
 
 
 # ---------- tail_log -----------------------------------------------------
@@ -153,6 +187,25 @@ def test_tail_log_refuses_non_log_roots(tmp_path):
     )
     assert out["available"] is False
     assert "permitted roots" in out["reason"]
+
+
+def test_tail_log_allows_dashboard_run_root_logs(tmp_path, monkeypatch):
+    from halo_forge.public_api import diagnostics
+
+    run_root = tmp_path / "halo-runs"
+    monkeypatch.setenv("HALO_FORGE_RUN_ROOT", str(run_root))
+    run_dir = run_root / "start-code"
+    _write_launch(run_dir, with_summary=False)
+    log = run_dir / "abc_training.log"
+
+    out = diagnostics.tail_log(
+        base_path=tmp_path / "readonly-app-cwd",
+        requested_path=str(log),
+        tail=2,
+    )
+
+    assert out["available"] is True
+    assert out["lines"] == ["line2", "line3"]
 
 
 def test_tail_log_handles_huge_file_via_max_bytes(tmp_path):

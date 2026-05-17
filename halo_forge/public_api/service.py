@@ -475,16 +475,24 @@ class PublicApiService:
 
         candidates: list[Path] = []
         if output_dir:
-            for name in ("run.log", "train.log", "training.log"):
+            for name in ("run.log", "train.log", "training.log", f"{run_id}_training.log"):
                 candidate = output_dir / name
                 if candidate.exists():
                     candidates.append(candidate)
+            if not candidates:
+                matches = sorted(
+                    output_dir.glob("*_training.log"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                candidates.extend(matches[:1])
 
         # Fall back to logs/ scan — newest file whose basename mentions
         # the run_id or output_dir basename.
         if not candidates:
-            logs_dir = self.base_path / "logs"
-            if logs_dir.is_dir():
+            for logs_dir in _candidate_log_roots(self.base_path):
+                if not logs_dir.is_dir():
+                    continue
                 tokens = [t for t in (run_id, output_dir.name if output_dir else "") if t]
                 matches = []
                 for log_file in logs_dir.glob("*.log"):
@@ -493,6 +501,8 @@ class PublicApiService:
                 # Newest first
                 matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                 candidates.extend(matches[:1])
+                if candidates:
+                    break
 
         if not candidates:
             return {
@@ -1902,16 +1912,25 @@ class PublicApiService:
         out_dir, run_id = _extract_output_dir_and_run_id(source)
         log_path: Optional[Path] = None
         if out_dir:
-            for name in ("run.log", "train.log", "training.log"):
+            for name in ("run.log", "train.log", "training.log", f"{run_id}_training.log"):
                 if (out_dir / name).exists():
                     log_path = out_dir / name
                     break
+            if log_path is None:
+                matches = sorted(
+                    out_dir.glob("*_training.log"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if matches:
+                    log_path = matches[0]
 
         if log_path is None:
             # Fall back to logs/ scan once at start; if nothing matches,
             # emit a single "unavailable" event and exit.
-            logs_dir = self.base_path / "logs"
-            if logs_dir.is_dir():
+            for logs_dir in _candidate_log_roots(self.base_path):
+                if not logs_dir.is_dir():
+                    continue
                 tokens = [t for t in (run_id, out_dir.name if out_dir else "") if t]
                 matches = [
                     p
@@ -1921,6 +1940,7 @@ class PublicApiService:
                 matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                 if matches:
                     log_path = matches[0]
+                    break
 
         if log_path is None or not log_path.exists():
             yield f"data: {json.dumps({'error': 'No log file alongside this run.'})}\n\n"
@@ -2777,6 +2797,21 @@ def _default_run_root() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return (Path.home() / ".halo-forge" / "runs").expanduser().resolve()
+
+
+def _default_log_root() -> Path:
+    configured = str(os.environ.get("HALO_FORGE_LOG_DIR") or "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".halo-forge" / "logs").expanduser().resolve()
+
+
+def _candidate_log_roots(base_path: Path) -> list[Path]:
+    roots = [(base_path / "logs").expanduser().resolve()]
+    app_logs = _default_log_root()
+    if app_logs not in roots:
+        roots.append(app_logs)
+    return roots
 
 
 def _friendly_upstream_error(detail: Any) -> Dict[str, Any]:

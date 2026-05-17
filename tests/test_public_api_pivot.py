@@ -1133,6 +1133,54 @@ def test_cli_version_reports_alpha_identity(monkeypatch, capsys):
     assert "package 2.0.0a1" in out
 
 
+def test_cli_auto_logging_uses_dashboard_log_root(tmp_path, monkeypatch):
+    from halo_forge.cli import setup_auto_logging
+
+    log_root = tmp_path / "halo-logs"
+    monkeypatch.setenv("HALO_FORGE_LOG_DIR", str(log_root))
+
+    log_path = setup_auto_logging("sft_train", quiet=True)
+    try:
+        print("hello from training")
+    finally:
+        sys.stdout.close()
+
+    assert log_path.parent == log_root
+    assert log_path.read_text(encoding="utf-8").strip() == "hello from training"
+
+
+def test_training_service_launch_env_and_cwd_are_dashboard_writable(tmp_path, monkeypatch):
+    app_dir = tmp_path / "app-data"
+    work_dir = tmp_path / "work-dir"
+    monkeypatch.setenv("HALO_FORGE_APP_DIR", str(app_dir))
+    monkeypatch.setenv("HALO_FORGE_WORKDIR", str(work_dir))
+
+    service = TrainingService(AppState())
+    env = service._get_strix_halo_env()
+
+    assert env["HALO_FORGE_APP_DIR"] == str(app_dir.resolve())
+    assert env["HALO_FORGE_LOG_DIR"] == str(app_dir.resolve() / "logs")
+    assert service._launch_working_directory() == work_dir.resolve()
+
+
+def test_public_run_logs_find_dashboard_training_log(tmp_path):
+    state = AppState()
+    output_dir = tmp_path / "halo-runs" / "start-code"
+    output_dir.mkdir(parents=True)
+    job = state.create_job("sft", "SFT smoke", output_dir=output_dir)
+    state.update_job_status(job.id, "failed", source="test", reason="smoke")
+    log_path = output_dir / f"{job.id}_training.log"
+    log_path.write_text("first\nTraceback boom\nlast\n", encoding="utf-8")
+
+    service = PublicApiService(app_state=state, base_path=tmp_path / "readonly-app-cwd")
+
+    logs = service.get_run_logs(job.id, tail=2)
+
+    assert logs["available"] is True
+    assert logs["log_path"] == str(log_path)
+    assert logs["lines"] == ["Traceback boom", "last"]
+
+
 def test_dashboard_check_prints_single_command_app_recipe(monkeypatch, capsys):
     import halo_forge.cli as cli_mod
 

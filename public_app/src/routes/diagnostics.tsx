@@ -151,7 +151,7 @@ function DiagnosticsRoute() {
           ) : logs.length === 0 ? (
             <Card>
               <CardContent className="py-4 text-fg-muted text-[12px]">
-                No `logs/` directory found under {summary?.base_path ?? "the project"}.
+                No Halo Forge application logs found for this workstation.
               </CardContent>
             </Card>
           ) : (

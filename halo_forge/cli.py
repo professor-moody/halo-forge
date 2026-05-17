@@ -195,6 +195,13 @@ class TeeWriter:
         return not self.quiet and self.terminal.isatty()
 
 
+def _default_app_log_dir() -> Path:
+    configured = str(os.environ.get("HALO_FORGE_LOG_DIR") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".halo-forge" / "logs"
+
+
 def setup_auto_logging(command_name: str, output_dir: str = "logs", quiet: bool = False) -> Path:
     """
     Configure automatic logging with timestamped file.
@@ -212,8 +219,16 @@ def setup_auto_logging(command_name: str, output_dir: str = "logs", quiet: bool 
     """
     from datetime import datetime
     
-    log_dir = Path(output_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = Path(output_dir).expanduser()
+    if not log_dir.is_absolute() and output_dir == "logs" and os.environ.get("HALO_FORGE_LOG_DIR"):
+        log_dir = _default_app_log_dir()
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        if log_dir.is_absolute() or output_dir != "logs":
+            raise
+        log_dir = _default_app_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = log_dir / f"{command_name}_{timestamp}.log"

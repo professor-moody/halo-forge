@@ -40,6 +40,10 @@ from halo_forge.capabilities import check_modality_train_capability
 from halo_forge.huggingface_access import inject_huggingface_token
 from halo_forge.utils.macos_runtime import caffeinate_command
 
+HALO_FORGE_APP_DIR_ENV = "HALO_FORGE_APP_DIR"
+HALO_FORGE_LOG_DIR_ENV = "HALO_FORGE_LOG_DIR"
+HALO_FORGE_WORKDIR_ENV = "HALO_FORGE_WORKDIR"
+
 # Import notification helpers (only used when UI is running)
 try:
     from ui.components.notifications import notify_checkpoint_saved
@@ -151,6 +155,9 @@ class TrainingService:
     def _get_strix_halo_env(self) -> dict[str, str]:
         """Get environment variables optimized for AMD Strix Halo."""
         env = os.environ.copy()
+        app_dir = self._app_data_dir()
+        env.setdefault(HALO_FORGE_APP_DIR_ENV, str(app_dir))
+        env.setdefault(HALO_FORGE_LOG_DIR_ENV, str(app_dir / "logs"))
         
         # GPU architecture
         env.setdefault('HSA_OVERRIDE_GFX_VERSION', '11.5.1')
@@ -170,6 +177,34 @@ class TrainingService:
         env.setdefault('OMP_NUM_THREADS', '1')
         
         return env
+
+    @staticmethod
+    def _app_data_dir() -> Path:
+        configured = str(os.environ.get(HALO_FORGE_APP_DIR_ENV) or "").strip()
+        if configured:
+            return Path(configured).expanduser().resolve()
+        return (Path.home() / ".halo-forge").expanduser().resolve()
+
+    @classmethod
+    def _launch_working_directory(cls) -> Path:
+        """Return a writable cwd for dashboard-managed training subprocesses."""
+        configured = str(os.environ.get(HALO_FORGE_WORKDIR_ENV) or "").strip()
+        candidates: list[Path] = []
+        if configured:
+            candidates.append(Path(configured).expanduser())
+        candidates.extend([Path.cwd(), cls._app_data_dir()])
+
+        for candidate in candidates:
+            try:
+                candidate = candidate.resolve()
+                candidate.mkdir(parents=True, exist_ok=True)
+                probe = candidate / ".halo-forge-cwd-write-test"
+                probe.write_text("ok", encoding="utf-8")
+                probe.unlink(missing_ok=True)
+                return candidate
+            except OSError:
+                continue
+        return Path.home()
 
     def _validate_sft_launch_payload(
         self,
@@ -2011,7 +2046,7 @@ class TrainingService:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=env,
-            cwd=Path.cwd(),
+            cwd=self._launch_working_directory(),
         )
         
         job.process = process
