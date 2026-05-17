@@ -464,8 +464,16 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
     );
   }
 
+  const servingBadge = servingThis
+    ? serveStatus.data?.model_ready
+      ? "chat ready in Playground"
+      : serveStatus.data?.ready_state === "server_ready"
+        ? "server ready, loading model"
+        : "starting local server"
+    : null;
+
   return (
-    <Card>
+    <Card className={servingThis ? "border-success/50 bg-success-bg/10" : undefined}>
       <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -493,6 +501,11 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
             {caveated ? (
               <Badge tone="warning" size="sm">
                 caveats
+              </Badge>
+            ) : null}
+            {servingBadge ? (
+              <Badge tone="success" dot size="sm">
+                {servingBadge}
               </Badge>
             ) : null}
           </div>
@@ -602,7 +615,7 @@ function ModelRow({ model }: { model: ModelCatalogEntry }) {
           ) : null}
           {servingThis ? (
             <div className="rounded-sm border border-success/30 bg-success-bg px-2 py-1.5 text-[11px] text-success">
-              {serveStatus.data?.model_ready ? "Loaded" : "Selected"} in Playground at <span className="font-mono">{serveStatus.data?.url}</span>.
+              {serveStatus.data?.model_ready ? "Loaded and chat-ready" : "Selected and starting"} in Playground at <span className="font-mono">{serveStatus.data?.url}</span>.
             </div>
           ) : null}
           {serveFeedback && !servingThis ? (

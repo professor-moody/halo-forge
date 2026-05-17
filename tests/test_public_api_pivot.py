@@ -260,6 +260,9 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "accelerator" in train_source
     assert "Run detail view" in run_source
     assert 'label="STATUS"' in run_source
+    assert "failure_summary" in api_helper
+    assert "FailureSummaryCard" in run_source
+    assert "Run could not create its log file" in Path("halo_forge/public_api/service.py").read_text(encoding="utf-8")
     assert "Run results" in results_source
     assert "Serve model" in results_source
     assert "No completed results yet" in results_source
@@ -338,6 +341,7 @@ def test_public_frontend_friendly_workstation_contract():
     assert "startGoalForModel" in models_source
     assert "export type ServeStatus" in api_source
     assert 'state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string' in api_source
+    assert "ready_state" in api_source
     assert "active_action" in api_source
     assert "error_hint" in api_source
     assert "model_ready" in api_source
@@ -354,6 +358,8 @@ def test_public_frontend_friendly_workstation_contract():
     assert "Start a local model to unlock chat" in playground_source
     assert "Start a model before chatting" in playground_source
     assert "server ready" in playground_source
+    assert "chat ready" in playground_source
+    assert "Waiting for model to finish loading" in playground_source
     assert "Managed local serving uses Hugging Face access from Connection" in playground_source
     assert "externalEndpoint ? apiKey" in playground_source
     assert "Open Playground" in models_source
@@ -363,8 +369,12 @@ def test_public_frontend_friendly_workstation_contract():
     assert "modelPageUrl" in models_source
     assert "Open served repo" in models_source
     assert "Starting local serving for" in models_source
+    assert "chat-ready" in models_source
     assert "UNIFIED MEM" in Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
-    assert "limited" in Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
+    telemetry_source = Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
+    assert "limited" in telemetry_source
+    assert "macOS sensor access" in telemetry_source
+    assert "TelemetryStatusChip" in telemetry_source
     assert "Choose open model" in playground_source
     assert "Results files" in results_source
     assert "View logs" in results_source
@@ -537,6 +547,7 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
             return {
                 "running": self.running,
                 "state": state,
+                "ready_state": "chat_ready" if self.running else "idle",
                 "active_action": "serving" if self.running else None,
                 "pid": 123 if self.running else None,
                 "model": self.model,
@@ -551,6 +562,7 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
                 "last_error": None,
                 "error_hint": None,
                 "healthy": self.running,
+                "model_ready": self.running,
                 "message": "Local model server is ready." if self.running else "No local model is being served.",
             }
 
@@ -590,6 +602,7 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
 
     assert started["running"] is True
     assert started["state"] == "running"
+    assert started["ready_state"] == "chat_ready"
     assert started["active_action"] == "serving"
     assert service.serve_status()["model"] == "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
     with pytest.raises(ValueError, match="already being served"):
@@ -616,6 +629,7 @@ def test_managed_serve_rejects_busy_port_before_spawn(tmp_path):
             )
 
     assert manager.status()["state"] == "idle"
+    assert manager.status()["ready_state"] == "idle"
     assert manager.status()["active_action"] is None
 
 
@@ -1179,6 +1193,45 @@ def test_public_run_logs_find_dashboard_training_log(tmp_path):
     assert logs["available"] is True
     assert logs["log_path"] == str(log_path)
     assert logs["lines"] == ["Traceback boom", "last"]
+
+
+def test_run_detail_exposes_plain_language_failure_summary(tmp_path):
+    state = AppState()
+    output_dir = tmp_path / "halo-runs" / "start-code"
+    output_dir.mkdir(parents=True)
+    job = state.create_job("sft", "SFT smoke", output_dir=output_dir)
+    job.error_message = "OSError: [Errno 30] Read-only file system: 'logs'"
+    log_path = output_dir / f"{job.id}_training.log"
+    log_path.write_text(
+        "launching\nOSError: [Errno 30] Read-only file system: 'logs'\n",
+        encoding="utf-8",
+    )
+    state.update_job_status(job.id, "failed", source="test", reason="logging failed")
+
+    service = PublicApiService(app_state=state, base_path=tmp_path / "readonly-app-cwd")
+    detail = service.get_run_detail(job.id)
+
+    failure = detail["failure_summary"]
+    assert failure["kind"] == "logging_cwd"
+    assert failure["headline"] == "Run could not create its log file"
+    assert failure["log_path"] == str(log_path)
+    assert "Read-only file system" in "\n".join(failure["log_tail"])
+    assert failure["retry_route"] == "/train?mode=sft"
+
+
+def test_training_failure_classifier_covers_common_operator_failures():
+    from halo_forge.public_api.service import _classify_training_failure
+
+    cases = {
+        "Permission denied while creating /x": "unwritable_output",
+        "Cannot access gated repo https://huggingface.co/meta/x Please log in": "gated_huggingface",
+        "dataset file does not exist: prompts.jsonl": "missing_data",
+        "ModuleNotFoundError: No module named 'mlx_lm'": "missing_dependency",
+        "MPS backend out of memory": "out_of_memory",
+        "rollout-gated. Re-run with --allow-prototype-train": "backend_unsupported",
+    }
+    for text, kind in cases.items():
+        assert _classify_training_failure(text)["kind"] == kind
 
 
 def test_dashboard_check_prints_single_command_app_recipe(monkeypatch, capsys):

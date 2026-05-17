@@ -30,6 +30,7 @@ from .views import (
     PublicActionView,
     ResearchSectionView,
     RunMetricsSummaryView,
+    RunFailureSummaryView,
     TrainingLaunchPreflightView,
     TrainingRecoveryView,
     TrainingRunDetailView,
@@ -2264,6 +2265,14 @@ class PublicApiService:
             user_summary=item.user_summary,
             metrics_summary=item.metrics_summary,
             recovery=recovery,
+            failure_summary=self._failure_summary_for_run(
+                run_identifier=item.run_id,
+                status=item.status,
+                modality=item.modality,
+                failure_reason=summary.failure_reason,
+                output_dir=summary.output_dir,
+                launch_context_path=summary.launch_context_path,
+            ),
             primary_action=item.primary_action,
             details={
                 **item.details,
@@ -2396,6 +2405,14 @@ class PublicApiService:
             user_summary=item.user_summary,
             metrics_summary=item.metrics_summary,
             recovery=recovery,
+            failure_summary=self._failure_summary_for_run(
+                run_identifier=item.run_id,
+                status=item.status,
+                modality=item.modality,
+                failure_reason=job.error_message,
+                output_dir=job.output_dir,
+                launch_context_path=job.launch_context_file,
+            ),
             primary_action=item.primary_action,
             details={
                 **item.details,
@@ -2612,6 +2629,71 @@ class PublicApiService:
         )
         return sections
 
+    def _failure_summary_for_run(
+        self,
+        *,
+        run_identifier: str,
+        status: str,
+        modality: str,
+        failure_reason: Optional[str],
+        output_dir: Optional[Path],
+        launch_context_path: Optional[Path],
+    ) -> Optional[RunFailureSummaryView]:
+        if str(status or "").lower() not in {"failed", "stopped", "cancelled", "canceled"}:
+            return None
+
+        log_payload = self.get_run_logs(run_identifier, tail=80)
+        log_tail = [
+            str(line)
+            for line in log_payload.get("lines", [])
+            if str(line).strip()
+        ][-12:]
+        log_path = str(log_payload.get("log_path") or "") or None
+        launch_text = self._launch_context_excerpt(launch_context_path)
+        text = "\n".join(
+            item
+            for item in [
+                str(failure_reason or ""),
+                "\n".join(log_tail),
+                launch_text,
+                str(output_dir or ""),
+            ]
+            if item
+        )
+        classified = _classify_training_failure(text, status=status)
+        retry_route = f"/train?mode={modality}"
+        return RunFailureSummaryView(
+            kind=classified["kind"],
+            headline=classified["headline"],
+            message=classified["message"],
+            next_action=classified["next_action"],
+            log_path=log_path,
+            log_tail=log_tail,
+            retry_route=retry_route,
+            docs_url=classified.get("docs_url"),
+        )
+
+    @staticmethod
+    def _launch_context_excerpt(path: Optional[Path]) -> str:
+        if not path:
+            return ""
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return ""
+        if not isinstance(payload, dict):
+            return ""
+        command = payload.get("command")
+        args = payload.get("args")
+        fields = {
+            "command": command,
+            "model": args.get("model") if isinstance(args, dict) else payload.get("model"),
+            "dataset": args.get("dataset") if isinstance(args, dict) else payload.get("dataset"),
+            "prompts": args.get("prompts") if isinstance(args, dict) else payload.get("prompts"),
+            "output_dir": args.get("output_dir") if isinstance(args, dict) else payload.get("output_dir"),
+        }
+        return "\n".join(f"{key}: {value}" for key, value in fields.items() if value not in (None, ""))
+
     def _metrics_summary(
         self,
         *,
@@ -2812,6 +2894,91 @@ def _candidate_log_roots(base_path: Path) -> list[Path]:
     if app_logs not in roots:
         roots.append(app_logs)
     return roots
+
+
+def _classify_training_failure(text: str, *, status: str = "failed") -> Dict[str, str]:
+    lower = str(text or "").lower()
+    if str(status or "").lower() in {"stopped", "cancelled", "canceled"}:
+        return {
+            "kind": "cancelled",
+            "headline": "Run was cancelled",
+            "message": "Halo Forge stopped this run before it completed.",
+            "next_action": "Review the log tail, then retry from Train if the configuration is still useful.",
+            "docs_url": "/docs",
+        }
+    if "read-only file system" in lower and ("logs" in lower or "cwd" in lower):
+        return {
+            "kind": "logging_cwd",
+            "headline": "Run could not create its log file",
+            "message": "The trainer started from a folder where the app could not create a logs directory.",
+            "next_action": "Update to the latest app build and retry the run; logs should now write under ~/.halo-forge/logs.",
+            "docs_url": "/docs",
+        }
+    if any(marker in lower for marker in ("permission denied", "not writable", "cannot be created", "read-only file system")):
+        return {
+            "kind": "unwritable_output",
+            "headline": "Halo Forge could not write to the output folder",
+            "message": "The selected output or working directory is not writable from this app runtime.",
+            "next_action": "Retry from Train so Halo Forge can use the default writable run folder under ~/.halo-forge/runs.",
+            "docs_url": "/docs",
+        }
+    if _looks_like_gated_hf_error(text):
+        return {
+            "kind": "gated_huggingface",
+            "headline": "Model requires Hugging Face access",
+            "message": GATED_MODEL_MESSAGE,
+            "next_action": "Connect Hugging Face, accept the model terms on Hugging Face, or choose an open model.",
+            "docs_url": "/docs",
+        }
+    if any(marker in lower for marker in ("no such file or directory", "file not found", "does not exist")) and any(
+        token in lower for token in ("dataset", "prompt", "prompts", ".jsonl")
+    ):
+        return {
+            "kind": "missing_data",
+            "headline": "Training data was not found",
+            "message": "The selected dataset or prompt file could not be resolved by the trainer.",
+            "next_action": "Choose a built-in dataset/template or provide a local JSONL path that exists on this workstation.",
+            "docs_url": "/docs",
+        }
+    if any(marker in lower for marker in ("module not found", "modulenotfounderror", "importerror", "command not found", "no module named")):
+        return {
+            "kind": "missing_dependency",
+            "headline": "Runtime dependency is missing",
+            "message": "The selected method needs a package or command that is not available in this runtime.",
+            "next_action": "Review Diagnostics and method docs, then install the missing dependency or choose a supported method.",
+            "docs_url": "/docs",
+        }
+    if any(marker in lower for marker in ("out of memory", "oom", "mps backend out of memory", "cuda out of memory")):
+        return {
+            "kind": "out_of_memory",
+            "headline": "Run ran out of memory",
+            "message": "The model or batch settings exceeded the available workstation memory.",
+            "next_action": "Retry with a smaller model, fewer samples, lower batch size, or MLX-friendly settings on Apple Silicon.",
+            "docs_url": "/docs",
+        }
+    if any(marker in lower for marker in ("unsupported backend", "not supported on", "rollout-gated", "capability is still gated")):
+        return {
+            "kind": "backend_unsupported",
+            "headline": "This method is not supported by the current backend",
+            "message": "The selected method/model combination is gated or unsupported on this workstation runtime.",
+            "next_action": "Choose a supported model/method, or enable the prototype gate only for experimental runs.",
+            "docs_url": "/docs",
+        }
+    if any(marker in lower for marker in ("401 client error", "403 client error", "unauthorized", "token", "authentication")):
+        return {
+            "kind": "model_auth",
+            "headline": "Model download needs authentication",
+            "message": "The model download failed because the upstream repository requires credentials or access.",
+            "next_action": "Connect Hugging Face or choose an open model from Models.",
+            "docs_url": "/docs",
+        }
+    return {
+        "kind": "unknown",
+        "headline": "Run failed before producing training metrics",
+        "message": "Halo Forge could not classify this failure from the available logs.",
+        "next_action": "Open Diagnostics, inspect the log tail below, then retry from Train with a known-good preset.",
+        "docs_url": "/docs",
+    }
 
 
 def _friendly_upstream_error(detail: Any) -> Dict[str, Any]:

@@ -81,6 +81,20 @@ class TrainingRecoveryView:
 
 
 @dataclass(frozen=True)
+class RunFailureSummaryView:
+    """Plain-language failure details for terminal failed runs."""
+
+    kind: str
+    headline: str
+    message: str
+    next_action: str
+    log_path: Optional[str] = None
+    log_tail: List[str] = field(default_factory=list)
+    retry_route: Optional[str] = None
+    docs_url: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class TrainingLaunchPreflightView:
     """Serialized launch preflight for the public training form."""
 
@@ -130,6 +144,7 @@ class TrainingRunDetailView:
     user_summary: ProductUserSummaryView
     metrics_summary: RunMetricsSummaryView
     recovery: TrainingRecoveryView
+    failure_summary: Optional[RunFailureSummaryView] = None
     primary_action: Optional[PublicActionView] = None
     details: Dict[str, Any] = field(default_factory=dict)
     research_sections: List[ResearchSectionView] = field(default_factory=list)

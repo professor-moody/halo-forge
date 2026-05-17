@@ -62,9 +62,17 @@ class ManagedServeProcess:
             exit_code=exit_code,
             load_error=load_error,
         )
+        ready_state = self._ready_state(
+            state=state,
+            running=running,
+            healthy=healthy,
+            model_ready=model_ready,
+            load_error=load_error,
+        )
         return {
             "running": running,
             "state": state,
+            "ready_state": ready_state,
             "active_action": self._active_action(state),
             "pid": proc.pid if proc is not None and running else None,
             "model": self._model,
@@ -247,6 +255,25 @@ class ManagedServeProcess:
         if state == "exited":
             return "review_logs"
         return None
+
+    def _ready_state(
+        self,
+        *,
+        state: str,
+        running: bool,
+        healthy: bool,
+        model_ready: bool,
+        load_error: dict[str, Any] | None = None,
+    ) -> str:
+        if state == "idle" or not running:
+            return "idle" if state == "idle" else "failed"
+        if load_error or state in {"unhealthy", "exited"}:
+            return "failed"
+        if model_ready:
+            return "chat_ready"
+        if healthy:
+            return "server_ready"
+        return "starting_server"
 
     def _error_hint(
         self,

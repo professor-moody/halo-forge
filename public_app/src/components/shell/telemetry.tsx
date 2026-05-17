@@ -31,6 +31,9 @@ export function TelemetryStrip() {
   const { data, status } = useEventSource<TelemetrySample>(
     "/api/public/telemetry/stream",
   );
+  const eventError = typeof (data as unknown as { error?: unknown } | null)?.error === "string"
+    ? String((data as unknown as { error?: string }).error)
+    : null;
   const isLoading = data === null && status !== "error";
   const appleTelemetry = isAppleTelemetry(data ?? undefined);
   const gpuLimited = appleTelemetry && data?.gpu_util_percent == null && !isLoading;
@@ -49,27 +52,27 @@ export function TelemetryStrip() {
       <div className="relative flex items-stretch divide-x divide-border-subtle overflow-x-auto px-3 md:px-5">
         <Cell
           icon={Gauge}
-          label="GPU UTIL"
+          label={gpuLimited ? "GPU SENSOR" : "GPU UTIL"}
           value={gpuLimited ? "limited" : fmtPercent(data?.gpu_util_percent)}
           unit={gpuLimited ? undefined : "%"}
-          hint={gpuLimited ? "macOS" : undefined}
+          hint={gpuLimited ? "macOS sensor access" : undefined}
           loading={isLoading}
         />
         <VramCell sample={data ?? undefined} loading={isLoading} />
         <Cell
           icon={Zap}
-          label="POWER"
+          label={powerLimited ? "POWER SENSOR" : "POWER"}
           value={powerLimited ? "limited" : fmtNum(data?.power_watts, 0)}
           unit={powerLimited ? undefined : "W"}
-          hint={powerLimited ? "sensor" : undefined}
+          hint={powerLimited ? "macOS sensor access" : undefined}
           loading={isLoading}
         />
         <Cell
           icon={Thermometer}
-          label="TEMP"
+          label={tempLimited ? "TEMP SENSOR" : "TEMP"}
           value={tempLimited ? "limited" : fmtNum(data?.temp_celsius, 0)}
           unit={tempLimited ? undefined : "°C"}
-          hint={tempLimited ? "sensor" : undefined}
+          hint={tempLimited ? "macOS sensor access" : undefined}
           loading={isLoading}
           tone={tempTone(data?.temp_celsius)}
         />
@@ -88,6 +91,12 @@ export function TelemetryStrip() {
           unit="%"
           hint={cpuHint}
           loading={isLoading}
+        />
+        <TelemetryStatusChip
+          backend={data?.backend}
+          timestamp={data?.timestamp}
+          status={status}
+          error={eventError}
         />
         <MPSFallbackChip count={data?.mps_to_cpu_fallbacks_60s ?? 0} />
 
@@ -115,6 +124,50 @@ function MPSFallbackChip({ count }: { count: number }) {
         </TooltipTrigger>
         <TooltipContent side="bottom" align="end" className="max-w-[30ch] text-[11px]">
           PyTorch moved one or more MPS operations to CPU in the last minute. Training will still run, but throughput may drop sharply.
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+function TelemetryStatusChip({
+  backend,
+  timestamp,
+  status,
+  error,
+}: {
+  backend: string | undefined;
+  timestamp: number | undefined;
+  status: string;
+  error: string | null;
+}) {
+  const age = timestamp ? Math.max(0, Date.now() / 1000 - timestamp) : null;
+  const stale = age != null && age > 10;
+  const degraded = status === "error" || Boolean(error) || stale;
+  const label = error ? "telemetry issue" : stale ? "stale" : backend || "telemetry";
+  const detail = error
+    ? error
+    : age == null
+      ? "Waiting for telemetry sample."
+      : `${backend || "telemetry"} · updated ${age < 1 ? "now" : `${age.toFixed(0)}s ago`}`;
+  return (
+    <div className="flex items-center px-3 py-2.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-wider",
+              degraded
+                ? "border-warning/40 bg-warning/10 text-warning"
+                : "border-border-subtle bg-surface text-fg-subtle",
+            )}
+          >
+            <Info className="h-3 w-3" />
+            {label}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="end" className="max-w-[32ch] text-[11px]">
+          {detail}
         </TooltipContent>
       </Tooltip>
     </div>

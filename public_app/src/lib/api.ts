@@ -415,6 +415,7 @@ export type HuggingFaceModelAccess = {
 export type ServeStatus = {
   running: boolean;
   state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string;
+  ready_state?: "idle" | "starting_server" | "server_ready" | "loading_model" | "chat_ready" | "failed" | string;
   active_action?: "loading_model" | "serving" | "check_logs" | "review_logs" | string | null;
   pid: number | null;
   model: string | null;
@@ -508,6 +509,17 @@ export type RunUserSummary = {
   confidence_tone?: string;
 };
 
+export type RunFailureSummary = {
+  kind: string;
+  headline: string;
+  message: string;
+  next_action: string;
+  log_path?: string | null;
+  log_tail?: string[];
+  retry_route?: string | null;
+  docs_url?: string | null;
+};
+
 /**
  * Run cost rollup (Track P2). Energy + dollar estimate computed from
  * wall-clock duration × backend nominal power. `source: "measured"` means
@@ -539,6 +551,7 @@ export type RunDetail = {
   user_summary?: RunUserSummary;
   metrics_summary?: RunMetricsSummary;
   recovery?: Record<string, unknown>;
+  failure_summary?: RunFailureSummary | null;
   details?: {
     cycles_executed?: number;
     seed?: number;

@@ -100,11 +100,13 @@ function PlaygroundRoute() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const serveState = serveStatus.data?.state ?? "idle";
-  const localReady = Boolean(serveStatus.data?.running && serveState === "running");
+  const serveReadyState = serveStatus.data?.ready_state ?? (serveStatus.data?.model_ready ? "chat_ready" : serveState);
+  const localChatReady = Boolean(serveStatus.data?.running && serveReadyState === "chat_ready");
+  const localServerReady = Boolean(serveStatus.data?.running && serveReadyState === "server_ready");
   const managedUrl = serveStatus.data?.url ?? DEFAULT_SERVE_URL;
   const usingManagedEndpoint = serveUrl === DEFAULT_SERVE_URL || serveUrl === managedUrl;
   const externalEndpoint = Boolean(serveUrl.trim() && !usingManagedEndpoint);
-  const canChat = localReady || externalEndpoint;
+  const canChat = (usingManagedEndpoint ? localChatReady || localServerReady : false) || externalEndpoint;
   const activeChatModel = canChat ? model : "No model serving";
   const activeChatUrl = canChat ? serveUrl : "Start a model to chat";
   const quickServeModel = useMemo(
@@ -330,6 +332,7 @@ function friendlyChatFailure(exc: unknown): string {
         <ServeStatusPanel
           status={serveStatus.data ?? null}
           state={serveStatus.data?.state ?? "idle"}
+          readyState={serveReadyState}
           model={serveStatus.data?.model ?? null}
           url={serveStatus.data?.url ?? DEFAULT_SERVE_URL}
           message={serveStatus.data?.message ?? null}
@@ -341,6 +344,7 @@ function friendlyChatFailure(exc: unknown): string {
           quickModelLoading={quickModels.isLoading}
           quickModelStarting={serveStart.isPending}
           quickModelError={serveStart.error?.message ?? null}
+          localServerReady={localServerReady}
           stopping={serveStop.isPending}
           onStartQuick={startQuickModel}
           onStop={() =>
@@ -367,10 +371,12 @@ function friendlyChatFailure(exc: unknown): string {
             <div className="px-4 py-4 space-y-3 min-h-[280px] max-h-[60vh] overflow-y-auto">
               {messages.length === 0 ? (
                 <div className="text-center text-sm text-fg-muted py-10 max-w-[44ch] mx-auto">
-                  <p>{canChat ? "Send a message to the active model." : "Start a local model to unlock chat."}</p>
+                  <p>{canChat ? (localServerReady && !localChatReady ? "Send a message to load and test the active model." : "Send a message to the active model.") : "Start a local model to unlock chat."}</p>
                   <p className="text-[11px] text-fg-disabled mt-3">
                     {canChat
-                      ? "Cmd/Ctrl+Enter sends. Settings can point this chat at an external endpoint."
+                      ? localServerReady && !localChatReady
+                        ? "The local server is up; the first message may finish loading the adapter."
+                        : "Cmd/Ctrl+Enter sends. Settings can point this chat at an external endpoint."
                       : "Use the safe-model button above, or choose a model from Models or Results."}
                   </p>
                 </div>
@@ -391,7 +397,7 @@ function friendlyChatFailure(exc: unknown): string {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={canChat ? "Send a message…" : "Start a model before chatting…"}
+                placeholder={canChat ? "Send a message…" : localServerReady ? "Waiting for model to finish loading…" : "Start a model before chatting…"}
                 disabled={!canChat}
                 rows={3}
                 className="flex-1 bg-bg border border-border-subtle rounded-md px-2.5 py-2 text-[13px] focus:outline-none focus:border-accent resize-y disabled:opacity-60 disabled:cursor-not-allowed"
@@ -421,6 +427,7 @@ function friendlyChatFailure(exc: unknown): string {
 function ServeStatusPanel({
   status,
   state,
+  readyState,
   model,
   url,
   message,
@@ -432,12 +439,14 @@ function ServeStatusPanel({
   quickModelLoading,
   quickModelStarting,
   quickModelError,
+  localServerReady,
   stopping,
   onStartQuick,
   onStop,
 }: {
   status: ServeStatus | null;
   state: string;
+  readyState: string;
   model: string | null;
   url: string;
   message: string | null;
@@ -449,6 +458,7 @@ function ServeStatusPanel({
   quickModelLoading: boolean;
   quickModelStarting: boolean;
   quickModelError: string | null;
+  localServerReady: boolean;
   stopping: boolean;
   onStartQuick: () => void;
   onStop: () => void;
@@ -460,12 +470,12 @@ function ServeStatusPanel({
   const gatedLoadError = loadError?.action === "connect_huggingface" || loadError?.error_kind === "gated_model";
   const modelId = loadError?.model_id ?? loadError?.model ?? model;
   const modelUrl = loadError?.model_url ?? (modelId ? `https://huggingface.co/${modelId}` : undefined);
-  const tone = state === "running" ? "success" : state === "starting" || state === "stopping" ? "warning" : state === "unhealthy" || state === "exited" ? "danger" : "neutral";
+  const tone = readyState === "chat_ready" ? "success" : readyState === "server_ready" || state === "starting" || state === "stopping" ? "warning" : state === "unhealthy" || state === "exited" || readyState === "failed" ? "danger" : "neutral";
   const label =
-    state === "running"
-      ? status?.model_ready
-        ? "ready"
-        : "server ready"
+    readyState === "chat_ready"
+      ? "chat ready"
+      : readyState === "server_ready"
+        ? "server ready"
       : state === "starting"
         ? "starting"
         : state === "stopping"
@@ -498,6 +508,7 @@ function ServeStatusPanel({
             </div>
             <div className="mt-1 text-[11px] text-fg-muted">
               {servingStateCopy(state, message)}
+              {localServerReady ? " The first message may finish loading the model adapter." : ""}
               {showLogContext && logsAvailable && logPath ? (
                 <span className="font-mono text-fg-subtle"> · logs: {logPath}</span>
               ) : null}
@@ -568,7 +579,7 @@ function ServeStatusPanel({
 
 function servingStateCopy(state: string, message: string | null): string {
   if (state !== "idle" && message) return message;
-  if (state === "running") return "Local server is ready. The model loads on the first message.";
+  if (state === "running") return "Local model server is ready.";
   if (state === "starting") return "Loading the model. This can take a minute on the first run.";
   if (state === "unhealthy") return "Local serving needs attention. Check logs, stop, or choose another model.";
   if (state === "exited") return "The local model server exited. Logs are kept for review.";
