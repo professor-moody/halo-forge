@@ -6,12 +6,13 @@ This is the bridge between the UI and actual training processes.
 """
 
 import asyncio
+import json
 import os
 import re
 import signal
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable, Any
 from collections import deque
@@ -43,6 +44,25 @@ from halo_forge.utils.macos_runtime import caffeinate_command
 HALO_FORGE_APP_DIR_ENV = "HALO_FORGE_APP_DIR"
 HALO_FORGE_LOG_DIR_ENV = "HALO_FORGE_LOG_DIR"
 HALO_FORGE_WORKDIR_ENV = "HALO_FORGE_WORKDIR"
+
+
+TRAINING_STAGES: dict[str, tuple[str, str]] = {
+    "preparing": ("Preparing", "Preparing the training process."),
+    "loading_dataset": ("Loading data", "Loading and formatting the training dataset."),
+    "downloading_model": ("Loading model", "Resolving model files and tokenizer assets."),
+    "building_trainer": ("Building trainer", "Preparing trainer state and optimizer."),
+    "training": ("Training", "Updating model weights."),
+    "evaluating": ("Evaluating", "Running evaluation checks."),
+    "saving_checkpoint": ("Saving", "Writing checkpoint or artifact files."),
+    "finalizing": ("Finalizing", "Collecting final metrics and artifacts."),
+    "completed": ("Completed", "Training completed."),
+    "failed": ("Failed", "Training stopped because the process failed."),
+    "cancelled": ("Cancelled", "Training was cancelled."),
+}
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 # Import notification helpers (only used when UI is running)
 try:
@@ -138,7 +158,10 @@ class TrainingService:
     def _is_progress_only_line(line: str) -> bool:
         """Return True for bare tqdm-style progress lines without extra signal."""
         return bool(
-            MetricsParser.PATTERNS["tqdm_progress"].search(line)
+            (
+                MetricsParser.PATTERNS["tqdm_progress"].search(line)
+                or re.search(r"\bMap:\s*\d+%\|", line)
+            )
             and not re.search(r"\{.*\}|loss|lr|learning_rate|epoch|cycle|HALO_YIELD", line, re.IGNORECASE)
         )
 
@@ -151,6 +174,151 @@ class TrainingService:
             return True
         self._last_progress_line_by_job[job_id] = line
         return False
+
+    def _set_stage(
+        self,
+        job_id: str,
+        key: str,
+        message: Optional[str] = None,
+        progress_percent: Optional[float] = None,
+    ) -> None:
+        """Update the live monitor stage for a training job."""
+        job = self.state.get_job(job_id)
+        if not job:
+            return
+        stage_key = key if key in TRAINING_STAGES else "preparing"
+        label, default_message = TRAINING_STAGES[stage_key]
+        if job.stage_key != stage_key:
+            job.stage_started_at = utc_now()
+        job.stage_key = stage_key
+        job.stage_label = label
+        job.stage_message = str(message or default_message)
+        if progress_percent is not None:
+            try:
+                job.stage_progress_percent = max(0.0, min(100.0, float(progress_percent)))
+            except (TypeError, ValueError):
+                pass
+        elif stage_key == "completed":
+            job.stage_progress_percent = 100.0
+        elif stage_key == "failed" and job.stage_progress_percent <= 0:
+            job.stage_progress_percent = job.progress_percent
+        job.last_event = job.stage_message
+
+    @staticmethod
+    def _short_event(line: str) -> str:
+        text = str(line or "").strip()
+        return text if len(text) <= 240 else text[:237] + "..."
+
+    def _handle_structured_event(self, job_id: str, line: str) -> bool:
+        """Handle HALO_STAGE/METRIC/ARTIFACT structured log events."""
+        stripped = line.strip()
+        prefix = None
+        if stripped.startswith("HALO_STAGE "):
+            prefix = "HALO_STAGE "
+        elif stripped.startswith("HALO_METRIC "):
+            prefix = "HALO_METRIC "
+        elif stripped.startswith("HALO_ARTIFACT "):
+            prefix = "HALO_ARTIFACT "
+        if prefix is None:
+            return False
+        try:
+            payload = json.loads(stripped[len(prefix):])
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+
+        job = self.state.get_job(job_id)
+        if not job:
+            return True
+        if prefix == "HALO_STAGE ":
+            self._set_stage(
+                job_id,
+                str(payload.get("key") or payload.get("stage") or "training"),
+                message=str(payload.get("message") or "").strip() or None,
+                progress_percent=payload.get("progress_percent"),
+            )
+            return True
+        if prefix == "HALO_ARTIFACT ":
+            state = str(payload.get("state") or payload.get("artifact_state") or "").strip()
+            artifact_type = str(payload.get("type") or payload.get("artifact") or "").strip()
+            if state:
+                job.artifact_state = state
+            elif artifact_type in {"final_model", "model"}:
+                job.artifact_state = "final_model"
+            elif artifact_type:
+                job.artifact_state = "checkpoint"
+            self._set_stage(
+                job_id,
+                "saving_checkpoint" if job.artifact_state == "checkpoint" else "finalizing",
+                message=str(payload.get("message") or f"Recorded {artifact_type or 'artifact'}."),
+            )
+            return True
+
+        metric = ParsedMetrics()
+        if payload.get("train_loss") is not None:
+            metric.loss = self._optional_float(payload.get("train_loss"))
+        elif payload.get("loss") is not None:
+            metric.loss = self._optional_float(payload.get("loss"))
+        if payload.get("learning_rate") is not None:
+            metric.learning_rate = self._optional_float(payload.get("learning_rate"))
+        if payload.get("grad_norm") is not None:
+            metric.grad_norm = self._optional_float(payload.get("grad_norm"))
+        if payload.get("step") is not None:
+            metric.step = self._optional_int(payload.get("step"))
+        if payload.get("total_steps") is not None:
+            metric.total_steps = self._optional_int(payload.get("total_steps"))
+        if payload.get("epoch") is not None:
+            metric.epoch = self._optional_float(payload.get("epoch"))
+        if metric.has_metrics():
+            self._update_job_metrics(job_id, metric)
+            self._set_stage(job_id, "training", "Training weights.", job.progress_percent)
+        return True
+
+    def _infer_stage_from_line(self, job_id: str, line: str) -> None:
+        """Infer a useful stage from unstructured trainer output."""
+        job = self.state.get_job(job_id)
+        if not job:
+            return
+        short = self._short_event(line)
+        job.last_event = short
+        if self._handle_structured_event(job_id, line):
+            return
+        lower = line.lower()
+        if lower.startswith("map:") or "loading huggingface dataset" in lower or "loading dataset" in lower:
+            self._set_stage(job_id, "loading_dataset", short)
+        elif any(token in lower for token in ("download", "resolving", "loading model", "loading tokenizer", "tokenizer loaded", "xet storage")):
+            self._set_stage(job_id, "downloading_model", short)
+        elif any(token in lower for token in ("building trainer", "trainer", "optimizer", "scheduler")):
+            self._set_stage(job_id, "building_trainer", short)
+        elif any(token in lower for token in ("eval", "validation")) and "loss" in lower:
+            self._set_stage(job_id, "evaluating", short, job.progress_percent)
+        elif "checkpoint" in lower and any(token in lower for token in ("save", "saving", "saved")):
+            job.artifact_state = "checkpoint"
+            self._set_stage(job_id, "saving_checkpoint", short, job.progress_percent)
+        elif any(token in lower for token in ("training complete", "training completed", "final model", "training_summary.json")):
+            job.artifact_state = "final_model"
+            self._set_stage(job_id, "finalizing", short, 100.0)
+        elif any(token in lower for token in ("sft training", "launching", "environment check", "preflight")):
+            self._set_stage(job_id, "preparing", short, 0.0)
+
+    @staticmethod
+    def _optional_float(value: Any) -> Optional[float]:
+        try:
+            if value in (None, ""):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _optional_int(value: Any) -> Optional[int]:
+        try:
+            if value in (None, ""):
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
     
     def _get_strix_halo_env(self) -> dict[str, str]:
         """Get environment variables optimized for AMD Strix Halo."""
@@ -525,7 +693,7 @@ class TrainingService:
             import json
 
             marker = {
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now().isoformat(),
                 "mode": str(mode_key or "").strip().lower(),
                 "expected_artifacts": self.expected_output_artifacts(mode_key),
             }
@@ -1323,7 +1491,7 @@ class TrainingService:
             "applied": True,
             "source": "training_service.launch_sft",
             "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "metadata": self._merge_transition_metadata(
                 job,
                 {"job_type": "sft"},
@@ -1544,7 +1712,7 @@ class TrainingService:
             "applied": True,
             "source": "training_service.launch_raft",
             "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "metadata": self._merge_transition_metadata(
                 job,
                 {"job_type": "raft"},
@@ -1723,7 +1891,7 @@ class TrainingService:
             "applied": True,
             "source": f"training_service.launch_{mode_key}_train",
             "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "metadata": self._merge_transition_metadata(job, {"job_type": mode_key}),
         }
         get_event_bus().emit_sync(Event(
@@ -1891,7 +2059,7 @@ class TrainingService:
             "applied": True,
             "source": f"training_service.launch_{modality}_train",
             "reason": "job_created",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "metadata": self._merge_transition_metadata(
                 job,
                 {"job_type": modality},
@@ -2050,7 +2218,8 @@ class TrainingService:
         )
         
         job.process = process
-        job.started_at = datetime.now()
+        job.started_at = utc_now()
+        self._set_stage(job_id, "preparing", "Starting the training process.", 0.0)
         transitioned = self.state.update_job_status(
             job_id,
             "running",
@@ -2115,7 +2284,8 @@ class TrainingService:
                     if self._should_skip_stream_line(job_id, line):
                         continue
 
-                    timestamp = datetime.now().isoformat()
+                    timestamp = utc_now().isoformat()
+                    self._infer_stage_from_line(job_id, line)
                     try:
                         from halo_forge.telemetry.apple_silicon import get_mps_fallback_counter
 
@@ -2156,6 +2326,13 @@ class TrainingService:
                         metrics = parser.parse_line(line)
                         if metrics:
                             self._update_job_metrics(job_id, metrics)
+                            live_job = self.state.get_job(job_id)
+                            self._set_stage(
+                                job_id,
+                                "training",
+                                "Training weights.",
+                                live_job.progress_percent if live_job else None,
+                            )
 
                             # Emit metrics update event
                             await event_bus.emit(Event(
@@ -2179,6 +2356,8 @@ class TrainingService:
                     line_lower = line.lower()
                     if ('checkpoint' in line_lower and 'saved' in line_lower) or \
                        ('saving' in line_lower and 'checkpoint' in line_lower):
+                        job.artifact_state = "checkpoint"
+                        self._set_stage(job_id, "saving_checkpoint", line, job.progress_percent)
                         checkpoint_path = str(job.output_dir) if job.output_dir else "checkpoint"
 
                         # Emit checkpoint event
@@ -2206,6 +2385,7 @@ class TrainingService:
         return_code = await job.process.wait()
 
         if job.stop_requested:
+            self._set_stage(job_id, "cancelled", "Training was cancelled.", job.progress_percent)
             transitioned = self.state.update_job_status(
                 job_id,
                 "stopped",
@@ -2228,6 +2408,11 @@ class TrainingService:
                     ),
                 ))
         elif return_code == 0:
+            if job.output_dir and (Path(job.output_dir) / "training_summary.json").exists():
+                job.artifact_state = "final_model"
+            elif job.artifact_state == "none":
+                job.artifact_state = "checkpoint" if job.current_step or job.current_cycle else "none"
+            self._set_stage(job_id, "completed", "Training completed.", 100.0)
             transitioned = self.state.update_job_status(
                 job_id,
                 "completed",
@@ -2251,6 +2436,7 @@ class TrainingService:
                 ),
             ))
         elif return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
+            self._set_stage(job_id, "cancelled", "Training was cancelled.", job.progress_percent)
             transitioned = self.state.update_job_status(
                 job_id,
                 "stopped",
@@ -2275,6 +2461,8 @@ class TrainingService:
             ))
         else:
             job.error_message = f"Process exited with code {return_code}"
+            job.artifact_state = "failed" if job.artifact_state == "none" else job.artifact_state
+            self._set_stage(job_id, "failed", job.error_message, job.progress_percent)
             transitioned = self.state.update_job_status(
                 job_id,
                 "failed",
@@ -2312,6 +2500,7 @@ class TrainingService:
         
         if metrics.learning_rate is not None:
             job.latest_lr = metrics.learning_rate
+            self.state.add_metric(job_id, 'lr', job.current_step, metrics.learning_rate)
         
         if metrics.epoch is not None:
             job.current_epoch = metrics.epoch  # Keep as float for accurate progress
@@ -2338,6 +2527,30 @@ class TrainingService:
         if metrics.yield_snapshot is not None:
             job.latest_yield_snapshot = dict(metrics.yield_snapshot)
             job.yield_history.append(dict(metrics.yield_snapshot))
+
+        if any(
+            value is not None
+            for value in (
+                metrics.loss,
+                metrics.learning_rate,
+                metrics.grad_norm,
+                metrics.step,
+                metrics.total_steps,
+            )
+        ):
+            point: dict[str, Any] = {
+                "step": int(metrics.step or job.current_step or 0),
+                "timestamp": utc_now().isoformat(),
+            }
+            if metrics.loss is not None:
+                point["train_loss"] = metrics.loss
+            if metrics.learning_rate is not None:
+                point["learning_rate"] = metrics.learning_rate
+            if metrics.grad_norm is not None:
+                point["grad_norm"] = metrics.grad_norm
+            if metrics.total_steps:
+                point["total_steps"] = metrics.total_steps
+            job.metric_points.append(point)
     
     async def stop_job(self, job_id: str, timeout: float = 30.0) -> bool:
         """

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import os
 import platform
 import sys
@@ -67,6 +68,11 @@ def _self_check() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Required for PyInstaller one-dir builds. Without this, Python's
+    # multiprocessing resource tracker can re-enter this executable with
+    # helper args that would otherwise be parsed as halo-forge CLI commands.
+    multiprocessing.freeze_support()
+
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--desktop-self-check", action="store_true")

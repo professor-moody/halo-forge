@@ -616,12 +616,15 @@ class RAFTTrainer:
         
         # Filter by threshold
         effective_threshold = cfg.reward_threshold
+        allow_compile_only_training = bool(
+            getattr(cfg, "allow_compile_only_training", False)
+        )
         above_threshold = [
             d for d in all_data
             if is_training_eligible(
                 d,
                 effective_threshold,
-                allow_compile_only=cfg.allow_compile_only_training,
+                allow_compile_only=allow_compile_only_training,
             )
         ]
         
@@ -641,7 +644,7 @@ class RAFTTrainer:
                 if is_training_eligible(
                     d,
                     0.0,
-                    allow_compile_only=cfg.allow_compile_only_training,
+                    allow_compile_only=allow_compile_only_training,
                 )
             ]
             if len(eligible_data) >= cfg.min_samples_per_cycle:
@@ -678,7 +681,7 @@ class RAFTTrainer:
             'training_eligible_count': len(filtered),
         }
 
-        if not self.representative_examples:
+        if not getattr(self, "representative_examples", []):
             failed_examples = [
                 {
                     "reason": "verification_failed",

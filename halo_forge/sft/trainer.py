@@ -8,6 +8,7 @@ Supports Qwen, Llama, and other transformer models.
 
 import os
 import sys
+import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
@@ -329,8 +330,14 @@ class SFTTrainer:
         dataset = dataset.shuffle(seed=self.config.seed)
         
         split_idx = int(len(dataset) * (1 - self.config.validation_split))
+        if len(dataset) > 0 and split_idx <= 0:
+            split_idx = 1
         train_dataset = dataset.select(range(split_idx))
-        val_dataset = dataset.select(range(split_idx, len(dataset)))
+        val_dataset = (
+            dataset.select(range(split_idx, len(dataset)))
+            if split_idx < len(dataset)
+            else dataset.select([])
+        )
         
         print(f"  Train: {len(train_dataset)} examples")
         print(f"  Validation: {len(val_dataset)} examples")
@@ -429,6 +436,13 @@ class SFTTrainer:
         if use_4bit:
             print("Preparing model for QLoRA...")
             self.model = prepare_model_for_kbit_training(self.model)
+
+        if cfg.lora_r <= 0:
+            print("LoRA disabled; using full fine-tuning")
+            empty_accelerator_cache()
+            print("Model ready")
+            print()
+            return
         
         # Apply LoRA. PEFT additions (use_dora / use_rslora /
         # init_lora_weights) come from cfg; they default to vanilla LoRA so
@@ -598,48 +612,50 @@ class SFTTrainer:
             mlm=False
         )
         
-        # Training arguments
-        training_args = TrainingArguments(
-            output_dir=cfg.output_dir,
-            overwrite_output_dir=True,
-            
-            per_device_train_batch_size=cfg.batch_size,
-            per_device_eval_batch_size=cfg.batch_size,
-            gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-            
-            num_train_epochs=cfg.num_epochs,
-            
-            learning_rate=cfg.learning_rate,
-            warmup_ratio=cfg.warmup_ratio,
-            lr_scheduler_type="cosine",
-            
-            optim=cfg.optim,
-            weight_decay=cfg.weight_decay,
-            max_grad_norm=cfg.max_grad_norm,
-            
-            gradient_checkpointing=cfg.gradient_checkpointing,
-            gradient_checkpointing_kwargs={'use_reentrant': False},
-            bf16=cfg.bf16,
-            
-            logging_steps=10,
-            logging_dir=f"{cfg.output_dir}/logs",
-            report_to="tensorboard",
-            
-            save_strategy="steps",
-            save_steps=cfg.save_steps,
-            save_total_limit=cfg.save_total_limit,
-            
-            eval_strategy="steps",
-            eval_steps=cfg.eval_steps,
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
-            greater_is_better=False,
-            
-            seed=42,
-            
+        # Training arguments. Transformers 5 removed a few older kwargs
+        # (notably overwrite_output_dir), so filter against the installed
+        # signature instead of making dashboard training brittle.
+        has_eval_data = len(val_dataset) > 0
+        training_arg_values: Dict[str, Any] = {
+            "output_dir": cfg.output_dir,
+            "overwrite_output_dir": True,
+            "per_device_train_batch_size": cfg.batch_size,
+            "per_device_eval_batch_size": cfg.batch_size,
+            "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
+            "num_train_epochs": cfg.num_epochs,
+            "learning_rate": cfg.learning_rate,
+            "warmup_ratio": cfg.warmup_ratio,
+            "lr_scheduler_type": "cosine",
+            "optim": cfg.optim,
+            "weight_decay": cfg.weight_decay,
+            "max_grad_norm": cfg.max_grad_norm,
+            "gradient_checkpointing": cfg.gradient_checkpointing,
+            "gradient_checkpointing_kwargs": {'use_reentrant': False},
+            "bf16": cfg.bf16,
+            "logging_steps": 10,
+            "logging_dir": f"{cfg.output_dir}/logs",
+            "report_to": "tensorboard",
+            "save_strategy": "steps",
+            "save_steps": cfg.save_steps,
+            "save_total_limit": cfg.save_total_limit,
+            "eval_strategy": "steps" if has_eval_data else "no",
+            "eval_steps": cfg.eval_steps,
+            "do_eval": has_eval_data,
+            "load_best_model_at_end": has_eval_data,
+            "metric_for_best_model": "eval_loss" if has_eval_data else None,
+            "greater_is_better": False if has_eval_data else None,
+            "seed": 42,
             # ROCm optimizations
-            dataloader_num_workers=0,
-            dataloader_pin_memory=False,
+            "dataloader_num_workers": 0,
+            "dataloader_pin_memory": False,
+        }
+        signature = inspect.signature(TrainingArguments.__init__)
+        training_args = TrainingArguments(
+            **{
+                key: value
+                for key, value in training_arg_values.items()
+                if key in signature.parameters and value is not None
+            }
         )
         
         print("=" * 70)
@@ -654,20 +670,24 @@ class SFTTrainer:
         print(f"Max sequence length: {cfg.max_seq_length}")
         print()
         
+        callbacks = []
+        if has_eval_data:
+            callbacks.append(
+                EarlyStoppingCallback(
+                    early_stopping_patience=cfg.early_stopping_patience,
+                    early_stopping_threshold=cfg.early_stopping_threshold,
+                )
+            )
+
         # Create trainer
         trainer = Trainer(
             model=self.model,
             args=training_args,
             train_dataset=train_dataset,
-            eval_dataset=val_dataset,
+            eval_dataset=val_dataset if has_eval_data else None,
             processing_class=self.tokenizer,  # Updated from deprecated 'tokenizer'
             data_collator=data_collator,
-            callbacks=[
-                EarlyStoppingCallback(
-                    early_stopping_patience=cfg.early_stopping_patience,
-                    early_stopping_threshold=cfg.early_stopping_threshold
-                )
-            ]
+            callbacks=callbacks,
         )
         
         # Train

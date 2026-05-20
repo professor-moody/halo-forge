@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
@@ -357,7 +357,7 @@ class LaunchContextV1:
             contract_version=LAUNCH_CONTEXT_CONTRACT_VERSION,
             job_type=job_type,
             service=service,
-            created_at=str(data.get("created_at") or datetime.now().isoformat()),
+            created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
             source_ui_page=str(data.get("source_ui_page") or ""),
             command=command,
             args=dict(args),
@@ -420,7 +420,7 @@ def persist_launch_context(
         contract_version=LAUNCH_CONTEXT_CONTRACT_VERSION,
         job_type=job_type,
         service=service,
-        created_at=datetime.now().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
         source_ui_page=source_ui_page,
         command=list(command),
         args=normalize_launch_args(job_type, args),

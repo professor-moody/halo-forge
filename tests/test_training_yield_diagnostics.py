@@ -84,6 +84,24 @@ def test_metrics_parser_extracts_machine_readable_yield_snapshot():
     assert parsed.yield_snapshot["summary"]["status"] == "healthy"
 
 
+def test_metrics_parser_ignores_dataset_map_progress_as_training_steps():
+    parser = MetricsParser()
+
+    parsed = parser.parse_line("Map: 100%|##########| 20022/20022 [00:00<00:00, 28062.05 examples/s]")
+
+    assert parsed is None
+
+
+def test_metrics_parser_keeps_trainer_tqdm_progress_steps():
+    parser = MetricsParser()
+
+    parsed = parser.parse_line("100%|##########| 33/33 [00:12<00:00,  2.61it/s]")
+
+    assert parsed is not None
+    assert parsed.step == 33
+    assert parsed.total_steps == 33
+
+
 def test_training_service_preflight_exposes_quality_outlook_for_risky_raft(tmp_path):
     prompts = tmp_path / "prompts.jsonl"
     prompts.write_text('{"prompt":"one"}\n{"prompt":"two"}\n', encoding="utf-8")

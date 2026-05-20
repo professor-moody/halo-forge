@@ -57,9 +57,8 @@ export const Route = createFileRoute("/runs/$runId")({
  *   Two-col      Loss & reward charts (2/3) | Run summary card (1/3)
  *   Cycle table  Per-cycle metrics with sparklines per row
  *
- * v1 ships static cycle metrics from the run summary. v2 will wire SSE
- * for active runs (live tail of train_loss while a job is running),
- * sample inspector, and verifier-breakdown histograms.
+ * Active runs use the SSE/live payload for stage, progress, and metric
+ * history; completed runs fall back to chart-ready summary artifacts.
  */
 
 function RunDetailRoute() {
@@ -83,6 +82,7 @@ function RunDetailRoute() {
   const cycleMetrics = useMemo<CycleMetric[]>(() => {
     return (data?.details?.cycle_metrics ?? []) as CycleMetric[];
   }, [data]);
+  const liveMetricPoints = useMemo(() => live?.metric_points ?? [], [live]);
 
   const isLive = isJobRunning(displayStatus);
 
@@ -202,6 +202,7 @@ function RunDetailRoute() {
       ) : (
         <div className="px-5 py-5 space-y-4">
           <LiveSummary data={data} live={live} streamStatus={liveStream.status} streamError={liveStream.error} />
+          {isLive || live?.stage ? <StageRail live={live} status={displayStatus} /> : null}
           {data.failure_summary ? <FailureSummaryCard data={data.failure_summary} /> : null}
           <StatRibbon data={data} />
 
@@ -220,7 +221,7 @@ function RunDetailRoute() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div className="lg:col-span-2 space-y-3">
-              <LossCard cycles={slicedCycles} />
+              <LossCard cycles={slicedCycles} livePoints={liveMetricPoints} stage={live?.stage ?? null} />
               <RewardCard cycles={slicedCycles} modality={String(data.modality)} />
             </div>
             <div className="space-y-3">
@@ -272,6 +273,8 @@ function LiveSummary({
   const totalSteps = live?.total_steps ?? null;
   const cycles = live?.current_cycle ?? data.details?.cycles_executed ?? null;
   const totalCycles = live?.total_cycles ?? null;
+  const stage = live?.stage;
+  const artifactState = live?.artifact_state ?? (data.details?.final_model_available ? "final_model" : "none");
   const nextStep =
     live?.next_step ??
     live?.user_summary?.next_step ??
@@ -294,6 +297,7 @@ function LiveSummary({
         ? "warning"
         : "neutral";
   const methodSummary = summaryForMethod(String(data.modality ?? ""), data);
+  const stageCopy = stage?.message ?? (isTerminal ? nextStep : "Waiting for the next training event.");
 
   return (
     <Card className="bg-surface/90">
@@ -313,14 +317,97 @@ function LiveSummary({
             </Badge>
           </div>
           <p className="mt-1 max-w-[72ch] text-[12.5px] leading-5 text-fg-muted">
-            {methodSummary} {nextStep}
+            {methodSummary} {stageCopy}
           </p>
+          {live?.last_event ? (
+            <p className="mt-1 max-w-[72ch] truncate font-mono text-[11px] text-fg-disabled" title={live.last_event}>
+              {live.last_event}
+            </p>
+          ) : null}
         </div>
         <div className="grid min-w-[360px] grid-cols-2 gap-2 lg:grid-cols-4">
-          <LiveMetric label="Method" value={String(data.modality ?? "-")} />
+          <LiveMetric label="Stage" value={stage?.label ?? String(data.modality ?? "-")} />
+          <LiveMetric label="Elapsed" value={fmtDuration(live?.elapsed_seconds)} />
           <LiveMetric label="Loss" value={fmt(loss, 4)} />
           <LiveMetric label="Steps" value={formatProgress(steps, totalSteps)} />
-          <LiveMetric label={cycleLikeMethod(String(data.modality ?? "")) ? "Cycles" : "Artifact"} value={cycleLikeMethod(String(data.modality ?? "")) ? formatProgress(cycles, totalCycles) : data.details?.final_model_available ? "saved" : "pending"} />
+          <LiveMetric label={cycleLikeMethod(String(data.modality ?? "")) ? "Cycles" : "Artifact"} value={cycleLikeMethod(String(data.modality ?? "")) ? formatProgress(cycles, totalCycles) : artifactStateLabel(artifactState)} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const STAGE_ORDER = [
+  "preparing",
+  "loading_dataset",
+  "downloading_model",
+  "building_trainer",
+  "training",
+  "evaluating",
+  "saving_checkpoint",
+  "finalizing",
+  "completed",
+] as const;
+
+const STAGE_LABELS: Record<string, string> = {
+  preparing: "Prepare",
+  loading_dataset: "Data",
+  downloading_model: "Model",
+  building_trainer: "Trainer",
+  training: "Train",
+  evaluating: "Eval",
+  saving_checkpoint: "Save",
+  finalizing: "Finalize",
+  completed: "Done",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+function StageRail({ live, status }: { live: RunLive | null; status?: string }) {
+  const currentKey =
+    live?.stage?.key ??
+    (String(status ?? "").toLowerCase() === "running" ? "training" : String(status ?? "").toLowerCase());
+  const terminalFailed = ["failed", "stopped", "cancelled", "canceled"].includes(currentKey);
+  const activeIndex = STAGE_ORDER.indexOf(currentKey as (typeof STAGE_ORDER)[number]);
+  const progress = live?.stage?.progress_percent ?? live?.progress_percent ?? 0;
+  return (
+    <Card>
+      <CardContent className="space-y-3 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-fg-disabled">Live stage</div>
+            <div className="mt-1 text-sm font-semibold text-fg">
+              {live?.stage?.label ?? STAGE_LABELS[currentKey] ?? "Waiting"}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
+            <Badge tone={terminalFailed ? "danger" : currentKey === "completed" ? "success" : "neutral"} size="sm">
+              {Math.max(0, Math.min(100, Number(progress) || 0)).toFixed(0)}%
+            </Badge>
+            {live?.eta_seconds ? <span>ETA {fmtDuration(live.eta_seconds)}</span> : null}
+            {live?.artifact_state ? <span>Artifact {artifactStateLabel(live.artifact_state)}</span> : null}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5 lg:grid-cols-9">
+          {STAGE_ORDER.map((key, index) => {
+            const done = currentKey === "completed" || (activeIndex >= 0 && index < activeIndex);
+            const active = key === currentKey;
+            return (
+              <div
+                key={key}
+                className={cn(
+                  "h-8 rounded-sm border px-2 py-1 text-[10px] leading-5",
+                  done
+                    ? "border-success/35 bg-success-bg/20 text-success"
+                    : active
+                      ? "border-accent/70 bg-accent/10 text-fg"
+                      : "border-border-subtle bg-bg-subtle/40 text-fg-disabled",
+                )}
+              >
+                {STAGE_LABELS[key]}
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -484,7 +571,38 @@ function StatRibbon({ data }: { data: RunDetail }) {
  * Charts
  * ----------------------------------------------------------------------- */
 
-function LossCard({ cycles }: { cycles: CycleMetric[] }) {
+function LossCard({
+  cycles,
+  livePoints,
+  stage,
+}: {
+  cycles: CycleMetric[];
+  livePoints: NonNullable<RunLive["metric_points"]>;
+  stage: RunLive["stage"] | null;
+}) {
+  type LossChartPoint = {
+    step: number;
+    train_loss?: number | null;
+    eval_loss?: number | null;
+  };
+  const chartData: LossChartPoint[] = livePoints.length
+    ? livePoints.map((point) => ({
+        step: point.step,
+        train_loss: point.train_loss,
+        eval_loss: point.eval_loss,
+      }))
+    : cycles.map((cycle) => ({
+        step: cycle.cycle,
+        train_loss: cycle.train_loss,
+        eval_loss: cycle.eval_loss,
+      }));
+  const emptyState =
+    stage?.message ??
+    (stage?.key === "loading_dataset"
+      ? "Loading dataset. Loss appears after the first optimizer step."
+      : stage?.key === "downloading_model"
+        ? "Resolving model files. Loss appears after training starts."
+        : "Waiting for the first optimizer step.");
   const series: MetricSeries[] = [
     {
       key: "train_loss",
@@ -511,12 +629,12 @@ function LossCard({ cycles }: { cycles: CycleMetric[] }) {
       </CardHeader>
       <CardContent className="px-3 py-4">
         <MetricChart
-          data={cycles}
-          xKey="cycle"
+          data={chartData}
+          xKey="step"
           series={series}
           height={200}
           yFormat={(v) => v.toFixed(2)}
-          emptyState="Loss metrics will appear here once the first cycle completes."
+          emptyState={emptyState}
         />
       </CardContent>
     </Card>
@@ -1205,6 +1323,14 @@ function fmtDuration(seconds: number | null | undefined): string {
   if (seconds < 60) return `${seconds.toFixed(0)}s`;
   if (seconds < 3600) return `${(seconds / 60).toFixed(1)}m`;
   return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+function artifactStateLabel(state: string | null | undefined): string {
+  const value = String(state ?? "none").toLowerCase();
+  if (value === "final_model") return "final model";
+  if (value === "checkpoint") return "checkpoint";
+  if (value === "failed") return "failed";
+  return "pending";
 }
 
 function formatProgress(current: number | null | undefined, total: number | null | undefined): string {

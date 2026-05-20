@@ -5,16 +5,25 @@ Global application state for job tracking and metrics.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional, Any, Dict
 from collections import deque
 import uuid
 
 
+def now_utc() -> datetime:
+    """Timezone-aware wall clock for API-visible job state."""
+    return datetime.now(timezone.utc)
+
+
 JobType = Literal[
     "sft",
     "raft",
+    "dpo",
+    "orpo",
+    "rm",
+    "grpo",
     "benchmark",
     "inference",
     "vlm",
@@ -43,7 +52,7 @@ class JobState:
     output_dir: Optional[Path] = None
     
     # Timestamps
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=now_utc)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
@@ -62,6 +71,16 @@ class JobState:
     verification_rate: Optional[float] = None  # RAFT only
     latest_yield_snapshot: Optional[Dict[str, Any]] = None
     yield_history: deque = field(default_factory=lambda: deque(maxlen=12))
+    metric_points: deque = field(default_factory=lambda: deque(maxlen=240))
+
+    # Live monitor state
+    stage_key: str = "preparing"
+    stage_label: str = "Preparing"
+    stage_message: str = "Preparing the training process."
+    stage_started_at: datetime = field(default_factory=now_utc)
+    stage_progress_percent: float = 0.0
+    last_event: Optional[str] = None
+    artifact_state: str = "none"
     
     # Error handling
     error_message: Optional[str] = None
@@ -94,8 +113,13 @@ class JobState:
         """Get job duration in seconds."""
         if self.started_at is None:
             return None
-        end = self.completed_at or datetime.now()
-        return (end - self.started_at).total_seconds()
+        start = self.started_at
+        end = self.completed_at or now_utc()
+        if start.tzinfo is None:
+            start = start.astimezone(timezone.utc)
+        if end.tzinfo is None:
+            end = end.astimezone(timezone.utc)
+        return (end.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds()
     
     @property
     def duration_str(self) -> str:
@@ -116,7 +140,7 @@ class MetricPoint:
     """A single metric data point."""
     step: int
     value: float
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=now_utc)
 
 
 @dataclass 
@@ -185,7 +209,7 @@ class AppState:
             "applied": applied,
             "source": source,
             "reason": reason,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": now_utc().isoformat(),
         }
         if metadata:
             event["metadata"] = dict(metadata)
@@ -268,10 +292,10 @@ class AppState:
         job.status = status
         if status == "running":
             if job.started_at is None:
-                job.started_at = datetime.now()
+                job.started_at = now_utc()
             job.stop_requested = False
         elif status in terminal_statuses:
-            job.completed_at = datetime.now()
+            job.completed_at = now_utc()
 
         self._record_transition(
             job_id=job_id,

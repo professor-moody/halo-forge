@@ -29,7 +29,7 @@ class BenchmarkResult:
     accuracy: Optional[float] = None
     samples: int = 0
     duration_seconds: float = 0.0
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     domain: str = "code"  # code, reasoning, vlm, audio, agentic
     notes: Optional[str] = None
     file_path: Optional[Path] = None
@@ -97,7 +97,7 @@ class TrainingRunSummary:
     modality: str
     model_name: str
     output_dir: Path
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     run_id: Optional[str] = None
     seed: Optional[int] = None
     resume_from_cycle: int = 0
@@ -141,7 +141,7 @@ class UtilityRunSummary:
     return_code: int
     output_dir: Path
     run_summary_path: Path
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
@@ -165,7 +165,7 @@ class QualificationReportSummary:
     pass_count: int
     warn_count: int
     fail_count: int
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     module_statuses: Dict[str, str] = field(default_factory=dict)
     failed_modules: List[str] = field(default_factory=list)
     module_issue_codes: Dict[str, str] = field(default_factory=dict)
@@ -188,7 +188,7 @@ class BootstrapReportSummary:
     pass_count: int
     warn_count: int
     fail_count: int
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     module_statuses: Dict[str, str] = field(default_factory=dict)
     failed_modules: List[str] = field(default_factory=list)
     top_error: Optional[str] = None
@@ -209,7 +209,7 @@ class LiveProbeReportSummary:
     pass_count: int
     warn_count: int
     fail_count: int
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     module_statuses: Dict[str, str] = field(default_factory=dict)
     failed_modules: List[str] = field(default_factory=list)
     top_error: Optional[str] = None
@@ -1454,9 +1454,14 @@ class ResultsService:
             return self._normalize_timestamp(datetime.now(timezone.utc))
 
     def _normalize_timestamp(self, value: datetime) -> datetime:
-        """Normalize parsed timestamps to UTC-aware datetimes for stable sorting."""
+        """Normalize parsed timestamps to UTC-aware datetimes for stable sorting.
+
+        Legacy dashboard launch contexts wrote naive local workstation time. Treat
+        those as local time before normalizing; interpreting them as UTC makes
+        a run started "now" appear several hours old in Central time.
+        """
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
         return value.astimezone(timezone.utc)
 
     def _display_domain_name(self, domain: str) -> str:

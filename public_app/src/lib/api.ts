@@ -578,6 +578,26 @@ export type RunLive = {
   latest_loss: number | null;
   latest_learning_rate: number | null;
   latest_grad_norm: number | null;
+  stage?: {
+    key: string;
+    label: string;
+    message: string;
+    progress_percent: number | null;
+    started_at?: string | null;
+  } | null;
+  last_event?: string | null;
+  elapsed_seconds?: number | null;
+  eta_seconds?: number | null;
+  artifact_state?: "none" | "checkpoint" | "final_model" | "failed" | string | null;
+  metric_points?: Array<{
+    step: number;
+    timestamp: string;
+    train_loss?: number | null;
+    eval_loss?: number | null;
+    learning_rate?: number | null;
+    grad_norm?: number | null;
+    throughput?: number | null;
+  }>;
   headline?: string | null;
   next_step?: string | null;
   top_issue?: string | null;

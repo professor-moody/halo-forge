@@ -8,6 +8,7 @@ import json
 import re
 import socket
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -699,6 +700,7 @@ def test_desktop_runtime_entrypoint_self_check_contract():
     build_script = Path("apps/desktop-tauri/scripts/build_runtime.py").read_text(encoding="utf-8")
 
     assert "--desktop-self-check" in source
+    assert "multiprocessing.freeze_support()" in source
     assert "HALO_FORGE_FRONTEND_DIST" in source
     assert "halo_forge.public_api.app" in source
     assert "mlx.nn" in source
@@ -1229,9 +1231,49 @@ def test_training_failure_classifier_covers_common_operator_failures():
         "ModuleNotFoundError: No module named 'mlx_lm'": "missing_dependency",
         "MPS backend out of memory": "out_of_memory",
         "rollout-gated. Re-run with --allow-prototype-train": "backend_unsupported",
+        "halo-forge: error: argument command: invalid choice: 'from multiprocessing.resource_tracker import main;main(12)'": "runtime_packaging",
     }
     for text, kind in cases.items():
         assert _classify_training_failure(text)["kind"] == kind
+
+
+def test_run_live_exposes_stage_metric_history_and_elapsed(tmp_path):
+    state = AppState()
+    output_dir = tmp_path / "runs" / "live"
+    output_dir.mkdir(parents=True)
+    job = state.create_job("sft", "SFT live", output_dir=output_dir)
+    job.started_at = datetime.now(timezone.utc)
+    job.stage_key = "training"
+    job.stage_label = "Training"
+    job.stage_message = "Updating model weights."
+    job.stage_progress_percent = 42.0
+    job.last_event = "loss=1.234 learning_rate=2e-05"
+    job.artifact_state = "checkpoint"
+    job.current_step = 3
+    job.total_steps = 10
+    job.latest_loss = 1.234
+    job.metric_points.append(
+        {
+            "step": 3,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "train_loss": 1.234,
+            "learning_rate": 2e-5,
+            "grad_norm": 0.8,
+        }
+    )
+    state.update_job_status(job.id, "running", source="test", reason="started")
+
+    service = PublicApiService(app_state=state, base_path=tmp_path)
+    live = service.get_run_live(job.id)
+
+    assert live["stage"]["key"] == "training"
+    assert live["stage"]["progress_percent"] == 42.0
+    assert live["last_event"] == "loss=1.234 learning_rate=2e-05"
+    assert live["elapsed_seconds"] >= 0
+    assert live["eta_seconds"] is not None
+    assert live["artifact_state"] == "checkpoint"
+    assert live["metric_points"][0]["train_loss"] == 1.234
+    assert live["metric_points"][0]["learning_rate"] == 2e-5
 
 
 def test_dashboard_check_prints_single_command_app_recipe(monkeypatch, capsys):

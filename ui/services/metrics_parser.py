@@ -57,9 +57,12 @@ class MetricsParser:
             r'\{[^}]*"loss":\s*([\d.]+)[^}]*"learning_rate":\s*([\d.e\-+]+)'
         ),
         
-        # tqdm progress bar format: 100%|##########| 33/33 or 50%|#####     | 16/33
+        # Trainer tqdm progress bar format at the start of the line:
+        # 100%|##########| 33/33 or 50%|#####     | 16/33.
+        # Keep this anchored so dataset preprocessing lines such as
+        # "Map: 100%|...| 20022/20022" are not mistaken for optimizer steps.
         'tqdm_progress': re.compile(
-            r'(\d+)%\|[#\s\-=]*\|\s*(\d+)/(\d+)'
+            r'^\s*(\d+)%\|[#\s\-=]*\|\s*(\d+)/(\d+)'
         ),
         
         # Step progress: Step 100/500 | Loss: 2.3456

@@ -152,6 +152,30 @@ class TrainingRunDetailView:
 
 
 @dataclass(frozen=True)
+class TrainingStageView:
+    """Live stage shown on the run monitor."""
+
+    key: str
+    label: str
+    message: str
+    progress_percent: float
+    started_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class TrainingMetricPointView:
+    """Bounded live metric history for active runs."""
+
+    step: int
+    timestamp: str
+    train_loss: Optional[float] = None
+    eval_loss: Optional[float] = None
+    learning_rate: Optional[float] = None
+    grad_norm: Optional[float] = None
+    throughput: Optional[float] = None
+
+
+@dataclass(frozen=True)
 class TrainingRunLiveView:
     """Live polling payload for the public monitor page."""
 
@@ -167,11 +191,17 @@ class TrainingRunLiveView:
     latest_loss: Optional[float]
     latest_learning_rate: Optional[float]
     latest_grad_norm: Optional[float]
+    stage: TrainingStageView
+    last_event: Optional[str]
+    elapsed_seconds: Optional[float]
+    eta_seconds: Optional[float]
+    artifact_state: str
     headline: str
     next_step: str
     top_issue: Optional[str]
     user_summary: ProductUserSummaryView
     metrics_summary: RunMetricsSummaryView
+    metric_points: List[TrainingMetricPointView] = field(default_factory=list)
     primary_action: Optional[PublicActionView] = None
     research_sections: List[ResearchSectionView] = field(default_factory=list)
 

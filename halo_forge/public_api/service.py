@@ -31,11 +31,13 @@ from .views import (
     ResearchSectionView,
     RunMetricsSummaryView,
     RunFailureSummaryView,
+    TrainingMetricPointView,
     TrainingLaunchPreflightView,
     TrainingRecoveryView,
     TrainingRunDetailView,
     TrainingRunListItemView,
     TrainingRunLiveView,
+    TrainingStageView,
     build_user_summary,
     to_dict,
 )
@@ -1821,11 +1823,31 @@ class PublicApiService:
                 latest_loss=detail.details.get("final_train_loss"),
                 latest_learning_rate=None,
                 latest_grad_norm=None,
+                stage=TrainingStageView(
+                    key="completed" if detail.status == "completed" else "failed",
+                    label="Completed" if detail.status == "completed" else "Failed",
+                    message=(
+                        "Training completed."
+                        if detail.status == "completed"
+                        else str(detail.failure_summary.message if detail.failure_summary else "Training failed.")
+                    ),
+                    progress_percent=100.0 if detail.status == "completed" else 0.0,
+                    started_at=detail.timestamp,
+                ),
+                last_event=detail.top_issue or detail.next_step,
+                elapsed_seconds=None,
+                eta_seconds=None,
+                artifact_state=(
+                    "final_model"
+                    if detail.details.get("final_model_available")
+                    else ("failed" if detail.status == "failed" else "none")
+                ),
                 headline=detail.headline,
                 next_step=detail.next_step,
                 top_issue=detail.top_issue,
                 user_summary=detail.user_summary,
                 metrics_summary=detail.metrics_summary,
+                metric_points=self._metric_points_from_summary(summary),
                 primary_action=detail.primary_action,
                 research_sections=detail.research_sections,
             )
@@ -1837,7 +1859,7 @@ class PublicApiService:
             payload = self.get_run_live(run_identifier, include_research=include_research)
             yield f"data: {json.dumps(payload)}\n\n"
             status = str(payload.get("status") or "").lower()
-            if status in {"completed", "failed", "stopped"}:
+            if status in {"completed", "failed", "stopped", "cancelled", "canceled"}:
                 break
             await asyncio.sleep(1.0)
 
@@ -2460,14 +2482,116 @@ class PublicApiService:
             latest_loss=job.latest_loss,
             latest_learning_rate=job.latest_lr,
             latest_grad_norm=job.latest_grad_norm,
+            stage=self._stage_for_job(job),
+            last_event=job.last_event,
+            elapsed_seconds=self._elapsed_seconds_for_job(job),
+            eta_seconds=self._eta_seconds_for_job(job),
+            artifact_state=str(job.artifact_state or "none"),
             headline=detail.headline,
             next_step=detail.next_step,
             top_issue=detail.top_issue,
             user_summary=detail.user_summary,
             metrics_summary=detail.metrics_summary,
+            metric_points=self._metric_points_for_job(job),
             primary_action=detail.primary_action,
             research_sections=detail.research_sections,
         )
+
+    def _stage_for_job(self, job: JobState) -> TrainingStageView:
+        key = str(getattr(job, "stage_key", "") or "").strip() or self._stage_key_from_status(job.status)
+        label = str(getattr(job, "stage_label", "") or "").strip() or key.replace("_", " ").title()
+        message = str(getattr(job, "stage_message", "") or "").strip()
+        if not message:
+            message = "Waiting for the next training event." if job.status == "running" else label
+        progress = getattr(job, "stage_progress_percent", None)
+        if progress is None:
+            progress = job.progress_percent
+        return TrainingStageView(
+            key=key,
+            label=label,
+            message=message,
+            progress_percent=float(progress or 0.0),
+            started_at=self._isoformat(job.stage_started_at) if getattr(job, "stage_started_at", None) else None,
+        )
+
+    @staticmethod
+    def _stage_key_from_status(status: str) -> str:
+        value = str(status or "").lower()
+        if value == "completed":
+            return "completed"
+        if value == "failed":
+            return "failed"
+        if value in {"stopped", "cancelled", "canceled"}:
+            return "cancelled"
+        if value == "running":
+            return "training"
+        return "preparing"
+
+    def _metric_points_for_job(self, job: JobState) -> list[TrainingMetricPointView]:
+        points: list[TrainingMetricPointView] = []
+        for raw in list(getattr(job, "metric_points", []) or [])[-240:]:
+            if not isinstance(raw, dict):
+                continue
+            timestamp = str(raw.get("timestamp") or "")
+            if not timestamp:
+                timestamp = self._isoformat(datetime.now(timezone.utc))
+            points.append(
+                TrainingMetricPointView(
+                    step=int(raw.get("step") or 0),
+                    timestamp=timestamp,
+                    train_loss=self._coerce_float(raw.get("train_loss")),
+                    eval_loss=self._coerce_float(raw.get("eval_loss")),
+                    learning_rate=self._coerce_float(raw.get("learning_rate")),
+                    grad_norm=self._coerce_float(raw.get("grad_norm")),
+                    throughput=self._coerce_float(raw.get("throughput")),
+                )
+            )
+        return points
+
+    def _metric_points_from_summary(self, summary: TrainingRunSummary) -> list[TrainingMetricPointView]:
+        points: list[TrainingMetricPointView] = []
+        for entry in _project_cycles_for_charts(summary.raw_data):
+            step = _coerce_optional_int(entry.get("train_steps_executed")) or int(entry.get("cycle") or 0)
+            train_loss = _coerce_optional_float(entry.get("train_loss"))
+            eval_loss = _coerce_optional_float(entry.get("eval_loss"))
+            if train_loss is None and eval_loss is None:
+                continue
+            points.append(
+                TrainingMetricPointView(
+                    step=step,
+                    timestamp=self._isoformat(summary.timestamp),
+                    train_loss=train_loss,
+                    eval_loss=eval_loss,
+                    learning_rate=_coerce_optional_float(entry.get("learning_rate")),
+                    grad_norm=None,
+                    throughput=None,
+                )
+            )
+        return points[-240:]
+
+    def _elapsed_seconds_for_job(self, job: JobState) -> Optional[float]:
+        started_at = job.started_at
+        if started_at is None:
+            return None
+        end = job.completed_at or datetime.now(timezone.utc)
+        if started_at.tzinfo is None:
+            started_at = started_at.astimezone(timezone.utc)
+        else:
+            started_at = started_at.astimezone(timezone.utc)
+        if end.tzinfo is None:
+            end = end.astimezone(timezone.utc)
+        else:
+            end = end.astimezone(timezone.utc)
+        return max(0.0, (end - started_at).total_seconds())
+
+    def _eta_seconds_for_job(self, job: JobState) -> Optional[float]:
+        elapsed = self._elapsed_seconds_for_job(job)
+        if elapsed is None or job.status != "running":
+            return None
+        progress = float(job.progress_percent or getattr(job, "stage_progress_percent", 0.0) or 0.0)
+        if progress <= 0.0 or progress >= 100.0:
+            return None
+        return max(0.0, elapsed * ((100.0 - progress) / progress))
 
     def _summary_recovery(self, summary: TrainingRunSummary) -> TrainingRecoveryView:
         return TrainingRecoveryView(
@@ -2729,7 +2853,7 @@ class PublicApiService:
     @staticmethod
     def _isoformat(value: datetime) -> str:
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+            value = value.astimezone()
         return value.isoformat()
 
     @staticmethod
@@ -2904,6 +3028,22 @@ def _classify_training_failure(text: str, *, status: str = "failed") -> Dict[str
             "headline": "Run was cancelled",
             "message": "Halo Forge stopped this run before it completed.",
             "next_action": "Review the log tail, then retry from Train if the configuration is still useful.",
+            "docs_url": "/docs",
+        }
+    if any(
+        marker in lower
+        for marker in (
+            "multiprocessing.resource_tracker",
+            "from multiprocessing.resource_tracker import main",
+            "argument command: invalid choice",
+            "invalid choice:",
+        )
+    ):
+        return {
+            "kind": "runtime_packaging",
+            "headline": "Desktop runtime could not start training",
+            "message": "The packaged app routed a Python helper process into the Halo Forge CLI before training could begin.",
+            "next_action": "Install the latest desktop build, then retry from Start or Train.",
             "docs_url": "/docs",
         }
     if "read-only file system" in lower and ("logs" in lower or "cwd" in lower):
