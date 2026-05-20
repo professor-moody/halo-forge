@@ -744,6 +744,7 @@ def test_packaged_runtime_smoke_script_documents_alpha_training_gate():
 
 def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    release = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
 
     assert "public-dashboard-regression" in ci
     assert "tests/test_public_api_pivot.py" in ci
@@ -759,6 +760,16 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "libwebkit2gtk-4.1-dev" in ci
     assert "timeout-minutes: 60" in ci
     assert "tauri build" in Path("apps/desktop-tauri/package.json").read_text(encoding="utf-8")
+    assert "push:" in release
+    assert "tags:" in release
+    assert '"v*"' in release
+    assert "workflow_dispatch" in release
+    assert "Desktop release artifact" in release
+    assert "Publish GitHub Release" in release
+    assert "gh release create" in release
+    assert "gh release upload" in release
+    assert "RELEASE_NOTES_${version}.md" in release
+    assert "--prerelease" in release
 
 
 @pytest.mark.parametrize(

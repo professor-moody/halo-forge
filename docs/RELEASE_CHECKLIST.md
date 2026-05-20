@@ -95,6 +95,7 @@ GRPO reference-model, and terminal math checks all passing.
 git status --short
 git log --oneline -5
 gh run list --branch main --limit 5
+gh release list --limit 5
 ```
 
 Before tagging or publishing, confirm:
@@ -104,16 +105,23 @@ Before tagging or publishing, confirm:
 - `public_app/package.json`, Tauri config, and desktop package metadata report `2.0.0-alpha-1`.
 - `docs/MLX_ACCEPTANCE.md` records the latest Terminal MLX acceptance evidence.
 - GitHub Actions for the latest pushed commit are green.
+- `.github/workflows/release.yml` is present and configured to create/update a
+  prerelease when `v2.0.0-alpha-1` is pushed.
 - No generated `runs/*`, local `examples/datasets/*`, or `uv.lock` artifacts are staged.
 
 ## Tagging
 
-Only tag after the latest push CI and nightly qualification proof are green:
+Only tag after the latest push CI and nightly qualification proof are green.
+Pushing the tag starts the release workflow and uploads unsigned desktop
+artifacts to a GitHub prerelease:
 
 ```bash
 git tag -a v2.0.0-alpha-1 -m "Halo Forge 2.0.0-alpha-1"
 git push origin v2.0.0-alpha-1
+gh run list --workflow Release --limit 3
+gh release view v2.0.0-alpha-1
 ```
 
-Do not create a GitHub Release from this checklist unless the release task
-explicitly asks for one.
+The release workflow can also be re-run manually from GitHub Actions with the
+existing tag name. Do not publish a stable/non-prerelease artifact from this
+alpha checklist.

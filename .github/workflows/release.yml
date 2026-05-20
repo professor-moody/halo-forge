@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, for example v2.0.0-alpha-1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  desktop-artifacts:
+    name: Desktop release artifact (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest]
+
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            public_app/package-lock.json
+            apps/desktop-tauri/package-lock.json
+
+      - name: Build public dashboard assets
+        working-directory: public_app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build bundled desktop runtime
+        working-directory: apps/desktop-tauri
+        run: python3 scripts/build_runtime.py
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop-tauri
+        run: npm ci
+
+      - name: Cargo check desktop shell
+        run: cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
+
+      - name: Build unsigned macOS desktop app
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop-tauri
+        run: npm run build -- --ci
+
+      - name: Build unsigned Linux desktop package
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop-tauri
+        run: npm run build -- --bundles deb --ci
+
+      - name: Upload desktop release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-forge-release-${{ matrix.os }}
+          path: |
+            apps/desktop-tauri/src-tauri/target/release/bundle/**/*.dmg
+            apps/desktop-tauri/src-tauri/target/release/bundle/**/*.deb
+            apps/desktop-tauri/src-tauri/target/release/bundle/**/*.AppImage
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub Release
+    needs: desktop-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_TAG}"
+          version="${tag#v}"
+          notes="docs/RELEASE_NOTES_${version}.md"
+          if [ ! -f "$notes" ]; then
+            notes="$(mktemp)"
+            {
+              echo "# Halo Forge ${version}"
+              echo
+              echo "Unsigned desktop artifacts generated from ${tag}."
+            } > "$notes"
+          fi
+
+          prerelease=()
+          case "$version" in
+            *alpha*|*beta*|*rc*) prerelease=(--prerelease) ;;
+          esac
+
+          mapfile -d '' assets < <(
+            find release-artifacts -type f \
+              \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) \
+              -print0
+          )
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found" >&2
+            find release-artifacts -type f >&2 || true
+            exit 1
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --title "Halo Forge ${version}" \
+              --notes-file "$notes" \
+              "${prerelease[@]}"
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" \
+              --verify-tag \
+              --title "Halo Forge ${version}" \
+              --notes-file "$notes" \
+              "${prerelease[@]}"
+          fi
