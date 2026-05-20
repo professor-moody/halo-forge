@@ -7,6 +7,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:runtime": "python3 scripts/build_runtime.py",
+    "smoke:runtime": "python3 scripts/packaged_sft_smoke.py",
     "tauri": "tauri",
     "check": "cargo check --manifest-path src-tauri/Cargo.toml"
   },

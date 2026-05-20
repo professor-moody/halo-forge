@@ -39,18 +39,29 @@ For the 2.0.0-alpha-1 app-first pass:
 cd apps/desktop-tauri
 npm run build:runtime
 npm run build
+npm run smoke:runtime
 ```
 
 Install the unsigned macOS DMG and smoke these dashboard routes:
 
+- `/` Overview opens with current backend/telemetry status and no stale runs on a fresh profile.
 - `/start` first-run goal chooser and writable output defaults.
+- `/runs/$runId` live monitor after a tiny SFT launch: timestamp says now, stage rail advances, log tail is available, optimizer steps are real, and final artifact state becomes available.
 - `/train` method/goal workspace for SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic templates.
 - `/models` Hugging Face access checks, open-model defaults, and managed Serve action.
 - `/playground` managed local serving, chat, gated-model recovery, and Stop.
-- `/results` completed-run actions and local artifact paths.
+- `/results` completed-run actions, Results-to-run links, and local artifact paths.
+- `/diagnostics` app-run roots, app logs, failed launches, completed launches, and log tails under `~/.halo-forge`.
 - `/connect` Halo Forge API token and workstation-scoped Hugging Face token flows.
 
 Expected desktop behavior: the app reports `2.0.0-alpha-1`, starts the local dashboard on `127.0.0.1:8765`, keeps logs under `~/.halo-forge/desktop/runtime.log`, and quits without killing unrelated Halo Forge processes.
+
+Expected training monitor behavior: stages read Prepare, Data, Model, Trainer,
+Train, Save, Finalize, Done/Failed; live loss appears only after optimizer
+steps; dataset `Map:` progress is not counted as training; success shows Open
+Results, Serve model when available, output path, final loss, and duration;
+failure shows the classified cause, last useful log lines, retry action, and
+Diagnostics link.
 
 The release-confidence harness runs these automatically when dependencies are
 present. Use `--skip-frontend` only when documenting an unavailable frontend

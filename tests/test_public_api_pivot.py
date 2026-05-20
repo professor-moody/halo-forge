@@ -263,6 +263,10 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert 'label="STATUS"' in run_source
     assert "failure_summary" in api_helper
     assert "FailureSummaryCard" in run_source
+    assert "StageRail" in run_source
+    assert "LiveNowCard" in run_source
+    assert "Waiting for the first optimizer step" in run_source
+    assert "metric_points" in api_helper
     assert "Run could not create its log file" in Path("halo_forge/public_api/service.py").read_text(encoding="utf-8")
     assert "Run results" in results_source
     assert "Serve model" in results_source
@@ -713,6 +717,29 @@ def test_desktop_runtime_entrypoint_self_check_contract():
     assert "mlx.metallib" in build_script
     assert "libjaccl.dylib" in build_script
     assert "halo-forge-runtime" in build_script
+
+
+def test_packaged_runtime_smoke_script_documents_alpha_training_gate():
+    script = Path("apps/desktop-tauri/scripts/packaged_sft_smoke.py").read_text(encoding="utf-8")
+    package = Path("apps/desktop-tauri/package.json").read_text(encoding="utf-8")
+    checklist = Path("docs/RELEASE_CHECKLIST.md").read_text(encoding="utf-8")
+    desktop_readme = Path("apps/desktop-tauri/README.md").read_text(encoding="utf-8")
+
+    assert "hf-internal-testing/tiny-random-gpt2" in script
+    assert "--desktop-self-check" in script
+    assert "--no-lora" in script
+    assert "training_summary.json" in script
+    assert "final_model" in script
+    assert "/api/public/health" in script
+    assert '"/start"' in script
+    assert '"/runs"' in script
+    assert '"/results"' in script
+    assert '"/diagnostics"' in script
+    assert '"smoke:runtime": "python3 scripts/packaged_sft_smoke.py"' in package
+    assert "npm run smoke:runtime" in checklist
+    assert "What users should see during training" in desktop_readme
+    assert "Dataset preprocessing" in desktop_readme
+    assert "optimizer steps" in desktop_readme
 
 
 def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():

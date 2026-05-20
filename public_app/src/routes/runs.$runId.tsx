@@ -225,6 +225,7 @@ function RunDetailRoute() {
               <RewardCard cycles={slicedCycles} modality={String(data.modality)} />
             </div>
             <div className="space-y-3">
+              <LiveNowCard data={data} live={live} />
               <RunSummaryCard data={data} />
               <CostCard cost={data.details?.cost} />
               <LineageCard runId={runId} />
@@ -409,6 +410,53 @@ function StageRail({ live, status }: { live: RunLive | null; status?: string }) 
             );
           })}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LiveNowCard({ data, live }: { data: RunDetail; live: RunLive | null }) {
+  const loss = live?.latest_loss ?? data.metrics_summary?.final_train_loss ?? null;
+  const steps = live?.current_step ?? data.metrics_summary?.update_steps ?? null;
+  const totalSteps = live?.total_steps ?? null;
+  const stageLabel = live?.stage?.label ?? plainRunStatus(data.status, "idle", null);
+  const stageMessage =
+    live?.stage?.message ??
+    (String(data.status ?? "").toLowerCase() === "completed"
+      ? "Training finished. Review the final artifact and results."
+      : String(data.status ?? "").toLowerCase() === "failed"
+        ? "Training stopped before completion. Review the failure summary and logs."
+        : "Waiting for the next training event.");
+  const artifact = live?.artifact_state ?? (data.details?.final_model_available ? "final_model" : "none");
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardEyebrow>LIVE</CardEyebrow>
+          <CardTitle>Now</CardTitle>
+          <Zap className="h-3.5 w-3.5 text-accent" />
+        </div>
+        <Badge tone={String(data.status).toLowerCase() === "failed" ? "danger" : "neutral"} size="sm">
+          {stageLabel}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-[12.5px] leading-5 text-fg-muted">{stageMessage}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <LiveMetric label="Elapsed" value={fmtDuration(live?.elapsed_seconds)} />
+          <LiveMetric label="Step" value={formatProgress(steps, totalSteps)} />
+          <LiveMetric label="Loss" value={fmt(loss, 4)} />
+          <LiveMetric label="Artifact" value={artifactStateLabel(artifact)} />
+        </div>
+        {live?.last_event ? (
+          <div className="rounded-md border border-border-subtle bg-bg-subtle/50 px-3 py-2">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-fg-disabled">Latest event</div>
+            <div className="mt-1 break-words font-mono text-[11px] leading-4 text-fg-muted">
+              {live.last_event}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

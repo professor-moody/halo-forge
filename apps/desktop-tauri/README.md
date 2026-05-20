@@ -72,9 +72,32 @@ cd ../apps/desktop-tauri
 npm ci
 npm run build:runtime
 npm run build
+npm run smoke:runtime
 ```
 
+`npm run smoke:runtime` runs the packaged runtime from the built `.app` resources
+when available. It performs the alpha training gate with a tiny open SFT model,
+confirms optimizer steps execute, checks that `training_summary.json` and
+`final_model/` are written, starts the packaged dashboard service, and verifies
+the normal operator routes return dashboard HTML.
+
 macOS arm64 and Linux are the v1 desktop targets. Windows is intentionally out of scope for this branch.
+
+## What users should see during training
+
+After a Start or Train launch, the run monitor should feel active immediately:
+
+- **Prepare**: the dashboard has accepted the launch and is creating run state.
+- **Data**: datasets or prompt files are being loaded and checked.
+- **Model**: model files are being resolved or downloaded.
+- **Trainer**: the local trainer is being constructed.
+- **Train**: optimizer steps are running; step count and loss should update from real training events.
+- **Save / Finalize**: checkpoints, summaries, and final artifacts are being written.
+- **Done or Failed**: the page should show Results, Serve, Compare, retry, or Diagnostics actions instead of leaving the user with raw logs.
+
+If no loss is visible yet, the copy should explain the current stage, for example
+“Loading dataset” or “Waiting for the first optimizer step.” Dataset preprocessing
+progress must not be shown as optimizer steps.
 
 ## Remote workstation checklist
 
