@@ -123,5 +123,8 @@ gh release view v2.0.0-alpha-1
 ```
 
 The release workflow can also be re-run manually from GitHub Actions with the
-existing tag name. Do not publish a stable/non-prerelease artifact from this
-alpha checklist.
+existing tag name. GitHub Release assets have a per-file size limit, so any
+oversized desktop package is skipped and recorded in
+`OVERSIZE_RELEASE_ASSETS.txt`; the full package remains available from the
+Release workflow run artifacts. Do not publish a stable/non-prerelease artifact
+from this alpha checklist.

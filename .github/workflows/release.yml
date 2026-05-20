@@ -150,14 +150,41 @@ jobs:
             exit 1
           fi
 
+          upload_assets=()
+          oversize_manifest="release-artifacts/OVERSIZE_RELEASE_ASSETS.txt"
+          max_asset_bytes=2147483647
+          for asset in "${assets[@]}"; do
+            size="$(wc -c < "$asset" | tr -d '[:space:]')"
+            if [ "$size" -gt "$max_asset_bytes" ]; then
+              {
+                echo "$(basename "$asset")"
+                echo "  size_bytes: $size"
+                echo "  reason: GitHub Release assets must be smaller than 2147483648 bytes."
+                echo "  source: This artifact remains available from the Release workflow run artifacts."
+                echo
+              } >> "$oversize_manifest"
+            else
+              upload_assets+=("$asset")
+            fi
+          done
+
+          if [ -f "$oversize_manifest" ]; then
+            upload_assets+=("$oversize_manifest")
+          fi
+          if [ "${#upload_assets[@]}" -eq 0 ]; then
+            echo "No uploadable release assets found" >&2
+            cat "$oversize_manifest" >&2 || true
+            exit 1
+          fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" \
               --title "Halo Forge ${version}" \
               --notes-file "$notes" \
               "${prerelease[@]}"
-            gh release upload "$tag" "${assets[@]}" --clobber
+            gh release upload "$tag" "${upload_assets[@]}" --clobber
           else
-            gh release create "$tag" "${assets[@]}" \
+            gh release create "$tag" "${upload_assets[@]}" \
               --verify-tag \
               --title "Halo Forge ${version}" \
               --notes-file "$notes" \

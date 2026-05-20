@@ -768,6 +768,8 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "Publish GitHub Release" in release
     assert "gh release create" in release
     assert "gh release upload" in release
+    assert "OVERSIZE_RELEASE_ASSETS.txt" in release
+    assert "2147483648" in release
     assert "RELEASE_NOTES_${version}.md" in release
     assert "--prerelease" in release
 
