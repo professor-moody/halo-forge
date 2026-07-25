@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-forge"
-version = "2.0.0a1"
+version = "2.0.0a2"
 description = "Multi-backend RLVR training framework for AMD ROCm, Apple Silicon, and CUDA"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -39,6 +39,7 @@ keywords = [
 ]
 
 dependencies = [
+    "numpy>=1.24.0",
     "torch>=2.1.0",
     "transformers>=4.49.0",
     "peft>=0.13.0",
@@ -50,7 +51,6 @@ dependencies = [
     "tqdm",
     "jsonlines",
     "tensorboard",
-    "matplotlib",
     "pandas",
     "rich",
     "fastapi>=0.115.0",
@@ -95,8 +95,25 @@ audio = [
 reasoning = [
     "sympy>=1.12",
 ]
+# Charting for `halo-forge plot ...` and the scripts/ plotting helpers. Nothing
+# in `halo_forge` or `ui` imports matplotlib; the scripts lazy-import it and
+# print an install hint, and `all_module_live_execution` already classifies it
+# as an optional dependency of the "plot" module.
+plot = [
+    "matplotlib",
+]
 # Agentic training currently relies on baseline dependencies only.
 agentic = []
+data-lab = [
+    "Pillow>=10.0.0",
+    "pyarrow>=14.0.0",
+    "sentence-transformers>=3.0.0",
+]
+corpus = [
+    "beautifulsoup4>=4.12.0",
+    "pypdf>=5.0.0",
+    "python-docx>=1.1.0",
+]
 inference = [
     "bitsandbytes",
     "scipy",
@@ -112,7 +129,7 @@ mlx = [
     "mlx-lm>=0.31.0,<0.32.0",
 ]
 all = [
-    "halo-forge[dev,llm-backends,benchmark,vlm-benchmark,vlm,audio,reasoning,agentic,inference]",
+    "halo-forge[dev,llm-backends,benchmark,vlm-benchmark,vlm,audio,reasoning,plot,agentic,data-lab,corpus,inference]",
 ]
 
 [project.scripts]
@@ -121,7 +138,7 @@ halo-forge-desktop-runtime = "halo_forge.desktop_runtime:main"
 
 [project.urls]
 Homepage = "https://github.com/professor-moody/halo-forge"
-Documentation = "https://github.com/professor-moody/halo-forge/tree/main/docs"
+Documentation = "https://halo-forge.io/docs/"
 Repository = "https://github.com/professor-moody/halo-forge"
 
 [tool.setuptools.packages.find]

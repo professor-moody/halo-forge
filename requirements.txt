@@ -8,6 +8,7 @@
 # `pip install -r requirements.txt`.
 
 # Core runtime (`project.dependencies`)
+numpy>=1.24.0
 torch>=2.1.0
 transformers>=4.49.0
 peft>=0.13.0
@@ -19,7 +20,6 @@ requests>=2.31.0
 tqdm
 jsonlines
 tensorboard
-matplotlib
 pandas
 rich
 fastapi>=0.115.0
@@ -51,6 +51,15 @@ soundfile
 
 # Reasoning extras (`.[reasoning]`)
 sympy>=1.12
+
+# Plotting extras (`.[plot]`) — used by scripts/plot_*.py and `halo-forge plot`.
+# Not a core dependency: nothing under halo_forge/ or ui/ imports it.
+matplotlib
+
+# Corpus extraction extras (`.[corpus]`)
+beautifulsoup4>=4.12.0
+pypdf>=5.0.0
+python-docx>=1.1.0
 
 # Dev extras (`.[dev]`)
 pytest
