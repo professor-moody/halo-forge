@@ -49,8 +49,23 @@ def _frontend_checks(skip_frontend: bool) -> list[Check]:
     if not (public_app / "node_modules").exists():
         print("\nSKIP frontend checks: public_app/node_modules not installed")
         return []
+    contract_tests = sorted(
+        path.relative_to(public_app).as_posix()
+        for path in (public_app / "scripts").glob("*contract.test.mjs")
+    )
     return [
         Check("frontend typecheck", ["npm", "run", "lint"], cwd=public_app),
+        *(
+            [
+                Check(
+                    "frontend contract tests",
+                    ["node", "--test", *contract_tests],
+                    cwd=public_app,
+                )
+            ]
+            if contract_tests
+            else []
+        ),
         Check("frontend build", ["npm", "run", "build"], cwd=public_app),
     ]
 
@@ -62,6 +77,23 @@ def build_checks(args: argparse.Namespace) -> list[Check]:
         Check(
             "syntax compile",
             [py, "-m", "compileall", "-q", "halo_forge", "ui", "tests", "scripts"],
+        ),
+        Check(
+            "release interface, docs, and scenario contracts",
+            [py, "scripts/check_release_interfaces.py"],
+        ),
+        Check(
+            "guided corpus and CPT V10 contracts",
+            [
+                py,
+                "-m",
+                "pytest",
+                "tests/test_guided_training_coach_v10.py",
+                "tests/test_guided_corpus_v10.py",
+                "tests/test_corpus_extraction_v10.py",
+                "tests/test_cpt_backend_v10.py",
+                "-q",
+            ],
         ),
         Check("serving tests", [py, "-m", "pytest", "tests/test_serving.py", "-q"]),
         Check(

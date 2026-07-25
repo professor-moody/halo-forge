@@ -168,9 +168,12 @@ class AppState:
         name: str,
         config_path: Optional[Path] = None,
         output_dir: Optional[Path] = None,
+        job_id: Optional[str] = None,
     ) -> JobState:
         """Create and register a new job."""
-        job_id = str(uuid.uuid4())[:8]
+        job_id = str(job_id or uuid.uuid4().hex[:8])
+        if job_id in self.jobs:
+            raise ValueError(f"Job {job_id} already exists")
         job = JobState(
             id=job_id,
             type=job_type,

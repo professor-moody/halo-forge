@@ -207,6 +207,88 @@ class AudioDataset(ABC):
         logger.info(f"Exported {len(self.samples)} samples to {output_path}")
 
 
+class LocalAudioManifestLoader(AudioDataset):
+    """Load Dataset Lab's canonical audio JSONL without a registry alias.
+
+    Asset paths are resolved relative to the manifest.  Dataset Lab training
+    artifacts normally make them absolute, but accepting relative paths keeps
+    direct CLI usage portable as well.
+    """
+
+    def __init__(
+        self,
+        manifest_path: str | Path,
+        split: str = "train",
+        cache_dir: Optional[str] = None,
+        limit: Optional[int] = None,
+    ):
+        super().__init__(split=split, cache_dir=cache_dir, limit=limit)
+        self.manifest_path = Path(manifest_path).expanduser().resolve()
+
+    @property
+    def name(self) -> str:
+        return self.manifest_path.stem
+
+    @property
+    def task(self) -> str:
+        return "mixed"
+
+    def load(self) -> List[AudioSample]:
+        if not self.manifest_path.is_file():
+            raise FileNotFoundError(f"Audio manifest not found: {self.manifest_path}")
+        samples: List[AudioSample] = []
+        with self.manifest_path.open(encoding="utf-8") as handle:
+            for index, line in enumerate(handle):
+                if self.limit is not None and len(samples) >= self.limit:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid audio manifest JSON on line {index + 1}: {exc}"
+                    ) from exc
+                if not isinstance(row, dict):
+                    raise ValueError(f"Audio manifest line {index + 1} must be an object")
+                raw_audio = row.get("audio", row.get("audio_path"))
+                if isinstance(raw_audio, dict):
+                    raw_audio = raw_audio.get("path")
+                if not isinstance(raw_audio, str) or not raw_audio.strip():
+                    raise ValueError(f"Audio manifest line {index + 1} is missing audio")
+                audio_path = Path(raw_audio).expanduser()
+                if not audio_path.is_absolute():
+                    audio_path = (self.manifest_path.parent / audio_path).resolve()
+                text = row.get("transcript", row.get("label", row.get("text")))
+                if text is None:
+                    raise ValueError(
+                        f"Audio manifest line {index + 1} requires transcript, label, or text"
+                    )
+                metadata = row.get("metadata")
+                metadata = dict(metadata) if isinstance(metadata, dict) else {}
+                metadata.setdefault("manifest_index", index)
+                metadata.setdefault("manifest", str(self.manifest_path))
+                samples.append(
+                    AudioSample(
+                        audio_path=str(audio_path),
+                        text=str(text),
+                        duration=float(row.get("duration", row.get("duration_seconds", 0.0)) or 0.0),
+                        task=str(row.get("task") or "asr"),
+                        metadata=metadata,
+                        sample_rate=(
+                            int(row["sample_rate"])
+                            if row.get("sample_rate") is not None
+                            else None
+                        ),
+                    )
+                )
+        if not samples:
+            raise ValueError(f"Audio manifest contains no usable records: {self.manifest_path}")
+        self.samples = samples
+        logger.info("Loaded %d local audio samples from %s", len(samples), self.manifest_path)
+        return samples
+
+
 class LibriSpeechLoader(AudioDataset):
     """Load LibriSpeech dataset for ASR training."""
     
@@ -505,6 +587,12 @@ def load_audio_dataset(
     Returns:
         AudioDataset instance
     """
+    local_path = Path(name).expanduser()
+    if local_path.is_file():
+        loader = LocalAudioManifestLoader(local_path, split=split, limit=limit, **kwargs)
+        loader.load()
+        return loader
+
     canonical_name = AUDIO_DATASET_ALIASES.get(name.lower(), name.lower())
     if canonical_name != name:
         logger.warning("Audio dataset alias '%s' normalized to '%s'", name, canonical_name)

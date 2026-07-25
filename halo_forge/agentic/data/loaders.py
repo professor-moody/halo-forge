@@ -7,6 +7,7 @@ Standardizes all formats to Hermes-style XML tags.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 import json
 import logging
@@ -105,6 +106,63 @@ class ToolCallingDataset(ABC):
         except (AssertionError, json.JSONDecodeError, KeyError, TypeError) as e:
             logger.debug(f"Sample validation failed: {e}")
             return False
+
+
+class LocalToolCallingLoader(ToolCallingDataset):
+    """Load canonical tool-use rows from a local JSONL artifact."""
+
+    def __init__(self, manifest_path: str | Path):
+        self.manifest_path = Path(manifest_path).expanduser().resolve()
+
+    def load(self, limit: Optional[int] = None) -> List[ToolCallSample]:
+        if not self.manifest_path.is_file():
+            raise FileNotFoundError(f"Tool-use manifest not found: {self.manifest_path}")
+        samples: List[ToolCallSample] = []
+        with self.manifest_path.open(encoding="utf-8") as handle:
+            for index, line in enumerate(handle):
+                if limit is not None and len(samples) >= limit:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid tool-use manifest JSON on line {index + 1}: {exc}"
+                    ) from exc
+                if not isinstance(row, dict):
+                    raise ValueError(f"Tool-use manifest line {index + 1} must be an object")
+                messages = row.get("messages")
+                tools = row.get("tools", row.get("tool_definitions"))
+                expected_calls = row.get("expected_calls", row.get("tool_calls", []))
+                if not isinstance(messages, list) or not isinstance(tools, list):
+                    raise ValueError(
+                        f"Tool-use manifest line {index + 1} requires messages and tools lists"
+                    )
+                if not isinstance(expected_calls, list):
+                    expected_calls = [expected_calls]
+                metadata = row.get("metadata")
+                metadata = dict(metadata) if isinstance(metadata, dict) else {}
+                metadata.setdefault("manifest_index", index)
+                metadata.setdefault("manifest", str(self.manifest_path))
+                sample = ToolCallSample(
+                    messages=messages,
+                    tools=tools,
+                    expected_calls=expected_calls,
+                    is_irrelevant=bool(row.get("is_irrelevant", not expected_calls)),
+                    metadata=metadata,
+                )
+                if not self.validate_sample(sample):
+                    raise ValueError(
+                        f"Tool-use manifest line {index + 1} has an invalid tool schema or call"
+                    )
+                samples.append(sample)
+        if not samples:
+            raise ValueError(
+                f"Tool-use manifest contains no usable records: {self.manifest_path}"
+            )
+        logger.info("Loaded %d tool-use samples from %s", len(samples), self.manifest_path)
+        return samples
 
 
 class XLAMLoader(ToolCallingDataset):

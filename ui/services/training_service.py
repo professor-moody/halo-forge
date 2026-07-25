@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Mapping
 from collections import deque
 
 from .metrics_parser import MetricsParser, ParsedMetrics
@@ -39,6 +39,7 @@ from .launch_context import (
 )
 from halo_forge.capabilities import check_modality_train_capability
 from halo_forge.huggingface_access import inject_huggingface_token
+from halo_forge.runtime_determinism import RUN_ID_ENV, build_run_id
 from halo_forge.utils.macos_runtime import caffeinate_command
 
 HALO_FORGE_APP_DIR_ENV = "HALO_FORGE_APP_DIR"
@@ -596,6 +597,266 @@ class TrainingService:
             pass
         return data
 
+    @staticmethod
+    def _persist_replay_manifest(
+        *,
+        output_dir: str,
+        run_id: str,
+        modality: str,
+        model: str,
+        seed: int,
+        launch_args: dict[str, Any],
+        dataset_value: str,
+        dataset_version_id: Optional[str] = None,
+        dataset_split: str = "train",
+        dataset_version_metadata: Optional[dict[str, Any]] = None,
+        dataset_bindings: Optional[list[dict[str, Any]]] = None,
+        training_artifact_metadata: Optional[dict[str, Any]] = None,
+        parent_run_id: Optional[str] = None,
+    ) -> None:
+        """Persist launch-time replay evidence for manual and Dataset Lab inputs."""
+        from halo_forge.replay import capture_manifest, save_manifest
+
+        dataset_file: Optional[Path] = None
+        dataset_id: Optional[str] = None
+        dataset_version: Optional[dict[str, Any]] = None
+        normalized_bindings = [
+            {
+                "role": str(binding.get("role") or "train"),
+                "dataset_version_id": str(binding.get("dataset_version_id") or ""),
+                "split": str(binding.get("split") or binding.get("role") or "train"),
+            }
+            for binding in (dataset_bindings or [])
+            if isinstance(binding, dict) and binding.get("dataset_version_id")
+        ]
+        if not dataset_version_id and normalized_bindings:
+            primary = next(
+                (binding for binding in normalized_bindings if binding["role"] == "train"),
+                normalized_bindings[0],
+            )
+            dataset_version_id = primary["dataset_version_id"]
+            dataset_split = primary["split"]
+
+        if dataset_version_id:
+            dataset_version = dict(dataset_version_metadata or {})
+            dataset_version["version_id"] = dataset_version_id
+            dataset_version.setdefault("split", dataset_split or "train")
+            dataset_version["canonical_run_id"] = run_id
+            if normalized_bindings:
+                dataset_version["bindings"] = normalized_bindings
+            if training_artifact_metadata:
+                dataset_version["training_artifact"] = dict(training_artifact_metadata)
+            if parent_run_id:
+                dataset_version["parent_run_id"] = str(parent_run_id)
+        else:
+            candidate = Path(str(dataset_value or "")).expanduser()
+            if dataset_value and candidate.exists() and candidate.is_file():
+                dataset_file = candidate
+            elif dataset_value:
+                dataset_id = str(dataset_value)
+
+        corpus_training_binding: Optional[dict[str, Any]] = None
+        if str(modality).strip().lower() == "cpt":
+            artifact = dict(training_artifact_metadata or {})
+            packing_plan = dict(artifact.get("packing_plan") or {})
+            tokenizer_hash = str(artifact.get("tokenizer_hash") or "").strip()
+            packing_plan_hash = str(
+                artifact.get("packing_plan_hash") or ""
+            ).strip()
+            if artifact and tokenizer_hash and packing_plan_hash:
+                version_identity = dict(dataset_version_metadata or {})
+                corpus_identity = {
+                    key: version_identity.get(key)
+                    for key in (
+                        "dataset_id",
+                        "version_id",
+                        "content_hash",
+                        "recipe_hash",
+                        "split",
+                        "source_fingerprints",
+                    )
+                    if version_identity.get(key) is not None
+                }
+                corpus_training_binding = {
+                    "extraction_identity": dict(
+                        version_identity.get("corpus_extraction") or {}
+                    ),
+                    "corpus_identity": corpus_identity,
+                    "corpus_version": dataset_version_id,
+                    "tokenizer_identity": {
+                        "model": model,
+                        "revision": launch_args.get("tokenizer_revision")
+                        or artifact.get("tokenizer_revision"),
+                        "hash": tokenizer_hash,
+                    },
+                    "tokenizer_hash": tokenizer_hash,
+                    "packing_plan": packing_plan,
+                    "packing_plan_hash": packing_plan_hash,
+                    "budget_mode": str(
+                        launch_args.get("budget_mode")
+                        or packing_plan.get("budget_mode")
+                        or ""
+                    ),
+                    "target_tokens": launch_args.get("target_tokens"),
+                    "corpus_passes": launch_args.get("corpus_passes"),
+                    "adaptation": str(
+                        launch_args.get("adaptation") or ""
+                    ),
+                    "training_artifact": artifact,
+                }
+
+        training_outcome_binding = {
+            key: launch_args.get(key)
+            for key in (
+                "proof_run",
+                "scenario_revision_id",
+                "outcome_assessment_id",
+                "outcome_override_reason",
+                "full_run_from_proof",
+                "proof_parent_run_id",
+            )
+            if launch_args.get(key) is not None
+        }
+        adaptation_study_binding = {
+            key: launch_args.get(key)
+            for key in (
+                "study_id",
+                "study_protocol_revision_id",
+                "study_arm_id",
+                "study_assignment_id",
+                "study_factor_values",
+                "study_contrast_ids",
+                "study_deviation_ids",
+            )
+            if launch_args.get(key) is not None
+        }
+        specialized_task_binding = {
+            key: launch_args.get(key)
+            for key in (
+                "task",
+                "label_schema_revision_id",
+                "retrieval_corpus_id",
+                "model_head_hash",
+                "processor_identity",
+                "loss_adapter",
+            )
+            if launch_args.get(key) is not None
+        }
+        agent_environment_binding = {
+            key: launch_args.get(key)
+            for key in (
+                "environment_revision_id",
+                "episode_suite_revision_id",
+                "trajectory_revision_id",
+                "snapshot_hash",
+            )
+            if launch_args.get(key) is not None
+        }
+        version_identity = dict(dataset_version_metadata or {})
+        provenance = dict(version_identity.get("provenance") or {})
+        repair_step = next(
+            (
+                dict(step.get("details") or {})
+                for step in provenance.get("steps") or []
+                if isinstance(step, Mapping)
+                and step.get("kind") == "repair_overlay"
+                and isinstance(step.get("details"), Mapping)
+            ),
+            {},
+        )
+        repair_identity = dict(
+            provenance.get("dataset_repair")
+            or version_identity.get("dataset_repair")
+            or repair_step
+            or {}
+        )
+        repair_revision_id = (
+            launch_args.get("dataset_repair_revision_id")
+            or repair_identity.get("revision_id")
+            or repair_identity.get("id")
+            or repair_identity.get("repair_revision_id")
+        )
+        product_completion_binding = {
+            key: value
+            for key, value in {
+                "dataset_repair_revision_id": repair_revision_id,
+                "repair_content_hash": (
+                    repair_identity.get("content_hash")
+                    or repair_identity.get("repair_content_hash")
+                ),
+                "repaired_record_set_hash": repair_identity.get(
+                    "repaired_record_set_hash"
+                ),
+                "source_fingerprint": repair_identity.get("source_fingerprint"),
+                "workstation_readiness_id": launch_args.get(
+                    "workstation_readiness_id"
+                ) or dict(version_identity.get("product_completion") or {}).get(
+                    "workstation_readiness_id"
+                ),
+                "workstation_readiness_hash": launch_args.get(
+                    "workstation_readiness_hash"
+                ) or dict(version_identity.get("product_completion") or {}).get(
+                    "workstation_readiness_hash"
+                ),
+                "distribution_capability": launch_args.get(
+                    "distribution_capability"
+                ) or dict(version_identity.get("product_completion") or {}).get(
+                    "distribution_capability"
+                ),
+            }.items()
+            if value not in (None, "", {}, [])
+        }
+        training_plan_binding = {
+            key: value
+            for key, value in {
+                "training_plan_revision_id": launch_args.get(
+                    "training_plan_revision_id"
+                ),
+                "model_id": launch_args.get("training_plan_model_id"),
+                "training_capacity_check_id": launch_args.get(
+                    "training_capacity_check_id"
+                ),
+                "model_preparation_id": launch_args.get("model_preparation_id"),
+                "compute_shape_hash": launch_args.get("training_compute_shape_hash"),
+                "selected_adjustment": launch_args.get(
+                    "training_capacity_adjustment"
+                ),
+                "decision_id": launch_args.get("training_plan_decision_id"),
+                "plan_content_hash": launch_args.get("training_plan_content_hash"),
+                "runtime_hash": launch_args.get("training_plan_runtime_hash"),
+                "recommendation_reasons": launch_args.get(
+                    "training_plan_recommendation_reasons"
+                ),
+                "resource_forecast": launch_args.get("training_plan_forecast"),
+                "resolved_model_commit": launch_args.get("resolved_model_commit"),
+                "model_preparation_manifest_hash": launch_args.get(
+                    "model_preparation_manifest_hash"
+                ),
+                "role": "proof" if launch_args.get("proof_run") else "full",
+            }.items()
+            if value not in (None, "", {}, [])
+        }
+
+        manifest = capture_manifest(
+            run_id=run_id,
+            modality=modality,
+            model_name=model,
+            seed=seed,
+            config=launch_args,
+            dataset_file=dataset_file,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+            corpus_training_binding=corpus_training_binding,
+            training_outcome_binding=training_outcome_binding,
+            adaptation_study_binding=adaptation_study_binding,
+            specialized_task_binding=specialized_task_binding,
+            agent_environment_binding=agent_environment_binding,
+            product_completion_binding=product_completion_binding,
+            training_plan_binding=training_plan_binding,
+            cli_args=[],
+        )
+        save_manifest(manifest, Path(output_dir).expanduser())
+
     def _apply_launch_overrides(
         self,
         args: dict[str, Any],
@@ -826,10 +1087,13 @@ class TrainingService:
         keep_percent: float,
         reward_threshold: float,
         min_samples: int,
+        max_prompts: Optional[int] = None,
     ) -> dict[str, Any]:
         warnings: list[str] = []
         suggestions: list[str] = []
         prompt_count = self._count_jsonl_rows(prompts)
+        if prompt_count is not None and max_prompts is not None:
+            prompt_count = min(prompt_count, max(0, int(max_prompts)))
         sample_budget = (prompt_count or 0) * max(1, samples_per_prompt)
         if prompt_count and sample_budget < 32:
             warnings.append("Prompt/sample budget is small for RAFT and may not produce enough kept examples.")
@@ -1097,6 +1361,7 @@ class TrainingService:
         reward_threshold: float,
         min_samples: int,
         max_new_tokens: int,
+        max_prompts: Optional[int] = None,
         checkpoint: Optional[str] = None,
     ) -> TrainingLaunchPreflight:
         """Run structured preflight checks for RAFT launch."""
@@ -1154,6 +1419,7 @@ class TrainingService:
                 keep_percent=keep_percent,
                 reward_threshold=reward_threshold,
                 min_samples=min_samples,
+                max_prompts=max_prompts,
             ),
         )
 
@@ -1325,6 +1591,7 @@ class TrainingService:
         guided_recovery: Optional[dict[str, Any]] = None,
         no_caffeinate: bool = False,
         accelerator: Optional[str] = None,
+        seed: int = 42,
         **kwargs
     ) -> str:
         """
@@ -1357,6 +1624,18 @@ class TrainingService:
         Returns:
             Job ID
         """
+        dataset_version_id = kwargs.pop("dataset_version_id", None)
+        dataset_version_metadata = kwargs.pop("dataset_version_metadata", None)
+        dataset_split = str(kwargs.pop("dataset_split", "train") or "train")
+        requested_run_id = kwargs.pop("run_id", None)
+        validation_file = kwargs.pop("validation_file", None)
+        if validation_file is None:
+            validation_file = kwargs.pop("validation_data", None)
+        else:
+            kwargs.pop("validation_data", None)
+        dataset_bindings = kwargs.pop("dataset_bindings", None)
+        training_artifact_metadata = kwargs.pop("training_artifact_metadata", None)
+        parent_run_id = kwargs.pop("parent_run_id", None)
         model, dataset, output_dir = self._validate_sft_launch_payload(
             model=model,
             dataset=dataset,
@@ -1368,10 +1647,12 @@ class TrainingService:
         )
 
         # Create job in state
+        canonical_run_id = build_run_id("sft", requested=requested_run_id)
         job = self.state.create_job(
             job_type="sft",
             name=f"SFT: {Path(model).name} on {dataset}",
             output_dir=Path(output_dir),
+            job_id=canonical_run_id,
         )
         job.total_epochs = epochs
         
@@ -1394,6 +1675,7 @@ class TrainingService:
             "--batch-size", str(batch_size),
             "--gradient-accumulation", str(gradient_accumulation_steps),
             "--learning-rate", str(learning_rate),
+            "--seed", str(seed),
             "--warmup-ratio", str(warmup_ratio),
             "--weight-decay", str(weight_decay),
             "--max-grad-norm", str(max_grad_norm),
@@ -1417,6 +1699,8 @@ class TrainingService:
         # Optional max samples limit
         if max_samples is not None and max_samples > 0:
             cmd.extend(["--max-samples", str(max_samples)])
+        if validation_file:
+            cmd.extend(["--validation-data", str(validation_file)])
         
         # Hardware options
         if not gradient_checkpointing:
@@ -1430,13 +1714,20 @@ class TrainingService:
                 cmd.extend([f"--{key.replace('_', '-')}", str(value)])
 
         launch_args = {
+            "run_id": job.id,
             "model": model,
             "dataset": dataset,
+            "dataset_version_id": dataset_version_id,
+            "dataset_split": dataset_split if dataset_version_id else None,
+            "dataset_bindings": dataset_bindings,
+            "training_artifact": training_artifact_metadata,
+            "parent_run_id": parent_run_id,
             "output_dir": output_dir,
             "epochs": epochs,
             "batch_size": batch_size,
             "gradient_accumulation_steps": gradient_accumulation_steps,
             "learning_rate": learning_rate,
+            "seed": seed,
             "warmup_ratio": warmup_ratio,
             "weight_decay": weight_decay,
             "max_grad_norm": max_grad_norm,
@@ -1446,6 +1737,7 @@ class TrainingService:
             "lora_dropout": lora_dropout,
             "max_seq_length": max_seq_length,
             "validation_split": validation_split,
+            "validation_file": validation_file,
             "max_samples": max_samples,
             "save_steps": save_steps,
             "eval_steps": eval_steps,
@@ -1455,6 +1747,24 @@ class TrainingService:
             "accelerator": accelerator,
         }
         launch_args.update({k: v for k, v in kwargs.items() if v is not None})
+        try:
+            self._persist_replay_manifest(
+                output_dir=output_dir,
+                run_id=job.id,
+                modality="sft",
+                model=model,
+                seed=seed,
+                launch_args=launch_args,
+                dataset_value=dataset,
+                dataset_version_id=dataset_version_id,
+                dataset_split=dataset_split,
+                dataset_version_metadata=dataset_version_metadata,
+                dataset_bindings=dataset_bindings,
+                training_artifact_metadata=training_artifact_metadata,
+                parent_run_id=parent_run_id,
+            )
+        except Exception as exc:
+            print(f"[TrainingService] Failed to persist replay manifest: {exc}")
         launch_context_file = None
         try:
             launch_context_file = persist_launch_context(
@@ -1531,6 +1841,7 @@ class TrainingService:
         reward_threshold: float = 0.5,
         min_samples: int = 64,
         max_new_tokens: int = 1024,
+        max_prompts: Optional[int] = None,
         lr_decay: float = 0.85,
         min_lr: float = 1e-6,
         checkpoint: Optional[str] = None,
@@ -1549,6 +1860,7 @@ class TrainingService:
         guided_recovery: Optional[dict[str, Any]] = None,
         no_caffeinate: bool = False,
         accelerator: Optional[str] = None,
+        seed: int = 42,
         **kwargs
     ) -> str:
         """
@@ -1579,6 +1891,13 @@ class TrainingService:
         Returns:
             Job ID
         """
+        dataset_version_id = kwargs.pop("dataset_version_id", None)
+        dataset_version_metadata = kwargs.pop("dataset_version_metadata", None)
+        dataset_split = str(kwargs.pop("dataset_split", "train") or "train")
+        requested_run_id = kwargs.pop("run_id", None)
+        dataset_bindings = kwargs.pop("dataset_bindings", None)
+        training_artifact_metadata = kwargs.pop("training_artifact_metadata", None)
+        parent_run_id = kwargs.pop("parent_run_id", None)
         model, prompts, output_dir = self._validate_raft_launch_payload(
             model=model,
             prompts=prompts,
@@ -1595,10 +1914,12 @@ class TrainingService:
             ensure_local_path_exists_if_pathlike(curriculum_stats, "curriculum_stats")
 
         # Create job in state
+        canonical_run_id = build_run_id("raft", requested=requested_run_id)
         job = self.state.create_job(
             job_type="raft",
             name=f"RAFT: {Path(model).name}",
             output_dir=Path(output_dir),
+            job_id=canonical_run_id,
         )
         job.total_cycles = cycles
         
@@ -1615,6 +1936,7 @@ class TrainingService:
             "--cycles", str(cycles),
             "--samples-per-prompt", str(samples_per_prompt),
             "--temperature", str(temperature),
+            "--seed", str(seed),
             "--keep-percent", str(keep_percent),
             "--reward-threshold", str(reward_threshold),
             "--min-samples", str(min_samples),
@@ -1625,6 +1947,8 @@ class TrainingService:
             "--reward-shaping", reward_shaping,
             "--system-prompt", system_prompt,
         ])
+        if max_prompts is not None:
+            cmd.extend(["--max-prompts", str(int(max_prompts))])
         
         # Curriculum-specific options
         if curriculum == "historical" and curriculum_stats:
@@ -1651,17 +1975,25 @@ class TrainingService:
                 cmd.extend([f"--{key.replace('_', '-')}", str(value)])
 
         launch_args = {
+            "run_id": job.id,
             "model": model,
             "prompts": prompts,
+            "dataset_version_id": dataset_version_id,
+            "dataset_split": dataset_split if dataset_version_id else None,
+            "dataset_bindings": dataset_bindings,
+            "training_artifact": training_artifact_metadata,
+            "parent_run_id": parent_run_id,
             "output_dir": output_dir,
             "verifier": verifier,
             "cycles": cycles,
             "samples_per_prompt": samples_per_prompt,
             "temperature": temperature,
+            "seed": seed,
             "keep_percent": keep_percent,
             "reward_threshold": reward_threshold,
             "min_samples": min_samples,
             "max_new_tokens": max_new_tokens,
+            "max_prompts": max_prompts,
             "lr_decay": lr_decay,
             "min_lr": min_lr,
             "checkpoint": checkpoint,
@@ -1676,6 +2008,24 @@ class TrainingService:
             "accelerator": accelerator,
         }
         launch_args.update({k: v for k, v in kwargs.items() if v is not None})
+        try:
+            self._persist_replay_manifest(
+                output_dir=output_dir,
+                run_id=job.id,
+                modality="raft",
+                model=model,
+                seed=seed,
+                launch_args=launch_args,
+                dataset_value=prompts,
+                dataset_version_id=dataset_version_id,
+                dataset_split=dataset_split,
+                dataset_version_metadata=dataset_version_metadata,
+                dataset_bindings=dataset_bindings,
+                training_artifact_metadata=training_artifact_metadata,
+                parent_run_id=parent_run_id,
+            )
+        except Exception as exc:
+            print(f"[TrainingService] Failed to persist replay manifest: {exc}")
         launch_context_file = None
         try:
             launch_context_file = persist_launch_context(
@@ -1750,6 +2100,7 @@ class TrainingService:
         batch_size: int = 1,
         gradient_accumulation_steps: int = 16,
         learning_rate: float = 5e-6,
+        seed: int = 42,
         max_samples: Optional[int] = None,
         beta: Optional[float] = None,
         loss_type: Optional[str] = None,
@@ -1767,6 +2118,14 @@ class TrainingService:
         guided_recovery: Optional[dict[str, Any]] = None,
         no_caffeinate: bool = False,
         accelerator: Optional[str] = None,
+        dataset_version_id: Optional[str] = None,
+        dataset_split: str = "train",
+        dataset_version_metadata: Optional[dict[str, Any]] = None,
+        validation_file: Optional[str] = None,
+        dataset_bindings: Optional[list[dict[str, Any]]] = None,
+        training_artifact_metadata: Optional[dict[str, Any]] = None,
+        parent_run_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> str:
         """Launch DPO/ORPO/RM/GRPO training through the normal CLI subprocess path."""
         mode_key = str(mode or "").strip().lower()
@@ -1788,10 +2147,12 @@ class TrainingService:
             reward_threshold=reward_threshold,
         )
 
+        canonical_run_id = build_run_id(mode_key, requested=run_id)
         job = self.state.create_job(
             job_type=mode_key,
             name=f"{mode_key.upper()}: {Path(model).name} on {dataset}",
             output_dir=Path(output_dir),
+            job_id=canonical_run_id,
         )
         job.total_epochs = epochs
 
@@ -1810,10 +2171,13 @@ class TrainingService:
                 "--batch-size", str(batch_size),
                 "--gradient-accumulation", str(gradient_accumulation_steps),
                 "--learning-rate", str(learning_rate),
+                "--seed", str(seed),
             ]
         )
         if max_samples is not None and max_samples > 0:
             cmd.extend(["--max-samples", str(max_samples)])
+        if validation_file and mode_key in {"dpo", "orpo", "rm"}:
+            cmd.extend(["--validation-data", str(validation_file)])
         if mode_key in {"dpo", "orpo"} and beta is not None:
             cmd.extend(["--beta", str(beta)])
         if mode_key == "dpo" and loss_type:
@@ -1837,14 +2201,22 @@ class TrainingService:
             cmd.append("--no-caffeinate")
 
         launch_args = {
+            "run_id": job.id,
             "model": model,
             "dataset": dataset,
+            "dataset_version_id": dataset_version_id,
+            "dataset_split": dataset_split if dataset_version_id else None,
+            "dataset_bindings": dataset_bindings,
+            "training_artifact": training_artifact_metadata,
+            "parent_run_id": parent_run_id,
             "output_dir": output_dir,
             "epochs": epochs,
             "batch_size": batch_size,
             "gradient_accumulation_steps": gradient_accumulation_steps,
             "learning_rate": learning_rate,
+            "seed": seed,
             "max_samples": max_samples,
+            "validation_file": validation_file,
             "beta": beta,
             "loss_type": loss_type,
             "reference_free": reference_free,
@@ -1856,6 +2228,24 @@ class TrainingService:
             "accelerator": accelerator,
             "no_caffeinate": no_caffeinate,
         }
+        try:
+            self._persist_replay_manifest(
+                output_dir=output_dir,
+                run_id=job.id,
+                modality=mode_key,
+                model=model,
+                seed=seed,
+                launch_args=launch_args,
+                dataset_value=dataset,
+                dataset_version_id=dataset_version_id,
+                dataset_split=dataset_split,
+                dataset_version_metadata=dataset_version_metadata,
+                dataset_bindings=dataset_bindings,
+                training_artifact_metadata=training_artifact_metadata,
+                parent_run_id=parent_run_id,
+            )
+        except Exception as exc:
+            print(f"[TrainingService] Failed to persist replay manifest: {exc}")
         launch_context_file = None
         try:
             launch_context_file = persist_launch_context(
@@ -1939,6 +2329,13 @@ class TrainingService:
         resume_strategy: Optional[str] = None,
         guided_recovery: Optional[dict[str, Any]] = None,
         no_caffeinate: bool = False,
+        dataset_version_id: Optional[str] = None,
+        dataset_split: str = "train",
+        dataset_version_metadata: Optional[dict[str, Any]] = None,
+        dataset_bindings: Optional[list[dict[str, Any]]] = None,
+        training_artifact_metadata: Optional[dict[str, Any]] = None,
+        parent_run_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> str:
         """Launch modality-specific train command (vlm/audio/reasoning/agentic)."""
         if modality not in MODALITY_TRAIN_LAUNCH_CONTRACTS:
@@ -1966,10 +2363,12 @@ class TrainingService:
         if not capability.allowed:
             raise ValueError(capability.message.splitlines()[-1])
 
+        canonical_run_id = build_run_id(modality, requested=run_id)
         job = self.state.create_job(
             job_type=modality,
             name=f"{modality.upper()} Train: {Path(model).name} on {dataset}",
             output_dir=Path(output_dir),
+            job_id=canonical_run_id,
         )
         job.total_cycles = cycles
 
@@ -1997,7 +2396,7 @@ class TrainingService:
             cmd.extend(["--reward-threshold", str(reward_threshold)])
         if modality == "audio" and task:
             cmd.extend(["--task", task])
-        if limit is not None and modality in {"vlm", "reasoning", "agentic"}:
+        if limit is not None and modality in {"vlm", "audio", "reasoning", "agentic"}:
             cmd.extend(["--limit", str(limit)])
         if capability.capability.status == "prototype" and allow_prototype_train:
             cmd.append("--allow-prototype-train")
@@ -2005,8 +2404,14 @@ class TrainingService:
             cmd.append("--no-caffeinate")
 
         launch_args = {
+            "run_id": job.id,
             "model": model,
             "dataset": dataset,
+            "dataset_version_id": dataset_version_id,
+            "dataset_split": dataset_split if dataset_version_id else None,
+            "dataset_bindings": dataset_bindings,
+            "training_artifact": training_artifact_metadata,
+            "parent_run_id": parent_run_id,
             "output_dir": output_dir,
             "cycles": cycles,
             "learning_rate": learning_rate,
@@ -2024,6 +2429,24 @@ class TrainingService:
             ),
             "no_caffeinate": no_caffeinate,
         }
+        try:
+            self._persist_replay_manifest(
+                output_dir=output_dir,
+                run_id=job.id,
+                modality=modality,
+                model=model,
+                seed=seed,
+                launch_args=launch_args,
+                dataset_value=dataset,
+                dataset_version_id=dataset_version_id,
+                dataset_split=dataset_split,
+                dataset_version_metadata=dataset_version_metadata,
+                dataset_bindings=dataset_bindings,
+                training_artifact_metadata=training_artifact_metadata,
+                parent_run_id=parent_run_id,
+            )
+        except Exception as exc:
+            print(f"[TrainingService] Failed to persist replay manifest: {exc}")
         launch_context_file = None
         try:
             launch_context_file = persist_launch_context(
@@ -2101,6 +2524,9 @@ class TrainingService:
             raise ValueError("launch context does not belong to training service")
 
         args = self._apply_launch_overrides(dict(context.args), override_args)
+        source_run_id = str(args.pop("run_id", "") or origin_job_id or "").strip()
+        if source_run_id:
+            args["parent_run_id"] = source_run_id
         job_type = context.job_type
         resume_strategy = "resume_latest" if resume_latest else "relaunch"
         recovery_payload = None
@@ -2204,6 +2630,7 @@ class TrainingService:
         
         # Get optimized environment
         env = self._get_strix_halo_env()
+        env[RUN_ID_ENV] = job_id
         inject_huggingface_token(env)
         
         exec_cmd = caffeinate_command(cmd, enabled=not no_caffeinate)

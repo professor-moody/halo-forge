@@ -6,11 +6,15 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import time
+import uuid
 from typing import Optional
 
 
 DEFAULT_TRAINING_SEED = 42
+RUN_ID_ENV = "HALO_FORGE_RUN_ID"
+_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def normalize_seed(seed: Optional[int]) -> int:
@@ -71,7 +75,24 @@ def set_global_seed(seed: Optional[int]) -> int:
     return normalized
 
 
-def build_run_id(modality: str) -> str:
-    """Generate a lightweight deterministic-run identifier."""
+def build_run_id(modality: str, requested: Optional[str] = None) -> str:
+    """Resolve the canonical run identifier before any trainer work begins.
+
+    Managed launches pass the identifier through ``HALO_FORGE_RUN_ID`` so the
+    UI job, subprocess, summaries, replay evidence, and filesystem all refer
+    to the same run. Direct CLI launches retain the historical generated-ID
+    behavior, with a short random suffix to avoid millisecond collisions.
+    """
+    supplied = str(requested or os.environ.get(RUN_ID_ENV) or "").strip()
+    if supplied:
+        if not _RUN_ID_PATTERN.fullmatch(supplied):
+            raise ValueError(
+                "run_id must start with an alphanumeric character and contain "
+                "only letters, numbers, '.', '_' or '-' (maximum 128 characters)"
+            )
+        return supplied
+
+    safe_modality = re.sub(r"[^A-Za-z0-9._-]+", "-", str(modality or "run")).strip("-.")
+    safe_modality = safe_modality or "run"
     epoch_ms = int(time.time() * 1000)
-    return f"{modality}-{epoch_ms}"
+    return f"{safe_modality}-{epoch_ms}-{uuid.uuid4().hex[:8]}"

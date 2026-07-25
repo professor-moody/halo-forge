@@ -58,8 +58,22 @@ class AudioProcessor:
         try:
             import torchaudio
             self._torchaudio = torchaudio
-        except ImportError:
-            logger.warning("torchaudio not installed. Install with: pip install torchaudio")
+        except (ImportError, OSError, RuntimeError):
+            logger.info("torchaudio is unavailable; checking the librosa/soundfile fallback")
+
+        self._librosa = None
+        self._soundfile = None
+        if self._torchaudio is None:
+            try:
+                import librosa
+                import soundfile
+
+                self._librosa = librosa
+                self._soundfile = soundfile
+            except (ImportError, OSError, RuntimeError):
+                logger.warning(
+                    "Audio decoding requires torchaudio or both librosa and soundfile"
+                )
     
     def load(self, audio_path: Union[str, Path]) -> ProcessedAudio:
         """
@@ -71,20 +85,32 @@ class AudioProcessor:
         Returns:
             ProcessedAudio with waveform and metadata
         """
-        if self._torchaudio is None:
-            raise ImportError("torchaudio is required for audio processing")
-        
         audio_path = Path(audio_path)
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
-        
-        # Load audio
-        waveform, sr = self._torchaudio.load(str(audio_path))
-        
-        # Resample if necessary
-        if sr != self.sample_rate:
-            resampler = self._torchaudio.transforms.Resample(sr, self.sample_rate)
-            waveform = resampler(waveform)
+
+        if self._torchaudio is not None:
+            waveform, sr = self._torchaudio.load(str(audio_path))
+            if sr != self.sample_rate:
+                resampler = self._torchaudio.transforms.Resample(sr, self.sample_rate)
+                waveform = resampler(waveform)
+        elif self._librosa is not None and self._soundfile is not None:
+            samples, sr = self._soundfile.read(
+                str(audio_path), dtype="float32", always_2d=True
+            )
+            samples = np.asarray(samples).T
+            if sr != self.sample_rate:
+                samples = self._librosa.resample(
+                    samples,
+                    orig_sr=sr,
+                    target_sr=self.sample_rate,
+                    axis=-1,
+                )
+            waveform = torch.from_numpy(np.asarray(samples)).float()
+        else:
+            raise ImportError(
+                "audio processing requires torchaudio or both librosa and soundfile"
+            )
         
         # Convert to mono
         if self.mono and waveform.shape[0] > 1:
@@ -135,9 +161,6 @@ class AudioProcessor:
         Returns:
             ProcessedAudio
         """
-        if self._torchaudio is None:
-            raise ImportError("torchaudio is required for audio processing")
-        
         # Convert to tensor
         waveform = torch.from_numpy(audio_array).float()
         
@@ -147,8 +170,23 @@ class AudioProcessor:
         
         # Resample if necessary
         if original_sr != self.sample_rate:
-            resampler = self._torchaudio.transforms.Resample(original_sr, self.sample_rate)
-            waveform = resampler(waveform)
+            if self._torchaudio is not None:
+                resampler = self._torchaudio.transforms.Resample(
+                    original_sr, self.sample_rate
+                )
+                waveform = resampler(waveform)
+            elif self._librosa is not None and self._soundfile is not None:
+                samples = self._librosa.resample(
+                    waveform.numpy(),
+                    orig_sr=original_sr,
+                    target_sr=self.sample_rate,
+                    axis=-1,
+                )
+                waveform = torch.from_numpy(np.asarray(samples)).float()
+            else:
+                raise ImportError(
+                    "audio resampling requires torchaudio or both librosa and soundfile"
+                )
         
         # Convert to mono
         if self.mono and waveform.shape[0] > 1:
@@ -173,33 +211,50 @@ class AudioProcessor:
     
     def _extract_mel(self, waveform: torch.Tensor) -> torch.Tensor:
         """Extract mel spectrogram."""
-        if self._torchaudio is None:
-            raise ImportError("torchaudio is required")
-        
-        mel_transform = self._torchaudio.transforms.MelSpectrogram(
-            sample_rate=self.sample_rate,
-            n_mels=80,
-            n_fft=400,
-            hop_length=160,
-            win_length=400,
+        if self._torchaudio is not None:
+            mel_transform = self._torchaudio.transforms.MelSpectrogram(
+                sample_rate=self.sample_rate,
+                n_mels=80,
+                n_fft=400,
+                hop_length=160,
+                win_length=400,
+            )
+            return mel_transform(waveform)
+        if self._librosa is not None and self._soundfile is not None:
+            mel = self._librosa.feature.melspectrogram(
+                y=waveform.numpy(),
+                sr=self.sample_rate,
+                n_mels=80,
+                n_fft=400,
+                hop_length=160,
+                win_length=400,
+            )
+            return torch.from_numpy(np.asarray(mel)).float()
+        raise ImportError(
+            "mel extraction requires torchaudio or both librosa and soundfile"
         )
-        return mel_transform(waveform)
     
     def _extract_mfcc(self, waveform: torch.Tensor) -> torch.Tensor:
         """Extract MFCC features."""
-        if self._torchaudio is None:
-            raise ImportError("torchaudio is required")
-        
-        mfcc_transform = self._torchaudio.transforms.MFCC(
-            sample_rate=self.sample_rate,
-            n_mfcc=40,
-            melkwargs={
-                "n_mels": 80,
-                "n_fft": 400,
-                "hop_length": 160,
-            }
+        if self._torchaudio is not None:
+            mfcc_transform = self._torchaudio.transforms.MFCC(
+                sample_rate=self.sample_rate,
+                n_mfcc=40,
+                melkwargs={
+                    "n_mels": 80,
+                    "n_fft": 400,
+                    "hop_length": 160,
+                },
+            )
+            return mfcc_transform(waveform)
+        if self._librosa is not None and self._soundfile is not None:
+            mfcc = self._librosa.feature.mfcc(
+                y=waveform.numpy(), sr=self.sample_rate, n_mfcc=40
+            )
+            return torch.from_numpy(np.asarray(mfcc)).float()
+        raise ImportError(
+            "MFCC extraction requires torchaudio or both librosa and soundfile"
         )
-        return mfcc_transform(waveform)
     
     def pad_or_truncate(
         self,

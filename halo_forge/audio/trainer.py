@@ -45,6 +45,11 @@ from halo_forge.runtime_determinism import (
     build_run_id,
     set_global_seed,
 )
+from halo_forge.training_signal import (
+    complete_signal_boundary,
+    hashed_media_reference,
+    lineage_identity_from_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +126,7 @@ class AudioRAFTTrainer:
     5. Repeat with decayed learning rate
     """
     
-    def __init__(self, config: AudioRAFTConfig):
+    def __init__(self, config: AudioRAFTConfig, signal_sink: Optional[Any] = None):
         """
         Initialize trainer.
         
@@ -129,6 +134,7 @@ class AudioRAFTTrainer:
             config: Training configuration
         """
         self.config = config
+        self.signal_sink = signal_sink
         from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="Audio RAFT")
@@ -189,6 +195,7 @@ class AudioRAFTTrainer:
         samples: Union[str, List[AudioSample]],
         validation_samples: Optional[List[AudioSample]] = None,
         resume_from_cycle: int = 0,
+        limit: Optional[int] = None,
     ) -> List[AudioRAFTCycleResult]:
         """
         Run RAFT training.
@@ -196,6 +203,7 @@ class AudioRAFTTrainer:
         Args:
             samples: Dataset name or list of AudioSample
             validation_samples: Optional validation set
+            limit: Deterministic cap used by managed proof runs
             
         Returns:
             List of cycle results
@@ -236,8 +244,10 @@ class AudioRAFTTrainer:
         
         # Load dataset if string
         if isinstance(samples, str):
-            dataset = load_audio_dataset(samples, limit=None)
+            dataset = load_audio_dataset(samples, limit=limit)
             samples = list(dataset)
+        elif limit is not None:
+            samples = samples[: max(0, int(limit))]
         if not samples:
             raise ValueError("audio training requires at least one sample")
         
@@ -252,6 +262,13 @@ class AudioRAFTTrainer:
             logger.info(f"{'='*60}")
             
             result = self._train_cycle(cycle, samples)
+            if validation_samples:
+                # Validation is measured separately and is never included in
+                # the optimizer input.  The argument existed historically but
+                # was silently ignored.
+                result.metrics["validation"] = self._evaluate_validation(
+                    validation_samples
+                )
             self.cycle_results.append(result)
             self._all_cycle_metrics.append(result.metrics)
             write_json_atomic(
@@ -384,6 +401,10 @@ class AudioRAFTTrainer:
         
         # 1. Generate predictions
         logger.info("Generating predictions...")
+        # ``_generate_predictions`` resolves the configured training
+        # multiplicity when no override is supplied.  Keeping this call shape
+        # preserves older adapters/tests that replace the helper with the
+        # original single-argument callable.
         predictions = self._generate_predictions(samples)
         
         # 2. Verify
@@ -393,6 +414,7 @@ class AudioRAFTTrainer:
         # 3. Filter by reward
         logger.info("Filtering by reward...")
         kept = self._filter_samples(verified)
+        self._capture_training_signals(verified, kept, cycle=cycle)
         
         # 4. Calculate metrics
         rewards = [v["reward"] for v in verified]
@@ -504,20 +526,86 @@ class AudioRAFTTrainer:
             learning_rate=lr,
             metrics=canonical_metrics,
         )
+
+    def _capture_training_signals(
+        self,
+        verified: List[Dict[str, Any]],
+        kept: List[Dict[str, Any]],
+        *,
+        cycle: int,
+    ) -> None:
+        sink = self.signal_sink
+        if sink is None:
+            return
+        selected_ids = {id(value) for value in kept}
+        for value in verified:
+            sample = value["sample"]
+            selected = id(value) in selected_ids
+            media_value = (
+                sample.audio_array if sample.audio_array is not None else sample.audio_path
+            )
+            sink.capture(
+                record=lineage_identity_from_metadata(sample.metadata),
+                source_index=int(value.get("source_index", 0)),
+                source={"trainer": "audio", "cycle": int(cycle)},
+                candidate_ordinal=int(value.get("candidate_ordinal", 0)),
+                occurrence_id=(
+                    f"cycle:{int(cycle)}:source:{int(value.get('source_index', 0))}:"
+                    f"candidate:{int(value.get('candidate_ordinal', 0))}"
+                ),
+                prompt={"task": sample.task},
+                context={
+                    "duration": sample.duration,
+                    "sample_rate": sample.sample_rate or self.config.sample_rate,
+                },
+                output=value.get("prediction"),
+                expected=value.get("ground_truth"),
+                media=[hashed_media_reference("audio", media_value)],
+                training_observation={
+                    "reward": value.get("reward"),
+                    "success": value.get("success"),
+                    "details": value.get("details"),
+                    "metadata": value.get("metadata") or {},
+                },
+                selected=selected,
+                selection_reason=(
+                    "kept_for_update"
+                    if selected
+                    else (
+                        "below_reward_threshold"
+                        if float(value.get("reward", 0.0)) < self.config.reward_threshold
+                        else "dropped_by_keep_percent"
+                    )
+                ),
+                generation_settings={
+                    "samples_per_prompt": self.config.samples_per_prompt,
+                    "task": self.config.task,
+                },
+                producer_model_hash=self.config.model_name,
+            )
     
     def _generate_predictions(
         self,
         samples: List[AudioSample],
         show_progress: bool = True,
+        candidates_per_sample: Optional[int] = None,
     ) -> List[str]:
         """Generate predictions for samples."""
+        candidate_count = int(
+            self.config.samples_per_prompt
+            if candidates_per_sample is None
+            else candidates_per_sample
+        )
+        if candidate_count < 1:
+            raise ValueError("candidates_per_sample must be positive")
         predictions = []
         
         iterator = tqdm(samples, desc="Transcribing") if show_progress else samples
         
         for sample in iterator:
             try:
-                # Get audio
+                # Decode a source asset once, then generate the configured
+                # number of candidate outputs from that exact waveform.
                 if sample.audio_array is not None:
                     processed = self.processor.load_array(
                         sample.audio_array,
@@ -525,14 +613,18 @@ class AudioRAFTTrainer:
                     )
                 else:
                     processed = self.processor.load(sample.audio_path)
-                
-                # Transcribe
-                result = self.adapter.transcribe(processed.waveform)
-                predictions.append(result.text)
-            
             except Exception as e:
                 logger.warning(f"Failed to process sample: {e}")
-                predictions.append("")
+                predictions.extend([""] * candidate_count)
+                continue
+
+            for _ in range(candidate_count):
+                try:
+                    result = self.adapter.transcribe(processed.waveform)
+                    predictions.append(result.text)
+                except Exception as e:
+                    logger.warning(f"Failed to generate audio candidate: {e}")
+                    predictions.append("")
         
         return predictions
     
@@ -544,11 +636,27 @@ class AudioRAFTTrainer:
     ) -> List[Dict[str, Any]]:
         """Verify predictions against ground truth."""
         verified = []
-        
-        pairs = list(zip(predictions, samples))
+        if not samples:
+            if predictions:
+                raise ValueError("audio predictions were supplied without source samples")
+            return verified
+        if len(predictions) % len(samples) != 0:
+            raise ValueError(
+                "audio prediction count must be an exact multiple of source samples; "
+                f"received {len(predictions)} predictions for {len(samples)} samples"
+            )
+        candidates_per_sample = len(predictions) // len(samples)
+        if candidates_per_sample < 1:
+            raise ValueError("audio verification requires at least one prediction per sample")
+        pairs = [
+            (predictions[source_index * candidates_per_sample + candidate_ordinal], sample,
+             source_index, candidate_ordinal)
+            for source_index, sample in enumerate(samples)
+            for candidate_ordinal in range(candidates_per_sample)
+        ]
         iterator = tqdm(pairs, desc="Verifying") if show_progress else pairs
         
-        for pred, sample in iterator:
+        for pred, sample, source_index, candidate_ordinal in iterator:
             result = self.verifier.verify(pred, sample.text)
             verified.append({
                 "prediction": pred,
@@ -556,7 +664,10 @@ class AudioRAFTTrainer:
                 "reward": result.reward,
                 "success": result.success,
                 "details": result.details,
+                "metadata": dict(getattr(result, "metadata", {}) or {}),
                 "sample": sample,
+                "source_index": source_index,
+                "candidate_ordinal": candidate_ordinal,
             })
         
         return verified
@@ -575,10 +686,45 @@ class AudioRAFTTrainer:
         sorted_samples = sorted(eligible, key=lambda x: x["reward"], reverse=True)
         
         # Keep top percent
-        keep_count = int(len(sorted_samples) * self.config.keep_top_percent)
+        keep_count = (
+            max(1, int(len(sorted_samples) * self.config.keep_top_percent))
+            if sorted_samples
+            else 0
+        )
         kept = sorted_samples[:keep_count]
         
         return kept
+
+    def _evaluate_validation(self, samples: List[AudioSample]) -> Dict[str, Any]:
+        """Measure the supplied validation split without training on it."""
+
+        predictions = self._generate_predictions(
+            samples,
+            show_progress=False,
+            candidates_per_sample=1,
+        )
+        verified = self._verify_predictions(
+            predictions,
+            samples,
+            show_progress=False,
+        )
+        rewards = [float(value["reward"]) for value in verified]
+        successes = sum(1 for value in verified if value.get("success"))
+        result: Dict[str, Any] = {
+            "row_count": len(samples),
+            "prediction_count": len(predictions),
+            "success_rate": successes / len(verified) if verified else 0.0,
+            "average_reward": sum(rewards) / len(rewards) if rewards else None,
+        }
+        if self.config.task == "asr":
+            wers = [
+                float(value["details"]["wer"])
+                for value in verified
+                if isinstance(value.get("details"), dict)
+                and value["details"].get("wer") is not None
+            ]
+            result["average_wer"] = sum(wers) / len(wers) if wers else None
+        return result
 
     def _train_on_samples(self, kept: List[Dict[str, Any]], lr: float) -> Dict[str, Any]:
         """Run real optimizer updates for supported audio model families."""
@@ -743,6 +889,11 @@ class AudioRAFTTrainer:
             tokenizer=getattr(self.adapter, "tokenizer", None),
             processor=getattr(self.adapter, "processor", None),
             extra_state={"task": self.config.task},
+        )
+        complete_signal_boundary(
+            self.signal_sink,
+            boundary_value=cycle,
+            checkpoint_path=checkpoint_dir,
         )
         
         logger.info(f"Saved checkpoint to {checkpoint_dir}")

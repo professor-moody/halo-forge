@@ -363,6 +363,23 @@ class ResultsService:
         """Return the newest modality training runs."""
         return self.list_training_runs()[:n]
 
+    def load_training_run(self, output_dir: str | Path) -> Optional[TrainingRunSummary]:
+        """Load one canonical summary from an explicitly managed run root.
+
+        Durable dashboard launches may use an operator-selected output root
+        outside the legacy discovery directories.  Their published summary is
+        still canonical and should take precedence over a stale terminal job
+        projection.
+        """
+
+        summary_path = Path(output_dir).expanduser() / "training_summary.json"
+        if not summary_path.is_file():
+            return None
+        try:
+            return self._parse_training_summary_file(summary_path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return None
+
     def list_utility_runs(self, force_refresh: bool = False) -> List[UtilityRunSummary]:
         """Scan canonical utility run summaries for config/data/info/plot jobs."""
         if not force_refresh and self._utility_cache_time:
@@ -853,6 +870,25 @@ class ResultsService:
                 launch_args = dict(read_launch_context(launch_context_path).args)
             except Exception:
                 launch_args = {}
+        plan_model_id = str(
+            launch_args.get("training_plan_model_id") or ""
+        ).strip()
+        if not plan_model_id:
+            replay_path = path.parent / "replay.json"
+            if replay_path.exists():
+                try:
+                    replay_payload = json.loads(replay_path.read_text(encoding="utf-8"))
+                    training_plan = (
+                        replay_payload.get("training_plan")
+                        if isinstance(replay_payload, dict)
+                        and isinstance(replay_payload.get("training_plan"), dict)
+                        else {}
+                    )
+                    plan_model_id = str(training_plan.get("model_id") or "").strip()
+                except Exception:
+                    plan_model_id = ""
+        if plan_model_id:
+            model_name = plan_model_id
         recovery_guidance = (
             data.get("recovery_guidance")
             if isinstance(data.get("recovery_guidance"), dict)

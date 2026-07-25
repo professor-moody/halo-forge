@@ -7,6 +7,7 @@ Dataset loaders and audio processors for audio-language training.
 from halo_forge.audio.data.loaders import (
     AudioSample,
     AudioDataset,
+    LocalAudioManifestLoader,
     LibriSpeechLoader,
     CommonVoiceLoader,
     AudioSetLoader,
@@ -20,6 +21,7 @@ from halo_forge.audio.data.processors import AudioProcessor, ProcessedAudio
 __all__ = [
     "AudioSample",
     "AudioDataset",
+    "LocalAudioManifestLoader",
     "LibriSpeechLoader",
     "CommonVoiceLoader",
     "AudioSetLoader",

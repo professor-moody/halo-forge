@@ -7,6 +7,7 @@ Dataset loaders for tool calling training.
 from halo_forge.agentic.data.loaders import (
     ToolCallSample,
     ToolCallingDataset,
+    LocalToolCallingLoader,
     XLAMLoader,
     GlaiveLoader,
     list_agentic_datasets,
@@ -19,6 +20,7 @@ from halo_forge.agentic.data.formatters import (
 __all__ = [
     "ToolCallSample",
     "ToolCallingDataset",
+    "LocalToolCallingLoader",
     "XLAMLoader",
     "GlaiveLoader",
     "list_agentic_datasets",

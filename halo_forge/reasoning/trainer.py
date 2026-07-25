@@ -6,7 +6,7 @@ RAFT training for mathematical and reasoning tasks.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Mapping, Optional
 import json
 import logging
 import time
@@ -38,6 +38,7 @@ from halo_forge.runtime_determinism import (
     build_run_id,
     set_global_seed,
 )
+from halo_forge.training_signal import complete_signal_boundary, lineage_identity_from_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,9 @@ class ReasoningCompletion:
     completion: str
     reward: float = 0.0
     verified: bool = False
-    result: Optional[ReasoningVerifyResult] = None
+    result: Optional[Any] = None
+    source_index: int = 0
+    candidate_ordinal: int = 0
 
 
 class ReasoningRAFTTrainer:
@@ -104,7 +107,7 @@ class ReasoningRAFTTrainer:
     5. Repeat for multiple cycles
     """
     
-    def __init__(self, config: ReasoningRAFTConfig):
+    def __init__(self, config: ReasoningRAFTConfig, signal_sink: Optional[Any] = None):
         """
         Initialize trainer.
         
@@ -112,6 +115,7 @@ class ReasoningRAFTTrainer:
             config: Training configuration
         """
         self.config = config
+        self.signal_sink = signal_sink
         from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="Reasoning RAFT")
@@ -194,7 +198,7 @@ class ReasoningRAFTTrainer:
         
         completions = []
         
-        for sample in samples:
+        for source_index, sample in enumerate(samples):
             prompt = self._format_prompt(sample.question)
             
             inputs = self.tokenizer(
@@ -205,7 +209,7 @@ class ReasoningRAFTTrainer:
                 max_length=1024,
             ).to(self.model.device)
             
-            for _ in range(self.config.samples_per_prompt):
+            for candidate_ordinal in range(self.config.samples_per_prompt):
                 with torch.no_grad():
                     outputs = self.model.generate(
                         **inputs,
@@ -224,6 +228,8 @@ class ReasoningRAFTTrainer:
                 completions.append(ReasoningCompletion(
                     sample=sample,
                     completion=generated,
+                    source_index=source_index,
+                    candidate_ordinal=candidate_ordinal,
                 ))
         
         return completions
@@ -316,6 +322,7 @@ class ReasoningRAFTTrainer:
         
         # 3. Filter completions
         filtered = self.filter_completions(completions)
+        self._capture_training_signals(completions, filtered, cycle=cycle)
         
         # 4. Calculate metrics
         accuracy = sum(1 for c in completions if c.verified) / len(completions)
@@ -435,6 +442,60 @@ class ReasoningRAFTTrainer:
         )
         
         return metrics
+
+    def _capture_training_signals(
+        self,
+        completions: List[ReasoningCompletion],
+        filtered: List[ReasoningCompletion],
+        *,
+        cycle: int,
+    ) -> None:
+        sink = self.signal_sink
+        if sink is None:
+            return
+        kept = {id(value) for value in filtered}
+        for value in completions:
+            selected = id(value) in kept
+            metadata = value.sample.metadata or {}
+            sink.capture(
+                record=lineage_identity_from_metadata(metadata),
+                source_index=value.source_index,
+                source={"trainer": "reasoning", "cycle": int(cycle)},
+                candidate_ordinal=value.candidate_ordinal,
+                occurrence_id=(
+                    f"cycle:{int(cycle)}:source:{value.source_index}:"
+                    f"candidate:{value.candidate_ordinal}"
+                ),
+                prompt=self._format_prompt(value.sample.question),
+                context={
+                    "question": value.sample.question,
+                    "difficulty": value.sample.difficulty,
+                    "subject": value.sample.subject,
+                },
+                output=value.completion,
+                expected=value.sample.answer,
+                training_observation=value.result or {
+                    "reward": value.reward,
+                    "success": value.verified,
+                    "error": "missing_verifier_result",
+                },
+                selected=selected,
+                selection_reason=(
+                    "kept_for_update"
+                    if selected
+                    else (
+                        "below_reward_threshold"
+                        if value.reward < self.config.reward_threshold
+                        else "dropped_by_keep_percent"
+                    )
+                ),
+                generation_settings={
+                    "temperature": self.config.temperature,
+                    "max_new_tokens": self.config.max_new_tokens,
+                    "samples_per_prompt": self.config.samples_per_prompt,
+                },
+                producer_model_hash=self.config.model_name,
+            )
     
     def train(
         self,
@@ -496,6 +557,21 @@ class ReasoningRAFTTrainer:
                 self.output_dir / "training_history.json",
                 {"cycles": self._all_cycle_metrics},
             )
+
+        # The persisted canonical cycle summaries are the source of truth for
+        # final evaluation.  Keeping summary construction independent from the
+        # optional in-memory tracking lists also makes resumed and instrumented
+        # trainer runs report the same effectiveness evidence.
+        cycle_accuracies = [
+            float(cycle["accuracy"])
+            for cycle in self._all_cycle_metrics
+            if isinstance(cycle.get("accuracy"), (int, float))
+        ]
+        cycle_rewards = [
+            float(cycle["avg_reward"])
+            for cycle in self._all_cycle_metrics
+            if isinstance(cycle.get("avg_reward"), (int, float))
+        ]
         
         # Save final summary
         summary = build_training_summary(
@@ -515,8 +591,8 @@ class ReasoningRAFTTrainer:
                     "cycles": self.config.num_cycles,
                     "samples": len(samples),
                 },
-                "final_accuracy": self.metrics["cycle_accuracy"][-1] if self.metrics["cycle_accuracy"] else 0,
-                "final_reward": self.metrics["cycle_rewards"][-1] if self.metrics["cycle_rewards"] else 0,
+                "final_accuracy": cycle_accuracies[-1] if cycle_accuracies else 0,
+                "final_reward": cycle_rewards[-1] if cycle_rewards else 0,
             },
         )
         final_state = persist_final_artifacts(
@@ -533,12 +609,8 @@ class ReasoningRAFTTrainer:
             minimum_optimizer_steps=1,
             evaluation={
                 "metric_name": "accuracy",
-                "baseline_value": (
-                    self.metrics["cycle_accuracy"][0] if self.metrics["cycle_accuracy"] else None
-                ),
-                "final_value": (
-                    self.metrics["cycle_accuracy"][-1] if self.metrics["cycle_accuracy"] else None
-                ),
+                "baseline_value": cycle_accuracies[0] if cycle_accuracies else None,
+                "final_value": cycle_accuracies[-1] if cycle_accuracies else None,
                 "higher_is_better": True,
                 "tolerance": 0.0,
             },
@@ -594,13 +666,26 @@ class ReasoningRAFTTrainer:
         # Save completions
         comp_data = []
         for c in completions:
+            raw_details = getattr(c.result, "details", None)
+            result_details = (
+                raw_details
+                if isinstance(raw_details, Mapping)
+                else {}
+            )
             comp_data.append({
                 "question": c.sample.question,
                 "expected_answer": c.sample.answer,
                 "completion": c.completion,
                 "reward": c.reward,
                 "verified": c.verified,
-                "extracted_answer": c.result.extracted_answer if c.result else None,
+                # ``MathVerifier`` follows the shared Verifier contract and
+                # returns ``VerifyResult``.  Older reasoning-only result
+                # objects exposed this as an attribute; accept both shapes.
+                "extracted_answer": (
+                    getattr(c.result, "extracted_answer", None)
+                    if c.result is not None
+                    else None
+                ) or result_details.get("extracted_answer"),
             })
         
         with open(path / "completions.jsonl", "w") as f:
@@ -614,6 +699,11 @@ class ReasoningRAFTTrainer:
             update_metrics=metrics,
             model=self.model,
             tokenizer=self.tokenizer,
+        )
+        complete_signal_boundary(
+            self.signal_sink,
+            boundary_value=int(metrics.get("cycle", 0)),
+            checkpoint_path=path,
         )
 
     def _train_on_filtered(
