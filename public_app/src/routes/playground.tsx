@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -22,6 +22,9 @@ import { queryKeys, useModelCatalog, useServeLogs, useServeStart, useServeStatus
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/playground")({
+  beforeLoad: () => {
+    throw redirect({ to: "/models", search: { tab: "serve" }, replace: true });
+  },
   component: PlaygroundRoute,
 });
 
@@ -377,7 +380,7 @@ function friendlyChatFailure(exc: unknown): string {
                       ? localServerReady && !localChatReady
                         ? "The local server is up; the first message may finish loading the adapter."
                         : "Cmd/Ctrl+Enter sends. Settings can point this chat at an external endpoint."
-                      : "Use the safe-model button above, or choose a model from Models or Results."}
+                      : "Use the safe-model button above, or choose a model or trained artifact from Models."}
                   </p>
                 </div>
               ) : (
@@ -504,7 +507,7 @@ function ServeStatusPanel({
               )}
             </div>
             <div className="mt-0.5 truncate font-mono text-[11px] text-fg-subtle">
-              {running ? `${model ?? "model"} · ${url}` : "Start serving from Models or completed Results."}
+              {running ? `${model ?? "model"} · ${url}` : "Start serving from Models or a completed run's artifact."}
             </div>
             <div className="mt-1 text-[11px] text-fg-muted">
               {servingStateCopy(state, message)}

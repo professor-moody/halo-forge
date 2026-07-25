@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -7,6 +7,7 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  ShieldCheck,
   Terminal,
 } from "lucide-react";
 import { useState } from "react";
@@ -66,6 +67,15 @@ function DiagnosticsRoute() {
     queryFn: () => api.diagnosticsLogs(),
     refetchInterval: 15_000,
   });
+  const supportPreview = useQuery({
+    queryKey: ["support-bundle-preview"],
+    queryFn: () => api.supportBundlePreview(),
+  });
+  const [supportCategories, setSupportCategories] = useState<string[] | null>(null);
+  const selectedSupportCategories = supportCategories ?? supportPreview.data?.categories ?? [];
+  const supportBundle = useMutation({
+    mutationFn: () => api.createSupportBundle(selectedSupportCategories),
+  });
 
   const summary = summaryQuery.data;
   const launches = launchesQuery.data?.items ?? [];
@@ -98,6 +108,11 @@ function DiagnosticsRoute() {
       />
 
       <div className="px-5 py-5 space-y-6 max-w-5xl">
+        <section aria-labelledby="support-h">
+          <h2 id="support-h" className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-muted flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />Privacy-safe support</h2>
+          <Card><CardHeader><CardTitle>Create a support bundle you can inspect before sharing</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"><div><p className="text-[12px] text-fg-muted">Includes selected version, readiness, scheduler, log, and integrity information. Dataset records, prompts, media, weights, credentials, and full local paths are excluded by default.</p>{supportPreview.data ? <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">{supportPreview.data.included.map((item) => <label key={item.id} className="flex items-center gap-1.5 text-[11px] text-fg-muted"><input type="checkbox" checked={selectedSupportCategories.includes(item.id)} onChange={(event) => setSupportCategories(event.target.checked ? [...new Set([...selectedSupportCategories, item.id])] : selectedSupportCategories.filter((value) => value !== item.id))} />{item.description}</label>)}</div> : null}</div><Button variant="primary" onClick={() => supportBundle.mutate()} disabled={supportBundle.isPending || selectedSupportCategories.length === 0}>{supportBundle.isPending ? <Loader2 className="animate-spin" /> : <ShieldCheck />}Create support bundle</Button>{supportBundle.data ? <div className="md:col-span-2 rounded border border-success/30 bg-success/5 p-3 text-[12px] text-fg"><span className="font-medium text-success">Bundle queued.</span> Open Activity to follow checksum and publication progress. No upload was performed.</div> : null}{supportBundle.isError ? <p className="md:col-span-2 text-[11px] text-danger">{String(supportBundle.error)}</p> : null}</CardContent></Card>
+        </section>
+
         {/* Orphan launches — top of the page because this is the most
             common reason a user asks "where's my run". */}
         <section aria-labelledby="orphans-h">

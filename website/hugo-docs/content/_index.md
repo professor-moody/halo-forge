@@ -7,7 +7,7 @@ title: "halo forge"
 **Cross-vendor local finetuning workstation.**
 SFT · DPO · GRPO · RAFT, with verifier-grounded rewards, on ROCm · CUDA · Apple MLX · Apple MPS.
 
-The single thing that makes halo-forge different from every adjacent project (axolotl, llama-factory, unsloth, mlx-lm-lora, torchtune): **it runs natively on every modern accelerator**, not just CUDA.
+Halo Forge keeps one guided data-to-training workflow across supported accelerator backends. ROCm and CUDA guided paths are exposed only after their pinned managed runtime passes real hardware qualification.
 
 Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train. Evaluate. Serve.
 

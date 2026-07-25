@@ -1,14 +1,23 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bookmark, GitCompareArrows, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useRunSearch } from "@/lib/hooks";
 import { Topbar } from "@/components/shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, relativeTime } from "@/lib/utils";
+import { api, type RegistryEntry } from "@/lib/api";
+import { clearPinned, pinRun, usePinnedRuns } from "@/lib/pinned-runs";
+import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/runs/")({
+  validateSearch: (search: Record<string, unknown>): { view?: "all" | "completed" | "collections" } => ({
+    view: ["all", "completed", "collections"].includes(String(search.view))
+      ? search.view as "all" | "completed" | "collections"
+      : undefined,
+  }),
   component: RunsListRoute,
 });
 
@@ -53,10 +62,26 @@ const CANONICAL_MODALITIES: ReadonlyArray<{ key: string; label: string; hint: st
 ];
 
 function RunsListRoute() {
+  const view = Route.useSearch().view ?? "all";
   const [modalities, setModalities] = useState<string[]>([]);
-  const [statuses, setStatuses] = useState<StatusKey[]>([]);
+  const [statuses, setStatuses] = useState<StatusKey[]>(view === "completed" ? ["completed"] : []);
   const [model, setModel] = useState("");
   const [hasEval, setHasEval] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    if (view === "completed") setStatuses(["completed"]);
+    if (view === "all") setStatuses([]);
+  }, [view]);
+
+  if (view === "collections") {
+    return (
+      <>
+        <Topbar eyebrow="Workspace" title="Runs" subtitle="Monitor work, review completed outputs, and reopen saved comparison sets." />
+        <RunsTabs active={view} />
+        <CollectionsWorkspace />
+      </>
+    );
+  }
 
   const params = useMemo(
     () => ({
@@ -105,6 +130,7 @@ function RunsListRoute() {
           ) : null
         }
       />
+      <RunsTabs active={view} />
       <div className="px-6 py-5 space-y-3">
         {/* Filter rail */}
         <Card>
@@ -206,7 +232,7 @@ function RunsListRoute() {
               <div className="px-6 py-12 text-center text-sm text-fg-muted">
                 {filtersActive
                   ? "No runs match the current filters."
-                  : "No runs indexed yet. Launch a guided run from Start to populate."}
+                  : "No runs indexed yet. Launch a guided run from Train to populate."}
               </div>
             ) : (
               <div className={cn(isFetching && "opacity-70 transition-opacity")}>
@@ -280,6 +306,87 @@ function RunsListRoute() {
         </Card>
       </div>
     </>
+  );
+}
+
+function RunsTabs({ active }: { active: "all" | "completed" | "collections" }) {
+  const navigate = useNavigate();
+  const tabs = [
+    { id: "all" as const, label: "All runs" },
+    { id: "completed" as const, label: "Completed" },
+    { id: "collections" as const, label: "Collections" },
+  ];
+  return (
+    <div className="flex border-b border-border bg-bg-subtle/55 px-4 md:px-6">
+      {tabs.map((tab) => (
+        <button key={tab.id} type="button" onClick={() => navigate({ to: "/runs", search: { view: tab.id } })} className={cn("relative h-10 px-3 text-[11.5px] transition-colors", active === tab.id ? "font-medium text-fg" : "text-fg-subtle hover:text-fg")}>
+          {tab.label}
+          {active === tab.id ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" /> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CollectionsWorkspace() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const pinned = usePinnedRuns();
+  const [name, setName] = useState("");
+  const collections = useQuery<{ items: RegistryEntry[] }>({
+    queryKey: ["registry"],
+    queryFn: api.listRegistry,
+    retry: false,
+  });
+  const create = useMutation({
+    mutationFn: () => api.createRegistryEntry({ name: name.trim(), run_ids: pinned }),
+    onSuccess: () => {
+      setName("");
+      queryClient.invalidateQueries({ queryKey: ["registry"] });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: number) => api.deleteRegistryEntry(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["registry"] }),
+  });
+
+  function openCollection(entry: RegistryEntry) {
+    clearPinned();
+    entry.run_ids.forEach(pinRun);
+    navigate({ to: "/runs/compare" });
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl px-5 py-5">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <section>
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div><h2 className="text-[13px] font-medium text-fg">Saved comparison sets</h2><p className="mt-1 text-[10.5px] text-fg-subtle">Named groups preserve a repeatable set of run identities.</p></div>
+            <span className="font-mono text-[10px] text-fg-disabled">{collections.data?.items.length ?? 0} collections</span>
+          </div>
+          <div className="divide-y divide-border-subtle border-y border-border-subtle">
+            {collections.isLoading ? (
+              <div className="flex h-32 items-center justify-center gap-2 text-[11px] text-fg-muted"><Search className="h-3.5 w-3.5 animate-pulse" /> Loading collections</div>
+            ) : collections.data?.items.length ? collections.data.items.map((entry) => (
+              <div key={entry.id} className="group flex items-center gap-3 py-3">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border-subtle bg-surface text-fg-subtle"><Bookmark className="h-3.5 w-3.5" /></div>
+                <div className="min-w-0 flex-1"><div className="truncate text-[12px] font-medium text-fg">{entry.name}</div><div className="mt-1 text-[10px] text-fg-disabled">{entry.run_ids.length} run{entry.run_ids.length === 1 ? "" : "s"} · {relativeTime(entry.updated_at)}</div>{entry.tags.length ? <div className="mt-1.5 flex flex-wrap gap-1">{entry.tags.map((tag) => <span key={tag} className="rounded-sm border border-border-subtle px-1.5 py-0.5 text-[9px] text-fg-subtle">{tag}</span>)}</div> : null}</div>
+                <Button size="sm" variant="ghost" onClick={() => openCollection(entry)} disabled={!entry.run_ids.length}><GitCompareArrows /> Compare</Button>
+                <Button size="icon" variant="ghost" onClick={() => remove.mutate(entry.id)} className="opacity-0 group-hover:opacity-100" aria-label={`Delete ${entry.name}`}><Trash2 /></Button>
+              </div>
+            )) : <div className="grid h-36 place-items-center text-center"><div><Bookmark className="mx-auto h-4 w-4 text-fg-disabled" /><p className="mt-2 text-[11.5px] text-fg-muted">No collections yet</p><p className="mt-1 text-[10px] text-fg-disabled">Pin runs, then save the working set.</p></div></div>}
+          </div>
+        </section>
+        <aside className="h-fit rounded-md border border-border-subtle bg-bg-subtle/40 p-4">
+          <div className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">Save current working set</div>
+          <div className="mt-2 font-mono text-[18px] text-fg">{pinned.length} pinned</div>
+          <p className="mt-1 text-[10.5px] leading-relaxed text-fg-subtle">Collections store run identities, not copies of model files.</p>
+          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Collection name" className="mt-3 h-8 text-[11px]" />
+          <Button className="mt-2 w-full" size="sm" onClick={() => create.mutate()} disabled={!name.trim() || !pinned.length || create.isPending}>{create.isPending ? <Plus className="animate-pulse" /> : <Plus />} Save collection</Button>
+          {create.error ? <p className="mt-2 text-[10px] text-danger">{create.error.message}</p> : null}
+        </aside>
+      </div>
+    </div>
   );
 }
 

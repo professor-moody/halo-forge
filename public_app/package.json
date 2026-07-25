@@ -1,14 +1,25 @@
 {
   "name": "halo-forge-public-app",
   "private": true,
-  "version": "2.0.0-alpha-1",
+  "version": "2.0.0-alpha-2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -b",
     "preview": "vite preview",
     "lint": "tsc -b --noEmit",
-    "qa:visual": "node scripts/visual-qa.mjs"
+    "qa:visual": "node scripts/visual-qa.mjs",
+    "test:dataset-lab": "node --test scripts/dataset-lab-contract.test.mjs",
+    "test:artifact-studio": "node --test scripts/artifact-studio-contract.test.mjs",
+    "test:adaptive-training": "node --test scripts/adaptive-training-contract.test.mjs",
+    "test:review-studio": "node --test scripts/review-studio-contract.test.mjs",
+    "test:verifier-reliability": "node --test scripts/verifier-reliability-contract.test.mjs",
+    "test:reward-integrity": "node --test scripts/reward-integrity-contract.test.mjs",
+    "test:desktop-bridge": "node --test scripts/desktop-bridge-contract.test.mjs",
+    "test:own-data-studio": "node --test scripts/own-data-studio-contract.test.mjs",
+    "test:training-plan": "node --test scripts/own-data-studio-contract.test.mjs",
+    "test:training-paths": "node --test scripts/training-path-certification-contract.test.mjs",
+    "test:labs-v11-v15": "node --test scripts/labs-v11-v15-contract.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -24,6 +35,7 @@
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-query-devtools": "^5.62.0",
     "@tanstack/react-router": "^1.95.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
@@ -31,7 +43,8 @@
     "react-dom": "^19.0.0",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^4.2.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",

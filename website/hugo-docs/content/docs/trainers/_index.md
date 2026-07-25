@@ -1,22 +1,23 @@
 ---
 title: "Trainers"
-description: "Halo-forge ships four post-training algorithms. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it."
+description: "Choose among Halo Forge's continued-pretraining, supervised, preference, verifier-guided, and multimodal trainers."
 weight: 10
 ---
 
 
-Halo-forge ships a broad post-training surface. The dashboard exposes these as goal-first methods in **Train**, while the CLI keeps the exact command surface for automation. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it.
+Halo-forge ships a broad model-training surface. The dashboard exposes these as goal-first methods in **Train**, while the CLI keeps the exact command surface for automation. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it.
 
 | Algorithm | What it does | When to use | CLI |
 |---|---|---|---|
 | **SFT** | Supervised finetuning on instruction/response pairs. | Adapting a base to a domain or task; first step in every recipe. | `halo-forge sft train` |
+| **CPT** | Causal continued pretraining on tokenizer-packed document text. | Adapting a causal LM to a reviewed local corpus without inventing labels. | `halo-forge cpt train` |
 | **DPO** | Preference optimization from `(prompt, chosen, rejected)` triples. | Alignment without RL. The default published format on HF. | `halo-forge dpo train` |
 | **ORPO** | Reference-free preference tuning from chosen/rejected pairs. | Lower-memory preference pass when DPO's reference model is too expensive. | `halo-forge orpo train` |
 | **RM** | Bradley-Terry reward model from preference pairs. | Build a reusable scorer for ranking or later RL. | `halo-forge rm train` |
 | **GRPO** | Verifier-grounded policy gradient with group-relative advantages. | RLVR — code execution, math, tool calling, anything with a programmatic reward. | `halo-forge grpo train` |
 | **RAFT** | Rejection-sampling RL: sample N, verify, SFT on the kept ones. | The simplest RLVR; works without KL terms or ratio clipping. | `halo-forge raft train` |
 | **VLM** | Vision-language training. | Image Q&A, document extraction, screenshots, charts. | `halo-forge vlm train` |
-| **Audio** | Audio/speech training. | ASR, classification, and audio-language tasks. | `halo-forge audio train` |
+| **Audio** | Whisper-style audio/speech training. | ASR adaptation. Classification and TTS are unavailable in guided own-data training until verified data-to-weight contracts exist. | `halo-forge audio train` |
 | **Reasoning** | Reasoning-specific training loop. | Math and multi-step answers. | `halo-forge reasoning train` |
 | **Agentic** | Tool-use/function-calling training. | Structured outputs and tool traces. | `halo-forge agentic train` |
 
@@ -28,9 +29,31 @@ Every trainer routes through `halo_forge.<modality>._dispatch.get_<modality>_tra
 
 1. Reads the active backend (`halo_forge.backend.get_backend()`), or honors `--accelerator` if set.
 2. Picks the right trainer class for that backend.
-3. Returns the constructed trainer; the trainer's `__init__` validates the config against what *that* backend can honor — see [`halo_forge.utils.backend_config.warn_unsupported_for_mlx`](../halo_forge/utils/backend_config.py).
+3. Returns the constructed trainer; the trainer's `__init__` validates the config against what *that* backend can honor — see [`halo_forge.utils.backend_config.warn_unsupported_for_mlx`](https://github.com/professor-moody/halo-forge/blob/main/halo_forge/utils/backend_config.py).
 
 So setting `--use-dora` on an MLX host doesn't silently fall back to vanilla LoRA — the trainer prints a warning at init pointing at the limitation.
+
+## CPT
+
+Continued pretraining consumes a rendered `corpus` artifact and applies causal
+next-token loss to non-padding tokens. The guided document flow extracts and
+reviews source text first; the trainer never receives held-out test or canary
+records.
+
+```bash
+halo-forge cpt train \
+  --dataset-version <version-id> \
+  --model Qwen/Qwen2.5-1.5B \
+  --adaptation lora \
+  --budget-mode passes --corpus-passes 1 \
+  --max-seq-length 2048 \
+  --packing paragraph_eos_non_overlap_v1
+```
+
+Every launch requires an explicit `--adaptation lora|full` choice and one token
+or corpus-pass budget. See
+[Adapt a Model to Documents](/docs/data/corpus-adaptation/) for extraction,
+packing, and runtime details.
 
 ## SFT
 
@@ -97,7 +120,11 @@ halo-forge grpo train \
 - `--no-scale-rewards` — flip from canonical GRPO (advantage / std) to RLOO-flavored (mean baseline only).
 - `--reference-free` — skip the reference model; saves memory. MLX supports both reference-free and reference-model GRPO.
 
-**Verifier integration.** `--verifier <short_name>` resolves through the [V1 plugin registry](VERIFIERS.md). Pass `execution`, `pytest`, `humaneval`, `llm_judge`, `json_schema`, or any `@register_verifier`-decorated class. The trainer instantiates and bridges to TRL's `reward_funcs` (PyTorch) or the manual scoring loop (MLX).
+**Verifier integration.** `--verifier <short_name>` resolves through the
+[verifier registry](/docs/verifiers/). Pass `execution`, `pytest`, `humaneval`,
+`llm_judge`, `json_schema`, or any `@register_verifier`-decorated class. The
+trainer instantiates and bridges to TRL's `reward_funcs` (PyTorch) or the manual
+scoring loop (MLX).
 
 **Rollout engine** (`--rollout-engine`):
 - `auto` (default) — torch fallback (HF generate)
@@ -159,4 +186,6 @@ Every trainer writes a `training_summary.json` to `--output` with the same schem
 }
 ```
 
-The same shape powers the run database (`/runs/search`), the run-detail UI, and the deterministic replay manifest. See [`docs/REPLAY.md`](REPLAY.md) for the replay contract.
+The same shape powers the run database (`/runs/search`), the run-detail UI, and
+the deterministic replay manifest. See [Replay](/docs/replay/) for the replay
+contract.

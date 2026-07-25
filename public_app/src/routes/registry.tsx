@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -24,6 +24,9 @@ import { clearPinned, pinRun, usePinnedRuns } from "@/lib/pinned-runs";
 import { cn, relativeTime } from "@/lib/utils";
 
 export const Route = createFileRoute("/registry")({
+  beforeLoad: () => {
+    throw redirect({ to: "/runs", search: { view: "collections" }, replace: true });
+  },
   component: RegistryRoute,
 });
 

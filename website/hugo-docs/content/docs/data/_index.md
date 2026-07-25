@@ -13,6 +13,17 @@ Three operations close the gap between "I have prompts" and "I have a training-r
 
 They compose: synthesize → dedup → score → filter is the full pre-finetune sequence (Distilabel + NeMo Curator + DEITA recipes folded into three commands).
 
+For managed local files, media, and document corpora, start with
+[Use Your Own Data](/docs/data/own-data/). Raw text, Markdown, visible HTML,
+text-layer PDF, and DOCX can use
+[Adapt a Model to Documents](/docs/data/corpus-adaptation/) and the distinct
+CPT trainer.
+
+When inspection reports malformed fields, chat roles, labels, preference pairs,
+duplicates, or media paths, choose [Fix Training Data](/docs/data/repair/).
+Repairs are reviewed immutable overlays; they never change the source or binary
+media.
+
 ## Synthesize
 
 ```bash
@@ -132,7 +143,8 @@ def my_judge(text: str) -> float:
 result = score_records(records, scorer=lambda r: score_with_judge(r, judge=my_judge))
 ```
 
-The judge integrates naturally with the [V2 LLM-as-judge verifier](VERIFIERS.md#llm-as-judge): wrap the verifier's `verify()` reward field as the judge callable.
+The judge integrates naturally with the [LLM-as-judge verifier](/docs/verifiers/llm-judge/):
+wrap the verifier's `verify()` reward field as the judge callable.
 
 **Rejection diagnosis.** The result's `reasons` dict buckets rejections by which component scored lowest. Useful for "why is half my dataset getting filtered" — usually one axis (length, alpha_ratio, repetition) is the dominant cause.
 

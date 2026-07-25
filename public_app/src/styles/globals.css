@@ -271,3 +271,60 @@
 @utility pulse-accent {
   animation: halo-pulse 1.5s var(--ease-quick) infinite;
 }
+
+/* Persistent workspace overlays: command palette, Activity Center, and
+   mobile navigation share one quiet backdrop and distinct directional
+   entrances so hierarchy is obvious without ornamental motion. */
+@utility workspace-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: color-mix(in oklch, var(--color-bg) 64%, transparent);
+  backdrop-filter: blur(3px);
+  animation: halo-overlay-in 120ms var(--ease-quick) both;
+}
+
+@keyframes halo-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes halo-palette-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes halo-panel-in {
+  from { opacity: 0.75; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes halo-drawer-in {
+  from { opacity: 0.8; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@utility command-palette-enter {
+  animation: halo-palette-in 170ms var(--ease-out-expo) both;
+}
+
+@utility activity-panel-enter {
+  animation: halo-panel-in 190ms var(--ease-out-expo) both;
+}
+
+@utility mobile-drawer-enter {
+  animation: halo-drawer-in 190ms var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-overlay,
+  .command-palette-enter,
+  .activity-panel-enter,
+  .mobile-drawer-enter,
+  .pulse-accent {
+    animation: none !important;
+  }
+}

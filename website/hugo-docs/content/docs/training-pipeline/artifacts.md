@@ -11,9 +11,10 @@ Common files:
 | File | Purpose |
 |---|---|
 | `launch_context.json` | reproducible launch command and UI args |
-| `training_summary.json` | normalized run summary for Runs and Results |
+| `training_summary.json` | normalized run summary for Runs and Models |
 | `final_model/` | final artifact when training succeeds |
 | `latest_checkpoint.json` | resume metadata for cycle-based methods |
 | `*_training.log` | captured stdout/stderr log |
 
-The browser cannot open arbitrary local files directly in every environment, so Results always shows the local workstation path.
+The browser cannot open arbitrary local files directly in every environment,
+so **Runs** and **Models** show the local workstation path.

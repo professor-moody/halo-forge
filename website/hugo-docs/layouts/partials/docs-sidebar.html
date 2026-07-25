@@ -8,11 +8,25 @@
             <div class="nav-section-title">Getting Started</div>
             <ul>
                 <li><a href="/docs/"{{ if eq .RelPermalink "/docs/" }} class="active"{{ end }}>Overview</a></li>
+                <li><a href="/download/"{{ if eq .RelPermalink "/download/" }} class="active"{{ end }}>Download</a></li>
+                <li><a href="/docs/getting-started/install-desktop/"{{ if eq .RelPermalink "/docs/getting-started/install-desktop/" }} class="active"{{ end }}>Install Desktop</a></li>
                 <li><a href="/docs/getting-started/quickstart/"{{ if eq .RelPermalink "/docs/getting-started/quickstart/" }} class="active"{{ end }}>Quick Start</a></li>
                 <li><a href="/docs/getting-started/choose-a-model/"{{ if eq .RelPermalink "/docs/getting-started/choose-a-model/" }} class="active"{{ end }}>Choose a Model</a></li>
                 <li><a href="/docs/getting-started/scenarios/"{{ if eq .RelPermalink "/docs/getting-started/scenarios/" }} class="active"{{ end }}>Usage Scenarios</a></li>
                 <li><a href="/docs/getting-started/toolbox/"{{ if eq .RelPermalink "/docs/getting-started/toolbox/" }} class="active"{{ end }}>Toolbox Setup</a></li>
                 <li><a href="/docs/getting-started/hardware/"{{ if eq .RelPermalink "/docs/getting-started/hardware/" }} class="active"{{ end }}>Hardware Notes</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Lab Workflows</div>
+            <ul>
+                <li><a href="/docs/data/"{{ if eq .RelPermalink "/docs/data/" }} class="active"{{ end }}>Dataset Lab</a></li>
+                <li><a href="/docs/data/repair/"{{ if eq .RelPermalink "/docs/data/repair/" }} class="active"{{ end }}>Fix Training Data</a></li>
+                <li><a href="/docs/review-studio/"{{ if eq .RelPermalink "/docs/review-studio/" }} class="active"{{ end }}>Review Studio</a></li>
+                <li><a href="/docs/sweep/"{{ if eq .RelPermalink "/docs/sweep/" }} class="active"{{ end }}>Experiments</a></li>
+                <li><a href="/docs/eval/"{{ if eq .RelPermalink "/docs/eval/" }} class="active"{{ end }}>Evaluation</a></li>
+                <li><a href="/docs/artifact-studio/"{{ if eq .RelPermalink "/docs/artifact-studio/" }} class="active"{{ end }}>Artifact Studio</a></li>
+                <li><a href="/docs/serving/"{{ if eq .RelPermalink "/docs/serving/" }} class="active"{{ end }}>Serving</a></li>
             </ul>
         </div>
         <div class="nav-section">

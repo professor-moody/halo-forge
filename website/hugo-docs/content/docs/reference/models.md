@@ -7,7 +7,8 @@ weight: 6
 Halo Forge has two different model concepts:
 
 - **Model catalog**: curated upstream/base models you can train, evaluate, serve, or use as starting points.
-- **Run bundles**: saved groups of your trained runs in the dashboard, used for comparison and cohort eval.
+- **Run collections**: saved groups of trained runs under **Runs**, used for
+  comparison and cohort evaluation.
 
 Use the catalog from CLI, API, or dashboard:
 

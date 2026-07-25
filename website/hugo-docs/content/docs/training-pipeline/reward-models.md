@@ -18,4 +18,6 @@ halo-forge rm train --dataset ultrafeedback --model Qwen/Qwen2.5-3B-Instruct --o
 
 ## Outputs
 
-Reward-model runs write `training_summary.json`, logs, and a final model artifact when training completes. Results shows the local workstation path even when the browser cannot open the file directly.
+Reward-model runs write `training_summary.json`, logs, and a final model artifact
+when training completes. **Runs** and **Models** show the local workstation path
+even when the browser cannot open the file directly.

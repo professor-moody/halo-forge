@@ -2,10 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type BackendInfo,
+  type ActivitySnapshot,
+  type ArtifactOperation,
+  type ArtifactQualification,
   type DashboardSummary,
+  type DatasetImportSession,
+  type DatasetSourceInspection,
   type HuggingFaceModelAccess,
   type HuggingFaceStatus,
   type ModelCatalogResponse,
+  type ModelArtifactOccurrence,
+  type PaginatedResponse,
   type RunListItem,
   type ServeLogs,
   type ServeStartPayload,
@@ -13,8 +20,10 @@ import {
   type SuggestedModel,
   type TelemetrySample,
   type TrainingDataset,
+  type TrainingScenarioDescriptor,
   type TrainingPreflight,
   type TrainingVerifier,
+  type StorageInventory,
   type VersionInfo,
   type WorkspaceInfo,
 } from "@/lib/api";
@@ -46,6 +55,17 @@ export const queryKeys = {
   serveLogs: (tail: number) => ["serve", "logs", tail] as const,
   huggingFace: ["huggingface"] as const,
   huggingFaceModel: (modelId: string) => ["huggingface", "model", modelId] as const,
+  activity: ["activity"] as const,
+  artifacts: (params?: Record<string, unknown>) => ["artifacts", params] as const,
+  artifactOperations: ["artifact-operations"] as const,
+  qualifications: (artifactId?: string) => ["qualifications", artifactId] as const,
+  storage: ["storage"] as const,
+  interfaceCapabilities: ["interface-capabilities"] as const,
+  trainingScenarios: (params?: { includeUnavailable?: boolean; modality?: string }) =>
+    ["training-scenarios", params] as const,
+  trainingScenario: (scenarioId: string) => ["training-scenarios", scenarioId] as const,
+  datasetImport: (importId: string) => ["dataset-imports", importId] as const,
+  datasetInspection: (inspectionId: string) => ["dataset-inspections", inspectionId] as const,
 };
 
 export function useVersionInfo() {
@@ -185,11 +205,115 @@ export function useTrainingModels(params: { mode?: string; modality?: string } =
   });
 }
 
+export function useInterfaceCapabilities() {
+  return useQuery({
+    queryKey: queryKeys.interfaceCapabilities,
+    queryFn: api.interfaceCapabilities,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useTrainingScenarios(params: { includeUnavailable?: boolean; modality?: string } = {}) {
+  return useQuery<{ items: TrainingScenarioDescriptor[]; total?: number }>({
+    queryKey: queryKeys.trainingScenarios(params),
+    queryFn: () => api.trainingScenarios(params),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useTrainingScenario(scenarioId: string) {
+  return useQuery<TrainingScenarioDescriptor>({
+    queryKey: queryKeys.trainingScenario(scenarioId),
+    queryFn: () => api.trainingScenario(scenarioId),
+    enabled: Boolean(scenarioId),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useDatasetImport(importId: string) {
+  return useQuery<DatasetImportSession>({
+    queryKey: queryKeys.datasetImport(importId),
+    queryFn: () => api.datasetImport(importId),
+    enabled: Boolean(importId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && ["ready", "completed", "failed", "cancelled"].includes(status) ? false : 1_000;
+    },
+  });
+}
+
+export function useDatasetInspection(inspectionId: string) {
+  return useQuery<DatasetSourceInspection>({
+    queryKey: queryKeys.datasetInspection(inspectionId),
+    queryFn: () => api.datasetSourceInspection(inspectionId),
+    enabled: Boolean(inspectionId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && ["completed", "failed", "cancelled"].includes(status) ? false : 1_000;
+    },
+  });
+}
+
 export function useModelCatalog(params: Record<string, string | undefined> = {}) {
   return useQuery<ModelCatalogResponse>({
     queryKey: queryKeys.modelCatalog(params),
     queryFn: () => api.modelCatalog(params),
     ...TRAINING_STATIC_OPTS,
+  });
+}
+
+export function useActivity(limit = 100) {
+  return useQuery<ActivitySnapshot>({
+    queryKey: queryKeys.activity,
+    queryFn: () => api.activity(limit),
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (previous) => previous,
+    retry: false,
+  });
+}
+
+export function useModelArtifacts(params: {
+  runId?: string;
+  groupId?: string;
+  kind?: string;
+  query?: string;
+  limit?: number;
+  offset?: number;
+} = {}) {
+  return useQuery<PaginatedResponse<ModelArtifactOccurrence>>({
+    queryKey: queryKeys.artifacts(params),
+    queryFn: () => api.listModelArtifacts(params),
+    placeholderData: (previous) => previous,
+    retry: false,
+  });
+}
+
+export function useArtifactOperations() {
+  return useQuery<PaginatedResponse<ArtifactOperation>>({
+    queryKey: queryKeys.artifactOperations,
+    queryFn: () => api.listArtifactOperations({ limit: 100 }),
+    refetchInterval: 5_000,
+    retry: false,
+  });
+}
+
+export function useArtifactQualifications(artifactId?: string) {
+  return useQuery<PaginatedResponse<ArtifactQualification>>({
+    queryKey: queryKeys.qualifications(artifactId),
+    queryFn: () => api.listQualifications({ artifactId, limit: 100 }),
+    enabled: Boolean(artifactId),
+    refetchInterval: 5_000,
+    retry: false,
+  });
+}
+
+export function useStorageInventory() {
+  return useQuery<StorageInventory>({
+    queryKey: queryKeys.storage,
+    queryFn: api.storageInventory,
+    refetchInterval: 30_000,
+    retry: false,
   });
 }
 

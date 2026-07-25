@@ -17,15 +17,60 @@ halo-forge
 ├── config
 │   └── validate
 ├── data
+│   ├── add / list / show / build / versions / preview / export / materialize
+│   ├── render / compare / mine / jobs / extract / corpus-profile
+│   ├── repair
+│   │   └── inspect / preview / apply / rebase
+│   ├── scenarios
+│   │   └── list / show / template / advise
 │   ├── prepare
 │   ├── generate
 │   ├── validate
 │   ├── synthesize       # generate completions via teacher + verifier filter
 │   ├── dedup            # exact + fuzzy MinHash dedup
 │   └── score            # heuristic quality scoring + threshold / top-K filter
+├── review
+│   ├── capabilities
+│   ├── schema
+│   │   └── list / show / validate / create / revise
+│   ├── acquire
+│   │   └── list / create / show / cancel / retry
+│   ├── queue
+│   │   └── list / show / create / clone / pause / resume / archive / start-second-pass
+│   ├── items / item / submit / correct / exclude / flag / adjudicate
+│   ├── suggestions
+│   │   └── generate / show
+│   ├── stats
+│   └── label-set
+│       └── list / show / publish / verify / preview / build-dataset
+├── verifier
+│   ├── catalog
+│   ├── profile
+│   │   └── list / show / validate / create / revise
+│   ├── protocol
+│   │   └── list / show / create / revise
+│   ├── qualification-profile
+│   │   └── list / show / create / revise
+│   ├── calibration
+│   │   └── list / create / show / samples / cancel / retry / compare
+│   └── qualify / promote / usage
+├── reward
+│   ├── capabilities
+│   ├── system
+│   │   └── list / show / validate / create / revise
+│   ├── protocol
+│   │   └── list / show / create / revise
+│   ├── integrity-profile
+│   │   └── list / show / create / revise
+│   ├── trace
+│   │   └── list / show / verify
+│   └── audit
+│       └── list / create / show / samples / metrics / compare / verify / cancel / retry / review
 ├── sft
 │   ├── train            # supervised finetuning (LoRA / DoRA / rsLoRA / PiSSA / QLoRA)
 │   └── datasets
+├── cpt
+│   └── train            # causal continued pretraining on packed corpus blocks
 ├── dpo
 │   ├── train            # preference optimization
 │   └── datasets
@@ -38,7 +83,27 @@ halo-forge
 ├── benchmark
 │   ├── run
 │   └── full
-├── eval                 # lm-evaluation-harness (mmlu / gsm8k / humaneval / ifeval / ...)
+├── eval                 # direct eval plus suite / run / jobs / compare / history / drift
+├── checkpoint-policy
+│   └── list / show / create / validate
+├── sweep                # create/list/show/checkpoints/analyze/decide/report/operate
+├── jobs
+│   └── worker           # headless durable workstation worker
+├── setup
+│   └── check / fix      # workstation readiness and safe local remediation
+├── support
+│   └── bundle
+│       └── preview / create / verify
+├── release
+│   └── qualify          # checksummed platform-package evidence
+├── artifact
+│   ├── list / show / import / lineage / verify
+│   ├── merge / convert / qualify / compare
+│   ├── pin / unpin / tag / promote
+│   └── serve / export / cleanup
+├── storage
+│   ├── status
+│   └── cleanup
 ├── probe                # mid-training small-benchmark + baseline diff
 ├── dashboard            # user-facing dashboard app (alias: app)
 ├── serve-public         # dashboard API only, for frontend development
@@ -106,12 +171,242 @@ No need for manual `tee` or `PYTHONUNBUFFERED`. Use `--quiet` to suppress termin
 The web UI now writes durable launch metadata for each training and benchmark run:
 
 - File: `<output_dir>/launch_context.json`
-- Purpose: enables Monitor/Results `Rerun`, `Clone to Form`, and training `Resume Latest`
+- Purpose: enables Run detail actions such as `Rerun`, `Clone in Train`, and
+  training `Resume Latest`
 - Resume scope: `raft`, `vlm`, `audio`, `reasoning`, `agentic` (checkpoint-based); benchmark supports rerun/clone only
 
 ---
 
 ## Core Commands (Production Ready)
+
+### Guided document corpus and continued pretraining
+
+```bash
+halo-forge data scenarios advise \
+  --goal "Adapt a model to our manuals" --source-layout pdf
+halo-forge data extract --path ./manuals
+halo-forge data corpus-profile <version-id>
+halo-forge data render <version-id> --trainer cpt \
+  --model Qwen/Qwen2.5-1.5B
+halo-forge cpt train --dataset-version <version-id> \
+  --model Qwen/Qwen2.5-1.5B \
+  --adaptation lora \
+  --budget-mode passes --corpus-passes 1
+```
+
+Document extraction supports text, Markdown, visible HTML, text-layer PDF,
+DOCX, and existing structured text columns. Encrypted/image-only PDFs are
+quarantined; OCR is not implied. CPT requires an explicit LoRA/full choice and
+never receives test or canary records. See
+[Adapt a Model to Documents](/docs/data/corpus-adaptation/).
+
+### Artifact Studio and workstation storage
+
+Artifact Studio manages immutable occurrences and content-addressed model
+blobs. Transformations and qualification are queued on the durable workstation
+worker and return both an operation ID and a work-item ID.
+
+```bash
+halo-forge artifact list
+halo-forge artifact show <occurrence-id-or-alias>
+halo-forge artifact import ./run/final_model --kind final --format hf --managed
+halo-forge artifact lineage <occurrence-id>
+halo-forge artifact verify <occurrence-id>
+
+halo-forge artifact merge <adapter-a> <adapter-b> \
+  --base-model Qwen/Qwen2.5-7B --method dare_ties
+halo-forge artifact convert <occurrence-id> --format gguf --quantization q4
+halo-forge artifact qualify <occurrence-id> --profile <profile-revision-id>
+halo-forge artifact compare <parent-id> <candidate-id>
+halo-forge artifact promote <occurrence-id> candidate
+
+halo-forge artifact serve <occurrence-id>
+halo-forge artifact export <occurrence-id> ./portable-model
+halo-forge storage status
+halo-forge storage cleanup
+```
+
+q4/q8 are post-training quantization, not QAT. Cleanup previews first, requires
+a review note to apply, and keeps removed content in trash for seven days.
+
+See [Artifact Studio](/docs/artifact-studio/) for the dashboard workflow,
+qualification gates, serving, and retention protections.
+
+### Adaptive training and research evidence
+
+Immutable checkpoint policies and matched-seed evidence use the same catalog
+and scheduler as the dashboard:
+
+```bash
+halo-forge checkpoint-policy validate --spec ./policy.yaml
+halo-forge checkpoint-policy create --spec ./policy.yaml
+halo-forge checkpoint-policy list --trainer sft
+halo-forge checkpoint-policy show <policy-or-revision-id>
+
+halo-forge sweep create --spec ./repeat.yaml \
+  --checkpoint-policy <revision-id> --max-steps 1000
+halo-forge sweep checkpoints <group-id>
+halo-forge sweep analyze <group-id>
+halo-forge sweep decide <group-id> --select <trial-id> \
+  --rationale "Matched-seed evidence supports this branch"
+halo-forge sweep report <group-id> --decision <decision-id>
+halo-forge sweep resume <group-id> --reason "Reviewed retry"
+
+halo-forge eval history --suite-revision <revision-id>
+halo-forge eval drift --base <evaluation-id> --candidate <evaluation-id>
+```
+
+Hugging Face adaptive policies use step budgets; RAFT, VLM, audio,
+reasoning, and agentic policies use cycle budgets. Unsupported resume
+contracts remain final-only. Cohort analysis defaults to matched seeds, a 95%
+percentile-bootstrap interval, 10,000 resamples, and bootstrap seed 42.
+
+See [Repeats and hyperparameter sweeps](/docs/sweep/) and the local
+`docs/ADAPTIVE_EVIDENCE.md` guide for policy schemas, evidence classifications,
+and reviewed-decision behavior.
+
+### Reward Integrity and Training Signal Studio
+
+The `reward` family pins an optimization verifier and independent sentinel,
+captures the exact retained outputs used during verifier-guided training, and
+audits those same outputs without regeneration.
+
+```bash
+halo-forge reward capabilities
+
+halo-forge reward system validate --spec ./reward-system.json
+halo-forge reward system create --name "Code reward + sentinel" \
+  --spec ./reward-system.json
+halo-forge reward system list
+halo-forge reward system show <system-or-revision-id>
+
+halo-forge reward protocol list
+halo-forge reward protocol create --name balanced-custom --spec ./protocol.json
+halo-forge reward integrity-profile list
+halo-forge reward integrity-profile create \
+  --name "Human aligned" --template human_aligned_integrity
+```
+
+Compatible verifier-guided training commands accept one managed audit binding:
+
+| Flag | Repeatable | Description |
+|---|---:|---|
+| `--reward-system-revision` | no | Immutable optimizer, sentinel, mapping, and auditor identity |
+| `--reward-audit-protocol-revision` | no | Immutable snapshot-retention protocol |
+| `--reward-integrity-profile-revision` | no | Immutable pass/warn/fail policy |
+| `--reward-development-suite-revision` | no | Optional pinned development/unspecified suite; evaluates each published checkpoint as durable completion evidence before its reward audit |
+| `--reward-audit-boundary` | yes | Selected step/cycle value or `final`, as supported by the capability |
+| `--wait` | no | Wait for managed training/audit work where the command supports it |
+
+The three revision flags must be supplied together. They conflict with a
+separate verifier-profile revision because the reward system already pins the
+training verifier. Raw `--verifier` usage remains compatible but is unmonitored.
+
+```bash
+halo-forge grpo train \
+  --max-steps 400 \
+  --reward-system-revision <system-revision-id> \
+  --reward-audit-protocol-revision <protocol-revision-id> \
+  --reward-integrity-profile-revision <profile-revision-id> \
+  --reward-development-suite-revision <optional-development-suite-revision-id> \
+  --reward-audit-boundary 100 --reward-audit-boundary 400
+
+halo-forge reward trace list --run-id <run-id>
+halo-forge reward trace show <trace-id>
+halo-forge reward trace verify <trace-id>
+
+halo-forge reward audit list --run-id <run-id>
+halo-forge reward audit show <audit-id>
+halo-forge reward audit samples <audit-id> --population uniform_core
+halo-forge reward audit metrics <audit-id>
+halo-forge reward audit compare <base-id> <candidate-id>
+halo-forge reward audit verify <audit-id>
+halo-forge reward audit review <audit-id> \
+  --action continue --reason "Reviewed paired sentinel evidence"
+```
+
+Standalone audit creation accepts `--trace`, `--reward-system-revision`,
+`--protocol-revision`, and `--integrity-profile-revision`; add `--wait` for
+foreground execution. Review actions are `continue`, `stop`, `fork`, and
+`create_review_proposal`, and every action requires `--reason`.
+
+Built-in capture is final-only for Hugging Face RAFT, cycle/final and resumable
+for MLX RAFT, step/final and resumable for Hugging Face GRPO when `max_steps` is
+configured, and final-only for MLX GRPO. Reasoning, agentic/tool, VLM, and audio
+remain cycle/final and resumable. A pinned development-suite revision is
+evidence identity only in this release: no independent suite evaluation runs at
+the boundary and no suite result is combined with the checkpoint gate.
+`balanced_256` is the default retention protocol and
+`human_aligned_integrity` is the normal guided policy. No result automatically
+tunes a verifier, creates data, launches a fork, or promotes an artifact.
+
+Replay manifest v4 checks the complete reward identity. Intentional drift
+requires both `--allow-reward-drift` and `--reward-drift-reason`; the reason and
+differences are appended beside the manifest.
+
+See [Reward Integrity](/docs/reward-integrity/) for capture fidelity,
+same-output guarantees, evidence thresholds, and pause behavior.
+
+### Human Feedback and Active Data Studio
+
+The `review` family creates deterministic acquisition proposals, records human
+review as append-only events, publishes immutable label sets, and hands reviewed
+records to Dataset Lab. It never creates a queue, publishes labels, builds a
+dataset, or starts training without a separate operator action.
+
+```bash
+# Discover capabilities and manage immutable annotation definitions.
+halo-forge review capabilities
+halo-forge review schema list
+halo-forge review schema create \
+  --name "SFT correction" --modality text --task-type text_correction \
+  --definition ./annotation-schema.yaml
+halo-forge review schema revise <schema-id> \
+  --definition ./annotation-schema-v2.yaml
+
+# Create and inspect a deterministic proposal.
+halo-forge review acquire create \
+  --source-kind evaluation_comparison \
+  --base-evaluation <base-evaluation-id> \
+  --candidate-evaluation <candidate-evaluation-id> \
+  --strategy regression --quota 100 --seed 42
+halo-forge review acquire show <batch-id> --candidates
+
+# Explicitly create a queue and record review events.
+halo-forge review queue create \
+  --batch <batch-id> --schema <schema-revision-id>
+halo-forge review items <queue-id>
+halo-forge review item <item-id>
+halo-forge review submit <item-id> --label '{"response": "corrected"}'
+halo-forge review correct <item-id> \
+  --label '{"response": "revised"}' --reason "Fixed an omission" \
+  --supersedes-event <event-id>
+halo-forge review stats <queue-id>
+
+# Suggestions are optional, on demand, and do not become human labels.
+halo-forge review suggestions generate <item-id> \
+  --provider ollama --model qwen2.5:7b
+
+# Explicitly publish, verify, preview, and build immutable outputs.
+halo-forge review label-set publish --queue <queue-id>
+halo-forge review label-set verify <revision-id>
+halo-forge review label-set preview <revision-id> --dataset <dataset-id>
+halo-forge review label-set build-dataset <revision-id> \
+  --dataset <dataset-id> --target-split train
+```
+
+Use `review acquire create --source-kind ...` and repeatable `--strategy` flags
+for common proposals. Use `--spec` for multiple ordered sources or acquisition
+strata. Review commands support `--database`, `--root`, and `--json`; paginated
+commands also accept `--limit` and `--offset`.
+
+Operational, holdout, test, and canary sources are ineligible for acquisition.
+Low-margin selection requires compatible scores, and diversity requires a
+pinned available embedding revision. Development exposure is recorded and
+propagated into the label set and descendant dataset version.
+
+See [Review Studio](/docs/review-studio/) for dashboard routes, two-pass review,
+protected evidence, output modes, and the full reviewed workflow.
 
 ### halo-forge config validate
 

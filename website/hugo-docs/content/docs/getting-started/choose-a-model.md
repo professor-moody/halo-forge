@@ -12,7 +12,9 @@ halo-forge models list --mode raft --backend mlx
 halo-forge models show Qwen/Qwen2.5-Coder-3B
 ```
 
-In the dashboard, open **Models**. By default it filters to models that fit the detected workstation backend. The older **Run Bundles** page is different: it saves groups of your trained runs for comparison.
+In the dashboard, open **Models**. By default it filters to models that fit the
+detected workstation backend. Saved run cohorts live under **Runs →
+Collections**; they are not model catalog entries.
 
 The dashboard catalog is designed as a decision surface, not just a list. Use the intent filters at the top when you already know the job:
 
@@ -22,11 +24,12 @@ The dashboard catalog is designed as a decision surface, not just a list. Use th
 - **VLM** and **Audio**: modality-specific starting points.
 - **Liquid AI**: experimental LFM entries with caveats surfaced before training.
 
-Safe SFT entries also expose **Use in Start**, which opens the goal-based first-run flow. Other rows use **Use in Advanced** to prefill the advanced training configurator.
+Safe SFT entries expose **Use in Guided Train**. Other rows use **Use in
+Advanced Train** to prefill the direct configurator.
 
-The Start goals map to conservative datasets:
+Guided Train goals map to conservative datasets:
 
-| Start goal | Dataset | Best use |
+| Guided goal | Dataset | Best use |
 |---|---|---|
 | Code | `codealpaca` | Prove code SFT, model download, and output paths |
 | Reasoning | `gsm8k_sft` | Check small math/reasoning data formatting |
@@ -37,13 +40,13 @@ The Start goals map to conservative datasets:
 
 | Goal | Start with | Why |
 |---|---|---|
-| Code training | `Qwen/Qwen2.5-Coder-0.5B` for Start, `Qwen/Qwen2.5-Coder-3B` for advanced | Start small, then scale once the path is proven |
+| Code training | `Qwen/Qwen2.5-Coder-0.5B` for Guided Train, `Qwen/Qwen2.5-Coder-3B` for advanced | Begin small, then scale once the path is proven |
 | Fast code smoke | `Qwen/Qwen2.5-Coder-0.5B` | Small enough for quick validation |
 | Preference tuning | `Qwen/Qwen2.5-3B-Instruct` | Good DPO/RM default |
 | Reasoning | `Qwen/Qwen2.5-1.5B-Instruct` or `Qwen/Qwen2.5-Math-1.5B` | Small reasoning-friendly baselines |
 | VLM | `Qwen/Qwen2-VL-2B-Instruct` | Safest current dashboard VLM adapter path |
 | Audio | `openai/whisper-small` | Current Halo Forge audio path is Whisper-oriented |
-| Apple MLX | `mlx-community/Qwen2.5-0.5B-Instruct-bf16` for Start, `mlx-community/Qwen2.5-3B-Instruct-bf16` when memory allows | MLX-format models avoid HF conversion friction |
+| Apple MLX | `mlx-community/Qwen2.5-0.5B-Instruct-bf16` for Guided Train, `mlx-community/Qwen2.5-3B-Instruct-bf16` when memory allows | MLX-format models avoid HF conversion friction |
 | Liquid AI experiment | `LiquidAI/LFM2.5-350M` | Tiny structured-output/tool-use candidate |
 
 ## Memory Tiers

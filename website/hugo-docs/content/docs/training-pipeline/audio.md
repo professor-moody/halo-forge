@@ -4,11 +4,16 @@ description: "Audio and speech training paths"
 weight: 18
 ---
 
-Audio training covers speech-to-text, classification, and related audio-language tasks.
+The verified guided audio path currently covers Whisper-style speech-to-text
+(ASR) adaptation. Audio classification and TTS may have loaders or verifier
+components in the codebase, but they do not yet have verified guided
+data-to-weight-update contracts and are shown as unavailable.
 
 ## Dashboard
 
-Open **Train**, choose **Audio**, then choose the audio method. Pick a task such as ASR before launching. Preflight reports missing dependencies or unsupported model families.
+Open **Train**, choose **Audio**, then choose **Speech recognition (ASR)**.
+Preflight reports missing decoder dependencies or unsupported model families;
+classification and TTS cannot be selected in Guided mode.
 
 ## CLI
 

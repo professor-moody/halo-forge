@@ -91,19 +91,28 @@ Open the dashboard:
 halo-forge dashboard
 ```
 
-Then open `http://127.0.0.1:8000`, use **Start** for the guided first run, open **Models** for the curated catalog, and use **Bundles** to save groups of trained runs for comparison.
+Then open `http://127.0.0.1:8000`, use **Train → Guided** for the
+first run, open **Models** for the curated catalog, and use **Runs →
+Collections** to save groups of trained runs for comparison.
 
 ## Dashboard First Run
 
 The dashboard is the easiest way to avoid a bad first launch:
 
-1. Open **Start**.
+1. Open **Train → Guided**.
 2. Choose a goal: **Code**, **Reasoning**, **Tool use**, or **Apple Silicon**.
-3. Review the generated SFT launch. Start keeps the model, dataset, sample count, and output path conservative.
+3. Review the generated SFT launch. Guided mode keeps the model, dataset,
+   sample count, and output path conservative.
 4. Watch **Preflight** before launching. It distinguishes missing inputs, backend detection, and server-side launch checks.
 5. Press **Launch** when the checks pass, then open the run monitor from the success state.
 
-Use **Train** after the first clean SFT run when you want RAFT, DPO, ORPO, reward models, GRPO, VLM, audio, reasoning, agentic training, or direct knob control.
+Use **Train → Advanced** after the first clean SFT run when you want direct
+control over RAFT, DPO, ORPO, reward models, GRPO, VLM, audio, reasoning, or
+agentic training.
+
+To use local records instead of a built-in dataset, follow [Use Your Own
+Data](/docs/data/own-data/) before the launch. Desktop, browser, and CLI paths
+publish the same immutable Dataset Lab version.
 
 For model exploration, open **Models** first and use the workstation filter plus intent filters: **First run**, **Code RAFT**, **Apple Silicon**, **VLM**, **Audio**, and **Liquid AI**.
 
@@ -133,5 +142,7 @@ For Apple Silicon, use `--accelerator mlx` for MLX-native inference paths and ML
 - [Choose a Model](/docs/getting-started/choose-a-model/) - model family and backend guidance.
 - [Choose a Training Method](/docs/training-pipeline/methods/) - decide between SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic runs.
 - [Usage Scenarios](/docs/getting-started/scenarios/) - complete recipes by goal.
+- [Use Your Own Data](/docs/data/own-data/) - managed file/folder import and immutable training handoff.
+- [Workstation Surfaces](/docs/reference/workstation-surfaces/) - desktop, browser, remote, and CLI parity.
 - [Hardware Notes](/docs/getting-started/hardware/) - backend-specific setup.
 - [Command Index](/docs/reference/command-index/) - full CLI reference.
