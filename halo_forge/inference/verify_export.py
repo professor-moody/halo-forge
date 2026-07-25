@@ -264,9 +264,16 @@ def verify_export(
     target_format = target_format.strip().lower()
     if target_format == "gguf":
         raise NotImplementedError(
-            "GGUF round-trip verification needs a GGUF-loading adapter; that's "
-            "roadmap. For now use llama.cpp or Ollama to load the exported file "
-            "and pass its `(prompt) -> str` callable to compare_generation."
+            "GGUF round-trip verification is not implemented: halo-forge's serving "
+            "adapters cannot load a .gguf file, so there is no exported-side "
+            "generator to compare against. Nothing you install fixes this today. "
+            "To verify a GGUF export now:\n"
+            "  1. pip install llama-cpp-python   (or run `ollama create` on the file)\n"
+            "  2. wrap the loaded model in a `(prompt) -> str` callable\n"
+            "  3. call halo_forge.inference.verify_export.compare_generation("
+            "source_generate=..., exported_generate=...)\n"
+            "For an in-CLI check, convert with --format mlx or --format hf and "
+            "verify that artifact instead."
         )
 
     src_adapter = build_serving_adapter(source_model)
