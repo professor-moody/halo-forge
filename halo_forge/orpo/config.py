@@ -30,6 +30,7 @@ class ORPOConfig:
 
     # Data
     train_file: Optional[str] = None
+    validation_file: Optional[str] = None
     dataset: Optional[str] = None
     dataset_split: str = "train"
     max_samples: Optional[int] = None
@@ -65,6 +66,8 @@ class ORPOConfig:
     # Training
     output_dir: str = "models/orpo"
     num_epochs: int = 1
+    # Absolute optimizer-step ceiling for a resumable sweep segment.
+    max_steps: Optional[int] = None
     # ORPO trains on chosen+rejected concatenated per row, so peak memory
     # is similar to DPO. Default to small batch + accumulation.
     batch_size: int = 1
@@ -90,6 +93,8 @@ class ORPOConfig:
     early_stopping_threshold: float = 0.0
 
     def __post_init__(self):
+        if self.max_steps is not None and int(self.max_steps) <= 0:
+            raise ValueError("max_steps must be positive when provided")
         if self.target_modules is None:
             self.target_modules = [
                 "q_proj", "k_proj", "v_proj", "o_proj",

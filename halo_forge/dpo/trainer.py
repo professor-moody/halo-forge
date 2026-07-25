@@ -163,6 +163,7 @@ class DPOTrainer:
 
         train_ds, val_ds = load_preference_dataset(
             train_file=train_file,
+            validation_file=cfg.validation_file,
             dataset=dataset,
             split=cfg.dataset_split,
             max_samples=cfg.max_samples,
@@ -180,6 +181,7 @@ class DPOTrainer:
             output_dir=cfg.output_dir,
             overwrite_output_dir=True,
             num_train_epochs=cfg.num_epochs,
+            max_steps=cfg.max_steps if cfg.max_steps is not None else -1,
             per_device_train_batch_size=cfg.batch_size,
             per_device_eval_batch_size=cfg.batch_size,
             gradient_accumulation_steps=cfg.gradient_accumulation_steps,

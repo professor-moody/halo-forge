@@ -48,13 +48,34 @@ from halo_forge.utils.accelerator import (
 logger = logging.getLogger(__name__)
 
 
+def _pair_text(prompt: Optional[str], response: Optional[str]) -> str:
+    """Join a normalized prompt with a response into one scoreable sequence.
+
+    `load_preference_dataset` renders the prompt with the model's chat template
+    when one exists, so it already ends in the assistant generation prompt and
+    the response appends directly. Without a template the two are plain text
+    and need an explicit newline — concatenating them raw fuses the last prompt
+    word and the first response word into a single token run the model never
+    sees at inference.
+    """
+    prompt = prompt or ""
+    response = response or ""
+    if not prompt:
+        return response
+    if not response:
+        return prompt
+    if prompt.endswith(("\n", " ", "\t")):
+        return prompt + response
+    return prompt + "\n" + response
+
+
 def _format_pair(row, tokenizer, max_length: int):
     """TRL's RewardTrainer expects ``input_ids_chosen``, ``attention_mask_chosen``,
     ``input_ids_rejected``, ``attention_mask_rejected`` columns. We
     tokenize prompt+chosen and prompt+rejected here so the trainer can
     iterate without a custom collator."""
-    chosen_text = (row.get("prompt") or "") + (row.get("chosen") or "")
-    rejected_text = (row.get("prompt") or "") + (row.get("rejected") or "")
+    chosen_text = _pair_text(row.get("prompt"), row.get("chosen"))
+    rejected_text = _pair_text(row.get("prompt"), row.get("rejected"))
     chosen = tokenizer(
         chosen_text, truncation=True, max_length=max_length, padding=False,
     )
@@ -166,13 +187,19 @@ class RewardModelTrainer:
         train_file = train_file or cfg.train_file
         dataset = dataset or cfg.dataset
 
+        # Load the tokenizer up front so conversational preference rows are
+        # normalized with this model's chat template rather than plain text.
+        self._load_tokenizer()
+
         train_ds, val_ds = load_preference_dataset(
             train_file=train_file,
+            validation_file=cfg.validation_file,
             dataset=dataset,
             split=cfg.dataset_split,
             max_samples=cfg.max_samples,
             validation_split=cfg.validation_split,
             seed=cfg.seed,
+            tokenizer=self.tokenizer,
         )
 
         self.setup_model()
@@ -197,6 +224,7 @@ class RewardModelTrainer:
             output_dir=cfg.output_dir,
             overwrite_output_dir=True,
             num_train_epochs=cfg.num_epochs,
+            max_steps=cfg.max_steps if cfg.max_steps is not None else -1,
             per_device_train_batch_size=cfg.batch_size,
             per_device_eval_batch_size=cfg.batch_size,
             gradient_accumulation_steps=cfg.gradient_accumulation_steps,
