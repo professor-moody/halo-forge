@@ -9,6 +9,7 @@ Supports Qwen, Llama, and other transformer models.
 import os
 import sys
 import inspect
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
@@ -112,6 +113,30 @@ class SFTTrainer:
         self.run_id: str = ""
         self.dataset_yield_diagnostics: Dict[str, Any] = {}
         self.dataset_representative_examples: list[dict[str, Any]] = []
+        self._trainable_parameter_hash_before: Optional[str] = None
+
+    def _hash_trainable_parameters(self) -> str:
+        """Hash exact trainable tensors for V21 real-path evidence."""
+
+        if self.model is None:
+            raise RuntimeError("The model must be prepared before hashing parameters")
+        digest = hashlib.sha256()
+        count = 0
+        for name, parameter in sorted(self.model.named_parameters(), key=lambda item: item[0]):
+            if not bool(parameter.requires_grad):
+                continue
+            count += 1
+            encoded = name.encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+            digest.update(str(tuple(parameter.shape)).encode("ascii"))
+            digest.update(str(parameter.dtype).encode("ascii"))
+            raw = parameter.detach().contiguous().cpu().view(torch.uint8).numpy().tobytes()
+            digest.update(len(raw).to_bytes(8, "big"))
+            digest.update(raw)
+        if count == 0:
+            raise RuntimeError("The trainer has no trainable parameters to certify")
+        return digest.hexdigest()
     
     def check_environment(self):
         """Verify the active accelerator and surface what we'll run on.
@@ -162,7 +187,12 @@ class SFTTrainer:
 
         print()
     
-    def load_dataset(self, file_path: Optional[str] = None, dataset_name: Optional[str] = None) -> tuple:
+    def load_dataset(
+        self,
+        file_path: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        validation_file: Optional[str] = None,
+    ) -> tuple:
         """
         Load dataset from JSONL file or HuggingFace.
         
@@ -181,6 +211,7 @@ class SFTTrainer:
         # Determine source
         dataset_name = dataset_name or self.config.dataset
         file_path = file_path or self.config.train_file
+        validation_file = validation_file or self.config.validation_file
         
         if dataset_name:
             # Load from HuggingFace
@@ -326,18 +357,41 @@ class SFTTrainer:
         else:
             raise ValueError("Either dataset or train_file must be specified")
         
-        # Shuffle and split
+        # Shuffle the training rows deterministically.  A Dataset Lab
+        # validation binding is loaded verbatim and never re-split from train.
         dataset = dataset.shuffle(seed=self.config.seed)
-        
-        split_idx = int(len(dataset) * (1 - self.config.validation_split))
-        if len(dataset) > 0 and split_idx <= 0:
-            split_idx = 1
-        train_dataset = dataset.select(range(split_idx))
-        val_dataset = (
-            dataset.select(range(split_idx, len(dataset)))
-            if split_idx < len(dataset)
-            else dataset.select([])
-        )
+        if validation_file:
+            validation_path = Path(validation_file).expanduser()
+            if not validation_path.is_file():
+                raise FileNotFoundError(f"Validation dataset not found: {validation_path}")
+            validation_examples = []
+            with jsonlines.open(validation_path) as reader:
+                for index, obj in enumerate(reader, start=1):
+                    if not isinstance(obj, dict):
+                        raise ValueError(f"Validation row {index} must be an object")
+                    text = obj.get("text")
+                    if not isinstance(text, str):
+                        prompt = obj.get("prompt")
+                        response = obj.get("response")
+                        if isinstance(prompt, str) and isinstance(response, str):
+                            text = f"{prompt.strip()}\n{response.strip()}".strip()
+                    if not isinstance(text, str) or not text.strip():
+                        raise ValueError(f"Validation row {index} has no usable text")
+                    validation_examples.append({"text": text})
+            if not validation_examples:
+                raise ValueError("Validation dataset contains no usable rows")
+            train_dataset = dataset
+            val_dataset = Dataset.from_list(validation_examples)
+        else:
+            split_idx = int(len(dataset) * (1 - self.config.validation_split))
+            if len(dataset) > 0 and split_idx <= 0:
+                split_idx = 1
+            train_dataset = dataset.select(range(split_idx))
+            val_dataset = (
+                dataset.select(range(split_idx, len(dataset)))
+                if split_idx < len(dataset)
+                else dataset.select([])
+            )
         
         print(f"  Train: {len(train_dataset)} examples")
         print(f"  Validation: {len(val_dataset)} examples")
@@ -439,6 +493,8 @@ class SFTTrainer:
 
         if cfg.lora_r <= 0:
             print("LoRA disabled; using full fine-tuning")
+            if cfg.capture_parameter_hashes:
+                self._trainable_parameter_hash_before = self._hash_trainable_parameters()
             empty_accelerator_cache()
             print("Model ready")
             print()
@@ -462,6 +518,8 @@ class SFTTrainer:
         print("Applying LoRA adapters...")
         self.model = get_peft_model(self.model, lora_config)
         self.model.print_trainable_parameters()
+        if cfg.capture_parameter_hashes:
+            self._trainable_parameter_hash_before = self._hash_trainable_parameters()
         
         # Model is already placed by device_map; just free transient buffers.
         empty_accelerator_cache()
@@ -540,6 +598,7 @@ class SFTTrainer:
     def train(
         self,
         train_file: Optional[str] = None,
+        validation_file: Optional[str] = None,
         dataset: Optional[str] = None,
         resume_from_checkpoint: Optional[str] = None
     ):
@@ -572,7 +631,8 @@ class SFTTrainer:
         # Pass tokenizer so formatters use correct chat template
         train_dataset, val_dataset = self.load_dataset(
             file_path=train_file,
-            dataset_name=dataset
+            dataset_name=dataset,
+            validation_file=validation_file,
         )
         
         # Setup model (tokenizer already loaded, will be reused)
@@ -623,6 +683,7 @@ class SFTTrainer:
             "per_device_eval_batch_size": cfg.batch_size,
             "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
             "num_train_epochs": cfg.num_epochs,
+            "max_steps": cfg.max_steps,
             "learning_rate": cfg.learning_rate,
             "warmup_ratio": cfg.warmup_ratio,
             "lr_scheduler_type": "cosine",
@@ -644,7 +705,7 @@ class SFTTrainer:
             "load_best_model_at_end": has_eval_data,
             "metric_for_best_model": "eval_loss" if has_eval_data else None,
             "greater_is_better": False if has_eval_data else None,
-            "seed": 42,
+            "seed": cfg.seed,
             # ROCm optimizations
             "dataloader_num_workers": 0,
             "dataloader_pin_memory": False,
@@ -804,6 +865,17 @@ class SFTTrainer:
             },
         )
         summary["final_model_path"] = str(final_output)
+        if cfg.capture_parameter_hashes:
+            parameter_hash_after = self._hash_trainable_parameters()
+            summary["parameter_evidence"] = {
+                "algorithm": "sha256-trainable-tensors-v1",
+                "before": self._trainable_parameter_hash_before,
+                "after": parameter_hash_after,
+                "changed": bool(
+                    self._trainable_parameter_hash_before
+                    and self._trainable_parameter_hash_before != parameter_hash_after
+                ),
+            }
         attach_effectiveness_contract(
             summary,
             minimum_samples_kept=max(1, len(train_dataset)),

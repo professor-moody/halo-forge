@@ -8,10 +8,44 @@ both consume this same `SFTConfig`.
 
 from __future__ import annotations
 
+import difflib
+import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from halo_forge.runtime_determinism import DEFAULT_TRAINING_SEED
+
+logger = logging.getLogger(__name__)
+
+# YAML sections `from_yaml` flattens into a single keyword namespace.
+_CONFIG_SECTIONS: tuple[str, ...] = ("model", "data", "lora", "qlora", "training")
+
+# Aliases accepted for backward compatibility with the shipped example configs
+# and with HuggingFace naming.
+_KEY_ALIASES: Dict[str, str] = {
+    "name": "model_name",
+    "per_device_train_batch_size": "batch_size",
+    "num_train_epochs": "num_epochs",
+    "r": "lora_r",
+    "alpha": "lora_alpha",
+    "dropout": "lora_dropout",
+}
+
+# Keys the shipped configs carry that this dataclass deliberately does not
+# model — the trainer hardcodes the HuggingFace `TrainingArguments` equivalents.
+# They are accepted and ignored; everything *else* unknown is a typo, and a typo
+# at these defaults costs a full GPU-day of training, so it must fail loudly.
+_IGNORED_KEYS: frozenset[str] = frozenset({
+    "dataloader_num_workers",
+    "dataloader_pin_memory",
+    "eval_strategy",
+    "evaluation_strategy",
+    "load_best_model_at_end",
+    "logging_steps",
+    "lr_scheduler_type",
+    "per_device_eval_batch_size",
+    "save_strategy",
+})
 
 
 @dataclass
@@ -30,6 +64,7 @@ class SFTConfig:
 
     # Data - supports both local files and HuggingFace datasets
     train_file: Optional[str] = None  # Local JSONL file
+    validation_file: Optional[str] = None  # Optional immutable validation JSONL
     dataset: Optional[str] = None  # HuggingFace dataset ID or short name
     max_samples: Optional[int] = None  # Limit number of samples
     validation_split: float = 0.05
@@ -49,7 +84,10 @@ class SFTConfig:
     lora_r: int = 16
     lora_alpha: int = 32
     lora_dropout: float = 0.05
-    target_modules: List[str] = None
+    # None -> the Qwen default set filled in by __post_init__. Declared as a
+    # plain None default (not a default_factory) precisely so the mutable list
+    # is constructed per instance rather than shared across configs.
+    target_modules: Optional[List[str]] = None
     # PEFT additions (Track T5):
     #   use_dora    — DoRA decomposes the weight into magnitude + direction;
     #                 typically matches LoRA quality at lower rank but
@@ -75,6 +113,9 @@ class SFTConfig:
     # Training
     output_dir: str = "models/sft"
     num_epochs: int = 3
+    # Optional absolute optimizer-step ceiling used by resumable experiment
+    # segments. ``None`` preserves the traditional epoch-based behavior.
+    max_steps: Optional[int] = None
     batch_size: int = 2
     gradient_accumulation_steps: int = 16
     learning_rate: float = 2e-4
@@ -86,6 +127,9 @@ class SFTConfig:
     bf16: bool = True
     gradient_checkpointing: bool = True
     seed: int = DEFAULT_TRAINING_SEED
+    # V21 real-path certification only. Ordinary training avoids copying all
+    # trainable tensors to CPU solely to hash them.
+    capture_parameter_hashes: bool = False
 
     # Saving
     save_steps: int = 500
@@ -97,6 +141,8 @@ class SFTConfig:
     early_stopping_threshold: float = 0.001
 
     def __post_init__(self):
+        if self.max_steps is not None and int(self.max_steps) <= 0:
+            raise ValueError("max_steps must be positive when provided")
         if self.target_modules is None:
             # Default for Qwen models
             self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
@@ -104,34 +150,83 @@ class SFTConfig:
 
     @classmethod
     def from_yaml(cls, path: str) -> "SFTConfig":
-        """Load config from YAML file."""
+        """Load config from YAML file.
+
+        Unrecognized keys raise `ValueError` rather than being dropped: a typo
+        such as ``learnign_rate`` would otherwise train a whole run at the
+        default. Known-but-unmodelled HuggingFace keys (see `_IGNORED_KEYS`)
+        are accepted and logged, so the shipped example configs keep loading.
+
+        Raises:
+            ValueError: the document is not a mapping, it carries top-level keys
+                outside `_CONFIG_SECTIONS`, or a section carries keys that are
+                neither `SFTConfig` fields nor documented passthroughs.
+        """
         import yaml  # lazy: yaml is a hard dep but keep config.py import-clean
 
         with open(path) as f:
             data = yaml.safe_load(f)
 
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"SFT config {path} must be a YAML mapping, got "
+                f"{type(data).__name__}"
+            )
+
+        # Only the known sections are read, so a hyperparameter written at the
+        # top level is silently discarded — the same full-GPU-day failure the
+        # per-key check below prevents. Reject it, and say where it belongs.
+        stray = sorted(set(data) - set(_CONFIG_SECTIONS))
+        if stray:
+            raise ValueError(
+                f"SFT config {path}: top-level key(s) "
+                f"{', '.join(repr(key) for key in stray)} sit outside every "
+                f"recognized section and would be ignored. Move them under one "
+                f"of: {', '.join(_CONFIG_SECTIONS)}."
+            )
+
         # Flatten nested config
-        flat = {}
-        for section in ['model', 'data', 'lora', 'qlora', 'training']:
-            if section in data:
-                flat.update(data[section])
+        flat: Dict[str, Any] = {}
+        for section in _CONFIG_SECTIONS:
+            values = data.get(section)
+            if isinstance(values, dict):
+                flat.update(values)
+            elif values is not None:
+                raise ValueError(
+                    f"SFT config {path}: section {section!r} must be a mapping, "
+                    f"got {type(values).__name__}"
+                )
 
-        # Map config keys
-        key_map = {
-            'name': 'model_name',
-            'train_file': 'train_file',
-            'per_device_train_batch_size': 'batch_size',
-            'num_train_epochs': 'num_epochs',
-            'r': 'lora_r',
-            'alpha': 'lora_alpha',
-            'dropout': 'lora_dropout',
-        }
+        mapped: Dict[str, Any] = {}
+        ignored: List[str] = []
+        unknown: List[str] = []
+        for key, value in flat.items():
+            resolved = _KEY_ALIASES.get(key, key)
+            if resolved in cls.__dataclass_fields__:
+                mapped[resolved] = value
+            elif key in _IGNORED_KEYS:
+                ignored.append(key)
+            else:
+                unknown.append(key)
 
-        mapped = {}
-        for k, v in flat.items():
-            mapped_key = key_map.get(k, k)
-            if hasattr(cls, '__dataclass_fields__') and mapped_key in cls.__dataclass_fields__:
-                mapped[mapped_key] = v
+        if ignored:
+            logger.debug(
+                "SFT config %s: ignoring trainer-managed key(s): %s",
+                path,
+                ", ".join(sorted(ignored)),
+            )
+
+        if unknown:
+            valid = sorted(set(cls.__dataclass_fields__) | set(_KEY_ALIASES))
+            details = []
+            for key in sorted(unknown):
+                close = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)
+                suffix = f" (did you mean {close[0]!r}?)" if close else ""
+                details.append(f"{key!r}{suffix}")
+            raise ValueError(
+                f"Unknown key(s) in SFT config {path}: {', '.join(details)}. "
+                f"Valid keys: {', '.join(valid)}"
+            )
 
         return cls(**mapped)
 
