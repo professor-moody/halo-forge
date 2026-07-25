@@ -1,9 +1,60 @@
 #!/usr/bin/env python3
 """Phase 5 release-engineering regression guards."""
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
+
+CI_WORKFLOW = Path(".github/workflows/ci.yml")
+
+# Readiness/report scripts the main CI job runs. Each one must either gate the
+# build (--strict) or carry a documented TODO(ci-strict) exception.
+READINESS_SCRIPTS = (
+    "scripts/run_ops_module_matrix.py",
+    "scripts/run_ops_e2e_reliability.py",
+    "scripts/run_ops_dataset_burnin.py",
+    "scripts/run_all_module_matrix.py",
+    "scripts/run_all_module_qualification.py",
+    "scripts/run_all_module_bootstrap.py",
+    "scripts/run_all_module_live_matrix.py",
+)
+
+
+def _ci_workflow_text() -> str:
+    assert CI_WORKFLOW.exists()
+    return CI_WORKFLOW.read_text(encoding="utf-8")
+
+
+def _ci_step_blocks(content: str) -> list[str]:
+    """Split the workflow into per-step blocks, keeping each step's comments.
+
+    A comment block sitting directly above a step documents that step, so it
+    is carried forward instead of being left on the previous one.
+    """
+    blocks: list[str] = []
+    carry = ""
+    for chunk in re.split(r"\n(?=\s*- name: )", content):
+        lines = chunk.split("\n")
+        trailing: list[str] = []
+        while lines and (not lines[-1].strip() or lines[-1].strip().startswith("#")):
+            trailing.insert(0, lines.pop())
+        blocks.append(carry + "\n".join(lines))
+        carry = "\n".join(trailing) + "\n" if trailing else ""
+    if carry:
+        blocks.append(carry)
+    return blocks
+
+
+def _ci_job_block(content: str, job_name: str) -> str:
+    """Return the text of a single top-level job definition."""
+    blocks = re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", content)
+    for block in blocks:
+        if re.match(rf"\s*{re.escape(job_name)}:\s*\n", block):
+            return block
+    raise AssertionError(f"CI workflow defines no `{job_name}` job")
 
 
 def test_ci_workflow_exists_with_compile_and_core_regression_steps():
@@ -120,18 +171,123 @@ def test_ci_workflow_exists_with_compile_and_core_regression_steps():
     assert not Path(".github/workflows/nightly_walkthroughs.yml").exists()
 
 
-def test_modality_tests_use_importorskip_for_optional_heavy_dependencies():
-    """Heavy modality tests should skip cleanly when torch/numpy are unavailable."""
-    expected_markers = {
-        "tests/test_inference.py": "pytest.importorskip(\"torch\")",
-        "tests/test_agentic.py": "pytest.importorskip(\"torch\")",
-        "tests/test_audio.py": "pytest.importorskip(\"numpy\")",
-        "tests/test_reasoning.py": "pytest.importorskip(\"numpy\")",
-        "tests/test_vlm.py": "pytest.importorskip(\"numpy\")",
+def test_ci_readiness_steps_gate_the_build_or_document_the_exception():
+    """Every readiness script in CI must gate the build or say why it does not.
+
+    Without --strict these steps print `status=fail` and exit 0, so CI stays
+    green over a broken tree. Where the tree genuinely is not ready, the
+    exception has to be visible in the diff as a TODO(ci-strict) comment
+    naming the failing modules rather than being silently unguarded.
+    """
+    content = _ci_workflow_text()
+    blocks = _ci_step_blocks(content)
+
+    for script in READINESS_SCRIPTS:
+        owning = [block for block in blocks if script in block]
+        assert owning, f"{script} is referenced by no CI step"
+        assert any(
+            "--strict" in block or "TODO(ci-strict)" in block for block in owning
+        ), (
+            f"{script} runs in CI without --strict and without a documented "
+            "TODO(ci-strict) exception, so it cannot turn the build red"
+        )
+
+    assert content.count("--strict") >= 4, (
+        "expected the readiness steps that pass today to gate the build"
+    )
+
+
+def test_ci_trainer_regression_job_installs_torch_and_runs_the_whole_suite():
+    """A job must install the training stack and run all of tests/.
+
+    The compile-and-core-regression job installs pytest only, which turns
+    every `pytest.importorskip("torch")` into a silent skip and leaves the
+    trainers untested. Selection must be whole-directory (with an explicit
+    deny-list at most), never a hand-maintained allow-list of files.
+    """
+    content = _ci_workflow_text()
+    job = _ci_job_block(content, "trainer-regression")
+
+    assert "https://download.pytorch.org/whl/cpu" in job
+    for dependency in ("torch", "transformers", "peft", "datasets", "trl"):
+        assert dependency in job, f"trainer-regression does not install {dependency}"
+    assert re.search(r"^\s*timeout-minutes:\s*\d+", job, re.M), (
+        "trainer-regression needs a timeout"
+    )
+    assert re.search(r"pytest\s+-q\s+tests/(\s|\\|$)", job, re.M), (
+        "trainer-regression must select the whole tests/ directory"
+    )
+
+
+def test_ci_lint_job_gates_ruff_and_documents_the_formatter_ratchet():
+    """Lint must gate on ruff; formatters may lag but must stay visible."""
+    content = _ci_workflow_text()
+    job = _ci_job_block(content, "lint")
+
+    # `continue-on-error` sits on its own line, so a per-line filter would call
+    # every step gating. Judge each step block as a whole instead.
+    gating = [
+        block
+        for block in _ci_step_blocks(job)
+        if "ruff check" in block and "continue-on-error" not in block
+    ]
+    assert gating, "lint job has no gating ruff check"
+    assert "black --check" in job
+    assert "isort --check-only" in job
+    # Formatter drift is huge on this tree; it must be non-gating for now.
+    assert "continue-on-error: true" in job
+
+
+def test_ci_workflow_parses_as_yaml_with_named_gating_jobs():
+    """The workflow must be valid YAML and define the gating jobs by name."""
+    yaml = pytest.importorskip("yaml")
+
+    document = yaml.safe_load(_ci_workflow_text())
+    jobs = document["jobs"]
+    for job_name in ("compile-and-core-regression", "trainer-regression", "lint"):
+        assert job_name in jobs, f"CI workflow defines no `{job_name}` job"
+        assert isinstance(jobs[job_name]["timeout-minutes"], int)
+        assert jobs[job_name]["steps"]
+
+
+def test_heavy_dependency_skip_guards_are_backed_by_a_job_that_installs_them():
+    """importorskip guards are acceptable only if some CI job installs the deps.
+
+    This replaces an older guard that asserted the modality tests keep their
+    `pytest.importorskip` markers and nothing else. On a CI that never
+    installs torch those markers silently disabled every trainer test, so the
+    marker is not the contract worth enforcing; the contract is that a job
+    exists which installs the heavy dependency and executes the file.
+    """
+    guarded = {
+        "tests/test_inference.py": "torch",
+        "tests/test_agentic.py": "torch",
+        "tests/test_audio.py": "numpy",
+        "tests/test_reasoning.py": "numpy",
+        "tests/test_vlm.py": "numpy",
     }
-    for rel_path, marker in expected_markers.items():
-        content = Path(rel_path).read_text(encoding="utf-8")
-        assert marker in content
+    content = _ci_workflow_text()
+    job = _ci_job_block(content, "trainer-regression")
+    light_job = _ci_job_block(content, "compile-and-core-regression")
+
+    for rel_path, module in guarded.items():
+        path = Path(rel_path)
+        assert path.exists(), rel_path
+        # The marker itself is still load-bearing: compile-and-core-regression
+        # runs these same files with pytest only, so dropping the guard turns
+        # that job red at collection time. Guard + a job that installs the
+        # dependency are both required; neither alone is sufficient.
+        if rel_path in light_job:
+            assert f'pytest.importorskip("{module}")' in path.read_text(encoding="utf-8"), (
+                f"{rel_path} runs in compile-and-core-regression, which does not "
+                f"install {module}, so it must keep its importorskip guard"
+            )
+        assert module in job, (
+            f"{rel_path} skips itself without {module}, but no CI job installs it"
+        )
+        assert f"--ignore={rel_path}" not in job, (
+            f"{rel_path} is guarded by importorskip and excluded from CI"
+        )
 
 
 def test_release_surface_excludes_legacy_tui_and_textual_dependency():

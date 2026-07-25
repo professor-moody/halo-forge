@@ -256,7 +256,8 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "display_version" in sidebar_source
     assert "Base model" in train_source
     assert "Launch summary" in train_source
-    assert "MLX Ready" in start_source
+    assert 'to: "/train"' in start_source
+    assert "Legacy deep link retained for compatibility" in start_source
     assert "MLX readiness" in train_source
     assert "accelerator" in train_source
     assert "Run detail view" in run_source
@@ -268,10 +269,11 @@ def test_public_frontend_scaffold_references_public_workflows():
     assert "Waiting for the first optimizer step" in run_source
     assert "metric_points" in api_helper
     assert "Run could not create its log file" in Path("halo_forge/public_api/service.py").read_text(encoding="utf-8")
-    assert "Run results" in results_source
-    assert "Serve model" in results_source
-    assert "No completed results yet" in results_source
-    assert "First guided run" in docs_source
+    assert 'to: "/runs"' in results_source
+    assert 'view: "completed"' in results_source
+    assert "Completed runs live in Runs" in results_source
+    assert "Guided training" in docs_source
+    assert "Use your own data" in docs_source
     assert "Remote workstation" in docs_source
     assert "Hugging Face access" in docs_source
     assert "CLI reference" in docs_source
@@ -311,6 +313,8 @@ def test_public_frontend_remote_auth_regression_contract():
 
 def test_public_frontend_friendly_workstation_contract():
     start_source = Path("public_app/src/routes/start.tsx").read_text(encoding="utf-8")
+    train_source = Path("public_app/src/routes/train.tsx").read_text(encoding="utf-8")
+    runs_source = Path("public_app/src/routes/runs.index.tsx").read_text(encoding="utf-8")
     run_source = Path("public_app/src/routes/runs.$runId.tsx").read_text(encoding="utf-8")
     models_source = Path("public_app/src/routes/models.tsx").read_text(encoding="utf-8")
     results_source = Path("public_app/src/routes/results.tsx").read_text(encoding="utf-8")
@@ -322,17 +326,18 @@ def test_public_frontend_friendly_workstation_contract():
         encoding="utf-8"
     )
 
-    assert "START_GOALS" in start_source
-    assert '"code"' in start_source
-    assert '"reasoning"' in start_source
-    assert '"tool-use"' in start_source
-    assert '"apple-silicon"' in start_source
-    assert '"gsm8k_sft"' in start_source
-    assert '"xlam_sft"' in start_source
-    assert "Run started" in start_source
-    assert "useWorkspaceInfo" in start_source
-    assert "default_run_root" in start_source
-    assert "models/start-" not in start_source
+    assert "const GOALS" in train_source
+    assert '"code"' in train_source
+    assert '"reasoning"' in train_source
+    assert '"tool-use"' in train_source
+    assert '"apple-silicon"' in train_source
+    assert '"gsm8k_sft"' in train_source
+    assert '"xlam_sft"' in train_source
+    assert "Run started" in train_source
+    assert "useWorkspaceInfo" in train_source
+    assert "default_run_root" in train_source
+    assert 'to: "/train"' in start_source
+    assert "models/start-" not in train_source
     assert "export type RunLive" in api_source
     assert "runLive:" in api_source
     assert "/events" in run_source
@@ -342,8 +347,8 @@ def test_public_frontend_friendly_workstation_contract():
     assert "Fits ${detectedBackend}" in models_source
     assert "showing all catalog models" in models_source
     assert "useServeStart" in models_source
-    assert "Use in Start" in models_source
-    assert "startGoalForModel" in models_source
+    assert "Use in Train" in models_source
+    assert "preferredTrainMode" in models_source
     assert "export type ServeStatus" in api_source
     assert 'state: "idle" | "starting" | "running" | "unhealthy" | "exited" | string' in api_source
     assert "ready_state" in api_source
@@ -367,24 +372,25 @@ def test_public_frontend_friendly_workstation_contract():
     assert "Waiting for model to finish loading" in playground_source
     assert "Managed local serving uses Hugging Face access from Connection" in playground_source
     assert "externalEndpoint ? apiKey" in playground_source
-    assert "Open Playground" in models_source
-    assert "Requires Hugging Face access" in models_source
-    assert "Connect Hugging Face" in models_source
-    assert "Check access" in models_source
-    assert "modelPageUrl" in models_source
-    assert "Open served repo" in models_source
-    assert "Starting local serving for" in models_source
-    assert "chat-ready" in models_source
+    assert "Serve & Test" in models_source
+    assert "license_note" in models_source
+    assert "download_note" in models_source
+    assert "Model page" in models_source
+    assert "startServing" in models_source
+    assert "servingThis" in models_source
+    assert "chat ready" in models_source
     assert "UNIFIED MEM" in Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
     telemetry_source = Path("public_app/src/components/shell/telemetry.tsx").read_text(encoding="utf-8")
     assert "limited" in telemetry_source
     assert "macOS sensor access" in telemetry_source
     assert "TelemetryStatusChip" in telemetry_source
     assert "Choose open model" in playground_source
-    assert "Results files" in results_source
-    assert "View logs" in results_source
-    assert "Local workstation path" in results_source
-    assert "Serve when complete" in start_source
+    assert 'to: "/runs"' in results_source
+    assert 'view: "completed"' in results_source
+    assert 'title="Runs"' in runs_source
+    assert "Completed" in runs_source
+    assert "Collections" in runs_source
+    assert "No runs indexed yet. Launch a guided run from Train to populate." in runs_source
     assert "Apple Neural Accelerators (experimental)" in overview_source
     assert "installChunkLoadRecovery" in main_source
 
@@ -394,6 +400,15 @@ def test_public_api_transport_exposes_public_workflows():
 
     assert "/version" in api_source
     assert "/dashboard" in api_source
+    assert "/interface-capabilities" in api_source
+    assert "/training-scenarios" in api_source
+    assert "/dataset-imports" in api_source
+    assert "/dataset-inspections/{inspection_id}/mapping-preview" in api_source
+    assert "/dataset-inspections/{inspection_id}/preparation-preview" in api_source
+    assert "/dataset-sources/{source_id}/refresh" in api_source
+    assert "/dataset-versions/{version_id}/readiness" in api_source
+    assert "/dataset-versions/{version_id}/proof-run" in api_source
+    assert "/runs/{run_id}/full-run" in api_source
     assert "/train/preflight" in api_source
     assert "/train/launch" in api_source
     assert "/workspace" in api_source
@@ -417,16 +432,16 @@ def test_public_api_version_contract():
     from halo_forge.public_api.app import create_app
     from halo_forge.version import DISPLAY_VERSION, PACKAGE_VERSION, RELEASE_CHANNEL
 
-    assert __version__ == PACKAGE_VERSION == "2.0.0a1"
-    assert __display_version__ == DISPLAY_VERSION == "2.0.0-alpha-1"
+    assert __version__ == PACKAGE_VERSION == "2.0.0a2"
+    assert __display_version__ == DISPLAY_VERSION == "2.0.0-alpha-2"
     assert RELEASE_CHANNEL == "alpha"
 
     app = create_app(serve_frontend=False)
     with TestClient(app) as client:
         payload = client.get("/api/public/version").json()
 
-    assert payload["package_version"] == "2.0.0a1"
-    assert payload["display_version"] == "2.0.0-alpha-1"
+    assert payload["package_version"] == "2.0.0a2"
+    assert payload["display_version"] == "2.0.0-alpha-2"
     assert payload["release_channel"] == "alpha"
 
 
@@ -646,7 +661,7 @@ def test_desktop_tauri_foundation_contract():
     startup_html = Path("apps/desktop-tauri/startup/index.html").read_text(encoding="utf-8")
 
     assert '"identifier": "ai.haloforge.desktop"' in config
-    assert '"version": "2.0.0-alpha-1"' in config
+    assert '"version": "2.0.0-alpha-2"' in config
     assert '"frontendDist": "../startup"' in config
     assert '"withGlobalTauri": true' in config
     assert '"devUrl": "http://127.0.0.1:8765"' in config
@@ -654,15 +669,20 @@ def test_desktop_tauri_foundation_contract():
     assert '"targets": ["app", "dmg", "appimage", "deb"]' in config
     assert '"../../../public_app/dist": "frontend"' in config
     assert '"../runtime/dist/halo-forge-runtime": "runtime/halo-forge-runtime"' in config
-    assert '"externalBin": ["sidecars/halo-forge-runtime"]' in config
+    assert '"macOS"' in config
+    assert '"hardenedRuntime": true' in config
+    assert '"minimumSystemVersion": "12.0"' in config
+    assert '"../runtime/dist/halo-forge-runtime": "runtime/halo-forge-runtime"' in config
+    assert 'halo-forge-runtime.exe' in main_rs
     assert Path("halo_forge/desktop_runtime.py").exists()
     assert Path("apps/desktop-tauri/scripts/build_runtime.py").exists()
     assert Path("apps/desktop-tauri/runtime/desktop_runtime_entry.py").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime-aarch64-apple-darwin").exists()
     assert (tauri_dir / "sidecars" / "halo-forge-runtime-x86_64-unknown-linux-gnu").exists()
-    assert ".sidecar(\"halo-forge-runtime\")" in main_rs
-    assert "HALO_FORGE_BUNDLED_RUNTIME" in main_rs
+    assert "StdCommand::new(runtime_exe)" in main_rs
+    assert "runtime_executable_in_dir" in main_rs
+    assert 'StdCommand::new("taskkill")' in main_rs
     assert "HALO_FORGE_FRONTEND_DIST" in main_rs
     assert "HALO_FORGE_REPO_ROOT" in main_rs
     assert "runtime_self_check_failed" in main_rs
@@ -683,7 +703,7 @@ def test_desktop_tauri_foundation_contract():
     assert "child.kill()" in main_rs
     assert '"shell:allow-spawn"' in capabilities
     assert "Starting Halo Forge" in startup_html
-    assert "2.0.0-alpha-1" in startup_html
+    assert "2.0.0-alpha-2" in startup_html
     assert "desktop_status" in startup_html
     assert "desktop_retry" in startup_html
     for sidecar_name in [
@@ -750,7 +770,10 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "tests/test_public_api_pivot.py" in ci
     assert "tests/test_model_catalog.py" in ci
     assert "npm run build" in ci
-    assert "desktop-unsigned-build" in ci
+    assert "desktop-preview-build" in ci
+    assert "windows-latest" in ci
+    assert "--bundles deb,appimage" in ci
+    assert "--bundles nsis" in ci
     assert "macos-14" in ci
     assert "ubuntu-latest" in ci
     assert "Build bundled desktop runtime" in ci
@@ -766,9 +789,30 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "workflow_dispatch" in release
     assert "Desktop release artifact" in release
     assert "Publish GitHub Release" in release
+    assert "Detect macOS signing credentials" in release
+    assert "Build unsigned macOS preview candidate" in release
+    assert "APPLE_CERTIFICATE" in release
+    assert "APPLE_CERTIFICATE_PASSWORD" in release
+    assert "APPLE_SIGNING_IDENTITY" in release
+    assert "APPLE_ID" in release
+    assert "APPLE_PASSWORD" in release
+    assert "APPLE_TEAM_ID" in release
+    assert "Validate signed and notarized macOS app" in release
+    assert "codesign --verify --deep --strict" in release
+    assert "xcrun stapler validate" in release
+    assert "spctl -a -vvv -t execute" in release
+    assert "spctl -a -vvv -t open --context context:primary-signature" in release
+    assert "Smoke packaged macOS runtime" in release
+    assert "Smoke Windows bundled runtime" in release
+    assert "Record distribution qualification evidence" in release
+    assert "Normalize macOS release artifact names" in release
+    assert "Halo-Forge_${version}_aarch64.dmg" in release
+    assert "halo-forge-release-manifest.json" in release
+    assert "*.dmg.sha256" in release
     assert "gh release create" in release
     assert "gh release upload" in release
     assert "OVERSIZE_RELEASE_ASSETS.txt" in release
+    assert "Unsigned Linux and Windows desktop packages remain workflow preview artifacts" in release
     assert "2147483648" in release
     assert "RELEASE_NOTES_${version}.md" in release
     assert "--prerelease" in release
@@ -1001,8 +1045,18 @@ def test_public_api_rejects_unsupported_mode_specific_fields(tmp_path):
     """Unsupported public training fields should raise 400-style ValueErrors."""
 
     class FakeTrainingService:
+        calls = []
+
         def preflight_modality_train_launch(self, **kwargs):
-            raise AssertionError("unsupported payload should be rejected before service dispatch")
+            self.calls.append(kwargs)
+            return TrainingLaunchPreflight(
+                ok=True,
+                errors=[],
+                warnings=[],
+                resolved_paths={"output_dir": kwargs["output_dir"]},
+                suggested_fixes=[],
+                quality_outlook={},
+            )
 
     service = PublicApiService(
         app_state=AppState(),
@@ -1025,19 +1079,20 @@ def test_public_api_rejects_unsupported_mode_specific_fields(tmp_path):
             }
         )
 
-    with pytest.raises(ValueError, match="limit"):
-        service.preflight_training(
-            {
-                "mode": "audio",
-                "model": "openai/whisper-tiny",
-                "dataset": "librispeech",
-                "output_dir": "models/audio_public_run",
-                "cycles": 2,
-                "samples_per_prompt": 3,
-                "task": "asr",
-                "limit": 24,
-            }
-        )
+    audio = service.preflight_training(
+        {
+            "mode": "audio",
+            "model": "openai/whisper-tiny",
+            "dataset": "librispeech",
+            "output_dir": "models/audio_public_run",
+            "cycles": 2,
+            "samples_per_prompt": 3,
+            "task": "asr",
+            "limit": 24,
+        }
+    )
+    assert audio["ok"] is True
+    assert FakeTrainingService.calls[0]["limit"] == 24
 
 
 @pytest.mark.parametrize(
@@ -1119,6 +1174,24 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     docs_text = "\n".join(
         path.read_text(encoding="utf-8") for path in docs_root.rglob("*.md")
     )
+    readme = Path("README.md").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    dashboard_docs_route = Path("public_app/src/routes/docs.tsx").read_text(
+        encoding="utf-8"
+    )
+    hugo_config = Path("website/hugo-docs/hugo.toml").read_text(encoding="utf-8")
+    home_layout = Path("website/hugo-docs/layouts/index.html").read_text(
+        encoding="utf-8"
+    )
+    header_layout = Path("website/hugo-docs/layouts/partials/header.html").read_text(
+        encoding="utf-8"
+    )
+    download_doc = Path("website/hugo-docs/content/download.md").read_text(
+        encoding="utf-8"
+    )
+    install_doc = (
+        docs_root / "docs" / "getting-started" / "install-desktop.md"
+    ).read_text(encoding="utf-8")
     public_frontend_doc = (
         docs_root / "docs" / "reference" / "public-frontend.md"
     ).read_text(encoding="utf-8")
@@ -1129,6 +1202,25 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     assert "Next.js" not in docs_text
     assert "NEXT_PUBLIC_HALO_API_BASE" not in docs_text
     assert "8081" not in docs_text
+    assert "github.com/professor-moody/halo-forge/tree/main/docs" not in readme
+    assert "github.com/professor-moody/halo-forge/tree/main/docs" not in pyproject
+    assert "github.com/professor-moody/halo-forge/tree/main/docs" not in dashboard_docs_route
+    assert "https://halo-forge.io/docs/" in readme
+    assert 'Documentation = "https://halo-forge.io/docs/"' in pyproject
+    assert "https://halo-forge.io/docs/" in dashboard_docs_route
+    assert 'version = "2.0.0-alpha-2"' in hugo_config
+    assert 'href="/download/"' in header_layout
+    assert "Install options" in home_layout
+    assert "Desktop availability" in home_layout
+    assert "Use Quick Start" in home_layout
+    assert "checksummed release\nmanifest" in download_doc
+    assert "Windows x86-64" in download_doc
+    assert "SmartScreen" in download_doc
+    assert "runtime version" in download_doc
+    assert "Unsigned packages are preview artifacts" in download_doc
+    assert "does not remove datasets" in download_doc
+    assert "release manifest" in install_doc
+    assert "Do not bypass Gatekeeper or Windows SmartScreen" in install_doc
     assert "halo-forge serve --host 127.0.0.1 --port 8000" not in docs_text
     assert "halo-forge serve --host 0.0.0.0 --port 8000" not in docs_text
     assert "halo-forge serve-public" in public_frontend_doc
@@ -1139,8 +1231,9 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     assert "npm run dev -- --host 0.0.0.0" in public_frontend_doc
     assert "http://<workstation-host>:8000" in public_frontend_doc
     assert "halo-forge dashboard" in quickstart_doc
-    assert "Start keeps the model, dataset, sample count, and output path conservative." in docs_text
-    assert "Use in Start" in docs_text
+    assert "Use Your Own Data" in docs_text
+    assert "Start keeps the model, dataset, sample count, and output path conservative." not in docs_text
+    assert "Use in Start" not in docs_text
     for method in ["SFT", "RAFT", "DPO", "ORPO", "RM", "GRPO", "VLM", "audio", "reasoning", "agentic"]:
         assert method in docs_text
     assert "/docs/training-pipeline/methods/" in docs_text
@@ -1185,8 +1278,8 @@ def test_cli_version_reports_alpha_identity(monkeypatch, capsys):
 
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    assert "halo-forge 2.0.0-alpha-1" in out
-    assert "package 2.0.0a1" in out
+    assert "halo-forge 2.0.0-alpha-2" in out
+    assert "package 2.0.0a2" in out
 
 
 def test_cli_auto_logging_uses_dashboard_log_root(tmp_path, monkeypatch):

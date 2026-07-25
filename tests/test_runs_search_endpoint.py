@@ -50,6 +50,32 @@ def search_client(monkeypatch, tmp_path):
     db = get_database()
     for record in _seed_records():
         db.upsert_run(record)
+    suite = db.create_benchmark_suite(name="search-evaluation-fixture")
+    revision = db.create_benchmark_suite_revision(
+        suite_id=suite.id,
+        content_hash="search-suite-v1",
+        items=[{"id": "fixture"}],
+        primary_metric="score",
+        direction="maximize",
+    )
+    for run_id in ("r_sft_qwen", "r_dpo_llama"):
+        evaluation = db.create_evaluation(
+            suite_revision_id=revision.id,
+            adapter_id="dataset",
+            adapter_version="2",
+            subject_type="run",
+            subject_ref=run_id,
+            subject_hash=f"subject-{run_id}",
+            reuse_key=f"reuse-{run_id}",
+            request={},
+        )
+        db.complete_evaluation(
+            evaluation.id,
+            metrics=[],
+            samples=[],
+            result={"fixture": True},
+            artifact_path=None,
+        )
 
     yield client, db
 

@@ -148,13 +148,14 @@ def test_vlm_resume_from_cycle_uses_previous_checkpoint_model(monkeypatch, tmp_p
 
     resume_model_path = {}
     trainer2 = VLMRAFTTrainer(VLMRAFTConfig(num_cycles=3, output_dir=str(output_dir)))
-    original_setup = trainer2._setup
+
+    _patch_trainer(trainer2)
+    patched_setup = trainer2._setup
 
     def _capture_setup():
         resume_model_path["value"] = trainer2.config.model_name
-        return original_setup()
+        return patched_setup()
 
-    _patch_trainer(trainer2)
     monkeypatch.setattr(trainer2, "_setup", _capture_setup)
     summary = trainer2.train(prompts=[SimpleNamespace()], resume_from=2)
     assert str(Path(resume_model_path["value"])).endswith("cycle_1/model")

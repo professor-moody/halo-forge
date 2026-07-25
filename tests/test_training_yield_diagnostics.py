@@ -212,6 +212,37 @@ def test_results_service_parses_training_quality_fields(tmp_path):
     assert run.dominant_rejection_reason == "verification_failed"
 
 
+def test_results_service_uses_catalog_model_identity_from_plan_replay(tmp_path):
+    output_dir = tmp_path / "models" / "guided_run"
+    output_dir.mkdir(parents=True)
+    (output_dir / "training_summary.json").write_text(
+        json.dumps(
+            {
+                "run_id": "guided-run",
+                "modality": "sft",
+                "model_name": str(tmp_path / "model-cache" / "snapshot"),
+                "total_train_steps_executed": 1,
+                "weights_updated": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "replay.json").write_text(
+        json.dumps(
+            {
+                "replay_version": 12,
+                "training_plan": {"model_id": "Qwen/Qwen2.5-Coder-0.5B"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = ResultsService(base_path=tmp_path).list_training_runs(force_refresh=True)
+
+    assert len(parsed) == 1
+    assert parsed[0].model_name == "Qwen/Qwen2.5-Coder-0.5B"
+
+
 def test_sft_load_dataset_tracks_missing_text_and_format_errors(tmp_path):
     try:
         from halo_forge.sft.trainer import SFTConfig, SFTTrainer
