@@ -142,14 +142,14 @@ def format_score(record: Any) -> float:
         if not isinstance(msgs, list) or not msgs:
             return 0.0
         valid = sum(
-            1 for m in msgs
-            if isinstance(m, dict)
-            and isinstance(m.get("content"), str)
-            and m["content"].strip()
+            1
+            for m in msgs
+            if isinstance(m, dict) and isinstance(m.get("content"), str) and m["content"].strip()
         )
         return valid / max(1, len(msgs))
     expected_present = sum(
-        1 for k in ("prompt", "completion", "chosen", "rejected", "text")
+        1
+        for k in ("prompt", "completion", "chosen", "rejected", "text")
         if isinstance(record.get(k), str) and record[k].strip()
     )
     return min(1.0, expected_present / 2)  # any 2 of those = full credit
@@ -178,10 +178,7 @@ def _extract_text(record: Any) -> str:
         # Chat-shape fallback.
         msgs = record.get("messages")
         if isinstance(msgs, list):
-            return " ".join(
-                m.get("content", "") if isinstance(m, dict) else str(m)
-                for m in msgs
-            )
+            return " ".join(m.get("content", "") if isinstance(m, dict) else str(m) for m in msgs)
     return str(record)
 
 
@@ -198,9 +195,7 @@ def heuristic_score(
     weights = weights or _DEFAULT_WEIGHTS
 
     components = {
-        "length": length_score(
-            text, target_min=target_min_length, target_max=target_max_length
-        ),
+        "length": length_score(text, target_min=target_min_length, target_max=target_max_length),
         "whitespace": whitespace_score(text),
         "alpha_ratio": alpha_ratio_score(text),
         "repetition": repetition_score(text, n=repetition_n),
@@ -243,8 +238,10 @@ def score_with_judge(
     except Exception as exc:
         logger.warning("Judge raised on record: %s", exc)
         return QualityScore(
-            score=0.0, components={"judge": 0.0},
-            rejected=True, reason="judge_error",
+            score=0.0,
+            components={"judge": 0.0},
+            rejected=True,
+            reason="judge_error",
         )
     clipped = max(0.0, min(1.0, raw))
     return QualityScore(score=clipped, components={"judge": clipped})
@@ -302,6 +299,7 @@ def score_file(
     output_path,
     threshold: float = 0.5,
     keep_top_k_pct: Optional[float] = None,
+    scorer: Callable[[Any], QualityScore] = heuristic_score,
 ) -> ScoreResult:
     """End-to-end: load JSONL → score → write surviving rows."""
     from pathlib import Path
@@ -309,13 +307,11 @@ def score_file(
     from halo_forge.data.dedup import load_jsonl, write_jsonl
 
     records = load_jsonl(Path(input_path))
-    result = score_records(records, threshold=threshold)
+    result = score_records(records, threshold=threshold, scorer=scorer)
 
     if keep_top_k_pct is not None:
         if not 0.0 < keep_top_k_pct <= 1.0:
-            raise ValueError(
-                f"keep_top_k_pct must be in (0, 1], got {keep_top_k_pct}"
-            )
+            raise ValueError(f"keep_top_k_pct must be in (0, 1], got {keep_top_k_pct}")
         # Override threshold-based filter with top-K-pct selection by score.
         cutoff = max(1, int(len(records) * keep_top_k_pct))
         ranked = sorted(
