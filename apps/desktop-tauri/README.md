@@ -9,15 +9,15 @@ The desktop app is intentionally thin:
 - it owns one local Halo Forge service sidecar
 - it waits for `/api/public/health` before showing the dashboard
 - it uses `127.0.0.1:8765` so it does not collide with the CLI default dashboard port
-- it targets macOS and Linux first
+- it has package contracts for macOS arm64, Linux x86-64, and Windows x86-64
 
 ## Runtime paths
 
 Halo Forge Desktop supports three runtime paths:
 
 - source development: the sidecar falls back to the repo-local `.venv`
-- bundled unsigned app: Tauri launches the PyInstaller `onedir` runtime resource
-- future distribution: the same bundled runtime will be signed/notarized with the app
+- packaged candidate: Tauri launches the platform's PyInstaller `onedir` runtime resource
+- qualified release: the download path is selected from signature, runtime-smoke, and platform evidence
 
 The tracked sidecar scripts are launchers. In a source checkout they can still run:
 
@@ -32,17 +32,17 @@ cd apps/desktop-tauri
 python3 scripts/build_runtime.py
 ```
 
-This creates:
+This creates a platform executable under:
 
 ```bash
-apps/desktop-tauri/runtime/dist/halo-forge-runtime/halo-forge-runtime
+apps/desktop-tauri/runtime/dist/halo-forge-runtime/
 ```
 
 The desktop shell passes `HALO_FORGE_FRONTEND_DIST` and validates the runtime with `--desktop-self-check` before starting the dashboard. If bundled runtime validation fails, the startup screen reports the self-check error and points at the desktop runtime log.
 
-Tauri v2 expects target-suffixed sidecars for real builds, so macOS arm64 and Linux x86_64 scripts are tracked next to the generic `halo-forge-runtime` contract.
-
-The app targets macOS arm64 + Linux unsigned builds in this branch. Signing, notarization, Windows, and auto-update remain later release work.
+The shell starts that bundled executable directly, including
+`halo-forge-runtime.exe` on Windows. It records the child process identity,
+owns only that process tree, and performs runtime self-check before navigation.
 
 Runtime logs for the dev desktop app are written to:
 
@@ -50,16 +50,48 @@ Runtime logs for the dev desktop app are written to:
 ~/.halo-forge/desktop/runtime.log
 ```
 
-## Unsigned artifact status
+## Distribution status
 
-The current DMG/app bundle is a developer-test artifact, not a finished public installer. A successful smoke test means:
+The build matrix produces macOS arm64 DMG, Linux x86-64 AppImage/deb, and
+Windows x86-64 NSIS candidates. Unsigned candidates are preview artifacts, not
+trusted public installers. The website recommends only artifacts represented
+as supported by the checksummed release manifest. A successful smoke test means:
 
 - the app starts its own loopback dashboard on `127.0.0.1:8765`
 - `/api/public/health` returns ok
-- Start, Train, Models, Playground, Results, and Docs load without the source dev server
-- quitting the app stops only the desktop-owned service
+- Data, Train, Experiments, Runs, Evaluate, Models, and Docs load without the source dev server
+- quitting the app stops only the desktop-owned service process tree
+- the packaged fixture reaches a real proof-run optimizer update
 
-Known release gaps remain deliberate: the app is unsigned/not notarized, the bundled runtime is large, and Linux is still a smoke/contract target. Gated or private Hugging Face repos can be connected from **Connection → Hugging Face access**; `HF_TOKEN` in the desktop runtime environment still takes precedence for ops workflows. Use open Qwen/MLX models for first serving tests.
+macOS signing/notarization is a credential-backed publication gate. Linux and
+Windows signatures are reported truthfully; unsigned candidates stay preview
+only. No normal-user documentation directs users around Gatekeeper or
+SmartScreen. Gated or private Hugging Face repos can be connected from
+**Connection → Hugging Face access**; `HF_TOKEN` in the desktop runtime
+environment still takes precedence for ops workflows.
+
+Repository metadata or a version tag does not prove a package is trusted. The
+distribution-capability record pins the platform, architecture, package type,
+runtime version, signature state, smoke result, and supported backends.
+
+## Native dataset chooser
+
+The dashboard's stable bridge is exported from
+`public_app/src/lib/desktop-bridge.ts`:
+
+```ts
+declare function pickDatasetSource(request: {
+  kind: "file" | "folder";
+  multiple?: boolean;
+}): Promise<{ paths: string[] } | null>
+```
+
+Inside Tauri it is also available as
+`window.haloForgeDesktop?.pickDatasetSource(...)`. Paths always belong to the
+desktop workstation. Cancel and non-desktop use return `null`; invocation
+failures reject. The capability grants only `dialog:allow-open` to the `main`
+window and the desktop-owned `http://127.0.0.1:8765/*` origin. Browser flows
+must keep upload and explicit workstation-path fallbacks.
 
 ## Local smoke
 
@@ -75,17 +107,18 @@ npm run build
 npm run smoke:runtime
 ```
 
-`npm run smoke:runtime` runs the packaged runtime from the built `.app` resources
-when available. It performs the alpha training gate with a tiny open SFT model,
+`npm run smoke:runtime` runs the packaged runtime when available. It performs
+the beta training gate with a tiny open SFT model,
 confirms optimizer steps execute, checks that `training_summary.json` and
 `final_model/` are written, starts the packaged dashboard service, and verifies
 the normal operator routes return dashboard HTML.
 
-macOS arm64 and Linux are the v1 desktop targets. Windows is intentionally out of scope for this branch.
+CI and Release build all three desktop targets. Browser and CLI remain the
+supported cross-platform fallback when a desktop candidate is preview-only.
 
 ## What users should see during training
 
-After a Start or Train launch, the run monitor should feel active immediately:
+After a Train launch, the run monitor should feel active immediately:
 
 - **Prepare**: the dashboard has accepted the launch and is creating run state.
 - **Data**: datasets or prompt files are being loaded and checked.
@@ -93,7 +126,7 @@ After a Start or Train launch, the run monitor should feel active immediately:
 - **Trainer**: the local trainer is being constructed.
 - **Train**: optimizer steps are running; step count and loss should update from real training events.
 - **Save / Finalize**: checkpoints, summaries, and final artifacts are being written.
-- **Done or Failed**: the page should show Results, Serve, Compare, retry, or Diagnostics actions instead of leaving the user with raw logs.
+- **Done or Failed**: the page should show Run, Artifact/Serve, Compare, retry, or Diagnostics actions instead of leaving the user with raw logs.
 
 If no loss is visible yet, the copy should explain the current stage, for example
 “Loading dataset” or “Waiting for the first optimizer step.” Dataset preprocessing
@@ -108,6 +141,6 @@ Remote v1 means one Halo Forge workstation controlled over the network:
 3. Open `http://<workstation-host>:8000` from another machine on the same trusted network.
 4. Paste the `hfk_...` token in Connection.
 5. If the workstation will download gated/private Hugging Face models, connect the `hf_...` token in **Connection → Hugging Face access**. This is separate from the `hfk_...` API token and is stored server-side.
-6. Confirm Overview, Runs, Run monitor, and Playground are reachable.
+6. Confirm Overview, Runs, Run monitor, and Models → Serve & Test are reachable.
 
 The desktop dev build itself remains loopback-local in this pass.

@@ -155,6 +155,17 @@
         animation: pulse 1.3s ease-in-out infinite;
       }
 
+      .support-options {
+        margin-top: 14px;
+        padding: 12px;
+        border: 1px solid #2d323a;
+        color: #b8c0cc;
+        font-size: 12px;
+      }
+
+      .support-options label { display: inline-flex; align-items: center; gap: 5px; margin: 7px 12px 0 0; }
+      .support-options p { margin: 9px 0 0; color: #858d99; line-height: 1.45; }
+
       @keyframes pulse {
         0%, 100% { opacity: 0.35; transform: scale(0.82); }
         50% { opacity: 1; transform: scale(1); }
@@ -173,7 +184,7 @@
       <section class="status" aria-live="polite">
         <div class="line">
           <span class="label">Version</span>
-          <span id="version" class="badge">2.0.0-alpha-1</span>
+          <span id="version" class="badge">2.0.0-alpha-2</span>
         </div>
         <div class="line">
           <span class="label">Runtime</span>
@@ -183,8 +194,19 @@
         <div id="log" class="log"></div>
       </section>
 
+      <fieldset id="support-options" class="support-options" hidden>
+        <legend>Support bundle preview</legend>
+        <label><input type="checkbox" value="versions" checked />App and runtime versions</label>
+        <label><input type="checkbox" value="readiness" checked />Readiness checks</label>
+        <label><input type="checkbox" value="scheduler" checked />Work events</label>
+        <label><input type="checkbox" value="logs" checked />Sanitized logs</label>
+        <label><input type="checkbox" value="integrity" checked />Integrity results</label>
+        <p>Credentials, prompts, dataset contents, media, model weights, and full workstation paths are excluded. Nothing is uploaded automatically.</p>
+      </fieldset>
+
       <div class="actions">
         <button id="retry" class="primary" type="button" disabled>Retry</button>
+        <button id="support" type="button" hidden>Create support bundle</button>
         <a id="open" class="button" href="http://127.0.0.1:8765">Open dashboard</a>
       </div>
     </main>
@@ -196,6 +218,8 @@
       const detail = document.querySelector("#detail");
       const log = document.querySelector("#log");
       const retry = document.querySelector("#retry");
+      const support = document.querySelector("#support");
+      const supportOptions = document.querySelector("#support-options");
       const openLink = document.querySelector("#open");
 
       let redirected = false;
@@ -216,13 +240,15 @@
       function render(status) {
         const state = status?.state || "starting";
         title.textContent = state === "ready" ? "Halo Forge is ready" : status?.message || "Starting Halo Forge";
-        versionEl.textContent = status?.app_version || "2.0.0-alpha-1";
+        versionEl.textContent = status?.app_version || "2.0.0-alpha-2";
         stateEl.textContent = state.replaceAll("_", " ");
         stateEl.dataset.tone = toneFor(state);
         detail.textContent = status?.detail || status?.message || "Checking the dashboard service.";
         log.textContent = status?.log_path ? `log: ${status.log_path}` : "";
         openLink.href = status?.dashboard_url || "http://127.0.0.1:8765";
         retry.disabled = state === "starting" || state === "ready";
+        support.hidden = state === "starting" || state === "ready" || state === "retrying";
+        supportOptions.hidden = support.hidden;
 
         if (state === "ready" && !redirected) {
           redirected = true;
@@ -262,6 +288,24 @@
             detail: error instanceof Error ? error.message : String(error),
             dashboard_url: openLink.href,
           });
+        }
+      });
+
+      support.addEventListener("click", async () => {
+        const categories = [...supportOptions.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+        if (!categories.length) {
+          detail.textContent = "Choose at least one support-bundle category.";
+          return;
+        }
+        support.disabled = true;
+        detail.textContent = "Creating a local privacy-safe bundle. Nothing will be uploaded.";
+        try {
+          const path = await window.__TAURI__.core.invoke("desktop_create_support_bundle", { categories });
+          detail.textContent = `Support bundle created at ${path}. Review it before sharing.`;
+        } catch (error) {
+          detail.textContent = `Support bundle could not be created: ${error instanceof Error ? error.message : String(error)}`;
+        } finally {
+          support.disabled = false;
         }
       });
 

@@ -164,7 +164,7 @@ def main() -> int:
     parser.add_argument("--reuse-venv", action="store_true", help="Do not recreate the runtime build venv")
     parser.add_argument(
         "--profile",
-        choices=("auto", "macos-mlx", "linux-dashboard"),
+        choices=("auto", "macos-mlx", "linux-dashboard", "windows-dashboard"),
         default="auto",
         help="Runtime dependency profile",
     )
@@ -178,7 +178,12 @@ def main() -> int:
 
     profile = args.profile
     if profile == "auto":
-        profile = "macos-mlx" if platform.system() == "Darwin" and platform.machine() == "arm64" else "linux-dashboard"
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
+            profile = "macos-mlx"
+        elif platform.system() == "Windows":
+            profile = "windows-dashboard"
+        else:
+            profile = "linux-dashboard"
 
     venv = runtime_dir / ".venv-build"
     if venv.exists() and not args.reuse_venv:
