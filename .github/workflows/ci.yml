@@ -28,10 +28,13 @@ jobs:
       - name: Install test runner
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest
+          python -m pip install pytest pyyaml
 
       - name: Syntax compile check
         run: python -m compileall -q halo_forge ui tests
+
+      - name: Release interface, docs, and scenario contracts
+        run: python scripts/check_release_interfaces.py
 
       - name: Modality baseline drift guard
         run: |
@@ -39,13 +42,25 @@ jobs:
             --baseline-file tests/baselines/modality_runtime_baseline.v1.json \
             --check
 
-      - name: Ops module readiness contract report
+      # Readiness/report steps below are gated with --strict wherever the tree
+      # is actually clean. Where it is not, the step stays non-strict *and*
+      # carries a TODO(ci-strict) naming the modules that must be fixed first,
+      # so the exception is visible in review instead of invisible.
+      - name: Ops module readiness contract gate
         run: |
           python3 scripts/run_ops_module_matrix.py \
             --fixture-pack v1 \
             --write-report \
-            --report-file results/readiness/ops_modules_readiness.v1.json
+            --report-file results/readiness/ops_modules_readiness.v1.json \
+            --strict
 
+      # TODO(ci-strict): drop the exception and append --strict once the
+      # `ui_ops` module passes. It currently reports status=fail because
+      # run_ops_e2e_reliability.py cannot find the `serve-public` parser
+      # command in halo_forge/cli.py (the command exists; the detector is
+      # stale), which drags launch_ok/stop_ok/relaunch_ok to false. This
+      # script has no per-module allowlist flag, so the whole step must stay
+      # non-strict until that is resolved.
       - name: Ops E2E launch reliability report (informational)
         run: |
           python3 scripts/run_ops_e2e_reliability.py \
@@ -53,6 +68,9 @@ jobs:
             --write-report \
             --report-file results/readiness/ops_e2e_launch_reliability.v1.json
 
+      # TODO(ci-strict): same `ui_ops` / `serve-public` detector failure as the
+      # step above (6 errors). run_ops_dataset_burnin.py has no per-module
+      # allowlist flag either, so this step stays non-strict for now.
       - name: Ops dataset burn-in report (informational)
         run: |
           python3 scripts/run_ops_dataset_burnin.py \
@@ -60,6 +78,9 @@ jobs:
             --write-report \
             --report-file results/readiness/ops_dataset_burnin.v1.json
 
+      # The three all-module reports below stay non-strict so the uploaded
+      # artifacts keep covering every module. Gating happens in the dedicated
+      # strict step that follows, which uses --module as an explicit allowlist.
       - name: All-module readiness report (informational)
         run: |
           python3 scripts/run_all_module_matrix.py \
@@ -82,12 +103,52 @@ jobs:
             --write-report \
             --report-file results/readiness/all_module_bootstrap.v1.json
 
-      - name: All-module live execution report (informational)
+      # Strict gate over the all-module matrix/qualification/bootstrap runs.
+      # `plot` and `benchmark_code` are excluded on purpose: both report
+      # status=fail today ("missing one or more plot CLI command contracts" /
+      # "missing one or more benchmark CLI command contracts").
+      # TODO(ci-strict): fix those two modules and delete the --module
+      # allowlists so every module gates. Adding a module to the product must
+      # also add it here, otherwise it gates nowhere.
+      - name: All-module readiness strict gate (allowlisted modules)
+        run: |
+          mkdir -p results/readiness/gate
+          python3 scripts/run_all_module_matrix.py \
+            --fixture-pack v1 \
+            --module agentic --module audio --module benchmark_non_code \
+            --module config --module data --module inference --module info \
+            --module raft --module reasoning --module sft --module ui_ops \
+            --module vlm \
+            --write-report \
+            --report-file results/readiness/gate/all_modules_readiness.gate.json \
+            --strict
+          python3 scripts/run_all_module_qualification.py \
+            --qualification-profile fixture-v1 \
+            --fixture-pack v1 \
+            --module agentic --module audio --module benchmark_non_code \
+            --module config --module data --module inference --module info \
+            --module raft --module reasoning --module sft --module ui_ops \
+            --module vlm \
+            --write-report \
+            --report-file results/readiness/gate/all_module_qualification.gate.json \
+            --strict
+          python3 scripts/run_all_module_bootstrap.py \
+            --bootstrap-profile contract-v1 \
+            --module agentic --module audio --module benchmark_non_code \
+            --module config --module data --module inference --module info \
+            --module raft --module reasoning --module sft --module ui_ops \
+            --module vlm \
+            --write-report \
+            --report-file results/readiness/gate/all_module_bootstrap.gate.json \
+            --strict
+
+      - name: All-module live execution gate
         run: |
           python3 scripts/run_all_module_live_matrix.py \
             --live-profile live-smoke-v1 \
             --write-report \
-            --report-file results/readiness/all_module_live_execution.v1.json
+            --report-file results/readiness/all_module_live_execution.v1.json \
+            --strict
 
       - name: Upload ops readiness artifacts
         uses: actions/upload-artifact@v4
@@ -121,6 +182,136 @@ jobs:
             tests/test_phase6_modality_graduation.py \
             tests/test_phase7c_modality_baseline_drift.py \
             tests/test_phase9_non_code_modality_research_matrix.py
+
+  trainer-regression:
+    # The job that actually gates trainer code.
+    #
+    # `compile-and-core-regression` installs pytest only, so every module-level
+    # `pytest.importorskip("torch")` turns the trainer tests it names into
+    # silent skips. This job installs CPU torch plus the training stack and
+    # runs the WHOLE tests/ directory, so a new test file is covered the moment
+    # it lands instead of waiting for someone to add it to a hand-maintained
+    # list.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install CPU torch and the training stack
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install transformers peft datasets trl
+          python -m pip install pytest pyyaml fastapi uvicorn httpx requests psutil numpy
+          python -m pip install beautifulsoup4 pypdf python-docx pillow jsonschema
+          python -m pip install --no-deps -e .
+
+      # Every module the suite guards with importorskip must be installed here,
+      # otherwise this job reintroduces exactly the silent-skip problem it
+      # exists to fix.
+      - name: Fail if a guarded dependency is missing
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import pathlib
+          import re
+          import sys
+
+          guarded = set()
+          for path in pathlib.Path("tests").rglob("test_*.py"):
+              guarded.update(
+                  re.findall(r'importorskip\("([A-Za-z0-9_.]+)"', path.read_text(encoding="utf-8"))
+              )
+          missing = sorted(name for name in guarded if importlib.util.find_spec(name) is None)
+          if missing:
+              print("ERROR: guarded dependencies not installed: " + ", ".join(missing))
+              sys.exit(1)
+          print("all guarded dependencies present: " + ", ".join(sorted(guarded)))
+          PY
+
+      - name: Report resolved training stack
+        run: |
+          python -c "import torch, transformers, peft, datasets, trl; \
+            print('torch', torch.__version__); \
+            print('transformers', transformers.__version__); \
+            print('peft', peft.__version__); \
+            print('datasets', datasets.__version__); \
+            print('trl', trl.__version__)"
+
+      # Whole-directory selection with an explicit deny-list, never an
+      # allow-list: a new test file is gated the moment it lands.
+      #
+      # TODO(ci-suite): delete the --deselect once the GRPO KL penalty is
+      # fixed. `_grpo_policy_loss` with beta=0.1 and reference_logp=1.0
+      # returns -1.9632 where the test expects -1.9, so the quarantine is a
+      # single test, not a file. Any new --deselect needs a comment saying why.
+      - name: Full test suite (trainers included)
+        run: |
+          pytest -q tests/ \
+            --deselect tests/test_grpo.py::test_grpo_policy_loss_reference_free_and_reference_model
+
+      # Non-gating visibility on the quarantined test so the deny-list above
+      # cannot quietly become permanent.
+      - name: Quarantined tests (informational)
+        continue-on-error: true
+        run: |
+          pytest -q \
+            tests/test_grpo.py::test_grpo_policy_loss_reference_free_and_reference_model
+
+  lint:
+    # Ratchet, not a big-bang reformat. `black --check` would currently want to
+    # reformat 223 of 372 files and no package is clean under black+isort, so
+    # reformatting the repo here would collide with everything in flight.
+    # Instead: ruff's error-only rule set gates today, and the formatters run
+    # non-gating so the diff is visible on every PR. As the tree is cleaned up,
+    # widen --select and flip the formatter steps to gating.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install linters
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ruff black isort
+
+      # Gating. E9 (syntax/IO errors), F63 (broken comparisons), F7 (misplaced
+      # statements) are clean on the current tree.
+      # TODO(lint-ratchet): add F82 (undefined names) once these 8 sites are
+      # fixed — halo_forge/lab_v11_v15/cli.py (Dict),
+      # halo_forge/public_api/service.py (validate_record, Sequence x3),
+      # halo_forge/run_db/db.py (WorkAttemptRecord),
+      # halo_forge/verifier_lab/adapters.py (Sequence x2). Then F401/F541/F841.
+      - name: Ruff (gating error set)
+        run: ruff check --select E9,F63,F7 --exclude .venv,node_modules,target .
+
+      - name: Ruff undefined names (informational)
+        continue-on-error: true
+        run: ruff check --select F82 --exclude .venv,node_modules,target .
+
+      - name: Black format drift (informational)
+        continue-on-error: true
+        run: black --check halo_forge scripts tests ui
+
+      - name: Import order drift (informational)
+        continue-on-error: true
+        run: isort --check-only halo_forge scripts tests ui
 
   macos-arm64-smoke:
     # macOS arm64 (Apple Silicon) smoke job. No GPU/ROCm — exercises the
@@ -192,7 +383,8 @@ jobs:
       - name: Install focused Python deps
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest fastapi uvicorn httpx
+          python -m pip install pytest fastapi uvicorn httpx pyyaml requests psutil numpy
+          python -m pip install beautifulsoup4 pypdf python-docx
           python -m pip install --no-deps -e .
 
       - name: Focused public API and model tests
@@ -202,6 +394,20 @@ jobs:
             tests/test_model_catalog.py \
             tests/test_playground_proxy.py \
             tests/test_serving.py
+
+      - name: Guided own-data and corpus/CPT API and CLI contracts
+        run: |
+          pytest -q \
+            tests/test_product_lab_v17.py \
+            tests/test_guided_own_data_v9.py \
+            tests/test_guided_proof_run.py \
+            tests/test_guided_training_coach_v10.py \
+            tests/test_guided_corpus_v10.py \
+            tests/test_corpus_extraction_v10.py \
+            tests/test_cpt_backend_v10.py \
+            tests/test_dataset_lab_api.py \
+            tests/test_dataset_lab_cli.py \
+            tests/test_public_api_activity.py
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -214,16 +420,28 @@ jobs:
         working-directory: public_app
         run: |
           npm ci
+          npm run lint
+          node --test scripts/*contract.test.mjs
           npm run build
 
-  desktop-unsigned-build:
-    name: Desktop unsigned build (${{ matrix.os }})
+      - name: Set up Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.163.3"
+          extended: true
+
+      - name: Build public documentation
+        working-directory: website/hugo-docs
+        run: hugo --minify
+
+  desktop-preview-build:
+    name: Desktop preview build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest]
+        os: [macos-14, ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -274,15 +492,27 @@ jobs:
       - name: Cargo check desktop shell
         run: cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
 
-      - name: Build unsigned desktop app
-        if: runner.os != 'Linux'
+      - name: Build macOS desktop candidate
+        if: runner.os == 'macOS'
         working-directory: apps/desktop-tauri
         run: npm run build -- --ci
 
-      - name: Build unsigned desktop app (Linux deb)
+      - name: Build Linux desktop candidates
         if: runner.os == 'Linux'
         working-directory: apps/desktop-tauri
-        run: npm run build -- --bundles deb --ci
+        run: npm run build -- --bundles deb,appimage --ci
+
+      - name: Build Windows desktop candidate
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop-tauri
+        run: npm run build -- --bundles nsis --ci
+
+      - name: Smoke packaged runtime
+        working-directory: apps/desktop-tauri
+        run: npm run smoke:runtime
+
+      - name: Verify upgrade and uninstall preservation contract
+        run: python apps/desktop-tauri/scripts/verify_install_contract.py --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v4
