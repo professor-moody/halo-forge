@@ -21,7 +21,8 @@ If `HF_TOKEN` is set, the dashboard can use it but cannot clear it. Clear or rot
 
 Some models, such as Llama-family checkpoints, require accepting a license on Hugging Face before downloads work. Halo Forge does not accept licenses for you. Use the model page link in **Models**, accept the license on Hugging Face, then return to **Connection** and verify access.
 
-When a model load fails because access is missing, Playground shows actions to:
+When a model load fails because access is missing, **Models → Serve & Test**
+shows actions to:
 
 - connect Hugging Face,
 - choose an open model,

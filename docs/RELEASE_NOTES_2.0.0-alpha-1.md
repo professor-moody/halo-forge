@@ -2,6 +2,8 @@
 
 Halo Forge 2.0.0-alpha-1 is the first app-first alpha. The CLI remains fully supported, but this release validates the dashboard and unsigned desktop app as the primary workstation surface.
 
+> Distribution note: the macOS DMG in this prerelease is unsigned and may be rejected by Gatekeeper as damaged when downloaded from a browser. Use `2.0.0-alpha-2` or later for public macOS install testing.
+
 ## Highlights
 
 - **Desktop app alpha**: unsigned Tauri macOS/Linux builds start a local Halo Forge dashboard on `127.0.0.1:8765`, show startup diagnostics, and use the bundled runtime path with source-checkout fallback.

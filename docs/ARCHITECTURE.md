@@ -4,7 +4,12 @@
 
 ## Overview
 
-**halo-forge** is a cross-vendor local fine-tuning workstation for SFT, DPO, GRPO, RAFT, eval, serving, and export. It began with AMD Strix Halo and verifier-ranked code training, but the current architecture routes through backend-aware ROCm, CUDA, Apple MPS, Apple MLX, and CPU paths.
+**halo-forge** is a cross-vendor local model-development workstation for
+guided data preparation, SFT, corpus continued pretraining (CPT), preference
+training, verifier-guided optimization, evaluation, serving, and export. It
+began with AMD Strix Halo and verifier-ranked code training, but the current
+architecture routes through backend-aware ROCm, CUDA, Apple MPS, Apple MLX, and
+CPU paths.
 
 ### Core Philosophy
 
@@ -107,7 +112,10 @@ halo-forge
 ├── data
 │   ├── prepare
 │   ├── generate
-│   └── validate
+│   ├── validate
+│   ├── extract / corpus-profile
+│   └── scenarios advise
+├── cpt train
 ├── sft
 │   ├── train
 │   └── datasets
@@ -441,7 +449,9 @@ The public product surface is a Vite + React app backed by the FastAPI public AP
 
 **Files:** `public_app/src/routes/*`, `halo_forge/public_api/app.py`
 
-Key routes: `/start`, `/train`, `/runs`, `/results`, `/models`, `/docs`, and `/connect`.
+Primary routes: `/`, `/datasets`, `/train`, `/sweeps`, `/runs`, `/eval`,
+`/models`, `/docs`, and `/connect`. Product copy calls `/sweeps`
+**Experiments**; completed-run work remains under **Runs**.
 
 #### TrainingService
 

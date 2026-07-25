@@ -1,17 +1,18 @@
 # Trainers
 
-Halo-forge ships a broad post-training surface. The dashboard exposes these as goal-first methods in **Train**, while the CLI keeps the exact command surface for automation. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it.
+Halo-forge ships a broad model-training surface. The dashboard exposes these as goal-first methods in **Train**, while the CLI keeps the exact command surface for automation. They share a common config / dispatch / output shape so the public API and frontend treat every run the same way regardless of which algorithm produced it.
 
 | Algorithm | What it does | When to use | CLI |
 |---|---|---|---|
 | **SFT** | Supervised finetuning on instruction/response pairs. | Adapting a base to a domain or task; first step in every recipe. | `halo-forge sft train` |
+| **CPT** | Causal continued pretraining on tokenizer-packed document text. | Adapting a causal LM to a reviewed local corpus without inventing labels. | `halo-forge cpt train` |
 | **DPO** | Preference optimization from `(prompt, chosen, rejected)` triples. | Alignment without RL. The default published format on HF. | `halo-forge dpo train` |
 | **ORPO** | Reference-free preference tuning from chosen/rejected pairs. | Lower-memory preference pass when DPO's reference model is too expensive. | `halo-forge orpo train` |
 | **RM** | Bradley-Terry reward model from preference pairs. | Build a reusable scorer for ranking or later RL. | `halo-forge rm train` |
 | **GRPO** | Verifier-grounded policy gradient with group-relative advantages. | RLVR — code execution, math, tool calling, anything with a programmatic reward. | `halo-forge grpo train` |
 | **RAFT** | Rejection-sampling RL: sample N, verify, SFT on the kept ones. | The simplest RLVR; works without KL terms or ratio clipping. | `halo-forge raft train` |
 | **VLM** | Vision-language training. | Image Q&A, document extraction, screenshots, charts. | `halo-forge vlm train` |
-| **Audio** | Audio/speech training. | ASR, classification, and audio-language tasks. | `halo-forge audio train` |
+| **Audio** | Whisper-style audio/speech training. | ASR adaptation. Classification and TTS remain unavailable in guided own-data training until they have verified data-to-weight contracts. | `halo-forge audio train` |
 | **Reasoning** | Reasoning-specific training loop. | Math and multi-step answers. | `halo-forge reasoning train` |
 | **Agentic** | Tool-use/function-calling training. | Structured outputs and tool traces. | `halo-forge agentic train` |
 
@@ -19,10 +20,10 @@ The post-training triad is **SFT -> DPO/ORPO -> GRPO** (plus optional RAFT and R
 
 ## Dashboard mapping
 
-- **Start** stays SFT-only and safe for first runs.
-- **Train** launches SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic methods.
+- **Train → Guided** is the safe first-run path.
+- **Train → Advanced** launches SFT, CPT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic methods with direct controls.
 - **Runs** monitors active and completed jobs with method-specific summaries.
-- **Results** shows artifacts, local paths, serving actions, logs, and compare affordances.
+- **Runs → Artifacts** and **Models** expose artifacts, local paths, serving actions, logs, and comparison affordances.
 
 ## Backend dispatch
 
@@ -33,6 +34,29 @@ Every trainer routes through `halo_forge.<modality>._dispatch.get_<modality>_tra
 3. Returns the constructed trainer; the trainer's `__init__` validates the config against what *that* backend can honor — see [`halo_forge.utils.backend_config.warn_unsupported_for_mlx`](../halo_forge/utils/backend_config.py).
 
 So setting `--use-dora` on an MLX host doesn't silently fall back to vanilla LoRA — the trainer prints a warning at init pointing at the limitation.
+
+## CPT
+
+Continued pretraining consumes a rendered `corpus` artifact, not chat or
+instruction formatting. The loss is causal next-token loss over non-padding
+tokens. No chat template, response mask, or held-out test/canary record is
+given to the trainer.
+
+```bash
+halo-forge cpt train \
+  --dataset-version <version-id> \
+  --model Qwen/Qwen2.5-1.5B \
+  --adaptation lora \
+  --budget-mode passes --corpus-passes 1 \
+  --max-seq-length 2048 --packing paragraph_eos_non_overlap_v1
+```
+
+Every launch requires `--adaptation lora|full`. Both token budget and corpus
+passes are shown, but one selected budget mode controls the run. The default
+packing is paragraph-aware, non-overlapping greedy packing with EOS
+separators. PyTorch supports verified CUDA, ROCm, MPS, and CPU paths; native
+MLX is used when the active Apple runtime verifies it. See
+[Corpus Adaptation](CORPUS_ADAPTATION.md).
 
 ## SFT
 
