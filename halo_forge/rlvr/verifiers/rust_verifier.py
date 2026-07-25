@@ -317,6 +317,16 @@ opt-level = 2
         # Suppress color output for cleaner parsing
         env = os.environ.copy()
         env["CARGO_TERM_COLOR"] = "never"
+        # The shared execution runner isolates HOME.  Point rustup-backed cargo
+        # shims at the host toolchain explicitly so compilation remains usable
+        # while generated code still receives an isolated home directory.
+        host_home = Path(env.get("HOME") or Path.home()).expanduser()
+        cargo_home = Path(env.get("CARGO_HOME") or host_home / ".cargo").expanduser()
+        rustup_home = Path(env.get("RUSTUP_HOME") or host_home / ".rustup").expanduser()
+        if cargo_home.exists():
+            env["CARGO_HOME"] = str(cargo_home)
+        if rustup_home.exists():
+            env["RUSTUP_HOME"] = str(rustup_home)
         
         result = self._execution_runner.run(
             cmd,

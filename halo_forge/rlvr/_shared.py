@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple
 
 from halo_forge.training_eligibility import is_training_eligible
 
@@ -46,6 +46,11 @@ def verify_and_filter_samples(
     min_samples_per_cycle: Optional[int] = None,
     allow_compile_only_training: bool = False,
     progress_logger: Optional[Callable[[str, str], None]] = None,
+    signal_sink: Optional[Any] = None,
+    signal_source: Optional[Mapping[str, Any]] = None,
+    samples_per_prompt: int = 1,
+    generation_settings: Optional[Mapping[str, Any]] = None,
+    producer_model_hash: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     """Verify completions, sort by reward, and filter.
 
@@ -101,7 +106,8 @@ def verify_and_filter_samples(
 
     # Combine + sort
     all_data: List[Dict[str, Any]] = []
-    for (prompt, completion), result in zip(samples, results):
+    width = max(1, int(samples_per_prompt))
+    for sample_index, ((prompt, completion), result) in enumerate(zip(samples, results)):
         all_data.append({
             "prompt": prompt,
             "completion": completion,
@@ -109,6 +115,9 @@ def verify_and_filter_samples(
             "success": result.success,
             "details": result.details,
             "metadata": getattr(result, "metadata", {}) or {},
+            "error": getattr(result, "error", None),
+            "_source_index": sample_index // width,
+            "_candidate_ordinal": sample_index % width,
         })
     all_data.sort(key=lambda x: x["reward"], reverse=True)
 
@@ -185,6 +194,38 @@ def verify_and_filter_samples(
         keep_count=keep_count,
         effective_threshold=effective_threshold,
     )
+
+    if signal_sink is not None:
+        kept = {id(value) for value in filtered}
+        for value in all_data:
+            selected = id(value) in kept
+            signal_sink.capture(
+                record=None,
+                source_index=int(value["_source_index"]),
+                source={"trainer": "raft", **dict(signal_source or {})},
+                candidate_ordinal=int(value["_candidate_ordinal"]),
+                occurrence_id=(
+                    f"cycle:{int((signal_source or {}).get('cycle', 0))}:"
+                    f"source:{int(value['_source_index'])}:"
+                    f"candidate:{int(value['_candidate_ordinal'])}"
+                ),
+                prompt=value["prompt"],
+                output=value["completion"],
+                expected=None,
+                training_observation=value,
+                selected=selected,
+                selection_reason=(
+                    "kept_for_update"
+                    if selected
+                    else (
+                        "below_reward_threshold"
+                        if float(value.get("reward", 0.0)) < effective_threshold
+                        else "dropped_by_keep_percent"
+                    )
+                ),
+                generation_settings=dict(generation_settings or {}),
+                producer_model_hash=producer_model_hash,
+            )
 
     return filtered, stats, representative_examples
 

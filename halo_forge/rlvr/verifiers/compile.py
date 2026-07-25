@@ -13,6 +13,7 @@ Graduated Rewards:
 """
 
 import subprocess
+import sys
 import tempfile
 import os
 import shutil
@@ -25,6 +26,13 @@ from halo_forge.rlvr.verifiers.execution_runner import (
     ExecutionPolicy,
     SandboxUnavailableError,
     VerifierExecutionRunner,
+    macos_sdk_path,
+)
+
+MISSING_MACOS_SDK_HINT = (
+    "No macOS SDK could be resolved via `xcrun --show-sdk-path`. Install the Xcode "
+    "Command Line Tools (`xcode-select --install`) so C/C++ system headers are visible "
+    "to the verifier."
 )
 
 try:
@@ -259,9 +267,10 @@ class CompileVerifier(Verifier):
         flags = self.flags.copy()
         if self.warn_as_error and '-Wall' not in flags and '-w' not in flags:
             flags.append('-Wall')
-        
-        cmd = [self.compiler] + flags + [source_file, '-o', output_file]
-        
+
+        sysroot_flags = self._macos_sysroot_flags(flags)
+        cmd = [self.compiler] + flags + sysroot_flags + [source_file, '-o', output_file]
+
         try:
             result = self._execution_runner.run(
                 cmd,
@@ -283,11 +292,36 @@ class CompileVerifier(Verifier):
             }
         else:
             error_lines = result.stderr.strip().split('\n')[:5]
+            error = '\n'.join(error_lines)
+            if self._needs_macos_sysroot() and 'file not found' in error:
+                error = f"{error}\n\n{MISSING_MACOS_SDK_HINT}"
             return {
                 'success': False,
-                'error': '\n'.join(error_lines)
+                'error': error
             }
-    
+
+    def _needs_macos_sysroot(self) -> bool:
+        """True when this compiler is a native macOS compiler needing an SDK root."""
+        return sys.platform == 'darwin' and 'mingw' not in self.compiler.lower()
+
+    def _macos_sysroot_flags(self, flags: List[str]) -> List[str]:
+        """Return ``-isysroot <sdk>`` when the macOS SDK must be supplied explicitly.
+
+        Command Line Tools clang/gcc only find ``stdio.h`` when an SDK root is
+        given, and the verifier runs with a deliberately stripped environment, so
+        the sysroot has to travel on the command line.  Returns an empty list when
+        the caller already pinned a sysroot, for cross-compilers, or when no SDK
+        can be resolved (the compile then fails with MISSING_MACOS_SDK_HINT).
+        """
+        if not self._needs_macos_sysroot():
+            return []
+        if any(flag == '-isysroot' or flag.startswith('--sysroot') for flag in flags):
+            return []
+        sdk_path = macos_sdk_path()
+        if not sdk_path:
+            return []
+        return ['-isysroot', sdk_path]
+
     def _run(self, executable: str) -> dict:
         """
         Run compiled executable with resource limits.

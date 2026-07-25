@@ -51,6 +51,7 @@ from halo_forge.training_contracts import (
 )
 from halo_forge.training_recovery import attach_recovery_guidance
 from halo_forge.training_eligibility import is_training_eligible
+from halo_forge.training_signal import complete_signal_boundary
 from halo_forge.utils.accelerator import (
     empty_accelerator_cache,
     get_device_map,
@@ -187,6 +188,7 @@ class RAFTTrainer:
         config: Optional[RAFTConfig] = None,
         sft_checkpoint: Optional[str] = None,
         rollout_generator: Optional[Any] = None,
+        signal_sink: Optional[Any] = None,
     ):
         """
         Initialize RAFT trainer.
@@ -208,6 +210,7 @@ class RAFTTrainer:
             self.config.sft_checkpoint = sft_checkpoint
 
         self.verifier = verifier
+        self.signal_sink = signal_sink
         self.output_dir = Path(self.config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -601,7 +604,10 @@ class RAFTTrainer:
         
         # Combine with prompts and rewards
         all_data = []
-        for (prompt, completion), result in zip(samples, results):
+        # Legacy/lightweight config shims predate candidate multiplicity.
+        # Treat them as one candidate per source record.
+        width = max(1, int(getattr(cfg, "samples_per_prompt", 1)))
+        for sample_index, ((prompt, completion), result) in enumerate(zip(samples, results)):
             all_data.append({
                 'prompt': prompt,
                 'completion': completion,
@@ -609,6 +615,9 @@ class RAFTTrainer:
                 'success': result.success,
                 'details': result.details,
                 'metadata': getattr(result, 'metadata', {}) or {},
+                'error': getattr(result, 'error', None),
+                '_source_index': sample_index // width,
+                '_candidate_ordinal': sample_index % width,
             })
         
         # Sort by reward
@@ -735,6 +744,53 @@ class RAFTTrainer:
         print(f"    1.0 (correct): {stats['reward_distribution']['1.0']}")
         
         return filtered, stats, all_data
+
+    def _capture_training_signals(
+        self,
+        all_data: List[Dict[str, Any]],
+        filtered: List[Dict[str, Any]],
+        *,
+        cycle: int,
+        effective_threshold: float,
+    ) -> None:
+        sink = self.signal_sink
+        if sink is None:
+            return
+        kept = {id(value) for value in filtered}
+        width = max(1, int(self.config.samples_per_prompt))
+        for position, value in enumerate(all_data):
+            selected = id(value) in kept
+            sink.capture(
+                record=None,
+                source_index=int(value.get("_source_index", position // width)),
+                source={"trainer": "raft", "cycle": int(cycle)},
+                candidate_ordinal=int(value.get("_candidate_ordinal", position % width)),
+                occurrence_id=(
+                    f"cycle:{int(cycle)}:"
+                    f"source:{int(value.get('_source_index', position // width))}:"
+                    f"candidate:{int(value.get('_candidate_ordinal', position % width))}"
+                ),
+                prompt=value.get("prompt"),
+                output=value.get("completion"),
+                expected=None,
+                training_observation=value,
+                selected=selected,
+                selection_reason=(
+                    "kept_for_update"
+                    if selected
+                    else (
+                        "below_reward_threshold"
+                        if float(value.get("reward", 0.0)) < effective_threshold
+                        else "dropped_by_keep_percent"
+                    )
+                ),
+                generation_settings={
+                    "temperature": self.config.get_temperature_for_cycle(cycle),
+                    "max_new_tokens": self.config.max_new_tokens,
+                    "samples_per_prompt": self.config.samples_per_prompt,
+                },
+                producer_model_hash=self.config.sft_checkpoint,
+            )
     
     def train_on_filtered(
         self,
@@ -852,6 +908,11 @@ class RAFTTrainer:
         # Save checkpoint
         checkpoint_path = self.output_dir / f"cycle_{cycle}_final"
         trainer.save_model(str(checkpoint_path))
+        complete_signal_boundary(
+            self.signal_sink,
+            boundary_value=cycle,
+            checkpoint_path=checkpoint_path,
+        )
         self._log(f"Saved checkpoint: {checkpoint_path}", "success")
         return {
             "train_steps_executed": total_train_steps,
@@ -893,6 +954,11 @@ class RAFTTrainer:
         # Skip if already complete
         if final_checkpoint.exists():
             self._log(f"Cycle {cycle} already complete, skipping...", "dim")
+            complete_signal_boundary(
+                self.signal_sink,
+                boundary_value=cycle,
+                checkpoint_path=final_checkpoint,
+            )
             self._reload_model(str(final_checkpoint))
             return {"cycle": cycle, "skipped": True}
         
@@ -963,6 +1029,15 @@ class RAFTTrainer:
             with open(verified_cache, 'w') as f:
                 for item in all_data:
                     f.write(json.dumps(item) + '\n')
+
+        self._capture_training_signals(
+            all_data,
+            filtered,
+            cycle=cycle,
+            effective_threshold=float(
+                stats.get("effective_threshold", self.config.reward_threshold)
+            ),
+        )
         
         if len(filtered) == 0:
             self._log("No samples passed filtering!", "error")
