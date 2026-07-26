@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 CI_WORKFLOW = Path(".github/workflows/ci.yml")
+PYPROJECT = Path("pyproject.toml")
 
 # Readiness/report scripts the main CI job runs. Each one must either gate the
 # build (--strict) or carry a documented TODO(ci-strict) exception.
@@ -21,6 +22,50 @@ READINESS_SCRIPTS = (
     "scripts/run_all_module_bootstrap.py",
     "scripts/run_all_module_live_matrix.py",
 )
+
+
+# Import name -> distribution name, for the guarded modules whose PyPI name
+# differs from the module you import.
+_DISTRIBUTION_ALIASES = {
+    "yaml": "pyyaml",
+    "PIL": "pillow",
+    "bs4": "beautifulsoup4",
+    "docx": "python-docx",
+    "sklearn": "scikit-learn",
+}
+
+
+def _core_dependency_names() -> set[str]:
+    """Return the distribution names in pyproject's [project] dependencies.
+
+    Parsed with a regex rather than tomllib so this test still runs in the
+    stdlib-only CI job and on Python 3.10, where tomllib does not exist.
+    """
+    text = PYPROJECT.read_text(encoding="utf-8")
+    block = re.search(r"^dependencies\s*=\s*\[(.*?)^\]", text, re.S | re.M)
+    assert block, "pyproject.toml has no [project] dependencies array"
+    return {
+        re.split(r"[<>=!~\[; ]", raw.strip().strip('",'))[0].strip().lower()
+        for raw in block.group(1).splitlines()
+        if raw.strip().startswith('"')
+    }
+
+
+def _job_installs(job: str, module: str) -> bool:
+    """Return True when `job` installs the distribution providing `module`.
+
+    A job satisfies the dependency either by naming it explicitly in a pip
+    command, or by installing the package itself (`pip install -e .`), which
+    pulls everything in pyproject's core dependency array. Checking only for
+    the literal module name would force the job back to a hand-written package
+    list -- exactly the drift that let a declared core dependency go missing.
+    """
+    distribution = _DISTRIBUTION_ALIASES.get(module, module).lower()
+    if re.search(rf"pip install[^\n]*\b{re.escape(distribution)}\b", job):
+        return True
+    if re.search(r"pip install\s+(-e\s+\.|\.)(\s|$)", job):
+        return distribution in _core_dependency_names()
+    return False
 
 
 def _ci_workflow_text() -> str:
@@ -282,7 +327,7 @@ def test_heavy_dependency_skip_guards_are_backed_by_a_job_that_installs_them():
                 f"{rel_path} runs in compile-and-core-regression, which does not "
                 f"install {module}, so it must keep its importorskip guard"
             )
-        assert module in job, (
+        assert _job_installs(job, module), (
             f"{rel_path} skips itself without {module}, but no CI job installs it"
         )
         assert f"--ignore={rel_path}" not in job, (
