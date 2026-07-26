@@ -87,15 +87,35 @@ def assert_port_free(port: int) -> None:
 
 
 def run_checked(cmd: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    """Run a command, surfacing its captured output when it fails.
+
+    This used to pass ``check=True`` and let ``CalledProcessError`` propagate.
+    The top-level handler prints ``str(exc)``, which for that exception is only
+    "Command [...] returned non-zero exit status 1" -- the stdout/stderr this
+    function captured was discarded, so a red packaged-runtime gate said that
+    training failed but never why. This is the only CI step that executes a real
+    optimizer step, so it is the step whose failures most need to be readable.
+    """
+    result = subprocess.run(
         cmd,
         cwd=str(cwd),
         env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        check=True,
+        check=False,
     )
+    if result.returncode != 0:
+        captured = (result.stdout or "").strip()
+        # Tail-limit: a failing trainer can emit a lot, and the end is the part
+        # that carries the traceback.
+        if len(captured) > 8000:
+            captured = "...(truncated)...\n" + captured[-8000:]
+        raise RuntimeError(
+            f"command failed (exit {result.returncode}): {' '.join(cmd)}\n"
+            f"--- captured output (stdout+stderr) ---\n{captured or '(no output)'}"
+        )
+    return result
 
 
 def fetch(url: str, timeout: float = 2.0) -> str:
