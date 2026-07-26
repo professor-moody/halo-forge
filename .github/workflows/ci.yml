@@ -246,25 +246,13 @@ jobs:
             print('datasets', datasets.__version__); \
             print('trl', trl.__version__)"
 
-      # Whole-directory selection with an explicit deny-list, never an
-      # allow-list: a new test file is gated the moment it lands.
-      #
-      # TODO(ci-suite): delete the --deselect once the GRPO KL penalty is
-      # fixed. `_grpo_policy_loss` with beta=0.1 and reference_logp=1.0
-      # returns -1.9632 where the test expects -1.9, so the quarantine is a
-      # single test, not a file. Any new --deselect needs a comment saying why.
+      # Whole-directory selection with no deny-list: a new test file is gated
+      # the moment it lands. Any --deselect added here needs a comment saying
+      # why and a TODO for removing it — a quarantine that outlives its cause
+      # silently shrinks the gate.
       - name: Full test suite (trainers included)
         run: |
-          pytest -q tests/ \
-            --deselect tests/test_grpo.py::test_grpo_policy_loss_reference_free_and_reference_model
-
-      # Non-gating visibility on the quarantined test so the deny-list above
-      # cannot quietly become permanent.
-      - name: Quarantined tests (informational)
-        continue-on-error: true
-        run: |
-          pytest -q \
-            tests/test_grpo.py::test_grpo_policy_loss_reference_free_and_reference_model
+          pytest -q tests/
 
   lint:
     # Ratchet, not a big-bang reformat. `black --check` would currently want to
