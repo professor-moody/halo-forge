@@ -62,6 +62,49 @@ def test_non_windows_runtime_keeps_torch_license_tree(tmp_path: Path, monkeypatc
     assert (licenses / "LICENSE").is_file()
 
 
+def test_linux_runtime_prunes_torch_tooling_but_keeps_shared_memory_helper(
+    tmp_path: Path, monkeypatch
+) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    monkeypatch.setattr(namespace["platform"], "system", lambda: "Linux")
+    torch_bin = tmp_path / "halo-forge-runtime" / "_internal" / "torch" / "bin"
+    torch_bin.mkdir(parents=True)
+    for name in (
+        "FileStoreTest",
+        "HashStoreTest",
+        "TCPStoreTest",
+        "protoc",
+        "test_profiler_collection",
+        "test_shim",
+        "torch_shm_manager",
+    ):
+        (torch_bin / name).write_text(name, encoding="utf-8")
+
+    removed = namespace["prune_linux_torch_tooling"](tmp_path / "halo-forge-runtime")
+
+    assert {path.name for path in removed} == {
+        "FileStoreTest",
+        "HashStoreTest",
+        "TCPStoreTest",
+        "protoc",
+        "test_profiler_collection",
+        "test_shim",
+    }
+    assert (torch_bin / "torch_shm_manager").is_file()
+
+
+def test_non_linux_runtime_keeps_torch_tooling(tmp_path: Path, monkeypatch) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    monkeypatch.setattr(namespace["platform"], "system", lambda: "Darwin")
+    torch_bin = tmp_path / "halo-forge-runtime" / "_internal" / "torch" / "bin"
+    torch_bin.mkdir(parents=True)
+    test_binary = torch_bin / "test_shim"
+    test_binary.write_text("test shim", encoding="utf-8")
+
+    assert namespace["prune_linux_torch_tooling"](tmp_path / "halo-forge-runtime") == ()
+    assert test_binary.is_file()
+
+
 def test_dashboard_runtime_seeds_cpu_torch_before_project_install(
     tmp_path: Path, monkeypatch
 ) -> None:

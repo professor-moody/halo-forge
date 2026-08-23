@@ -102,6 +102,36 @@ def archive_windows_torch_licenses(runtime_bundle: Path) -> tuple[Path, ...]:
     return tuple(archived)
 
 
+def prune_linux_torch_tooling(runtime_bundle: Path) -> tuple[Path, ...]:
+    """Remove PyTorch development executables that are not used at runtime.
+
+    The CPU wheel includes store tests, profiler tests, shims, and protoc tools
+    under ``torch/bin``. linuxdeploy treats every ELF file in the AppDir as an
+    application binary and tries to resolve its development-only libtorch
+    dependencies. Halo Forge only needs ``torch_shm_manager`` from this folder
+    for multiprocessing, so retain it and remove the unrelated tooling before
+    Tauri assembles the AppImage.
+    """
+    if platform.system() != "Linux":
+        return ()
+
+    torch_bin = runtime_bundle / "_internal" / "torch" / "bin"
+    if not torch_bin.is_dir():
+        return ()
+
+    removed: list[Path] = []
+    for path in sorted(torch_bin.iterdir()):
+        if path.name == "torch_shm_manager":
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed.append(path)
+        print(f"Removed unused Linux Torch tooling: {path}", flush=True)
+    return tuple(removed)
+
+
 def install_runtime_deps(py: Path, repo_root: Path, *, profile: str) -> None:
     run([str(py), "-m", "pip", "install", "--upgrade", "pip", "wheel"], cwd=repo_root)
 
@@ -187,6 +217,7 @@ def build_pyinstaller(py: Path, repo_root: Path, runtime_dir: Path) -> Path:
     run(cmd, cwd=repo_root)
     executable = runtime_executable(dist_dir)
     archive_windows_torch_licenses(executable.parent)
+    prune_linux_torch_tooling(executable.parent)
     return executable
 
 
