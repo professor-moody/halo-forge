@@ -2118,7 +2118,7 @@ class TeeWriter:
         self.log_path = log_path
         self.quiet = quiet
         self.terminal = sys.stdout
-        self.log_file = open(log_path, "w", buffering=1)  # Line buffered
+        self.log_file = open(log_path, "w", buffering=1, encoding="utf-8")  # Line buffered
 
     def write(self, message: str):
         """Write to both terminal and log file."""
@@ -2127,7 +2127,15 @@ class TeeWriter:
 
         # Write to terminal unless quiet mode
         if not self.quiet:
-            self.terminal.write(message)
+            try:
+                self.terminal.write(message)
+            except UnicodeEncodeError:
+                # Legacy Windows consoles may still use cp1252. Keep the
+                # complete UTF-8 log while rendering unsupported terminal
+                # glyphs as replacements instead of aborting the command.
+                encoding = getattr(self.terminal, "encoding", None) or "ascii"
+                safe_message = message.encode(encoding, errors="replace").decode(encoding)
+                self.terminal.write(safe_message)
 
     def flush(self):
         """Flush both outputs."""

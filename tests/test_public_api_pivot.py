@@ -1324,6 +1324,35 @@ def test_cli_auto_logging_uses_dashboard_log_root(tmp_path, monkeypatch):
     assert log_path.read_text(encoding="utf-8").strip() == "hello from training"
 
 
+def test_cli_auto_logging_handles_unicode_on_legacy_windows_console(tmp_path, monkeypatch):
+    import io
+
+    from halo_forge.cli import TeeWriter
+
+    real_open = open
+
+    def legacy_windows_open(*args, **kwargs):
+        kwargs.setdefault("encoding", "cp1252")
+        return real_open(*args, **kwargs)
+
+    terminal_bytes = io.BytesIO()
+    legacy_terminal = io.TextIOWrapper(terminal_bytes, encoding="cp1252")
+    monkeypatch.setattr("builtins.open", legacy_windows_open)
+    monkeypatch.setattr(sys, "stdout", legacy_terminal)
+
+    log_path = tmp_path / "unicode.log"
+    tee = TeeWriter(log_path)
+    try:
+        tee.write("╔═ Halo Forge ═╗\n")
+        tee.flush()
+    finally:
+        tee.close()
+
+    legacy_terminal.flush()
+    assert log_path.read_text(encoding="utf-8") == "╔═ Halo Forge ═╗\n"
+    assert terminal_bytes.getvalue().decode("cp1252") == "?? Halo Forge ??\n"
+
+
 def test_training_service_launch_env_and_cwd_are_dashboard_writable(tmp_path, monkeypatch):
     app_dir = tmp_path / "app-data"
     work_dir = tmp_path / "work-dir"
