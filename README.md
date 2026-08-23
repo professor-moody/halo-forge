@@ -318,8 +318,11 @@ build matrix produces macOS arm64 DMG, Linux x86-64 AppImage/deb, and Windows
 x86-64 NSIS candidates with the same bundled-runtime health and proof-run smoke
 contract. The application and download documentation read the verified release
 manifest before recommending an installer. Unsigned candidates remain preview
-artifacts: normal users are never instructed to bypass Gatekeeper or Windows
-SmartScreen. Removing the desktop shell does not remove `~/.halo-forge` data.
+artifacts: macOS prereleases may expose an unmistakably named, checksummed
+developer preview, while stable releases and the normal download path never
+offer an unsigned DMG. Normal users are never instructed to bypass Gatekeeper
+or Windows SmartScreen. Removing the desktop shell does not remove
+`~/.halo-forge` data.
 
 The public app surfaces:
 

@@ -39,13 +39,13 @@ keywords = [
 ]
 
 dependencies = [
-    "numpy>=1.24.0",
-    "torch>=2.1.0",
-    "transformers>=4.49.0",
-    "peft>=0.13.0",
+    "numpy>=1.24.0,<3.0.0",
+    "torch>=2.1.0,<3.0.0",
+    "transformers>=4.49.0,<6.0.0",
+    "peft>=0.13.0,<1.0.0",
     "datasets>=2.14.0,<4.0.0",
-    "trl>=0.12.0",
-    "accelerate",
+    "trl>=0.12.0,<1.0.0",
+    "accelerate>=0.26.0,<2.0.0",
     "pyyaml>=6.0",
     "requests>=2.31.0",
     "tqdm",
@@ -53,9 +53,9 @@ dependencies = [
     "tensorboard",
     "pandas",
     "rich",
-    "fastapi>=0.115.0",
-    "uvicorn>=0.34.0",
-    "keyring>=25.0.0",
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn>=0.34.0,<1.0.0",
+    "keyring>=25.0.0,<26.0.0",
 ]
 
 [project.optional-dependencies]
@@ -65,8 +65,17 @@ dependencies = [
 # - `requirements.txt` remains a convenience mirror and must stay in sync.
 dev = [
     "pytest",
+    "httpx",
+    "psutil",
+    "Pillow>=10.0.0",
+    "jsonschema",
+    "pypdf>=5.0.0",
+    "beautifulsoup4>=4.12.0",
+    "python-docx>=1.1.0",
+    "pyinstaller>=6.0.0,<7.0.0",
     "black",
     "isort",
+    "ruff",
 ]
 llm-backends = [
     "anthropic>=0.18.0",

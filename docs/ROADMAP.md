@@ -1,393 +1,528 @@
-# Halo Forge Lab Roadmap
+# Halo Forge Product and Engineering Roadmap
 
-**Updated:** 2026-07-17
+- **Updated:** 2026-08-23
+- **Current release line:** 2.0.0-alpha-2
+- **Planning horizon:** alpha-2 closure through 2.0 general availability
 
-Halo Forge is a local workbench for model-training research. Its operating loop
-is now:
+Halo Forge has enough product breadth. The road to 2.0 is now a reliability,
+maintainability, security, qualification, and usability program rather than a
+feature-count program.
+
+This roadmap is gate-driven. Timeboxes are planning estimates, not promises. A
+milestone moves when its exit criteria are met; an arbitrary date does not turn
+missing evidence into support.
+
+## Product objective
+
+Halo Forge should let an operator take owned data to a locally controlled,
+evaluated, reproducible, and serveable model artifact through one understandable
+workflow:
 
 ```text
-Development evidence or unlabeled data
-  → acquisition proposal → approved review queue → human labels/adjudication
-  → approved immutable label set → reviewed child dataset version
-  → explicit training launch or repeat
-
-Dataset version → repeat/sweep → train → evaluate → compare
-                ↑                                      ↓
-                └─── fork or failure-mined child version ───┘
-
-Completed run → artifact → transform → qualify → promote → serve/export
-
-Qualified reward system → exact training output capture → independent sentinel
-                        → integrity decision → continue or reviewed pause
-
-Own data → proof outcome → controlled adaptation study → grounded reviewed data
-         → specialized task model → deterministic agent trajectory
+Own data
+  -> inspect and publish an immutable dataset
+  -> receive one explainable training recommendation
+  -> prove that the path fits and updates weights
+  -> compare compatible evaluation evidence
+  -> review the outcome
+  -> promote, serve, or export the qualified artifact
 ```
 
-The Lab is organized around immutable dataset and label-set versions, review
-queues, run groups, runs, benchmark-suite revisions, and model artifacts. It
-deliberately does not add a general research-project or experiment-matrix
-object. Acquisition, queue creation, label publication, dataset building, and
-training remain separate reviewed actions.
+Advanced experiment, verifier, reward-integrity, review, adaptation-study, and
+environment workflows remain first-class, but they must not obscure this
+primary path.
 
-## Delivered foundation
+## Roadmap principles
 
-### Dataset Lab v1 — local multimodal data factory
+1. **Truth before breadth.** A capability is advertised only when the exact
+   path has current evidence on the named runtime and hardware family.
+2. **One domain model, several surfaces.** CLI, API, browser, and desktop use
+   the same records and services; parity is tested rather than reimplemented.
+3. **Immutable evidence.** Dataset, tokenizer, chat-template, verifier,
+   runtime, run, evaluation, and artifact identity remain reconstructable.
+4. **Safe local operation.** Untrusted verifier execution fails closed;
+   remote binding requires authentication; desktop privileges are minimal.
+5. **Reproducible releases.** Application and desktop builds use frozen,
+   reviewed dependency sets while the Python package publishes deliberate
+   compatibility ranges.
+6. **No feature expansion during a red gate.** Release, security, migration,
+   or data-integrity failures take priority over new Labs or trainer modes.
+7. **Evidence expires.** Hardware and runtime qualifications carry versions,
+   timestamps, and requalification triggers.
 
-Delivered:
+## Current baseline
 
-- persistent local and pinned Hugging Face dataset sources;
-- canonical text, chat, preference, reasoning/RLVR, tool, VLM, and audio
-  records;
-- ordered YAML/JSON recipes for mapping, validation, filtering, deduplication,
-  scoring, sampling, mixtures, splits, contamination checks, curricula,
-  failure imports, and annotation synthesis;
-- immutable, content-identified versions with source and asset fingerprints;
-- profiling, previews, quarantines, provenance, optional media
-  materialization, atomic publication, and restart-safe jobs;
-- dashboard, API, and CLI registration, build, inspection, export, and direct
-  Train handoff; and
-- compatibility for existing `prepare`, `validate`, `dedup`, `score`, and
-  `synthesize` workflows.
+The following capability layers are delivered and form the baseline to
+stabilize, not a list of work to rebuild:
 
-See [Dataset Lab](DATASET_LAB.md).
+- Dataset Lab v1-v2: immutable multimodal datasets, recipes, trainer artifacts,
+  evaluations, comparison, and failure mining;
+- Lab v3-v5: experiment operations, workstation scheduling, Artifact Studio,
+  adaptive checkpoints, and reproducible evidence;
+- Lab v6-v8: human review, verifier reliability, reward integrity, and exact
+  training-signal capture;
+- Labs v11-v15: proof outcomes, controlled adaptation studies, grounded data,
+  specialized task models, and deterministic environments;
+- V21: exact real-path certification and workstation beta evidence;
+- SFT, CPT, DPO, GRPO, RAFT, modality trainers, evaluation, conversion,
+  serving, and artifact workflows across capability-checked backends; and
+- React/FastAPI browser UI plus Tauri desktop packaging contracts.
 
-### Dataset Lab v2 — closed-loop training and evaluation
+The detailed contracts remain in the domain documents linked from
+[Documentation](README.md). The roadmap tracks what must become dependable and
+supportable next.
 
-Delivered:
+## Priority model
 
-- stable record, content, and per-version instance identities with lineage;
-- versioned trainer-dataset adapters and content-addressed trainer artifacts;
-- exact preservation of supplied validation data and exclusion of test/canary
-  data from trainers;
-- canonical run identity, explicit dataset roles, replay-complete dataset and
-  tokenizer identity, and run/dataset traceability;
-- immutable benchmark suite revisions, persistent evaluations, metric
-  direction, sample-level evidence, subject hashing, and compatible-result
-  reuse;
-- base/candidate comparison and reviewed, provenance-preserving failure mining;
-- dataset-version comparison by membership, content, split movement, recipe,
-  statistics, and source contribution; and
-- dashboard, API, and CLI flows for render, train, evaluate, compare, mine, and
-  fork while retaining legacy versions, paths, manifests, and evaluation
-  summaries.
+| Priority | Meaning | Examples |
+|---|---|---|
+| P0 | Blocks a release or can corrupt, misidentify, expose, or silently discard user work | identity errors, failed release gates, unsafe execution, broken migrations |
+| P1 | Material reliability, maintainability, or primary-workflow failure | dependency drift, worker recovery, control-plane decomposition, test isolation |
+| P2 | Important product quality or operational scale | accessibility, large-catalog performance, advanced workflow refinement |
+| P3 | Valid future capability with no current release dependency | distributed scheduling, new search policies, remote publishing |
 
-### Lab v3 — reproducible experiment operations
+Every roadmap issue must name its priority, milestone, owner, acceptance test,
+and user-visible effect. “Improve,” “support,” and “polish” are not sufficient
+acceptance criteria by themselves.
 
-Delivered and now the current operational layer:
+## Critical path and parallel work
 
-- persistent repeat and sweep groups with deterministic trial materialization,
-  explicit run seeds, canonical run IDs, and immutable output directories;
-- a pinned development-suite objective with explicit metric direction, plus a
-  separate holdout purpose reserved for final confirmation;
-- trainer/backend capability gating for step-, cycle-, or full-trial execution;
-- opt-in synchronous successive halving with seed-complete rung decisions and a
-  default reduction factor of three; repeats are never pruned;
-- a durable SQLite work/dependency queue, one global accelerator lease,
-  priority/FIFO ordering, process heartbeats, cancellation, retry, restart
-  recovery, and serving-aware resource blocking;
-- cohort aggregation and ranking across seeds, group comparison, and reviewed
-  best-trial fork specifications;
-- minimal checkpoint/adapter/final-model artifact records and append-only
-  evaluation/failure-mining exposure lineage;
-- evidence-validity and mining-eligibility metadata, bounded comparison pages,
-  and honest treatment of legacy aggregate-only evaluation; and
-- the Experiments dashboard plus `halo-forge sweep`, `halo-forge jobs`, and
-  matching HTTP resources.
+```text
+Frozen dependencies and P0 correctness
+  -> alpha-2 engineering evidence and developer preview
+    -> control-plane decomposition and hermetic CI
+      -> secure, recoverable primary workflow
+        -> real-hardware qualification
+          -> release candidate
+            -> 2.0 GA
+```
 
-See [Reproducible Experiment Operations](EXPERIMENT_OPERATIONS.md).
+Security analysis, documentation repair, and hardware-lab scheduling may begin
+earlier, but they do not bypass the chain. In particular, hardware evidence is
+not release evidence until it was produced by the frozen runtime and current
+identity contracts.
 
-### Lab v4 — workstation control plane and Artifact Studio
+## Release train
 
-Delivered:
+### Milestone 0 — alpha-2 release closure
 
-- one durable workstation scheduler and supervised dashboard worker for data,
-  training, evaluation, experiments, artifact operations, cleanup, and serving;
-- attempt isolation, event history, dependency blocking/reopening, bounded
-  retries, PID/start-identity recovery, two-second resource samples, permanent
-  telemetry rollups, and RAM/disk preflight;
-- content-addressed artifact blobs with occurrence, location, operation, and
-  ordered multi-parent lineage records;
-- verified adapter bake/composition, conversion, post-training quantization,
-  atomic publication, operation reuse, pins, tags, notes, and append-only alias
-  history;
-- immutable qualification and serving profiles, operational performance
-  evaluation, direction-aware parent/candidate comparison, explicit promotion,
-  and local portable export;
-- storage inventory, protected reviewed cleanup plans, seven-day trash,
-  restoration, and expired-trash purge; and
-- a consolidated, responsive dashboard with structured forms, compatible
-  pickers, contextual inspectors, command palette, and global Activity Center.
+- **Purpose:** close the already-declared alpha-2 engineering surface and ship
+  an honestly labeled developer preview without adding scope.
+- **Indicative timebox:** 2-3 focused weeks.
+- **Feature policy:** freeze; accept only P0/P1 release fixes and documentation
+  truth corrections.
+- **Status (2026-08-23):** engineering closure is complete on the release branch.
+  The frozen dependency contract, full Python suite, modality/ops gates,
+  frontend/docs/Cargo builds, packaged-runtime self-check, and packaged
+  two-step SFT/dashboard smoke pass locally. The no-cost publication path is an
+  unsigned, checksummed macOS developer preview on a GitHub prerelease; source,
+  CLI, and browser installation remain the supported paths. Developer ID
+  signing and notarization are a separately funded promotion gate and do not
+  block moving engineering work to Milestone 1.
 
-See [Artifact Studio](ARTIFACT_STUDIO.md).
+#### Work
 
-### Lab v5 — adaptive training and Evidence Studio
+- Establish a Python dependency policy:
+  - commit a reviewed `uv.lock` for development and packaged runtimes;
+  - use frozen resolution in CI and desktop/release builds;
+  - retain intentional ranges in `pyproject.toml` for wheel consumers;
+  - add release constraints for packages whose major versions are not yet
+    compatible, including Transformers; and
+  - test both the frozen application set and the declared package range.
+- Fix all undefined names and make Ruff F82 a blocking gate. The swallowed
+  Review Studio `validate_record` failure is P0 because it can reject valid
+  output records without exposing the implementation error.
+- Resolve the reasoning modality baseline drift for checkpoint and resume
+  evidence. Update a baseline only after explaining and reviewing the behavior
+  change.
+- Land the chat-template identity contract with:
+  - one versioned digest scheme;
+  - explicit present, absent, unreadable, and unsupported states;
+  - conversion and catalog round-trip coverage;
+  - backward-readable legacy records; and
+  - no dead or shadowed test helpers.
+- Make the full Python suite pass in the frozen release environment.
+- Repair or explicitly defer every non-strict release-readiness check. A
+  deferred check must identify the unsupported surface in release notes.
+- Regenerate and verify frontend, documentation, desktop, and packaged-runtime
+  artifacts from a clean checkout.
+- Publish unsigned macOS alpha/beta/RC candidates only with an
+  `-unsigned-preview` filename, checksum, explicit preview manifest state, and
+  opt-in installation guidance. Never attach an unsigned DMG to a stable
+  release or recommend it on the normal download path.
+- Keep macOS signing, notarization, and stapling conditional on credentials;
+  complete those gates before calling any DMG supported.
+- Reconcile version strings, release notes, changelog, download page, hardware
+  matrix, and architecture documentation.
 
-Delivered:
+#### Exit criteria
 
-- immutable checkpoint-policy revisions with explicit step/cycle schedules,
-  development-only objectives and guardrails, practical thresholds, patience,
-  reviewed or opt-in automatic boundary actions, and retention guidance;
-- resolved trainer-compatible plans and a durable train boundary → checkpoint
-  → evaluation → gate → continuation graph with idempotent recovery;
-- truthful pause, review, stop, and continuation states, append-only operator
-  overrides, checkpoint trajectory views, and Activity Center review actions;
-- deterministic matched-seed cohort snapshots with 95% percentile-bootstrap
-  intervals, 10,000 resamples, seed 42, practical-equivalence conclusions,
-  compatibility checks, and no sample-level pseudo-replication;
-- primary-objective ranking, explicit secondary evidence, and a post-training
-  Pareto view that preserves unavailable speed, memory, energy, and size data;
-- append-only reviewed research decisions and immutable Markdown, HTML, JSON,
-  CSV, and SVG evidence bundles containing data, suite, run, checkpoint,
-  runtime, assumptions, and missing-evidence identities;
-- longitudinal evaluation history and direction-aware drift comparison; and
-- a guided, autosaved Experiments workflow with labeled search pickers,
-  server-side drafts, global search, checkpoint timelines, evidence review,
-  responsive navigation, and matching API/CLI operations.
+- all blocking GitHub Actions jobs are green on the release commit;
+- zero Ruff E9/F63/F7/F82 findings;
+- frozen full suite passes with no unreviewed deselection or quarantine;
+- modality baseline, release interface, frontend contract, Cargo, and packaged
+  smoke gates pass;
+- no test writes to an operator's real `~/.halo-forge` state;
+- signature, notarization, availability, and support status are represented
+  truthfully in the release manifest;
+- unsigned macOS assets are confined to prereleases and visibly labeled as
+  developer previews;
+- no known P0 issue is open; and
+- the release checklist can be executed from a clean clone without undocumented
+  local state.
 
-See [Adaptive Training and Evidence Studio](ADAPTIVE_EVIDENCE.md).
+#### Funded macOS distribution gate
 
-### Lab v6 — Human Feedback and Active Data Studio
+This gate may be completed whenever project funding or an eligible program
+membership becomes available. It blocks promotion of the DMG to a supported
+normal installer, but it does not block alpha engineering or the source,
+browser, and CLI release paths.
 
-Delivered:
+- obtain a project-controlled Apple Developer membership and Developer ID
+  identity without sharing personal certificates;
+- store signing and notarization credentials in protected release secrets;
+- validate codesign, notarization, stapling, Gatekeeper acceptance, packaged
+  smoke, checksum, manifest, and public-download readback; and
+- change the download page from preview guidance to a recommended DMG only
+  after that exact artifact passes every gate.
 
-- immutable annotation-schema revisions for text, preference, tool-use, VLM,
-  and audio review, with binary, categorical, multi-label, scalar, correction,
-  pairwise, and ranking tasks;
-- deterministic, checksummed acquisition batches over development evaluations,
-  comparisons, run samples, Dataset Lab versions, Playground sessions, and
-  imported JSONL, including ordered quota strata and stable record deduplication;
-- evidence-aware explicit, failure, regression, improvement, disagreement,
-  low-score, low-margin, coverage, diversity, and seeded-random selection that
-  refuses to fabricate unavailable scores, margins, or embeddings;
-- protected-evidence enforcement: operational, holdout, test, and canary
-  records cannot enter review acquisition, while development exposure is
-  recorded and propagated to descendant label sets and dataset versions;
-- one-pass and blinded, counterbalanced two-pass queues with explicit
-  adjudication, append-only events, idempotent writes, stale-write rejection,
-  drafts, deferral, flags, exclusions, correction history, and projection
-  recovery;
-- optional on-demand model suggestions with separate provenance and reveal
-  history that never count as human decisions;
-- immutable, content-addressed label-set revisions with canonical records,
-  lineage, statistics, checksums, suggestion provenance, and exposure identity;
-- reviewed `filter`, `replace_by_record_id`, `append`, and `annotate` handoff to
-  immutable Dataset Lab child versions, followed by a separate Train or repeat
-  launch; and
-- Data → Review Queues dashboard workflows, durable Activity integration,
-  matching HTTP resources, structured spec descriptors, and the complete
-  `halo-forge review` CLI hierarchy.
+### Milestone 1 — alpha-3 maintainability and deterministic CI
 
-See [Human Feedback and Active Data Studio](REVIEW_STUDIO.md).
+- **Purpose:** reduce control-plane blast radius without changing product
+  semantics.
+- **Indicative timebox:** 4-6 weeks.
+- **Feature policy:** domain-preserving refactors only.
 
-### Lab v7 — Verifier Reliability and Reward Studio
+#### Workstream A: service decomposition
 
-Delivered:
+- Split `halo_forge/public_api/app.py` into domain routers: system, datasets,
+  review, training, experiments, evaluations, artifacts, verifiers, rewards,
+  and research Labs.
+- Split `PublicApiService` into domain application services behind a temporary
+  compatibility facade.
+- Move CLI parser and handler registration into the same domain packages.
+- Split database operations into schema/migration, run, work, dataset,
+  evaluation, artifact, and research repositories while retaining one SQLite
+  transaction boundary where required.
+- Define and enforce dependency direction:
 
-- immutable verifier profiles for deterministic checks, LLM judges, verified
-  reward-model artifacts, and ordered chains, with implementation,
-  configuration, reward-contract, adapter, and runtime fingerprints;
-- protected-source eligibility, deterministic grouped calibration/confirmation
-  partitioning, replicated runs, pair/ranking counterbalancing, reviewed
-  perturbations, reward-model batch checks, and normalized observations;
-- task-aware reliability metrics, stable-record grouped bootstrap intervals,
-  explicit missing evidence, reviewed qualification policies, append-only
-  decisions, and candidate/approved alias history;
-- durable, recoverable calibration work and atomic checksummed evidence bundles;
-- exact qualified-by-default bindings in data, evaluation, review, training,
-  evidence, and replay while retaining visibly unqualified legacy behavior;
-- guided Evaluate and Verifier workspaces, server-paged evidence inspection,
-  bounded multi-subject comparison, and reviewed reliability-failure handoff;
-  and
-- matching HTTP resources and the complete `halo-forge verifier` CLI hierarchy.
+```text
+transport (CLI/FastAPI/Tauri)
+  -> application services
+    -> domain services
+      -> repositories and runtime adapters
+```
 
-See [Verifier Reliability and Reward Studio](VERIFIER_RELIABILITY.md).
+- Add import-boundary tests so UI and transports cannot become dependencies of
+  domain logic.
 
-### Lab v8 — Reward Integrity and Training Signal Studio
+#### Workstream B: API and frontend contract
 
-Delivered:
+- Treat the FastAPI OpenAPI document as a checked artifact.
+- Generate or mechanically validate the TypeScript client and shared schemas
+  instead of manually mirroring hundreds of resources.
+- Preserve endpoint compatibility through contract snapshots and deprecation
+  periods.
+- Add pagination, cancellation, idempotency, error, and asynchronous-work
+  conventions shared by every domain router.
 
-- additive SQLite schema v11 records for immutable reward systems, protocols,
-  integrity profiles, direct-run segments, sealed traces, audits, observations,
-  metrics, decisions, and domain bindings without rebuilding older records;
-- immutable reward-system revisions pinning one qualified optimization verifier,
-  a disjoint qualified primary sentinel, optional diagnostic auditors, reward
-  mapping and shaping, task/modality compatibility, and implementation,
-  artifact, tokenizer, configuration, and runtime identities;
-- a versioned trainer-signal capability registry and one identity-aware,
-  bounded observation sink for RAFT, GRPO, reasoning, agentic/tool, VLM, and
-  audio, including candidate ordinals, selection outcomes, component traces,
-  hashed media, and exact captured outputs;
-- deterministic `balanced_256`, `broad_512`, and `exhaustive` retention,
-  append-only attempt-scoped shards, atomic sealing, checksum verification,
-  resume deduplication, and explicit virtual identities for legacy/manual data;
-- independent same-output sentinel rescoring without regeneration or influence
-  on gradients, selection, filtering, or the optimization reward;
-- paired coverage, agreement, acceptance asymmetry, normalized reward gaps,
-  rank and top-tail diagnostics, grouped-bootstrap intervals, and matched-
-  identity boundary trends with diagnostic/core populations kept separate;
-- immutable strict, human-aligned, and report-only integrity profiles, explicit
-  `pass`, `warn`, `fail`, and `incomplete_evidence` decisions, and reviewed
-  Continue, Stop, Fork, or Review Studio proposal actions;
-- durable trace and audit work, run/checkpoint/artifact bindings, bounded
-  evidence APIs, dashboard audit workspaces, and the complete
-  `halo-forge reward` CLI hierarchy; and
-- replay manifest v4 reward, auditor, capability, trace, boundary, audit, and
-  decision identities while keeping v1-v3 readable and requiring a recorded
-  reason for exact-replay reward drift.
+#### Workstream C: test infrastructure
 
-Hugging Face RAFT and MLX GRPO are truthfully final-boundary-only. MLX RAFT is
-cycle-resumable, while Hugging Face GRPO supports resumable step audits when a
-positive `max_steps` is resolved. Reasoning, agentic/tool, VLM, and audio remain
-cycle-resumable. Optional development-suite identity is pinned on each audit;
-V8 evaluates every exact published checkpoint through durable Evaluation Lab
-work before its reward audit can run. Development results are completion and
-evidence tracking only: V8 defines no quality threshold and does not combine
-suite metrics with the checkpoint gate. Existing raw verifier launches remain
-compatible but unmonitored. No audit result automatically tunes a verifier,
-changes reward mapping, creates data, starts a fork, or promotes an artifact.
+- Add an autouse isolated Halo Forge state root for tests and reset cached
+  databases, supervisors, token stores, and workers between cases.
+- Functionally probe `sandbox-exec` or `bwrap`; skip with an explicit reason
+  when the binary exists but the parent environment prevents execution.
+- Separate unit, contract, integration, sandbox, packaged-runtime, hardware,
+  and soak suites with documented runtimes and owners.
+- Add coverage reporting and ratchet changed-code coverage before setting a
+  repository-wide threshold.
+- Add a supported-Python core matrix for 3.10-3.13 and retain one frozen full
+  suite on the release Python version.
+- Track flaky tests; quarantine requires an issue, owner, reason, and expiry.
 
-See [Reward Integrity and Training Signal Studio](REWARD_INTEGRITY.md).
+#### Exit criteria
 
-### Labs v11–v15 — outcomes, studies, grounding, task models, and environments
+- no production Python module exceeds an agreed control-plane size budget
+  without an architectural exception;
+- adding a domain endpoint normally changes one router, one application
+  service, one client surface, and its tests rather than central monoliths;
+- OpenAPI/client drift fails CI;
+- the full non-hardware suite is hermetic and repeatable from a clean clone;
+- changed-code coverage is reported and cannot regress below the ratchet; and
+- no behavior or persisted schema changes without explicit migration evidence.
 
-Delivered as five independently releasable capability layers:
+### Milestone 2 — beta-1 secure, recoverable guided workstation
 
-- V11 separates technical proof completion from development-quality evidence,
-  records normalized findings and resource projections, and requires a
-  compatible assessment or retained override before a full run;
-- V12 adds immutable paired A/B, dose-response, and bounded 2×2 adaptation
-  studies with paired seeds, domain/retention evidence, planned contrasts,
-  grouped intervals, Holm correction, deviations, and reviewed decisions;
-- V13 turns immutable corpora into cited generation proposals with exact
-  source-span identity, structural verification, coverage reports, and an
-  explicit Review Studio handoff;
-- V14 adds verified PyTorch classification, multi-label, embedding, reranking,
-  image-classification, and audio-classification data, training, evaluation,
-  artifact, serving, and replay contracts; and
-- V15 adds deterministic local state-machine environments, immutable episode
-  suites, exact trace replay, comparison, step evidence, and reviewed
-  trajectory publication for existing trainers.
+- **Purpose:** make the primary own-data workflow safe and understandable for
+  external beta users.
+- **Indicative timebox:** 4-6 weeks.
 
-Schema v18 and replay v9 remain backward readable. See
-[Halo Forge Labs V11–V15](LABS_V11_V15.md).
+#### Security and privacy
 
-## Current work
+- Publish `SECURITY.md` with supported versions, reporting instructions,
+  verifier-execution boundaries, and response expectations.
+- Add a maintained threat model for local browser, remote browser, desktop,
+  verifier sandbox, model loading, document extraction, tokens, and support
+  bundles.
+- Enable a restrictive Tauri content security policy.
+- Remove webview shell permissions that are not required; scope any remaining
+  command and argument explicitly.
+- Replace “any HTTP 200 on port 8765” desktop readiness with a product/version
+  response and per-launch handshake or equivalent ownership proof.
+- Verify non-loopback auth, CORS, token rotation/revocation, secret redaction,
+  and support-bundle privacy in integration tests.
+- Add dependency update automation, vulnerability review, SBOM generation, and
+  release provenance for Python, npm, Cargo, and packaged runtimes.
+- Audit archive extraction, local path handling, symlinks, subprocess
+  invocation, model remote code, and verifier workspace containment.
 
-The current phase is V21 beta closure: progressively certifying real trainer
-paths instead of treating hardware detection or a generic tensor update as
-proof that guided training works. Runtime core qualification, exact trainer-path
-certification, user-plan capacity evidence, and full workstation beta evidence
-are separate states.
+#### Primary experience
 
-Delivered in the V21 implementation:
+- Make **Train on your data** the default entry point.
+- Present one recommendation, its evidence, its resource estimate, and one next
+  safe action at a time.
+- Place raw trainer flags, JSON specifications, and research controls behind a
+  clearly labeled Advanced mode.
+- Unify preparation, queued work, proof progress, evaluation, and outcome
+  review into a recoverable journey with durable deep links.
+- Provide actionable recovery for gated models, missing runtimes, insufficient
+  storage, incompatible trainers, interrupted workers, and failed artifacts.
+- Ensure every irreversible or expensive action has a preview, scope, and
+  confirmation.
 
-- schema v23 and replay v14 identity for immutable path profiles,
-  certifications, evidence steps, attempts, bindings, and workstation reports;
-- a ten-step real Dataset Lab → shipped trainer → parameter delta → artifact
-  reload certification contract;
-- automatic instruction-SFT certification after core AMD runtime qualification,
-  with other paths verified progressively on demand;
-- backend capability filtering that cannot be unlocked by lightweight tensor
-  diagnostics;
-- durable waiting, retry, resume, Activity, API, CLI, Setup, and Train surfaces;
-- workstation reports that resolve concrete capacity, proof, artifact, outcome,
-  recovery, coexistence, and soak records instead of accepting boolean claims;
-  and
-- CUDA retained as hardware-unqualified until equivalent evidence exists on a
-  real NVIDIA host.
+#### Frontend quality
 
-Remaining release evidence is operational rather than a new capability:
+- Add Playwright smoke flows for setup, own-data publication, proof launch,
+  run recovery, evaluation comparison, and artifact serving.
+- Add automated keyboard and accessibility checks for the primary workflow.
+- Split oversized frontend chunks and set explicit JavaScript budgets.
+- Exercise 10,000-run/dataset/artifact catalogs for query latency, pagination,
+  search, reconnect, and memory behavior.
 
-- add long-running crash/recovery soak coverage on representative workstations;
-- complete an independently idle Strix instruction-SFT certification, managed
-  capacity check, own-data proof, matched outcome assessment, external-workload
-  wait/release exercise, and twelve-hour soak;
-- progressively implement and certify the remaining advertised path executors;
-- run the same real-path ladder on NVIDIA hardware before enabling CUDA guided
-  scenarios;
-- soak signal capture, trace sealing, same-output rescoring, boundary pause,
-  reviewed continuation, and crash recovery across supported trainers;
-- expand independent-sentinel fixtures and matched-identity reward-inversion
-  scenarios without inventing unavailable scores or causal claims;
-- improve backend-specific performance instrumentation while retaining nulls
-  for metrics the runtime cannot measure;
-- run restart, retry, and bounded-memory soak tests for large acquisition,
-  suggestion, label publication, and reviewed dataset-build work;
-- expand representative review fixtures for preference, tool, VLM, and audio
-  records without generating or editing binary media; and
-- refine keyboard, mobile, reconnect, and accessibility behavior using real
-  large catalogs and queues;
-- soak proof-outcome assessment and reviewed full-run gating;
-- expand real task-model fixtures and serving round trips across supported
-  text, image, and audio families; and
-- validate deterministic environment snapshot/replay behavior over large
-  episode and step catalogs.
+#### Exit criteria
 
-## True future phases
+- no unresolved high or critical security finding in the supported surface;
+- desktop capabilities and CSP pass an explicit regression test;
+- all primary workflows pass browser and packaged-desktop Playwright smoke;
+- a new operator can reach a qualified proof preflight without editing JSON or
+  knowing trainer implementation names;
+- interrupted preparation or proof work resumes or fails with a bounded,
+  actionable state; and
+- accessibility checks have no critical violations on primary routes.
 
-These remain intentionally outside the current single-workstation Lab scope:
+### Milestone 3 — beta-2 real-hardware qualification
 
-### Larger search and scheduling
+- **Purpose:** replace platform possibility with measured support evidence.
+- **Indicative timebox:** 6-10 weeks, constrained by hardware access.
 
-- additional verified pruning policies and multi-objective search;
-- multi-objective selection across quality, speed, memory, energy, and size;
-- repeated-seed and budget orchestration across several workstations;
-- distributed training and cluster scheduling; and
-- statistically valid sequential-testing and budget-allocation policies beyond
-  the declared checkpoint gates now supported.
+#### Qualification ladder
 
-### Richer artifact operations
+For every advertised trainer/backend pair:
 
-- verified QAT backed by an actual quantization-aware training implementation;
-- remote Hugging Face or registry publishing with reviewable credentials and
-  release metadata;
-- additional conversion backends once round-trip and loadability contracts are
-  available; and
-- adapter routing and continued-training policies beyond explicit operator
-  actions.
+1. clean install or packaged runtime;
+2. runtime and accelerator identity capture;
+3. immutable dataset and tokenizer preparation;
+4. capacity preflight;
+5. real forward/backward optimizer step;
+6. trainable-parameter hash change;
+7. checkpoint save and resume;
+8. final artifact reload;
+9. compatible base/candidate evaluation;
+10. reviewed proof outcome;
+11. scheduler wait/release and restart recovery; and
+12. bounded soak with telemetry and integrity readback.
 
-### More autonomous data research
+#### Hardware targets
 
-- autonomous active-learning proposals built from valid development failures;
-- multi-reviewer assignment, accounts, and agreement studies beyond the
-  current local one-reviewer/two-pass workflow;
-- additional acquisition algorithms after they have pinned, reproducible
-  evidence contracts;
-- live or nondeterministic agent environments with explicit side-effect
-  controls;
-- binary image/audio generation and broader multimodal synthesis; and
-- a bounded-memory streaming rewrite for every legacy recipe transform.
+- **Apple Silicon:** MLX SFT, CPT, RAFT, DPO, and GRPO on the supported MLX
+  line; MPS routes only where explicitly verified.
+- **AMD ROCm / Strix Halo:** managed-runtime qualification, instruction SFT
+  first, then progressively certified trainer paths.
+- **NVIDIA CUDA:** keep guided scenarios hardware-unqualified until the same
+  ladder passes on a real NVIDIA host.
+- **CPU:** metadata, validation, deterministic tests, and tiny smoke only; do
+  not market it as a practical heavy-training path.
 
-### Broader research analysis
+#### Operational evidence
 
-- larger randomized designs beyond the delivered paired, dose-response, and
-  bounded 2×2 adaptation-study templates;
-- cross-backend reproducibility studies with normalized hardware telemetry; and
-- cross-group meta-analysis and publication templates beyond the immutable
-  evidence bundles now supported.
+- Run twelve-hour workstation event windows with bounded sequential proofs.
+- Exercise power loss/process death, worker restart, retry, cancellation,
+  external accelerator contention, low disk, and artifact publication recovery.
+- Soak reward-signal capture, sealing, same-output sentinel rescoring, boundary
+  review, and continuation across supported verifier-guided trainers.
+- Measure rather than infer peak memory, disk growth, throughput, power, and
+  energy; keep unavailable metrics null.
+- Publish qualification timestamps, runtime versions, hardware identities,
+  limitations, and invalidation rules in the support matrix.
 
-## Operational research angles
+#### Exit criteria
 
-The delivered Lab can already support controlled studies of:
+- every green support-matrix cell points to current checksummed evidence;
+- no capability is enabled solely from hardware detection or a generic tensor
+  test;
+- the recommended Apple and AMD instruction-SFT paths complete the full ladder;
+- CUDA guided scenarios remain disabled until equivalent NVIDIA evidence is
+  complete;
+- recovery and twelve-hour soak requirements pass on representative supported
+  workstations; and
+- qualification evidence is reproducible by a second operator from published
+  instructions.
 
-- raw versus cleaned, deduplicated, scored, mixed, curriculum, or synthetic
-  data;
-- dataset size, source contribution, mixture ratio, and sampling policy;
-- SFT versus preference optimization or verifier-guided training on a shared
-  base and suite;
-- learning rate, batch size, LoRA configuration, epochs/cycles, and repeated
-  seed variance;
-- verifier choice, reward threshold, and development-to-holdout transfer;
-- optimization-verifier versus independent-sentinel agreement, reward-gap,
-  top-tail disagreement, and boundary-drift behavior on the same outputs;
-- checkpoint/cycle continuation for trainers with a verified capability;
-- model family, backend, modality, training cost, and inference behavior;
-- acquisition-strategy and annotation-policy effects across deterministic
-  review batches; and
-- reviewed failures, corrections, preferences, tool traces, VLM annotations,
-  or audio labels turned into child datasets and forked training groups without
-  losing record, review, or exposure history.
+### Milestone 4 — 2.0 release candidate
 
-The next roadmap phase should be selected from measured friction in these
-workflows, not from adding another layer of organizational objects.
+- **Purpose:** freeze behavior and prove upgrade, compatibility, distribution,
+  and support readiness.
+- **Indicative timebox:** 4 weeks.
+- **Feature policy:** complete freeze; P0/P1 release fixes only.
+
+#### Work
+
+- Freeze public CLI, API, database schema, replay, artifact manifest, and
+  configuration contracts for 2.0.
+- Test upgrade and rollback from the latest supported 1.x release and every
+  2.0 prerelease carrying persisted-state changes.
+- Verify backup, restore, cleanup, uninstall preservation, and corrupted-state
+  recovery.
+- Run signed/notarized macOS, signed Windows, and finalized Linux distribution
+  candidates through packaged-runtime and primary-workflow smoke.
+- Complete operator, troubleshooting, architecture, security, migration,
+  hardware, and contributor documentation.
+- Publish known limitations and distinguish preview, qualified, and unsupported
+  cells consistently across code, API, UI, docs, and release metadata.
+- Run a release-candidate security review and dependency/license inventory.
+- Establish issue templates, ownership, triage cadence, and support boundaries.
+
+#### Exit criteria
+
+- zero open P0 and no unaccepted P1 release blocker;
+- two consecutive clean release-candidate runs from clean checkouts;
+- migrations and rollback/recovery pass against preserved representative
+  catalogs;
+- all distributed artifacts have checksums, provenance, signature status, and
+  packaged smoke evidence;
+- documentation and product claims match the qualification registry; and
+- no release gate is informational unless the corresponding capability is
+  explicitly excluded from 2.0 support.
+
+### Milestone 5 — 2.0 general availability
+
+**Purpose:** publish a supportable local model-development workstation.
+
+#### Launch requirements
+
+- publish signed, checksummed, manifest-qualified artifacts only;
+- publish Python/source installation with reviewed constraints and a frozen
+  reproducibility path;
+- publish the final hardware and trainer support matrix;
+- publish migration, backup, rollback, security, and troubleshooting guides;
+- tag, build, verify, and read back the release from the public download and
+  package surfaces; and
+- open a 30-day stabilization window in which reliability and documentation
+  take precedence over new capability work.
+
+#### GA success measures
+
+- at least 95% of qualified-path CI and scheduled hardware runs pass without
+  retry over the stabilization window;
+- flaky-test rate remains below 0.5%;
+- zero silent data-loss, identity, migration, or security regression;
+- primary local catalog queries stay below the agreed p95 budget at 10,000
+  records on reference hardware;
+- the largest initial frontend chunk stays within the committed bundle budget;
+- support reports contain actionable identity and diagnostics without secrets,
+  prompts, dataset contents, or model weights; and
+- every support claim can be traced to current qualification evidence.
+
+## Cross-cutting workstreams
+
+These run through all milestones and should be visible as separate issue
+labels or project lanes.
+
+| Workstream | Accountable area | Typical artifacts |
+|---|---|---|
+| Release/platform | dependency sets, CI, packaging, migrations, release evidence | locks, constraints, workflows, manifests |
+| Core architecture | service boundaries, repositories, scheduling, replay | ADRs, domain packages, migration tests |
+| Product/frontend | primary journey, advanced mode, accessibility, performance | route specs, Playwright flows, bundle reports |
+| Security/privacy | threat model, desktop capabilities, auth, sandbox, redaction | SECURITY.md, tests, SBOM, review reports |
+| Hardware/ML | trainer truth, backend qualification, performance, soaks | certification bundles, support matrix |
+| Documentation/community | architecture truth, operator guidance, contribution path | docs, examples, issue templates |
+
+For a single-maintainer sequence, execute these lanes in milestone order. With
+multiple maintainers, release/platform and security can proceed beside
+architecture or product work, but no lane may bypass shared milestone gates.
+
+## Engineering scorecard
+
+Review this scorecard at each milestone boundary.
+
+| Dimension | Alpha-2 gate | Beta gate | GA gate |
+|---|---|---|---|
+| Correctness | frozen full suite green; zero undefined names | hermetic suites and changed-code coverage ratchet | two clean RC runs; no P0/P1 blocker |
+| Reproducibility | reviewed lock/constraints and frozen builds | qualification bundles reproducible | public artifacts and install paths read back |
+| Architecture | documented current topology | domain routers/services and API drift gate | stable 2.0 public contracts |
+| Security | known P0 fixed | threat model, CSP, minimal capabilities, SBOM | release security review complete |
+| Product | existing flows truthful | primary own-data journey passes E2E | supportable onboarding and recovery |
+| Hardware | no unsupported green claims | full evidence ladder on reference hosts | public current support matrix |
+| Operations | core scheduler gates green | restart/retry/soak evidence | upgrade, backup, restore, uninstall proven |
+
+## Risk register
+
+| Risk | Consequence | Mitigation | Trigger |
+|---|---|---|---|
+| Product breadth outruns maintenance | regressions and confusing navigation | feature freeze, primary-path focus, domain owners | new Lab or trainer proposed before GA |
+| Dependency major-version drift | clean installs fail unpredictably | frozen app set, deliberate ranges, min/latest CI | resolver changes a training dependency |
+| Central modules amplify changes | unrelated domains break together | compatibility facade plus incremental decomposition | cross-domain diff for a local endpoint |
+| Tests depend on user or host state | flaky failures or polluted local data | isolated roots, functional capability probes | test touches real home, port, GPU, or sandbox |
+| Qualification becomes stale | support matrix overstates reality | expiry and invalidation on runtime/model changes | backend, driver, trainer, or model adapter changes |
+| Desktop/web privilege boundary is too broad | local content compromise gains app privileges | CSP, minimal capability scopes, handshake | new Tauri command, remote origin, or plugin |
+| Untrusted verifier execution escapes | workstation data or network exposure | fail-closed sandbox, containment tests, unsafe opt-in | sandbox/backend/profile change |
+| Schema growth breaks old catalogs | loss of user history or startup failure | additive migrations, fixtures, backups, rollback tests | schema or replay version increments |
+
+## Definition of done
+
+A roadmap item is complete only when all applicable conditions hold:
+
+- behavior is implemented in the domain service rather than duplicated across
+  transports;
+- CLI, API, browser, and desktop parity is either present or the limitation is
+  explicit;
+- persisted-state changes include forward migration, backward-read behavior,
+  representative fixtures, and recovery guidance;
+- success, failure, interruption, cancellation, retry, and idempotency paths
+  are covered where relevant;
+- user-visible claims are capability- and evidence-backed;
+- security and privacy implications are reviewed;
+- tests are deterministic and do not depend on personal workstation state;
+- operator and developer documentation is updated; and
+- release checks pass from a clean checkout.
+
+## Post-2.0 candidates
+
+These are valid directions, but none should enter the 2.0 critical path.
+
+### Scale and scheduling
+
+- multi-workstation orchestration and distributed training;
+- additional verified pruning and multi-objective search policies;
+- statistically valid sequential testing and adaptive budget allocation; and
+- cross-backend normalized performance studies.
+
+### Artifact and distribution
+
+- verified quantization-aware training;
+- reviewed publishing to Hugging Face or other registries;
+- additional conversion formats with round-trip loading evidence; and
+- adapter routing and continued-training policies.
+
+### Data and research
+
+- autonomous development-data proposals with explicit review gates;
+- multi-user review assignment and agreement analysis;
+- additional reproducible acquisition algorithms;
+- live or nondeterministic agent environments with side-effect controls;
+- binary image/audio generation; and
+- broader study designs and publication workflows.
+
+Post-2.0 work should be selected from measured user friction, support burden,
+and qualification evidence—not from the availability of another organizational
+layer or model-training technique.

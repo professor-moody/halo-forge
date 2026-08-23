@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Dict, Mapping
 
 from halo_forge.run_db import RunDatabase, get_database
 

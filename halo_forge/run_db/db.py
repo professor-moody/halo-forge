@@ -20,9 +20,12 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence
 
 from halo_forge.run_db.schema import SCHEMA_SQL, initial_meta_rows
+
+if TYPE_CHECKING:
+    from halo_forge.run_db.v4 import WorkAttemptRecord
 
 # Columns we expose on the row-level dataclass. These mirror the
 # SQLite schema; everything else lives behind ``raw_json``.

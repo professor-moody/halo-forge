@@ -676,6 +676,7 @@ class SFTTrainer:
         # (notably overwrite_output_dir), so filter against the installed
         # signature instead of making dashboard training brittle.
         has_eval_data = len(val_dataset) > 0
+        model_device = str(getattr(self.model, "device", "")).lower()
         training_arg_values: Dict[str, Any] = {
             "output_dir": cfg.output_dir,
             "overwrite_output_dir": True,
@@ -709,6 +710,10 @@ class SFTTrainer:
             # ROCm optimizations
             "dataloader_num_workers": 0,
             "dataloader_pin_memory": False,
+            # Transformers 5 validates bf16 against the selected execution
+            # device.  Without this flag a CPU model is treated as a missing
+            # GPU and rejected even though CPU bf16 is a supported path.
+            "use_cpu": model_device == "cpu" or model_device.startswith("cpu:"),
         }
         signature = inspect.signature(TrainingArguments.__init__)
         training_args = TrainingArguments(

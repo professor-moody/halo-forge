@@ -10,6 +10,7 @@ without creating or committing run artifacts.
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -72,8 +73,14 @@ def _frontend_checks(skip_frontend: bool) -> list[Check]:
 
 def build_checks(args: argparse.Namespace) -> list[Check]:
     py = sys.executable
+    ruff = shutil.which("ruff") or "ruff"
     checks = [
         Check("git diff whitespace check", ["git", "diff", "--check"]),
+        Check("frozen dependency lock", [py, "scripts/check_dependency_contract.py"]),
+        Check(
+            "static undefined-name and syntax gate",
+            [ruff, "check", "--select", "E9,F63,F7,F82", "."],
+        ),
         Check(
             "syntax compile",
             [py, "-m", "compileall", "-q", "halo_forge", "ui", "tests", "scripts"],
@@ -83,41 +90,22 @@ def build_checks(args: argparse.Namespace) -> list[Check]:
             [py, "scripts/check_release_interfaces.py"],
         ),
         Check(
-            "guided corpus and CPT V10 contracts",
-            [
-                py,
-                "-m",
-                "pytest",
-                "tests/test_guided_training_coach_v10.py",
-                "tests/test_guided_corpus_v10.py",
-                "tests/test_corpus_extraction_v10.py",
-                "tests/test_cpt_backend_v10.py",
-                "-q",
-            ],
+            "modality baseline",
+            [py, "scripts/generate_modality_baseline.py", "--check"],
         ),
-        Check("serving tests", [py, "-m", "pytest", "tests/test_serving.py", "-q"]),
         Check(
-            "MLX readiness and smoke contract tests",
+            "strict operational module matrix",
             [
                 py,
-                "-m",
-                "pytest",
-                "tests/test_mlx_readiness.py",
-                "tests/test_mlx_smoke_summary_validator.py",
-                "tests/test_mlx_grpo_reference_model_measurement.py",
-                "-q",
+                "scripts/run_ops_module_matrix.py",
+                "--fixture-pack",
+                "v1",
+                "--strict",
             ],
         ),
         Check(
-            "GRPO and terminal math tests",
-            [
-                py,
-                "-m",
-                "pytest",
-                "tests/test_grpo.py",
-                "tests/test_mlx_terminal_smoke.py",
-                "-q",
-            ],
+            "full Python test suite",
+            [py, "-m", "pytest", "tests", "-q"],
         ),
     ]
     checks.extend(_frontend_checks(args.skip_frontend))

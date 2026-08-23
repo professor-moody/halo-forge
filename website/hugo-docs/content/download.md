@@ -24,7 +24,11 @@ the same managed data, training, evaluation, and model services as desktop.
 | Windows x86-64 | NSIS plus Windows sidecar, picker, process, path, health, and proof-smoke contracts | Only entries represented as supported by the manifest |
 
 Unsigned packages are preview artifacts. Halo Forge never asks normal users to
-bypass Gatekeeper or SmartScreen.
+bypass Gatekeeper or SmartScreen. Technical testers may opt into a clearly
+labeled, checksummed unsigned macOS asset from an alpha, beta, or release
+candidate GitHub prerelease by following the
+[unsigned-preview instructions](/docs/getting-started/install-desktop/#unsigned-macos-developer-preview).
+Stable releases never publish an unsigned macOS DMG.
 
 ## Data Location And Uninstall
 

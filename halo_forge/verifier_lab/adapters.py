@@ -6,7 +6,7 @@ import math
 import time
 from pathlib import Path
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Iterable, Mapping, Optional, Protocol, Type
+from typing import Any, Callable, Iterable, Mapping, Optional, Protocol, Sequence, Type
 
 from halo_forge.rlvr.verifiers.base import Verifier
 from halo_forge.rlvr.verifiers.registry import get_verifier, inventory

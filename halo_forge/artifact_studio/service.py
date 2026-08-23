@@ -35,7 +35,21 @@ from halo_forge.run_db import (
     ServingProfileRevisionRecord,
     WorkItemRecord,
 )
+import json
+import logging
+
+from halo_forge.chat_template_identity import (
+    ChatTemplateIdentity,
+    ChatTemplateRecord,
+    ChatTemplateState,
+    DerivationMode,
+    identify_from_path,
+    record_for_derivation,
+    record_for_inheritance,
+)
 from halo_forge.version import PACKAGE_VERSION
+
+logger = logging.getLogger(__name__)
 from halo_forge.workstation_jobs import WorkstationScheduler
 
 from .models import (
@@ -144,6 +158,70 @@ class ArtifactStudioService:
             return _CATALOG_TO_FILESYSTEM_KIND[normalized]
         allowed = sorted(set(_FILESYSTEM_TO_CATALOG_KIND) | set(_CATALOG_TO_FILESYSTEM_KIND))
         raise ValueError(f"Unsupported artifact kind {value!r}; choose from: {', '.join(allowed)}")
+
+    @classmethod
+    def _chat_template_record(
+        cls, location: Any, *, source: Any
+    ) -> ChatTemplateRecord:
+        """Identity for a produced artifact, with how it was obtained.
+
+        Derivation is attempted from the output first. When the output cannot be
+        interrogated the input's value is carried forward, but the record says
+        `inherited` and names the occurrence it came from -- the previous
+        behaviour copied the digest and left the distinction in a debug log,
+        so a transformed artifact asserted source provenance it had not earned.
+
+        The GGUF path necessarily lands on `inherited`: a `.gguf` container has
+        no tokenizer directory for `transformers` to load, so identity cannot be
+        derived from the output even though the template is inside the container.
+        """
+        path = getattr(location, "path", None) or getattr(location, "uri", None)
+        source_id = _field(source, "id")
+
+        if path:
+            identity = identify_from_path(path)
+            if identity.state in (ChatTemplateState.PRESENT, ChatTemplateState.ABSENT):
+                return record_for_derivation(identity)
+
+        # Could not interrogate the output. Inherit from the input -- but from
+        # the input's *envelope* where it has one. Reading only the bare column
+        # and calling `from_legacy_hash` would demote a perfectly good current
+        # identity to `legacy/unknown`, making it permanently incomparable for
+        # no reason other than the transform being unable to read its own output.
+        return record_for_inheritance(cls._source_identity(source), source_id)
+
+    @classmethod
+    def _source_identity_record(cls, source: Any) -> ChatTemplateRecord:
+        """The full record for an occurrence, envelope-first.
+
+        Recovers `mode` too, so a profile built from an inherited identity does
+        not present as though the served artifact was itself verified.
+        """
+        envelope = _occurrence_envelope(source)
+        if envelope:
+            return ChatTemplateRecord.from_dict(envelope)
+        return record_for_inheritance(
+            cls._source_identity(source), _field(source, "id")
+        )
+
+    @staticmethod
+    def _source_identity(source: Any) -> ChatTemplateIdentity:
+        """Recover an input's identity, preferring its envelope over the column.
+
+        Falls back to `from_legacy_hash` only for occurrences written before the
+        envelope existed, which is exactly what that constructor is for.
+        """
+        envelope = _occurrence_envelope(source)
+        if envelope:
+            # The envelope is authoritative whatever it says. Previously only a
+            # PRESENT state was honoured and anything else fell through to the
+            # bare column -- so a record that had *looked* and found no template
+            # was overridden by a stale hash left in a legacy field. "We checked
+            # and there is none" outranks "there is an old string here".
+            return ChatTemplateRecord.from_dict(envelope).identity
+        return ChatTemplateIdentity.from_legacy_hash(
+            _field(source, "chat_template_hash")
+        )
 
     def _sync_registration(
         self,
@@ -986,16 +1064,30 @@ class ArtifactStudioService:
             self._require_occurrence(item) for item in operation.to_dict()["input_occurrence_ids"]
         ]
         first = input_occurrences[0]
+        chat_template_record = self._chat_template_record(
+            filesystem_location, source=first
+        )
         output_occurrence = self._sync_registration(
             registration,
             artifact_kind=filesystem_blob.artifact_kind,
             model_id=str(spec.parameters.get("model_id") or first.model_id),
             backend=str(spec.parameters.get("backend") or first.backend),
             tokenizer_revision=first.tokenizer_revision,
-            chat_template_hash=first.chat_template_hash,
+            # DERIVED from the artifact that was actually produced, not
+            # inherited from the input. Conversion is exactly where an inherited
+            # value stops describing the thing it is attached to; measured
+            # 2026-08-16 the template does survive MLX/HF-recast/GGUF unchanged,
+            # but the metadata must not depend on that continuing to be true.
+            # Falls back to the input's value only when the output cannot be
+            # interrogated, and records which of those happened.
+            # Compatibility projection only. The authoritative value is the
+            # envelope in metadata -- a bare digest cannot say whether it was
+            # derived from this artifact or inherited from its input.
+            chat_template_hash=chat_template_record.projected_hash,
             metadata={
                 "artifact_operation_id": operation.id,
                 "operation_evidence": dict(completed.engine_metadata),
+                "chat_template": chat_template_record.to_dict(),
             },
         )
         for ordinal, parent in enumerate(input_occurrences):
@@ -1362,6 +1454,11 @@ class ArtifactStudioService:
             "endpoint_settings": dict(endpoint_settings or {}),
             "generation_settings": dict(generation_settings or {}),
             "resource_requirements": dict(resource_requirements or {}),
+            # Projection only. The envelope is deliberately NOT included here:
+            # it is not stored on the profile record, so folding it into the
+            # fingerprint would make revisions differ for a reason nothing can
+            # later read back. Reconstruct it with
+            # `serving_profile_chat_template(profile, occurrence)` instead.
             "chat_template_hash": occurrence.chat_template_hash,
         }
         profile = self.catalog.create_serving_profile_revision(
@@ -1892,3 +1989,92 @@ class ArtifactStudioService:
 
 
 __all__ = ["ArtifactStudioService", "QualificationExecutor", "ServingStarter"]
+
+
+def _field(source: Any, name: str) -> Any:
+    """Read `name` from a record OR its `to_dict()` projection.
+
+    Both shapes are supported deliberately, and `getattr` alone silently
+    supports only one: on a dict it returns `None` for every field name, so the
+    promised projection support did not work at all.
+    """
+    if isinstance(source, Mapping):
+        return source.get(name)
+    return getattr(source, name, None)
+
+
+def _occurrence_envelope(source: Any) -> Optional[Mapping[str, Any]]:
+    """Pull the chat-template envelope off an occurrence record or projection.
+
+    `ArtifactOccurrenceRecord` stores metadata as **`metadata_json`**, a JSON
+    string; `.metadata` exists only on the `to_dict()` projection. An earlier
+    version read `.metadata` alone, so every real record fell through to the
+    bare-column path and had its current identity downgraded to
+    `legacy/unknown`. The test that was supposed to cover this constructed a
+    fake object with a `.metadata` attribute and therefore agreed with the bug.
+    """
+    raw = _field(source, "metadata_json")
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, Mapping) and parsed.get("chat_template"):
+            return parsed["chat_template"]
+    metadata = _field(source, "metadata")
+    if isinstance(metadata, Mapping) and metadata.get("chat_template"):
+        return metadata["chat_template"]
+    return None
+
+
+def serving_profile_chat_template(
+    profile: Any, occurrence: Any, *, allow_unbound: bool = False
+) -> ChatTemplateRecord:
+    """Reconstruct a serving profile's chat-template record from its occurrence.
+
+    `ServingProfileRevisionRecord` has no metadata column, so the envelope is
+    **not stored on the profile**. It is reconstructed from the occurrence the
+    profile references, and this function is that contract.
+
+    The binding is checked rather than assumed. An earlier version accepted
+    `profile` and never read it, so a profile for occurrence A would happily
+    return occurrence B's identity -- which is exactly the confusion the record
+    exists to prevent.
+
+    - the profile's `occurrence_id` must equal the supplied occurrence's `id`;
+    - the profile's `chat_template_hash` column is *not* consulted: it cannot
+      carry state, scheme or mode;
+    - a missing envelope yields an `inherited` or `unsupported` record, never
+      `derived`.
+
+    `allow_unbound=True` exists only for callers that genuinely have no profile
+    yet (constructing one), and must not be used to skip the check.
+    """
+    from halo_forge.artifact_studio.service import ArtifactStudioService
+
+    occurrence_id = _field(occurrence, "id")
+    if profile is None:
+        if not allow_unbound:
+            raise ValueError(
+                "serving_profile_chat_template requires the profile so its "
+                "occurrence binding can be checked; pass allow_unbound=True only "
+                "when no profile exists yet"
+            )
+    else:
+        profile_occurrence = _field(profile, "occurrence_id")
+        if not profile_occurrence or not occurrence_id:
+            # `None == None` satisfied the equality check, so a profile with no
+            # binding and an occurrence with no id "matched". Absence is not
+            # agreement.
+            raise ValueError(
+                "cannot verify the profile/occurrence binding: "
+                f"profile.occurrence_id={profile_occurrence!r}, "
+                f"occurrence.id={occurrence_id!r}"
+            )
+        if profile_occurrence != occurrence_id:
+            raise ValueError(
+                "serving profile is bound to occurrence "
+                f"{profile_occurrence!r}, not {occurrence_id!r}; refusing to "
+                "report another artifact's chat-template identity"
+            )
+    return ArtifactStudioService._source_identity_record(occurrence)

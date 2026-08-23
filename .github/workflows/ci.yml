@@ -217,10 +217,8 @@ jobs:
       - name: Install CPU torch and the training stack
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -e .
-          python -m pip install pytest httpx psutil pillow jsonschema
-          python -m pip install beautifulsoup4 pypdf python-docx
+          python -m pip install torch --constraint constraints/release.txt --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --constraint constraints/release.txt -e ".[dev]"
 
       # Every module the suite guards with importorskip must be installed here,
       # otherwise this job reintroduces exactly the silent-skip problem it
@@ -285,21 +283,16 @@ jobs:
       - name: Install linters
         run: |
           python -m pip install --upgrade pip
-          python -m pip install ruff black isort
+          python -m pip install uv==0.10.10
+          python -m pip install --constraint constraints/release.txt ruff black isort
+
+      - name: Frozen dependency contract
+        run: python scripts/check_dependency_contract.py
 
       # Gating. E9 (syntax/IO errors), F63 (broken comparisons), F7 (misplaced
-      # statements) are clean on the current tree.
-      # TODO(lint-ratchet): add F82 (undefined names) once these 8 sites are
-      # fixed — halo_forge/lab_v11_v15/cli.py (Dict),
-      # halo_forge/public_api/service.py (validate_record, Sequence x3),
-      # halo_forge/run_db/db.py (WorkAttemptRecord),
-      # halo_forge/verifier_lab/adapters.py (Sequence x2). Then F401/F541/F841.
+      # statements), and F82 (undefined names) are clean on the current tree.
       - name: Ruff (gating error set)
-        run: ruff check --select E9,F63,F7 --exclude .venv,node_modules,target .
-
-      - name: Ruff undefined names (informational)
-        continue-on-error: true
-        run: ruff check --select F82 --exclude .venv,node_modules,target .
+        run: ruff check --select E9,F63,F7,F82 --exclude .venv,node_modules,target .
 
       - name: Black format drift (informational)
         continue-on-error: true

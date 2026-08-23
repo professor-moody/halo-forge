@@ -14,6 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Optional
@@ -73,12 +74,28 @@ int main(void) {
 
 
 def _sandbox_backend() -> Optional[str]:
-    """Return the sandbox binary this host would use, or None."""
+    """Return the sandbox backend only when it can execute a real process."""
     if sys.platform == "darwin":
-        return shutil.which("sandbox-exec")
-    if sys.platform.startswith("linux"):
-        return shutil.which("bwrap")
-    return None
+        backend = shutil.which("sandbox-exec")
+    elif sys.platform.startswith("linux"):
+        backend = shutil.which("bwrap")
+    else:
+        backend = None
+    if backend is None:
+        return None
+
+    trivial = "/usr/bin/true" if Path("/usr/bin/true").exists() else shutil.which("true")
+    if trivial is None:
+        return None
+    try:
+        with tempfile.TemporaryDirectory(prefix="halo-forge-test-sandbox-") as temp_dir:
+            runner = VerifierExecutionRunner(
+                execution_policy="sandbox", workspace_root=Path(temp_dir)
+            )
+            result = runner.run([trivial], cwd=Path(temp_dir), timeout=30)
+    except (OSError, subprocess.SubprocessError, SandboxUnavailableError):
+        return None
+    return backend if result.returncode == 0 else None
 
 
 def _c_compiler() -> Optional[str]:
@@ -92,7 +109,7 @@ def _c_compiler() -> Optional[str]:
 
 requires_sandbox = pytest.mark.skipif(
     _sandbox_backend() is None,
-    reason="no local sandbox backend (sandbox-exec / bwrap) on this host",
+    reason="no executable local sandbox backend (sandbox-exec / bwrap) on this host",
 )
 requires_compiler = pytest.mark.skipif(
     _c_compiler() is None,

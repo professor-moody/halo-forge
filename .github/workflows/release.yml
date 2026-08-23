@@ -180,50 +180,29 @@ jobs:
       - name: Normalize macOS release artifact names
         if: runner.os == 'macOS'
         env:
+          MAC_SIGNED: ${{ steps.macos-signing.outputs.available }}
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           dmg_dir="apps/desktop-tauri/src-tauri/target/release/bundle/dmg"
           dmg="$(find "$dmg_dir" -maxdepth 1 -name '*.dmg' -print -quit)"
-          normalized="$dmg_dir/Halo-Forge_${version}_aarch64.dmg"
+          signature_state="unsigned"
+          artifact_suffix="-unsigned-preview"
+          if [ "${MAC_SIGNED:-false}" = "true" ]; then
+            signature_state="signed_notarized"
+            artifact_suffix=""
+          fi
+          normalized="$dmg_dir/Halo-Forge_${version}_aarch64${artifact_suffix}.dmg"
           if [ "$dmg" != "$normalized" ]; then
             mv "$dmg" "$normalized"
           fi
-          shasum -a 256 "$normalized" | awk '{print $1}' > "${normalized}.sha256"
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          tag = os.environ["RELEASE_TAG"]
-          version = tag.removeprefix("v")
-          repo = os.environ["GITHUB_REPOSITORY"]
-          dmg = Path(f"apps/desktop-tauri/src-tauri/target/release/bundle/dmg/Halo-Forge_{version}_aarch64.dmg")
-          checksum = Path(str(dmg) + ".sha256").read_text(encoding="utf-8").strip()
-          manifest = {
-              "version": version,
-              "release_channel": "alpha",
-              "tag": tag,
-              "notarization_status": "${{ steps.macos-signing.outputs.available == 'true' && 'validated' || 'unsigned_preview' }}",
-              "artifacts": [
-                  {
-                      "platform": "macos-aarch64",
-                      "kind": "dmg",
-                      "name": dmg.name,
-                      "size_bytes": dmg.stat().st_size,
-                      "sha256": checksum,
-                      "url": f"https://github.com/{repo}/releases/download/{tag}/{dmg.name}",
-                  }
-              ],
-          }
-          Path("apps/desktop-tauri/src-tauri/target/release/bundle/halo-forge-release-manifest.json").write_text(
-              json.dumps(manifest, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          PY
-          shasum -a 256 apps/desktop-tauri/src-tauri/target/release/bundle/halo-forge-release-manifest.json \
-            | awk '{print $1}' > apps/desktop-tauri/src-tauri/target/release/bundle/halo-forge-release-manifest.json.sha256
+          python scripts/write_macos_release_manifest.py \
+            --dmg "$normalized" \
+            --output apps/desktop-tauri/src-tauri/target/release/bundle/halo-forge-release-manifest.json \
+            --tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY" \
+            --signature-state "$signature_state"
 
       - name: Upload desktop release artifact
         uses: actions/upload-artifact@v4
@@ -277,8 +256,12 @@ jobs:
           fi
 
           prerelease=()
+          is_prerelease=false
           case "$version" in
-            *alpha*|*beta*|*rc*) prerelease=(--prerelease) ;;
+            *alpha*|*beta*|*rc*)
+              prerelease=(--prerelease)
+              is_prerelease=true
+              ;;
           esac
 
           mapfile -d '' assets < <(
@@ -297,17 +280,24 @@ jobs:
           preview_manifest="release-artifacts/PREVIEW_DESKTOP_ARTIFACTS.txt"
           max_asset_bytes=2147483647
           macos_unsigned_preview=false
-          if grep -Rqs '"notarization_status": "unsigned_preview"' release-artifacts; then
+          if grep -Rqs --include='halo-forge-release-manifest.json' '"notarization_status": "unsigned_preview"' release-artifacts; then
             macos_unsigned_preview=true
+          fi
+          if grep -Rqs --include='halo-forge-release-manifest.json' '"signature_state": "unsigned"' release-artifacts; then
+            macos_unsigned_preview=true
+          fi
+          publish_unsigned_macos_preview=false
+          if [ "$macos_unsigned_preview" = true ] && [ "$is_prerelease" = true ]; then
+            publish_unsigned_macos_preview=true
           fi
           for asset in "${assets[@]}"; do
             case "$asset" in
               *.dmg|*.dmg.sha256|*/halo-forge-release-manifest.json|*/halo-forge-release-manifest.json.sha256)
-                if [ "$macos_unsigned_preview" = true ]; then
+                if [ "$macos_unsigned_preview" = true ] && [ "$publish_unsigned_macos_preview" != true ]; then
                   {
                     echo "$(basename "$asset")"
                     echo "  size_bytes: $(wc -c < "$asset" | tr -d '[:space:]')"
-                    echo "  reason: The macOS package is unsigned and remains a workflow preview artifact."
+                    echo "  reason: Stable releases never publish an unsigned macOS package; it remains a workflow preview artifact."
                     echo
                   } >> "$preview_manifest"
                   continue
@@ -349,16 +339,32 @@ jobs:
             exit 1
           fi
 
+          publish_notes="$(mktemp)"
+          cp "$notes" "$publish_notes"
+          release_title="Halo Forge ${version}"
+          if [ "$publish_unsigned_macos_preview" = true ]; then
+            release_title="${release_title} (unsigned macOS developer preview)"
+            {
+              echo
+              echo "## macOS developer-preview warning"
+              echo
+              echo "The macOS DMG attached to this prerelease is unsigned and not notarized."
+              echo "It is for informed testing, is not a trusted normal installer, and may be blocked by Gatekeeper."
+              echo "Verify its SHA-256 checksum before opening it. Browser and CLI installation remain the supported path."
+              echo "Preview instructions: https://halo-forge.io/docs/getting-started/install-desktop/#unsigned-macos-developer-preview"
+            } >> "$publish_notes"
+          fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" \
-              --title "Halo Forge ${version}" \
-              --notes-file "$notes" \
+              --title "$release_title" \
+              --notes-file "$publish_notes" \
               "${prerelease[@]}"
             gh release upload "$tag" "${upload_assets[@]}" --clobber
           else
             gh release create "$tag" "${upload_assets[@]}" \
               --verify-tag \
-              --title "Halo Forge ${version}" \
-              --notes-file "$notes" \
+              --title "$release_title" \
+              --notes-file "$publish_notes" \
               "${prerelease[@]}"
           fi

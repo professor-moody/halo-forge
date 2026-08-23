@@ -70,11 +70,18 @@ def runtime_executable(dist_dir: Path) -> Path:
 
 
 def install_runtime_deps(py: Path, repo_root: Path, *, profile: str) -> None:
-    run([str(py), "-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools<82"], cwd=repo_root)
-    run([str(py), "-m", "pip", "install", "pyinstaller>=6.0"], cwd=repo_root)
+    run([str(py), "-m", "pip", "install", "--upgrade", "pip", "wheel"], cwd=repo_root)
+
+    constraint_name = "release-mlx.txt" if profile == "macos-mlx" else "release.txt"
+    constraint = repo_root / "constraints" / constraint_name
+    if not constraint.is_file():
+        raise SystemExit(f"Missing frozen runtime constraints: {constraint}")
+    constrained = ["--constraint", str(constraint)]
+
+    run([str(py), "-m", "pip", "install", *constrained, "pyinstaller"], cwd=repo_root)
 
     editable = ".[mlx]" if profile == "macos-mlx" else "."
-    run([str(py), "-m", "pip", "install", editable], cwd=repo_root)
+    run([str(py), "-m", "pip", "install", *constrained, editable], cwd=repo_root)
 
 
 def build_pyinstaller(py: Path, repo_root: Path, runtime_dir: Path) -> Path:

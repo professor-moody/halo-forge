@@ -21,6 +21,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
+from halo_forge.chat_template_identity import (
+    ChatTemplateRecord,
+    DerivationMode,
+    identify_from_path,
+    record_for_derivation,
+)
 from halo_forge.models.catalog import CATALOG_VERSION, get_model, recommended_models
 from halo_forge.run_db import RunDatabase
 from halo_forge.workstation_jobs.resources import sample_workstation_capacity
@@ -1091,15 +1097,12 @@ class TrainingPlanService:
             }
         }
         processor_identity["hash"] = _hash(processor_identity["files"])
-        chat_template_hash = None
-        tokenizer_config = cache_path / "tokenizer_config.json"
-        if tokenizer_config.is_file():
-            try:
-                chat_template = json.loads(tokenizer_config.read_text(encoding="utf-8")).get("chat_template")
-                if chat_template:
-                    chat_template_hash = hashlib.sha256(str(chat_template).encode("utf-8")).hexdigest()
-            except (OSError, ValueError, TypeError):
-                chat_template_hash = None
+        # Was: a direct read of tokenizer_config.json, which returns nothing for
+        # any artifact that has been through a converter -- conversion moves the
+        # template into chat_template.jinja. Derive from the loaded tokenizer
+        # instead, through the shared contract.
+        chat_template_record = record_for_derivation(identify_from_path(cache_path))
+        chat_template_hash = chat_template_record.projected_hash
         manifest = {
             "format_version": 1, "model_id": model, "requested_revision": requested,
             "resolved_commit": resolved, "cache_path": str(cache_path),
@@ -1107,6 +1110,7 @@ class TrainingPlanService:
             "tokenizer_identity": tokenizer_identity,
             "processor_identity": processor_identity,
             "chat_template_hash": chat_template_hash,
+            "chat_template": chat_template_record.to_dict(),
         }
         manifest_hash = _hash(
             {key: value for key, value in manifest.items() if key != "cache_path"}
@@ -1125,6 +1129,7 @@ class TrainingPlanService:
                 "tokenizer_identity": tokenizer_identity,
                 "processor_identity": processor_identity,
                 "chat_template_hash": chat_template_hash,
+            "chat_template": chat_template_record.to_dict(),
                 "model_inventory_hash": manifest_hash,
             },
         )

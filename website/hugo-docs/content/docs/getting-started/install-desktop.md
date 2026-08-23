@@ -48,6 +48,30 @@ Dataset Lab-specific convenience is a native open dialog for choosing files or
 folders on the workstation. See [Workstation Surfaces](/docs/reference/workstation-surfaces/)
 for the callable contract and browser fallback.
 
+## Unsigned macOS Developer Preview
+
+Alpha, beta, and release-candidate GitHub prereleases may include a DMG whose
+filename ends in `-unsigned-preview.dmg`. This optional path is for informed
+technical testing. It is not notarized, is not supported as a normal installer,
+and may be blocked by Gatekeeper. Stable releases never include it.
+
+1. Download the DMG and matching `.sha256` file only from the official Halo
+   Forge GitHub prerelease.
+2. In Terminal, change to the download directory and run
+   `shasum -a 256 -c Halo-Forge_*_aarch64-unsigned-preview.dmg.sha256`.
+   Continue only if it reports `OK`.
+3. Open the DMG. If macOS blocks the known preview and you intentionally accept
+   its unsigned status, follow Apple's current
+   [Open Anyway instructions](https://support.apple.com/en-us/102445) in
+   **System Settings → Privacy & Security**.
+4. If the checksum fails, the download source is not the official prerelease,
+   or the warning differs from Apple's documented flow, stop and use the
+   browser/CLI Quick Start instead.
+
+Do not disable Gatekeeper and do not remove quarantine attributes globally.
+The checksum proves that the download matches the project's artifact; it does
+not provide Apple Developer ID identity or notarization.
+
 ## If The Operating System Blocks The Installer
 
 Do not bypass Gatekeeper or Windows SmartScreen for normal use. Remove the

@@ -8275,6 +8275,7 @@ class TestRunner:
         from types import SimpleNamespace
 
         from halo_forge.modality_baseline import build_modality_entries_from_runs
+        from halo_forge.modality_artifacts import persist_cycle_artifacts
         from halo_forge.training_contracts import build_cycle_summary
         from halo_forge.vlm.trainer import VLMRAFTConfig, VLMRAFTTrainer, VLMSampleResult
         from halo_forge.audio.trainer import AudioRAFTConfig, AudioRAFTTrainer, AudioRAFTCycleResult
@@ -8390,22 +8391,38 @@ class TestRunner:
             reasoning = ReasoningRAFTTrainer(
                 ReasoningRAFTConfig(num_cycles=1, output_dir=str(output_root / "reasoning"), seed=7)
             )
-            reasoning.train_cycle = lambda samples, cycle: build_cycle_summary(
-                cycle=cycle,
-                learning_rate=1e-5,
-                samples_seen=1,
-                samples_kept=1,
-                cycle_duration_seconds=0.01,
-                update_metrics={
-                    "train_steps_executed": 1,
-                    "train_loss": 0.1,
-                    "weights_updated": True,
-                    "update_reason": "updated",
-                    "optimizer_steps": 1,
-                    "skipped_batches_non_finite": 0,
-                },
-                extra={"accuracy": 1.0, "avg_reward": 1.0},
-            )
+            reasoning.model = _FakeSaveComponent("reasoning_model")
+            reasoning.tokenizer = _FakeSaveComponent("reasoning_tokenizer")
+
+            def _reasoning_cycle(samples, cycle):
+                metrics = build_cycle_summary(
+                    cycle=cycle,
+                    learning_rate=1e-5,
+                    samples_seen=1,
+                    samples_kept=1,
+                    cycle_duration_seconds=0.01,
+                    update_metrics={
+                        "train_steps_executed": 1,
+                        "train_loss": 0.1,
+                        "weights_updated": True,
+                        "update_reason": "updated",
+                        "optimizer_steps": 1,
+                        "skipped_batches_non_finite": 0,
+                    },
+                    extra={"accuracy": 1.0, "avg_reward": 1.0},
+                )
+                persist_cycle_artifacts(
+                    output_dir=reasoning.output_dir,
+                    modality="reasoning",
+                    model_name=reasoning.config.model_name,
+                    cycle=cycle,
+                    update_metrics=metrics,
+                    model=reasoning.model,
+                    tokenizer=reasoning.tokenizer,
+                )
+                return metrics
+
+            reasoning.train_cycle = _reasoning_cycle
             reasoning_summary = reasoning.train(samples=[MathSample(question="1+1", answer="2")])
             if not reasoning_summary.get("final_model_path"):
                 raise RuntimeError("Reasoning smoke did not emit final_model_path")

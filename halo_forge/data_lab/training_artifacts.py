@@ -36,6 +36,15 @@ from typing import (
 from .errors import VersionError
 from .identity import RecordIdentity
 from .models import infer_schema, normalize_kind, validate_record
+from ..chat_template_identity import (
+    ChatTemplateIdentity,
+    ChatTemplateRecord,
+    ChatTemplateState,
+    DerivationMode,
+    digest_template,
+    identify_from_tokenizer,
+    record_for_derivation,
+)
 from .sources import content_hash, hash_file, stable_json
 from .storage import DatasetVersion, VersionStore
 
@@ -1286,12 +1295,57 @@ class TrainingArtifactRenderer:
                 )
             except (TypeError, ValueError) as exc:
                 raise VersionError(str(exc)) from exc
-        effective_template = chat_template or (
-            str(getattr(tokenizer, "chat_template"))
-            if tokenizer is not None and getattr(tokenizer, "chat_template", None)
-            else None
+        # Identity comes from the loaded tokenizer via the shared contract, so
+        # it is unaffected by conversion relocating the template between
+        # tokenizer_config.json and chat_template.jinja. See
+        # halo_forge/chat_template_identity.py for why this is not a bare hash.
+        if chat_template is not None:
+            # `is not None`, not truthiness: an explicitly supplied empty
+            # template is a caller decision to have no template text, which is
+            # different from supplying nothing and falling back to the
+            # tokenizer. Truthiness collapsed the two.
+            chat_template_identity = ChatTemplateIdentity(
+                ChatTemplateState.PRESENT, digest=digest_template(chat_template)
+            )
+        else:
+            chat_template_identity = identify_from_tokenizer(tokenizer)
+        chat_template_record = record_for_derivation(chat_template_identity)
+        # `chat_template_hash` feeds `artifact_identity`, which IS the content
+        # address. Substituting the new scheme's digest here would silently
+        # re-address every artifact ever produced -- a migration, not the
+        # hardening this change is. So the address keeps the historical
+        # projection, byte for byte, and the new identity lives beside it in the
+        # envelope.
+        #
+        # Consequence, stated because it is surprising: the value in the
+        # `chat_template_hash` column is NOT `record.projected_hash`. Anything
+        # comparing identities must read the envelope; the column is a legacy
+        # address component and nothing more.
+        # `is not None` throughout, matching the identity path above. Truthiness
+        # here collapsed an explicitly-supplied empty template into "no
+        # template", so a render with `chat_template=""` produced the *same
+        # artifact address* as one with no template at all -- and, being
+        # content-addressed, reused the first render's manifest and discarded the
+        # empty-template identity entirely. That is an address collision between
+        # two genuinely different artifacts, which is worse than the narrow
+        # migration below.
+        #
+        # Migration scope: only artifacts rendered with an explicit `""` change
+        # address. Those artifacts were previously recorded as having no
+        # template, i.e. they were already mis-addressed; nothing that was
+        # correct moves.
+        if chat_template is not None:
+            effective_template = chat_template
+        else:
+            tokenizer_template = (
+                getattr(tokenizer, "chat_template", None) if tokenizer is not None else None
+            )
+            effective_template = (
+                str(tokenizer_template) if tokenizer_template is not None else None
+            )
+        chat_template_hash = (
+            content_hash(effective_template) if effective_template is not None else None
         )
-        chat_template_hash = content_hash(effective_template) if effective_template else None
 
         versions: Dict[tuple[Optional[str], str], DatasetVersion] = {}
         manifests: Dict[tuple[Optional[str], str], Dict[str, Any]] = {}
@@ -1786,6 +1840,12 @@ class TrainingArtifactRenderer:
             }
             manifest = {
                 **artifact_identity,
+                # Deliberately NOT part of `artifact_identity`: that dict is the
+                # content address, and adding a field to it would change every
+                # existing artifact id. The projection `chat_template_hash` is
+                # already in the address; this envelope is the record of how that
+                # projection was obtained.
+                "chat_template": chat_template_record.to_dict(),
                 "status": "complete",
                 "artifact_id": artifact_id,
                 "artifact_hash": artifact_hash,

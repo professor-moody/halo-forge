@@ -1,20 +1,31 @@
 # Release Checklist
 
 Use this checklist for a 2.0.0-alpha-2 release-candidate pass. Generated outputs under
-`runs/*`, local datasets under `examples/datasets/*`, and `uv.lock` are local
-artifacts unless a release task explicitly says otherwise.
+`runs/*` and local datasets under `examples/datasets/*` are local artifacts.
+`uv.lock` and the two files under `constraints/` are reviewed release inputs and
+must be committed together whenever dependency metadata changes.
 
 ## Required Local Checks
 
 ```bash
 git diff --check
+uv lock --check
+.venv/bin/python scripts/check_dependency_contract.py
+.venv/bin/python -m ruff check --select E9,F63,F7,F82 --exclude .venv,node_modules,target .
 .venv/bin/python -m compileall -q halo_forge ui tests scripts
 .venv/bin/python scripts/check_release_interfaces.py
-.venv/bin/python -m pytest tests/test_product_lab_v17.py -q
-.venv/bin/python -m pytest tests/test_serving.py -q
-.venv/bin/python -m pytest tests/test_mlx_readiness.py tests/test_mlx_smoke_summary_validator.py tests/test_mlx_grpo_reference_model_measurement.py -q
-.venv/bin/python -m pytest tests/test_grpo.py tests/test_mlx_terminal_smoke.py -q
-.venv/bin/python -m pytest tests/test_public_api_pivot.py tests/test_model_catalog.py tests/test_huggingface_access.py tests/test_serving.py tests/test_playground_proxy.py -q
+.venv/bin/python scripts/generate_modality_baseline.py --check
+.venv/bin/python scripts/run_ops_module_matrix.py --fixture-pack v1 --strict
+.venv/bin/python -m pytest tests -q
+```
+
+Regenerate the reviewed pip constraints after changing `pyproject.toml`:
+
+```bash
+uv lock
+uv export --extra dev --no-emit-project --no-hashes --no-annotate --no-header --frozen --output-file constraints/release.txt
+uv export --extra dev --extra mlx --no-emit-project --no-hashes --no-annotate --no-header --frozen --output-file constraints/release-mlx.txt
+python scripts/check_dependency_contract.py
 ```
 
 Or run the bundled harness:
@@ -139,14 +150,17 @@ Before tagging or publishing, confirm:
   `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
   `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and
   `APPLE_TEAM_ID`.
-- No generated `runs/*`, local `examples/datasets/*`, or `uv.lock` artifacts are staged.
+- No generated `runs/*` or local `examples/datasets/*` artifacts are staged.
+- `uv.lock`, `constraints/release.txt`, and `constraints/release-mlx.txt` match
+  the committed dependency metadata and are staged when that metadata changes.
 
 ## Tagging
 
 Only tag after the latest push CI and nightly qualification proof are green.
-Pushing the tag starts the release workflow. It uploads only release-manifest-
-qualified artifacts to the normal release surface; unsigned desktop candidates
-remain preview workflow artifacts:
+Pushing the tag starts the release workflow. For alpha, beta, and release
+candidate tags, an unsigned macOS DMG is published only as a clearly named,
+checksummed developer-preview asset. Stable tags never publish an unsigned
+macOS DMG. Unsigned Linux and Windows candidates remain workflow artifacts:
 
 ```bash
 git tag -a v2.0.0-alpha-2 -m "Halo Forge 2.0.0-alpha-2"
@@ -167,6 +181,22 @@ spctl -a -vvv -t execute "Halo Forge.app"
 spctl -a -vvv -t open --context context:primary-signature "Halo-Forge_2.0.0-alpha-2_aarch64.dmg"
 ```
 
+Without Apple credentials, verify the prerelease contains all three preview
+records and that their names and contents agree:
+
+```bash
+Halo-Forge_2.0.0-alpha-2_aarch64-unsigned-preview.dmg
+Halo-Forge_2.0.0-alpha-2_aarch64-unsigned-preview.dmg.sha256
+halo-forge-release-manifest.json
+```
+
+The checksum file is in `shasum --check` format. The release manifest must say
+`signature_state: unsigned`, `notarization_status: not_submitted`,
+`distribution_status: preview`, and `supported: false`. Confirm the generated
+GitHub release is a prerelease and its warning links to the preview install
+instructions. These checks close the no-cost publication gate; they do not
+qualify the DMG as a trusted normal installer.
+
 GitHub Release assets have a per-file size limit, so any oversized package is
 skipped and recorded in `OVERSIZE_RELEASE_ASSETS.txt`. Unsigned Linux and
 Windows candidates remain workflow preview artifacts. Do not publish a
@@ -175,11 +205,15 @@ stable/non-prerelease artifact from this beta checklist.
 Current alpha release surface before the alpha-2 tag and workflow succeed:
 
 - Published GitHub prerelease: `https://github.com/professor-moody/halo-forge/releases/tag/v2.0.0-alpha-1` (unsigned developer-test build).
-- Alpha-2 release target: signed/notarized macOS arm64 DMG, SHA-256 checksum,
-  and `halo-forge-release-manifest.json`; do not claim these assets exist until
-  the release workflow and public release page verify them.
+- Alpha-2 release target: a checksummed macOS arm64 developer-preview DMG and
+  truthful `halo-forge-release-manifest.json`. If signing credentials are
+  available, the same workflow may promote it to a signed/notarized supported
+  artifact after all validation gates pass.
 - Linux packages: AppImage/deb candidates are built and qualified; unsigned candidates remain preview artifacts.
 - Windows packages: the NSIS candidate includes the Windows runtime sidecar and packaged proof smoke; unsigned candidates remain preview artifacts.
 - Canonical user docs: `https://halo-forge.io/docs/`; root `docs/` is for release and engineering artifacts.
 
-The `v2.0.0-alpha-1` DMG was unsigned and can be rejected by macOS Gatekeeper as damaged. Do not promote it as a normal website download.
+The `v2.0.0-alpha-1` DMG was unsigned and can be rejected by macOS Gatekeeper
+as damaged. Do not promote it as a normal website download. Alpha-2's preview
+label and checksum make the trust state explicit; they do not remove that OS
+limitation.

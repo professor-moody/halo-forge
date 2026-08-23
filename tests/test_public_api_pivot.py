@@ -634,7 +634,10 @@ def test_public_api_managed_serve_contract_rejects_second_process(tmp_path):
 def test_managed_serve_rejects_busy_port_before_spawn(tmp_path):
     manager = ManagedServeProcess(base_path=tmp_path, log_dir=tmp_path / "serve-logs")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
+        try:
+            sock.bind(("127.0.0.1", 0))
+        except PermissionError:
+            pytest.skip("parent sandbox does not permit loopback socket binding")
         sock.listen(1)
         port = sock.getsockname()[1]
 
@@ -806,7 +809,15 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "Smoke Windows bundled runtime" in release
     assert "Record distribution qualification evidence" in release
     assert "Normalize macOS release artifact names" in release
-    assert "Halo-Forge_${version}_aarch64.dmg" in release
+    assert 'normalized="$dmg_dir/Halo-Forge_${version}_aarch64${artifact_suffix}.dmg"' in release
+    assert 'artifact_suffix="-unsigned-preview"' in release
+    assert 'signature_state="unsigned"' in release
+    assert "scripts/write_macos_release_manifest.py" in release
+    assert "publish_unsigned_macos_preview" in release
+    assert '[ "$is_prerelease" = true ]' in release
+    assert "Stable releases never publish an unsigned macOS package" in release
+    assert "macOS developer-preview warning" in release
+    assert "Verify its SHA-256 checksum before opening it" in release
     assert "halo-forge-release-manifest.json" in release
     assert "*.dmg.sha256" in release
     assert "gh release create" in release
@@ -1218,9 +1229,14 @@ def test_public_docs_stale_copy_and_local_hugo_links():
     assert "SmartScreen" in download_doc
     assert "runtime version" in download_doc
     assert "Unsigned packages are preview artifacts" in download_doc
+    assert "Stable releases never publish an unsigned macOS DMG" in download_doc
     assert "does not remove datasets" in download_doc
     assert "release manifest" in install_doc
     assert "Do not bypass Gatekeeper or Windows SmartScreen" in install_doc
+    assert "Unsigned macOS Developer Preview" in install_doc
+    assert "shasum -a 256 -c" in install_doc
+    assert "support.apple.com/en-us/102445" in install_doc
+    assert "Do not disable Gatekeeper" in install_doc
     assert "halo-forge serve --host 127.0.0.1 --port 8000" not in docs_text
     assert "halo-forge serve --host 0.0.0.0 --port 8000" not in docs_text
     assert "halo-forge serve-public" in public_frontend_doc

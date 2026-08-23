@@ -10,10 +10,110 @@ so the answer matches what the trainer code will see at runtime.
 from __future__ import annotations
 
 import importlib.util
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
+
+
+# Establish a disposable home before test modules are imported. A few modules
+# resolve default paths at import time, so a fixture alone is too late to keep
+# collection from observing or writing an operator's real ~/.halo-forge state.
+_SESSION_TEST_ROOT = Path(tempfile.mkdtemp(prefix="halo-forge-pytest-"))
+_ORIGINAL_HOME = os.environ.get("HOME")
+_ORIGINAL_CARGO_HOME = os.environ.get("CARGO_HOME")
+_ORIGINAL_RUSTUP_HOME = os.environ.get("RUSTUP_HOME")
+os.environ["HOME"] = str(_SESSION_TEST_ROOT / "home")
+Path(os.environ["HOME"]).mkdir(parents=True, exist_ok=True)
+
+# A rustup-backed cargo executable needs the installed toolchain after HOME is
+# isolated. Keep that location read-only in practice, while all Cargo cache and
+# build writes go to the disposable session root.
+_installed_rustup_value = _ORIGINAL_RUSTUP_HOME or (
+    str(Path(_ORIGINAL_HOME) / ".rustup") if _ORIGINAL_HOME else None
+)
+if _installed_rustup_value and Path(_installed_rustup_value).is_dir():
+    os.environ["RUSTUP_HOME"] = _installed_rustup_value
+_test_cargo_home = _SESSION_TEST_ROOT / "cargo"
+_test_cargo_home.mkdir(parents=True, exist_ok=True)
+os.environ["CARGO_HOME"] = str(_test_cargo_home)
+
+
+_STATE_ENVIRONMENTS = {
+    "HALOFORGE_RUN_DB_PATH": "runs.db",
+    "HALOFORGE_DATASET_ROOT": "datasets",
+    "HALOFORGE_RUNTIME_ROOT": "runtimes",
+    "HALOFORGE_EVALUATION_ROOT": "evaluations",
+    "HALOFORGE_ARTIFACT_ROOT": "artifacts",
+    "HALOFORGE_EVIDENCE_ROOT": "evidence",
+    "HALOFORGE_REVIEW_ROOT": "reviews",
+    "HALOFORGE_VERIFIER_CALIBRATION_ROOT": "verifier-calibrations",
+    "HALOFORGE_TRAINING_SIGNAL_ROOT": "training-signals",
+}
+_ORIGINAL_STATE_ENVIRONMENTS = {
+    name: os.environ.get(name) for name in _STATE_ENVIRONMENTS
+}
+for _name, _relative_path in _STATE_ENVIRONMENTS.items():
+    _target = _SESSION_TEST_ROOT / _relative_path
+    if _target.suffix != ".db":
+        _target.mkdir(parents=True, exist_ok=True)
+    os.environ[_name] = str(_target)
+
+
+def _clear_process_state() -> None:
+    """Stop workers and close cached databases between isolated test roots."""
+    try:
+        from halo_forge.workstation_jobs import supervisor as supervisor_module
+
+        with supervisor_module._SUPERVISOR_LOCK:
+            supervisors = list(supervisor_module._SUPERVISORS.values())
+            supervisor_module._SUPERVISORS.clear()
+        for supervisor in supervisors:
+            supervisor.stop(timeout=1.0)
+    except Exception:
+        pass
+
+    try:
+        from halo_forge.run_db import db as db_module
+
+        with db_module._GLOBAL_DB_LOCK:
+            databases = list(db_module._GLOBAL_DB.values())
+            db_module._GLOBAL_DB.clear()
+        for database in databases:
+            try:
+                database.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        from halo_forge.auth.dependency import reset_store_for_tests
+
+        reset_store_for_tests(None)
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _isolate_halo_forge_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Give every test a private home, catalog, and managed artifact roots."""
+    _clear_process_state()
+    state_root = tmp_path / "halo-forge-state"
+    home = state_root / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOME", str(home))
+    for name, relative_path in _STATE_ENVIRONMENTS.items():
+        target = state_root / relative_path
+        if target.suffix != ".db":
+            target.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv(name, str(target))
+    yield
+    _clear_process_state()
 
 
 def _detect_gpu_kind_safe() -> str:
@@ -74,6 +174,30 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "requires_accelerator: skip if no GPU/MPS accelerator is detected",
     )
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Remove the collection-time test home after the pytest process exits."""
+    del config
+    _clear_process_state()
+    if _ORIGINAL_HOME is None:
+        os.environ.pop("HOME", None)
+    else:
+        os.environ["HOME"] = _ORIGINAL_HOME
+    for name, value in (
+        ("CARGO_HOME", _ORIGINAL_CARGO_HOME),
+        ("RUSTUP_HOME", _ORIGINAL_RUSTUP_HOME),
+    ):
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    for name, value in _ORIGINAL_STATE_ENVIRONMENTS.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    shutil.rmtree(_SESSION_TEST_ROOT, ignore_errors=True)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

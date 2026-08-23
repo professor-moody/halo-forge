@@ -13,9 +13,17 @@ CPU paths.
 
 ### Core Philosophy
 
-- **CLI as single source of truth**: All training logic flows through the `halo-forge` CLI commands. The web UI shells out to CLI rather than duplicating implementation.
-- **Pluggable verification**: Verifiers are the reward contract—any language or validation method can be added by implementing the `Verifier` interface.
-- **Production-first design**: Graceful shutdown, checkpoint streaming, and memory-optimized chunking are built into the core loops.
+- **Shared application contracts**: The CLI and FastAPI transports call the
+  same domain services, repositories, trainer adapters, and artifact contracts.
+  The React app talks to FastAPI; it does not shell out to the CLI.
+- **Durable managed execution**: Dashboard launches become SQLite-backed work
+  items. A supervised worker owns staging, the trainer subprocess, heartbeat,
+  recovery, verification, and atomic publication.
+- **Pluggable verification**: Verifiers are the reward contract—any language or
+  validation method can be added by implementing the `Verifier` interface.
+- **Evidence-first design**: Checkpoints, replay identity, immutable dataset
+  versions, training summaries, and release qualification are persisted rather
+  than inferred from transient process state.
 
 ---
 
@@ -23,69 +31,51 @@ CPU paths.
 
 ```mermaid
 flowchart TB
-    subgraph entrypoint [Entry Points]
+    subgraph transport [Product Transports]
+        Desktop["Tauri Desktop"]
+        Browser["Browser"]
+        React["Vite + React App"]
+        API["FastAPI Routers"]
         CLI["halo-forge CLI"]
-        PublicApp["React Public App"]
-        PublicAPI["FastAPI Public API"]
-        Services["Shared UI Services"]
     end
-    
-    subgraph commands [Command Handlers]
-        SFTCmd["cmd_sft_train"]
-        RAFTCmd["cmd_raft_train"]
-        BenchCmd["cmd_benchmark"]
+
+    subgraph application [Application Layer]
+        PublicService["PublicApiService"]
+        DomainServices["Dataset / Review / Training / Eval / Artifact Services"]
+        Scheduler["WorkstationScheduler"]
     end
-    
-    subgraph training [Training Pipelines]
-        SFTTrainer["SFTTrainer"]
-        RAFTTrainer["RAFTTrainer"]
+
+    subgraph execution [Durable Execution]
+        Catalog["RunDatabase + LabV4Catalog"]
+        Supervisor["WorkerSupervisor"]
+        Worker["WorkstationWorker"]
+        TrainerProcess["Canonical Trainer Subprocess"]
     end
-    
-    subgraph verification [Verification Layer]
-        VerifierBase["Verifier ABC"]
-        GCC["GCCVerifier"]
-        MinGW["MinGWVerifier"]
-        MSVC["RemoteMSVCVerifier"]
-        HumanEval["HumanEvalVerifier"]
-        Multi["MultiLanguageVerifier"]
+
+    subgraph domain [Domain Runtime]
+        Data["Immutable Datasets + Training Artifacts"]
+        Trainers["SFT / RAFT / Preference / Modality Trainers"]
+        Verifiers["Verifier Registry + Sandboxed Execution"]
+        Artifacts["Checkpoints / Summaries / Replay / Final Models"]
     end
-    
-    subgraph data [Data Pipeline]
-        Formatter["format_for_training"]
-        PublicDS["DatasetPreparer"]
-        Validator["DatasetValidator"]
-    end
-    
-    subgraph raft_internals [RAFT Cycle]
-        Generate["generate_samples"]
-        Verify["verify_and_filter"]
-        Train["SFT on filtered"]
-        Curriculum["CurriculumScheduler"]
-        Shaping["RewardShaper"]
-    end
-    
-    CLI --> commands
-    WebUI -->|subprocess| CLI
-    
-    SFTCmd --> SFTTrainer
-    RAFTCmd --> RAFTTrainer
-    BenchCmd --> VerifierBase
-    
-    RAFTTrainer --> raft_internals
-    Generate --> Verify
-    Verify --> VerifierBase
-    Verify --> Train
-    Curriculum --> Generate
-    Shaping --> Verify
-    
-    VerifierBase --> GCC
-    VerifierBase --> MinGW
-    VerifierBase --> MSVC
-    VerifierBase --> HumanEval
-    VerifierBase --> Multi
-    
-    SFTTrainer --> data
-    PublicDS --> Formatter
+
+    Desktop --> React
+    Browser --> React
+    React --> API
+    API --> PublicService
+    CLI --> DomainServices
+    PublicService --> DomainServices
+    PublicService --> Scheduler
+    Scheduler --> Catalog
+    Supervisor --> Catalog
+    Supervisor --> Worker
+    Worker --> TrainerProcess
+    TrainerProcess --> Trainers
+    DomainServices --> Catalog
+    DomainServices --> Data
+    Trainers --> Verifiers
+    Trainers --> Artifacts
+    Worker --> Artifacts
 ```
 
 ---
@@ -96,7 +86,10 @@ flowchart TB
 
 **File:** `halo_forge/cli.py`
 
-The CLI is the canonical orchestration layer for all training and benchmarking operations.
+The CLI is a first-class transport and the canonical subprocess entry point for
+trainer execution. Dataset, review, evaluation, artifact, and research
+operations also expose shared application services through FastAPI; neither
+transport should reimplement domain behavior.
 
 | Function | Purpose |
 |----------|---------|
@@ -443,7 +436,11 @@ print(result)  # Detailed report with format detection, stats, errors
 
 **Directories:** `public_app/`, `halo_forge/public_api/`, `ui/services/`
 
-The public product surface is a Vite + React app backed by the FastAPI public API. The API reuses service-layer modules under `ui/services/` for launch, preflight, monitoring, and result projection. Older NiceGUI product pages are retired; keep any low-level diagnostics internal.
+The public product surface is a Vite + React app backed by the FastAPI public
+API. `PublicApiService` coordinates domain services and SQLite-backed durable
+work. The API reuses service-layer modules under `ui/services/` for preflight,
+presentation, monitoring, and result projection. Older NiceGUI product pages
+are retired; keep any low-level diagnostics internal.
 
 #### App Structure
 
@@ -457,7 +454,10 @@ Primary routes: `/`, `/datasets`, `/train`, `/sweeps`, `/runs`, `/eval`,
 
 **File:** `ui/services/training_service.py`
 
-Launches training as subprocess with AMD-optimized environment:
+Builds launch preflight and the backend-aware subprocess environment. Direct
+CLI/legacy launches can use it immediately; dashboard launches are normally
+queued through `WorkstationScheduler` and executed by `WorkstationWorker`,
+which stages output and publishes only after verification:
 
 ```python
 def _get_strix_halo_env(self) -> dict[str, str]:
@@ -586,7 +586,11 @@ CLI args > YAML nested (e.g., raft.keep_top_percent) > YAML top-level > defaults
 | Reward Shaping | `halo_forge/rlvr/reward_shaping.py` | `RewardShaper` |
 | Data Formatting | `halo_forge/data/formatters.py` | `format_for_training()` |
 | Dataset Prep | `halo_forge/data/public_datasets.py` | `DatasetPreparer` |
-| UI App | `ui/app.py` | `run()`, page routes |
+| Public App | `public_app/src/` | React routes and API client |
+| Public API | `halo_forge/public_api/app.py` | FastAPI router assembly |
+| Application Facade | `halo_forge/public_api/service.py` | `PublicApiService` |
+| Durable Work | `halo_forge/workstation_jobs/` | scheduler, supervisor, worker |
+| Run Catalog | `halo_forge/run_db/db.py` | `RunDatabase` |
 | Training Service | `ui/services/training_service.py` | `TrainingService` |
 | Benchmarking | `halo_forge/benchmark/pass_at_k.py` | `Benchmark`, `estimate_pass_at_k()` |
 
@@ -603,7 +607,9 @@ Beyond core SFT/RAFT, halo-forge includes specialized pipelines:
 | Reasoning | `halo_forge/reasoning/` | Math/GSM8K reasoning enhancement |
 | Agentic | `halo_forge/agentic/` | Tool calling / function calling training |
 
-Each domain follows the same pattern: CLI commands → domain trainer → domain-specific verifiers.
+Training domains follow the same runtime pattern: CLI or managed work item →
+domain trainer → domain-specific verifiers → canonical checkpoint, summary,
+replay, and final-model artifacts.
 
 ---
 

@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence
 
 from halo_forge.huggingface_access import GATED_MODEL_ACTION, HuggingFaceAccessManager
 from halo_forge.training_recovery import build_recovery_guidance
@@ -2534,7 +2534,7 @@ class PublicApiService:
             "adapter_id": self._optional_str(payload.get("adapter_id")),
             "model": self._optional_str(payload.get("model")),
             "tokenizer_revision": self._optional_str(payload.get("tokenizer_revision")),
-            "chat_template": self._optional_str(payload.get("chat_template")),
+            "chat_template": self._optional_template(payload.get("chat_template")),
             "validation_fraction": float(payload.get("validation_fraction", 0.05)),
             "seed": int(payload.get("seed", 42)),
         }
@@ -7841,7 +7841,7 @@ class PublicApiService:
             "tokenizer_revision": PublicApiService._optional_str(
                 payload.get("tokenizer_revision")
             ),
-            "chat_template": PublicApiService._optional_str(
+            "chat_template": PublicApiService._optional_template(
                 payload.get("chat_template")
             ),
             "validation_fraction": float(payload.get("validation_fraction", 0.05)),
@@ -10994,7 +10994,7 @@ class PublicApiService:
         if dataset is not None or not create:
             return dataset, dataset_id or f"new-review-dataset-{revision_id[:16]}"
 
-        from halo_forge.data_lab.models import infer_schema
+        from halo_forge.data_lab.models import infer_schema, validate_record
 
         context = self._review_label_set_context(revision_id)
         items = self._all_review_label_set_items(revision_id)
@@ -18292,6 +18292,26 @@ class PublicApiService:
     def _optional_str(value: Any) -> Optional[str]:
         text = str(value or "").strip()
         return text or None
+
+    @staticmethod
+    def _optional_template(value: Any) -> Optional[str]:
+        """Read a chat template from a payload without altering its text.
+
+        `_optional_str` is right for the 190-odd identifier-shaped fields it
+        serves, and wrong for this one in two ways:
+
+        - it maps `""` to `None`, collapsing "the caller supplied an empty
+          template" into "the caller supplied nothing". Those address to
+          different artifacts downstream, so the API must not merge them.
+        - it `.strip()`s, and leading or trailing whitespace in a Jinja template
+          changes what the template renders. Stripping silently produces a
+          different template than the caller sent, under the same identity.
+
+        Only `None` means absent here. Anything else is returned verbatim.
+        """
+        if value is None:
+            return None
+        return value if isinstance(value, str) else str(value)
 
     @staticmethod
     def _has_public_value(value: Any) -> bool:

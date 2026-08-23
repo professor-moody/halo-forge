@@ -63,7 +63,22 @@ def _job_installs(job: str, module: str) -> bool:
     distribution = _DISTRIBUTION_ALIASES.get(module, module).lower()
     if re.search(rf"pip install[^\n]*\b{re.escape(distribution)}\b", job):
         return True
-    if re.search(r"pip install\s+(-e\s+\.|\.)(\s|$)", job):
+    if re.search(r"pip install[^\n]*[\"']?\.\[dev\][\"']?", job):
+        text = PYPROJECT.read_text(encoding="utf-8")
+        block = re.search(r"^dev\s*=\s*\[(.*?)^\]", text, re.S | re.M)
+        assert block, "pyproject.toml has no dev optional-dependency array"
+        declared = {
+            re.split(r"[<>=!~\[; ]", raw.strip().strip('\",'))[0].strip().lower()
+            for raw in block.group(1).splitlines()
+            if raw.strip().startswith('"')
+        }
+        if distribution in declared:
+            return True
+    installs_project = re.search(
+        r"pip install[^\n]*(?:-e\s+)?[\"']?\.(?:\[[^\]]+\])?[\"']?(?:\s|$)",
+        job,
+    )
+    if installs_project:
         return distribution in _core_dependency_names()
     return False
 

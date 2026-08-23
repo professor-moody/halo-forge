@@ -8,13 +8,13 @@
 # `pip install -r requirements.txt`.
 
 # Core runtime (`project.dependencies`)
-numpy>=1.24.0
-torch>=2.1.0
-transformers>=4.49.0
-peft>=0.13.0
+numpy>=1.24.0,<3.0.0
+torch>=2.1.0,<3.0.0
+transformers>=4.49.0,<6.0.0
+peft>=0.13.0,<1.0.0
 datasets>=2.14.0,<4.0.0
-trl>=0.12.0
-accelerate
+trl>=0.12.0,<1.0.0
+accelerate>=0.26.0,<2.0.0
 pyyaml>=6.0
 requests>=2.31.0
 tqdm
@@ -22,9 +22,9 @@ jsonlines
 tensorboard
 pandas
 rich
-fastapi>=0.115.0
-uvicorn>=0.34.0
-keyring>=25.0.0
+fastapi>=0.115.0,<1.0.0
+uvicorn>=0.34.0,<1.0.0
+keyring>=25.0.0,<26.0.0
 
 # Inference extras (`.[inference]`)
 bitsandbytes
@@ -63,8 +63,14 @@ python-docx>=1.1.0
 
 # Dev extras (`.[dev]`)
 pytest
+httpx
+psutil
+Pillow>=10.0.0
+jsonschema
+pyinstaller>=6.0.0,<7.0.0
 black
 isort
+ruff
 
 # Optional LLM backend extras (`.[llm-backends]`)
 # anthropic>=0.18.0
