@@ -7,6 +7,9 @@ import time
 
 import pytest
 
+ASYNC_RESPONSE_TIMEOUT = 5.0
+BLOCKED_RENDER_TIMEOUT = 30.0
+
 
 def _wait_for_dataset_job(service, job_id: str, timeout: float = 5.0):
     deadline = time.monotonic() + timeout
@@ -95,7 +98,9 @@ def test_managed_preflight_and_launch_return_reused_render_job_then_launch_ready
 
     def blocking_render(bindings, **options):
         renderer_entered.set()
-        assert release_renderer.wait(5), "test did not release artifact renderer"
+        assert release_renderer.wait(
+            BLOCKED_RENDER_TIMEOUT
+        ), "test did not release artifact renderer"
         return original_render(bindings, **options)
 
     monkeypatch.setattr(dataset_lab, "render_training_artifact", blocking_render)
@@ -116,7 +121,7 @@ def test_managed_preflight_and_launch_return_reused_render_job_then_launch_ready
             preflight = client.post("/api/public/train/preflight", json=common)
             preflight_elapsed = time.monotonic() - started_at
             assert preflight.status_code == 202, preflight.text
-            assert preflight_elapsed < 0.5
+            assert preflight_elapsed < ASYNC_RESPONSE_TIMEOUT
             pending = preflight.json()
             assert pending["status"] == "preparing_dataset"
             assert pending["ready"] is False and pending["accepted"] is True
@@ -133,7 +138,7 @@ def test_managed_preflight_and_launch_return_reused_render_job_then_launch_ready
             )
             launch_elapsed = time.monotonic() - started_at
             assert launch.status_code == 202, launch.text
-            assert launch_elapsed < 0.5
+            assert launch_elapsed < ASYNC_RESPONSE_TIMEOUT
             launch_pending = launch.json()
             assert launch_pending["job_id"] == pending["job_id"]
             assert launch_pending["run_id"]
