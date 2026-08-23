@@ -741,6 +741,7 @@ def test_desktop_runtime_entrypoint_self_check_contract():
     assert "libjaccl.dylib" in build_script
     assert "archive_windows_torch_licenses" in build_script
     assert 'internal.glob("torch-*.dist-info/licenses")' in build_script
+    assert "https://download.pytorch.org/whl/cpu" in build_script
     assert "halo-forge-runtime" in build_script
 
 

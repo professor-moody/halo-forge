@@ -113,6 +113,30 @@ def install_runtime_deps(py: Path, repo_root: Path, *, profile: str) -> None:
 
     run([str(py), "-m", "pip", "install", *constrained, "pyinstaller"], cwd=repo_root)
 
+    if profile in {"linux-dashboard", "windows-dashboard"}:
+        # The desktop sidecar orchestrates managed accelerator runtimes; it does
+        # not need CUDA libraries itself. PyPI's Linux Torch wheel can pull the
+        # CUDA 13 stack, which makes AppImage's dependency scanner demand a host
+        # libcuda.so.1 and bloats every installer. Seed the frozen CPU wheel
+        # explicitly before installing Halo Forge.
+        run(
+            [str(py), "-m", "pip", "install", *constrained, "setuptools"],
+            cwd=repo_root,
+        )
+        run(
+            [
+                str(py),
+                "-m",
+                "pip",
+                "install",
+                *constrained,
+                "torch",
+                "--index-url",
+                "https://download.pytorch.org/whl/cpu",
+            ],
+            cwd=repo_root,
+        )
+
     editable = ".[mlx]" if profile == "macos-mlx" else "."
     run([str(py), "-m", "pip", "install", *constrained, editable], cwd=repo_root)
 

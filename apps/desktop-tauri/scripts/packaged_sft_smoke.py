@@ -33,7 +33,8 @@ APP_RUNTIME = (
 APP_FRONTEND = APP_BUNDLE / "Contents/Resources/frontend"
 DIST_RUNTIME = (
     REPO_ROOT
-    / "apps/desktop-tauri/runtime/dist/halo-forge-runtime/halo-forge-runtime"
+    / "apps/desktop-tauri/runtime/dist/halo-forge-runtime"
+    / ("halo-forge-runtime.exe" if sys.platform == "win32" else "halo-forge-runtime")
 )
 DIST_FRONTEND = REPO_ROOT / "public_app/dist"
 ROUTES = (

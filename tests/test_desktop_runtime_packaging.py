@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import runpy
+import sys
 import zipfile
 from pathlib import Path
 
 
 BUILD_SCRIPT = Path("apps/desktop-tauri/scripts/build_runtime.py")
+SMOKE_SCRIPT = Path("apps/desktop-tauri/scripts/packaged_sft_smoke.py")
+
+
+def test_packaged_smoke_discovers_windows_runtime_executable(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    namespace = runpy.run_path(str(SMOKE_SCRIPT))
+
+    assert namespace["DIST_RUNTIME"].name == "halo-forge-runtime.exe"
 
 
 def test_windows_torch_license_tree_is_archived_without_dropping_notices(
@@ -51,3 +60,32 @@ def test_non_windows_runtime_keeps_torch_license_tree(tmp_path: Path, monkeypatc
 
     assert namespace["archive_windows_torch_licenses"](bundle) == ()
     assert (licenses / "LICENSE").is_file()
+
+
+def test_dashboard_runtime_seeds_cpu_torch_before_project_install(
+    tmp_path: Path, monkeypatch
+) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    constraints = tmp_path / "constraints"
+    constraints.mkdir()
+    (constraints / "release.txt").write_text(
+        "pyinstaller==6.19.0\nsetuptools==83.0.0\ntorch==2.13.0\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+
+    def capture(cmd: list[str], **_kwargs) -> None:
+        calls.append(cmd)
+
+    install = namespace["install_runtime_deps"]
+    monkeypatch.setitem(install.__globals__, "run", capture)
+    install(
+        Path("python"),
+        tmp_path,
+        profile="linux-dashboard",
+    )
+
+    torch_call = next(call for call in calls if "torch" in call)
+    project_call = next(call for call in calls if call[-1] == ".")
+    assert "https://download.pytorch.org/whl/cpu" in torch_call
+    assert calls.index(torch_call) < calls.index(project_call)
