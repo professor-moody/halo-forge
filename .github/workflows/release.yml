@@ -146,17 +146,17 @@ jobs:
       - name: Smoke packaged macOS runtime
         if: runner.os == 'macOS'
         working-directory: apps/desktop-tauri
-        run: npm run smoke:runtime
+        run: npm run smoke:runtime -- --accelerator cpu
 
       - name: Smoke Linux bundled runtime
         if: runner.os == 'Linux'
         working-directory: apps/desktop-tauri
-        run: python scripts/packaged_sft_smoke.py --runtime runtime/dist/halo-forge-runtime/halo-forge-runtime --frontend ../../public_app/dist
+        run: python scripts/packaged_sft_smoke.py --runtime runtime/dist/halo-forge-runtime/halo-forge-runtime --frontend ../../public_app/dist --accelerator cpu
 
       - name: Smoke Windows bundled runtime
         if: runner.os == 'Windows'
         working-directory: apps/desktop-tauri
-        run: python scripts/packaged_sft_smoke.py --runtime runtime/dist/halo-forge-runtime/halo-forge-runtime.exe --frontend ../../public_app/dist
+        run: python scripts/packaged_sft_smoke.py --runtime runtime/dist/halo-forge-runtime/halo-forge-runtime.exe --frontend ../../public_app/dist --accelerator cpu
 
       - name: Verify upgrade and uninstall preservation contract
         run: python apps/desktop-tauri/scripts/verify_install_contract.py --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle

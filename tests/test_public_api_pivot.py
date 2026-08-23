@@ -758,6 +758,8 @@ def test_packaged_runtime_smoke_script_documents_alpha_training_gate():
     assert '"/runs"' in script
     assert '"/results"' in script
     assert '"/diagnostics"' in script
+    assert '"--accelerator"' in script
+    assert 'if accelerator != "auto"' in script
     assert '"smoke:runtime": "python3 scripts/packaged_sft_smoke.py"' in package
     assert "npm run smoke:runtime" in checklist
     assert "What users should see during training" in desktop_readme
@@ -807,6 +809,8 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "spctl -a -vvv -t open --context context:primary-signature" in release
     assert "Smoke packaged macOS runtime" in release
     assert "Smoke Windows bundled runtime" in release
+    assert "npm run smoke:runtime -- --accelerator cpu" in ci
+    assert release.count("--accelerator cpu") == 3
     assert "Record distribution qualification evidence" in release
     assert "Normalize macOS release artifact names" in release
     assert 'normalized="$dmg_dir/Halo-Forge_${version}_aarch64${artifact_suffix}.dmg"' in release

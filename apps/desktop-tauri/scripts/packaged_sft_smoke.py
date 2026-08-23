@@ -46,6 +46,15 @@ ROUTES = (
     "/playground",
     "/connect",
 )
+ACCELERATOR_CHOICES = (
+    "auto",
+    "rocm",
+    "rocm_gfx1151",
+    "cuda",
+    "mps",
+    "mlx",
+    "cpu",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,6 +67,12 @@ def parse_args() -> argparse.Namespace:
         "--model",
         default="hf-internal-testing/tiny-random-gpt2",
         help="Tiny open model used for packaged SFT smoke.",
+    )
+    parser.add_argument(
+        "--accelerator",
+        choices=ACCELERATOR_CHOICES,
+        default="auto",
+        help="Accelerator passed to the packaged Halo Forge CLI (default: auto).",
     )
     return parser.parse_args()
 
@@ -152,7 +167,13 @@ def write_tiny_dataset(path: Path) -> None:
     )
 
 
-def run_sft_smoke(runtime: Path, frontend: Path, workdir: Path, model: str) -> dict[str, object]:
+def run_sft_smoke(
+    runtime: Path,
+    frontend: Path,
+    workdir: Path,
+    model: str,
+    accelerator: str,
+) -> dict[str, object]:
     data_dir = workdir / "data"
     output_dir = workdir / "sft-output"
     log_dir = workdir / "logs"
@@ -170,11 +191,11 @@ def run_sft_smoke(runtime: Path, frontend: Path, workdir: Path, model: str) -> d
         }
     )
     run_checked([str(runtime), "--desktop-self-check"], env=env, cwd=REPO_ROOT)
-    result = run_checked(
+    cli_command = [str(runtime), "-m", "halo_forge.cli"]
+    if accelerator != "auto":
+        cli_command.extend(["--accelerator", accelerator])
+    cli_command.extend(
         [
-            str(runtime),
-            "-m",
-            "halo_forge.cli",
             "sft",
             "train",
             "--model",
@@ -205,7 +226,10 @@ def run_sft_smoke(runtime: Path, frontend: Path, workdir: Path, model: str) -> d
             "2",
             "--no-lora",
             "--no-caffeinate",
-        ],
+        ]
+    )
+    result = run_checked(
+        cli_command,
         env=env,
         cwd=REPO_ROOT,
     )
@@ -285,7 +309,7 @@ def main() -> int:
 
     workdir = Path(tempfile.mkdtemp(prefix="halo-forge-packaged-smoke-"))
     try:
-        sft = run_sft_smoke(runtime, frontend, workdir, args.model)
+        sft = run_sft_smoke(runtime, frontend, workdir, args.model, args.accelerator)
         dashboard = run_dashboard_route_smoke(runtime, frontend, workdir, args.port)
         payload = {
             "ok": True,

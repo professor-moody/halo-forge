@@ -1,7 +1,26 @@
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
+
+
+def test_explicit_cpu_accelerator_overrides_available_mps(monkeypatch):
+    from halo_forge.utils import accelerator
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(
+            mps=SimpleNamespace(is_available=lambda: True, is_built=lambda: True)
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    monkeypatch.setenv("HALOFORGE_BACKEND", "cpu")
+    assert accelerator.detect_gpu_kind() == accelerator.GPU_KIND_CPU
+
+    monkeypatch.delenv("HALOFORGE_BACKEND")
+    assert accelerator.detect_gpu_kind() == accelerator.GPU_KIND_MPS
 
 
 def test_set_global_seed_routes_active_mlx_backend(monkeypatch):

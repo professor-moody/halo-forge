@@ -508,7 +508,10 @@ jobs:
 
       - name: Smoke packaged runtime
         working-directory: apps/desktop-tauri
-        run: npm run smoke:runtime
+        # Hosted macOS runners can advertise MPS while providing too little
+        # usable shared memory even for the tiny model. Accelerator qualification
+        # is covered separately; this gate validates the packaged runtime itself.
+        run: npm run smoke:runtime -- --accelerator cpu
 
       - name: Verify upgrade and uninstall preservation contract
         run: python apps/desktop-tauri/scripts/verify_install_contract.py --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle
