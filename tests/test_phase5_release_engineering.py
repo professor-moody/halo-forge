@@ -269,6 +269,15 @@ def test_ci_trainer_regression_job_installs_torch_and_runs_the_whole_suite():
     job = _ci_job_block(content, "trainer-regression")
 
     assert "https://download.pytorch.org/whl/cpu" in job
+    setuptools_install = (
+        "python -m pip install --constraint constraints/release.txt setuptools"
+    )
+    torch_install = "python -m pip install torch --constraint constraints/release.txt"
+    assert setuptools_install in job
+    assert job.index(setuptools_install) < job.index(torch_install), (
+        "the pinned setuptools build dependency must be installed from PyPI "
+        "before torch resolution is restricted to the CPU wheel index"
+    )
     for dependency in ("torch", "transformers", "peft", "datasets", "trl"):
         assert dependency in job, f"trainer-regression does not install {dependency}"
     assert re.search(r"^\s*timeout-minutes:\s*\d+", job, re.M), (

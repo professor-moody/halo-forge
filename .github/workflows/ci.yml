@@ -217,6 +217,11 @@ jobs:
       - name: Install CPU torch and the training stack
         run: |
           python -m pip install --upgrade pip
+          # The CPU wheel index carries torch and its runtime dependencies, but
+          # not every build dependency. Torch 2.13 requires setuptools>=77;
+          # install the frozen setuptools version from PyPI before restricting
+          # torch resolution to the CPU index.
+          python -m pip install --constraint constraints/release.txt setuptools
           python -m pip install torch --constraint constraints/release.txt --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --constraint constraints/release.txt -e ".[dev]"
 
