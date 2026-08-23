@@ -440,7 +440,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        # Tauri documents Ubuntu 22.04 as a Linux distribution baseline; using
+        # latest would raise the generated package's minimum glibc requirement.
+        os: [macos-14, ubuntu-22.04, windows-latest]
 
     steps:
       - name: Checkout
@@ -499,7 +501,10 @@ jobs:
       - name: Build Linux desktop candidates
         if: runner.os == 'Linux'
         working-directory: apps/desktop-tauri
-        run: npm run build -- --bundles deb,appimage --ci
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          VERBOSE: "1"
+        run: npm run build -- --bundles deb,appimage --ci --verbose
 
       - name: Build Windows desktop candidate
         if: runner.os == 'Windows'

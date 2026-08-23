@@ -9,6 +9,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -67,6 +68,38 @@ def select_seed_python(repo_root: Path) -> str:
 def runtime_executable(dist_dir: Path) -> Path:
     name = "halo-forge-runtime.exe" if platform.system() == "Windows" else "halo-forge-runtime"
     return dist_dir / "halo-forge-runtime" / name
+
+
+def archive_windows_torch_licenses(runtime_bundle: Path) -> tuple[Path, ...]:
+    """Keep Torch notices while avoiding NSIS's legacy path-length ceiling.
+
+    Torch wheels contain deeply nested third-party license paths. Tauri expands
+    every resource into an NSIS ``File`` command, where those paths can exceed
+    the Windows limit even though the runtime itself built successfully. A zip
+    preserves the complete notice tree as a distributable artifact at a short
+    filesystem path; no executable Torch files are changed.
+    """
+    if platform.system() != "Windows":
+        return ()
+
+    archived: list[Path] = []
+    internal = runtime_bundle / "_internal"
+    for licenses_dir in sorted(internal.glob("torch-*.dist-info/licenses")):
+        files = sorted(path for path in licenses_dir.rglob("*") if path.is_file())
+        if not files:
+            continue
+        archive_path = licenses_dir.with_suffix(".zip")
+        with zipfile.ZipFile(
+            archive_path,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            for path in files:
+                archive.write(path, path.relative_to(licenses_dir).as_posix())
+        shutil.rmtree(licenses_dir)
+        archived.append(archive_path)
+        print(f"Archived Windows Torch license tree: {archive_path}", flush=True)
+    return tuple(archived)
 
 
 def install_runtime_deps(py: Path, repo_root: Path, *, profile: str) -> None:
@@ -128,7 +161,9 @@ def build_pyinstaller(py: Path, repo_root: Path, runtime_dir: Path) -> Path:
         str(entry),
     ]
     run(cmd, cwd=repo_root)
-    return runtime_executable(dist_dir)
+    executable = runtime_executable(dist_dir)
+    archive_windows_torch_licenses(executable.parent)
+    return executable
 
 
 def mlx_binary_args(py: Path) -> list[str]:

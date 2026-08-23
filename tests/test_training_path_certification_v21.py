@@ -55,7 +55,12 @@ def _qualified_runtime(
     )
     database._conn.commit()
     qualification = runtime.qualify(revision.id, enqueue=False)
-    assert runtime.run_qualification(qualification.id).status == "local_verified"
+    # Ubuntu 24.04 is the declared vendor-supported ROCm host; other test
+    # platforms exercise the same evidence path as a local verification.
+    assert runtime.run_qualification(qualification.id).status in {
+        "local_verified",
+        "vendor_supported",
+    }
     return database, runtime, revision.id
 
 

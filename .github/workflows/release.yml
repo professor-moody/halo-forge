@@ -25,7 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        # Keep the Linux package compatible with Tauri's documented baseline.
+        os: [macos-14, ubuntu-22.04, windows-latest]
 
     steps:
       - name: Checkout release ref
@@ -120,7 +121,10 @@ jobs:
       - name: Build Linux desktop package
         if: runner.os == 'Linux'
         working-directory: apps/desktop-tauri
-        run: npm run build -- --bundles deb,appimage --ci
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          VERBOSE: "1"
+        run: npm run build -- --bundles deb,appimage --ci --verbose
 
       - name: Build Windows desktop package
         if: runner.os == 'Windows'

@@ -739,6 +739,8 @@ def test_desktop_runtime_entrypoint_self_check_contract():
     assert "mlx._reprlib_fix" in build_script
     assert "mlx.metallib" in build_script
     assert "libjaccl.dylib" in build_script
+    assert "archive_windows_torch_licenses" in build_script
+    assert 'internal.glob("torch-*.dist-info/licenses")' in build_script
     assert "halo-forge-runtime" in build_script
 
 
@@ -777,6 +779,8 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "npm run build" in ci
     assert "desktop-preview-build" in ci
     assert "windows-latest" in ci
+    assert "os: [macos-14, ubuntu-22.04, windows-latest]" in ci
+    assert "os: [macos-14, ubuntu-22.04, windows-latest]" in release
     assert "--bundles deb,appimage" in ci
     assert "--bundles nsis" in ci
     assert "macos-14" in ci
