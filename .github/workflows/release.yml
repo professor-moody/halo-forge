@@ -165,18 +165,25 @@ jobs:
       - name: Verify upgrade and uninstall preservation contract
         run: python apps/desktop-tauri/scripts/verify_install_contract.py --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle
 
+      - name: Checkout release workflow support
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .release-workflow-support
+          sparse-checkout: scripts/write_distribution_qualification.py
+          sparse-checkout-cone-mode: false
+
       - name: Record distribution qualification evidence
         shell: bash
         env:
           MAC_SIGNED: ${{ steps.macos-signing.outputs.available }}
-          PYTHONPATH: ${{ github.workspace }}
         run: |
           signature="unsigned"
           if [ "${RUNNER_OS}" = "macOS" ] && [ "${MAC_SIGNED:-false}" = "true" ]; then
             signature="signed_notarized"
           fi
           platform="$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
-          python scripts/write_distribution_qualification.py \
+          python .release-workflow-support/scripts/write_distribution_qualification.py \
             --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle \
             --output "apps/desktop-tauri/src-tauri/target/release/bundle/distribution-capability-${platform}.json" \
             --signature-state "$signature" \
