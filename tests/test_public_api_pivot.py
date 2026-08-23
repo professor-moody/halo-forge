@@ -819,6 +819,7 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "Smoke Windows bundled runtime" in release
     assert "npm run smoke:runtime -- --accelerator cpu" in ci
     assert release.count("--accelerator cpu") == 3
+    assert "--runtime runtime/dist" not in release
     assert "Checkout release workflow support" in release
     assert "ref: ${{ github.sha }}" in release
     assert "Record distribution qualification evidence" in release
