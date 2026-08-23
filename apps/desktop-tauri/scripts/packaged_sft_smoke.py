@@ -117,6 +117,8 @@ def run_checked(cmd: list[str], env: dict[str, str], cwd: Path) -> subprocess.Co
         cwd=str(cwd),
         env=env,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,

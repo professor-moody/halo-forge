@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import runpy
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -53,6 +54,23 @@ def test_dashboard_early_exit_includes_captured_log(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="dashboard traceback marker"):
         namespace["wait_for_health"](8765, ExitedProcess(), log_path)
+
+
+def test_packaged_smoke_decodes_runtime_output_as_utf8(tmp_path: Path, monkeypatch) -> None:
+    namespace = runpy.run_path(str(SMOKE_SCRIPT))
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, stdout="✓ runtime output\n")
+
+    monkeypatch.setattr(namespace["subprocess"], "run", fake_run)
+
+    result = namespace["run_checked"](["runtime", "--check"], {}, tmp_path)
+
+    assert result.stdout == "✓ runtime output\n"
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"
 
 
 def test_windows_torch_license_tree_is_archived_without_dropping_notices(
