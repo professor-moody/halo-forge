@@ -820,6 +820,7 @@ def test_ci_covers_public_dashboard_and_unsigned_desktop_builds():
     assert "npm run smoke:runtime -- --accelerator cpu" in ci
     assert release.count("--accelerator cpu") == 3
     assert "Record distribution qualification evidence" in release
+    assert "PYTHONPATH: ${{ github.workspace }}" in release
     assert "Normalize macOS release artifact names" in release
     assert 'normalized="$dmg_dir/Halo-Forge_${version}_aarch64${artifact_suffix}.dmg"' in release
     assert 'artifact_suffix="-unsigned-preview"' in release
