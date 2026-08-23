@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout release ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 
@@ -48,13 +48,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -166,7 +166,7 @@ jobs:
         run: python apps/desktop-tauri/scripts/verify_install_contract.py --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle
 
       - name: Checkout release workflow support
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           path: .release-workflow-support
@@ -217,7 +217,7 @@ jobs:
             --signature-state "$signature_state"
 
       - name: Upload desktop release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: halo-forge-release-${{ matrix.os }}
           path: |
@@ -241,12 +241,12 @@ jobs:
 
     steps:
       - name: Checkout release notes
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-artifacts
 
