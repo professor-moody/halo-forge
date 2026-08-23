@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import runpy
 import sys
 import zipfile
 from pathlib import Path
+
+import pytest
 
 
 BUILD_SCRIPT = Path("apps/desktop-tauri/scripts/build_runtime.py")
@@ -15,6 +18,41 @@ def test_packaged_smoke_discovers_windows_runtime_executable(monkeypatch) -> Non
     namespace = runpy.run_path(str(SMOKE_SCRIPT))
 
     assert namespace["DIST_RUNTIME"].name == "halo-forge-runtime.exe"
+
+
+def test_desktop_runtime_configures_utf8_stdio(monkeypatch) -> None:
+    import halo_forge.desktop_runtime as desktop_runtime
+
+    stdout_bytes = io.BytesIO()
+    stderr_bytes = io.BytesIO()
+    stdout = io.TextIOWrapper(stdout_bytes, encoding="cp1252")
+    stderr = io.TextIOWrapper(stderr_bytes, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    desktop_runtime._configure_utf8_stdio()
+
+    assert stdout.encoding == "utf-8"
+    assert stderr.encoding == "utf-8"
+    stdout.write("╔═ Halo Forge ═╗\n")
+    stdout.flush()
+    assert stdout_bytes.getvalue().decode("utf-8") == "╔═ Halo Forge ═╗\n"
+
+
+def test_dashboard_early_exit_includes_captured_log(tmp_path: Path) -> None:
+    namespace = runpy.run_path(str(SMOKE_SCRIPT))
+    log_path = tmp_path / "dashboard.log"
+    log_path.write_text("dashboard traceback marker\n", encoding="utf-8")
+
+    class ExitedProcess:
+        returncode = 1
+
+        @staticmethod
+        def poll() -> int:
+            return 1
+
+    with pytest.raises(RuntimeError, match="dashboard traceback marker"):
+        namespace["wait_for_health"](8765, ExitedProcess(), log_path)
 
 
 def test_windows_torch_license_tree_is_archived_without_dropping_notices(

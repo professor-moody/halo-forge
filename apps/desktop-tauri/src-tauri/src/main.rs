@@ -133,6 +133,7 @@ fn desktop_create_support_bundle(app: AppHandle, categories: Vec<String>) -> Res
     }
     let output = command
         .env("HALO_FORGE_REPO_ROOT", repo_root)
+        .env("PYTHONUTF8", "1")
         .output()
         .map_err(|error| format!("Could not start the support-bundle command: {error}"))?;
     if !output.status.success() {
@@ -245,7 +246,8 @@ fn start_runtime(app: AppHandle) {
         };
         runtime_command = runtime_command
             .env("HALO_FORGE_FRONTEND_DIST", frontend_dist)
-            .env("HALO_FORGE_REPO_ROOT", repo_root);
+            .env("HALO_FORGE_REPO_ROOT", repo_root)
+            .env("PYTHONUTF8", "1");
         let spawn_result = runtime_command
             .args([
                 "dashboard",
@@ -585,6 +587,7 @@ fn run_bundled_self_check(
     let output = StdCommand::new(runtime_exe)
         .arg("--desktop-self-check")
         .env("HALO_FORGE_FRONTEND_DIST", frontend_dist)
+        .env("PYTHONUTF8", "1")
         .output()
         .map_err(|err| {
             StartupError::new(

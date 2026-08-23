@@ -139,12 +139,29 @@ def fetch(url: str, timeout: float = 2.0) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def wait_for_health(port: int, process: subprocess.Popen[str]) -> dict[str, object]:
+def log_tail(path: Path, limit: int = 8000) -> str:
+    try:
+        captured = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as exc:
+        return f"(could not read {path}: {exc})"
+    if len(captured) > limit:
+        captured = "...(truncated)...\n" + captured[-limit:]
+    return captured or "(no output)"
+
+
+def wait_for_health(
+    port: int,
+    process: subprocess.Popen[str],
+    log_path: Path | None = None,
+) -> dict[str, object]:
     deadline = time.time() + 45
     last_error = ""
     while time.time() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(f"Dashboard exited early with code {process.returncode}")
+            detail = f"Dashboard exited early with code {process.returncode}"
+            if log_path is not None:
+                detail += f"\n--- dashboard output ---\n{log_tail(log_path)}"
+            raise RuntimeError(detail)
         try:
             payload = json.loads(fetch(f"http://127.0.0.1:{port}/api/public/health"))
             if payload.get("ok") is True:
@@ -283,7 +300,7 @@ def run_dashboard_route_smoke(runtime: Path, frontend: Path, workdir: Path, port
             text=True,
         )
         try:
-            health = wait_for_health(port, proc)
+            health = wait_for_health(port, proc, log_path)
             version = json.loads(fetch(f"http://127.0.0.1:{port}/api/public/version"))
             missing_routes: list[str] = []
             for route in ROUTES:

@@ -687,6 +687,7 @@ def test_desktop_tauri_foundation_contract():
     assert "runtime_executable_in_dir" in main_rs
     assert 'StdCommand::new("taskkill")' in main_rs
     assert "HALO_FORGE_FRONTEND_DIST" in main_rs
+    assert 'env("PYTHONUTF8", "1")' in main_rs
     assert "HALO_FORGE_REPO_ROOT" in main_rs
     assert "runtime_self_check_failed" in main_rs
     assert "run_bundled_self_check" in main_rs
@@ -729,6 +730,7 @@ def test_desktop_runtime_entrypoint_self_check_contract():
     assert "--desktop-self-check" in source
     assert "multiprocessing.freeze_support()" in source
     assert "HALO_FORGE_FRONTEND_DIST" in source
+    assert "_configure_utf8_stdio" in source
     assert "halo_forge.public_api.app" in source
     assert "mlx.nn" in source
     assert '"-m", "halo_forge.cli"' in source

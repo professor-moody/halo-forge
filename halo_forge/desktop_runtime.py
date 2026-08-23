@@ -17,6 +17,20 @@ from pathlib import Path
 from typing import Any
 
 
+def _configure_utf8_stdio() -> None:
+    """Use deterministic UTF-8 output for the cross-platform desktop sidecar."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            # Embedded or already-closed streams may not be reconfigurable.
+            # CLI-level writers still degrade unsupported glyphs safely.
+            pass
+
+
 def _check_import(name: str) -> tuple[bool, str | None]:
     try:
         __import__(name)
@@ -72,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     # multiprocessing resource tracker can re-enter this executable with
     # helper args that would otherwise be parsed as halo-forge CLI commands.
     multiprocessing.freeze_support()
+    _configure_utf8_stdio()
 
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(add_help=False)
