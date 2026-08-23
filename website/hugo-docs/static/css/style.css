@@ -149,6 +149,7 @@ tr.highlight td { background: var(--accent-subtle); color: var(--text-primary); 
 
 /* Docs Content */
 .docs-content { flex: 1; padding: 2.5rem 3.5rem; max-width: 850px; min-width: 0; }
+.standalone-page { max-width: 900px; margin: 0 auto; padding: 3rem 2rem 4rem; }
 .docs-header { margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
 .docs-header h1 { font-family: var(--font-display); font-size: 2rem; font-weight: 600; margin-bottom: 0.4rem; }
 .docs-description { color: var(--text-secondary); font-size: 1.05rem; }

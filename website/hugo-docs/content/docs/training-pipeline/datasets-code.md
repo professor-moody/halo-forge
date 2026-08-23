@@ -236,6 +236,6 @@ halo-forge data validate --file data/custom.jsonl
 
 ## Next Steps
 
-- [Training Pipeline](../how-to-train/) - Use datasets for training
-- [RAFT Training](../raft/) - RLVR training workflow
-- [Windows Setup](../../reference/windows-setup/) - For Windows curriculum
+- [Training Pipeline](/docs/training-pipeline/how-to-train/) - Use datasets for training
+- [RAFT Training](/docs/training-pipeline/raft/) - RLVR training workflow
+- [Windows Setup](/docs/reference/windows-setup/) - For Windows curriculum

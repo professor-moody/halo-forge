@@ -1,9 +1,13 @@
 {
   "identifier": "default",
-  "description": "Allow the desktop shell to run only the bundled Halo Forge sidecar.",
+  "description": "Allow the desktop shell to run its bundled runtime and choose local dataset files or folders.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:8765/*"]
+  },
   "permissions": [
     "core:default",
+    "dialog:allow-open",
     "shell:allow-execute",
     "shell:allow-spawn",
     "shell:allow-kill"

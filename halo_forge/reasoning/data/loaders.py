@@ -93,6 +93,80 @@ class MathDataset(ABC):
         logger.info(f"Exported {len(self.samples)} samples to {output_path}")
 
 
+class LocalMathManifestLoader(MathDataset):
+    """Load canonical prompt/RLVR rows from a local Dataset Lab artifact."""
+
+    def __init__(
+        self,
+        manifest_path: str | Path,
+        split: str = "train",
+        cache_dir: Optional[str] = None,
+        limit: Optional[int] = None,
+    ):
+        super().__init__(split=split, cache_dir=cache_dir, limit=limit)
+        self.manifest_path = Path(manifest_path).expanduser().resolve()
+
+    @property
+    def name(self) -> str:
+        return self.manifest_path.stem
+
+    def load(self) -> List[MathSample]:
+        if not self.manifest_path.is_file():
+            raise FileNotFoundError(f"Reasoning manifest not found: {self.manifest_path}")
+        samples: List[MathSample] = []
+        with self.manifest_path.open(encoding="utf-8") as handle:
+            for index, line in enumerate(handle):
+                if self.limit is not None and len(samples) >= self.limit:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid reasoning manifest JSON on line {index + 1}: {exc}"
+                    ) from exc
+                if not isinstance(row, dict):
+                    raise ValueError(f"Reasoning manifest line {index + 1} must be an object")
+                question = row.get("prompt", row.get("question", row.get("problem")))
+                answer = row.get(
+                    "reference_answer", row.get("expected_answer", row.get("answer"))
+                )
+                if not isinstance(question, str) or not question.strip():
+                    raise ValueError(f"Reasoning manifest line {index + 1} is missing prompt")
+                if answer is None:
+                    raise ValueError(
+                        f"Reasoning manifest line {index + 1} is missing reference_answer"
+                    )
+                metadata = row.get("metadata")
+                metadata = dict(metadata) if isinstance(metadata, dict) else {}
+                metadata.setdefault("manifest_index", index)
+                metadata.setdefault("manifest", str(self.manifest_path))
+                samples.append(
+                    MathSample(
+                        question=question,
+                        answer=str(answer),
+                        solution=row.get("solution"),
+                        difficulty=(
+                            str(row["difficulty"])
+                            if row.get("difficulty") is not None
+                            else None
+                        ),
+                        subject=(
+                            str(row["subject"]) if row.get("subject") is not None else None
+                        ),
+                        metadata=metadata,
+                    )
+                )
+        if not samples:
+            raise ValueError(
+                f"Reasoning manifest contains no usable records: {self.manifest_path}"
+            )
+        self.samples = samples
+        logger.info("Loaded %d reasoning samples from %s", len(samples), self.manifest_path)
+        return samples
+
+
 class GSM8KLoader(MathDataset):
     """
     Load GSM8K dataset.
@@ -340,6 +414,12 @@ def load_math_dataset(
     Returns:
         MathDataset instance
     """
+    local_path = Path(name).expanduser()
+    if local_path.is_file():
+        loader = LocalMathManifestLoader(local_path, split=split, limit=limit, **kwargs)
+        loader.load()
+        return loader
+
     if name not in MATH_DATASETS:
         raise ValueError(f"Unknown dataset: {name}. Available: {list(MATH_DATASETS.keys())}")
     

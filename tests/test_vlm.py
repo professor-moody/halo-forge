@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import pytest
 np = pytest.importorskip("numpy")
 pytest.importorskip("torch")
-Image = pytest.importorskip("PIL.Image").Image
+Image = pytest.importorskip("PIL.Image")
 
 from halo_forge.vlm.verifiers.base import VisionVerifier, VisionVerifyResult
 from halo_forge.vlm.verifiers.perception import (

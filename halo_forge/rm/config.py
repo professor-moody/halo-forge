@@ -26,6 +26,7 @@ class RMConfig:
 
     # Data — preference pairs. Same shape as DPO datasets.
     train_file: Optional[str] = None
+    validation_file: Optional[str] = None
     dataset: Optional[str] = None
     dataset_split: str = "train"
     max_samples: Optional[int] = None
@@ -53,6 +54,8 @@ class RMConfig:
     # Training
     output_dir: str = "models/rm"
     num_epochs: int = 1
+    # Absolute optimizer-step ceiling for a resumable sweep segment.
+    max_steps: Optional[int] = None
     batch_size: int = 4
     gradient_accumulation_steps: int = 4
     learning_rate: float = 1e-5  # RMs train fast; smaller than SFT
@@ -74,6 +77,8 @@ class RMConfig:
     center_rewards_coefficient: Optional[float] = 0.01
 
     def __post_init__(self):
+        if self.max_steps is not None and int(self.max_steps) <= 0:
+            raise ValueError("max_steps must be positive when provided")
         if self.target_modules is None:
             self.target_modules = [
                 "q_proj", "k_proj", "v_proj", "o_proj",

@@ -1,0 +1,5 @@
+prompt,response
+"  Say hello politely.  ","  Hello! It is nice to meet you.  "
+"","This row is missing the required prompt."
+"  Say hello politely.  ","  Hello! It is nice to meet you.  "
+"Summarize: The sky appears blue because shorter wavelengths scatter more.","Short blue wavelengths scatter through the atmosphere more strongly."

@@ -91,15 +91,43 @@ def test_mlx_grpo_trainer_module_imports_without_mlx():
 
 
 def test_grpo_policy_loss_reference_free_and_reference_model():
+    import math
+
     from halo_forge.grpo.mlx_trainer import _grpo_policy_loss
 
     assert _grpo_policy_loss(2.0, advantage=1.0, beta=0.04) == pytest.approx(-2.0)
+
+    # With a reference model the penalty is the k3 estimator of KL(pi || pi_ref),
+    # not the signed log-ratio.  r = log pi_ref - log pi = -1, so
+    # kl = exp(-1) + 1 - 1 = 0.367879..., and loss = -2.0 + 0.1 * kl.
+    expected_kl = math.exp(-1.0) - (-1.0) - 1.0
     assert _grpo_policy_loss(
         2.0,
         advantage=1.0,
         beta=0.1,
         reference_logp=1.0,
-    ) == pytest.approx(-1.9)
+    ) == pytest.approx(-2.0 + 0.1 * expected_kl)
+
+
+def test_grpo_reference_penalty_is_a_true_divergence():
+    """The reference term must penalize divergence in BOTH directions.
+
+    The original implementation used the signed log-ratio ``log pi - log pi_ref``,
+    which is negative whenever the policy falls below the reference — it *paid*
+    the policy to diverge downward and had no restoring force.  These assertions
+    fail against that formulation.
+    """
+    from halo_forge.grpo.mlx_trainer import _grpo_reference_kl
+
+    assert _grpo_reference_kl(1.5, 1.5) == pytest.approx(0.0)
+
+    above = _grpo_reference_kl(2.0, 1.0)
+    below = _grpo_reference_kl(1.0, 2.0)
+    assert above > 0.0
+    assert below > 0.0
+
+    # Penalty grows as the policy moves further from the reference.
+    assert _grpo_reference_kl(3.0, 1.0) > above
 
 
 def test_mlx_grpo_warns_on_unsupported_config(capsys):

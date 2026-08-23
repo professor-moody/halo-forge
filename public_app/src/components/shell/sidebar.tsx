@@ -1,207 +1,142 @@
+import { useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  Activity,
-  BarChart3,
-  Bookmark,
-  BookOpen,
-  CheckCircle2,
-  GitCompareArrows,
-  LayoutDashboard,
-  MessageSquare,
-  PackageSearch,
-  Play,
-  Plug,
-  Rocket,
-  ShieldCheck,
-  Stethoscope,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, ChevronDown, GitCompareArrows, Search, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { ApiError, connectionMode, getApiToken, isAuthRequiredError } from "@/lib/api";
-import { useBackendInfo, useVersionInfo } from "@/lib/hooks";
+import { useActivity, useBackendInfo, useVersionInfo } from "@/lib/hooks";
 import { usePinnedRuns } from "@/lib/pinned-runs";
 import { ThemeToggle } from "./theme-toggle";
+import { PRIMARY_NAV, SYSTEM_NAV, isNavigationActive } from "./navigation";
 
-/**
- * Left rail. Three vertical zones:
- *
- *   1. Wordmark — the brand glyph + "halo-forge" set in IBM Plex Sans
- *      Medium with tight tracking. The wordmark has a subtle copper
- *      pulse on hover so the brand has *some* life without being
- *      decorative.
- *   2. Workspace nav — primary routes. Active state is a soft copper
- *      fill plus a left edge marker; left-edge markers are the
- *      workstation-app vocabulary (Logic Pro, DAWs, IDE tabs) for
- *      "this is the active document".
- *   3. Compute panel — pinned to the bottom. The single most
- *      distinctive piece of halo-forge. Shows backend, dtype, attention
- *      impl. Phase B will expand this into a full telemetry strip
- *      (memory bar, watts, throughput).
- */
-
-type NavItem = {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  /** Keyboard hint shown on the right rail. Plain text, will be wrapped in <kbd>. */
-  kbd?: string;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Overview", icon: LayoutDashboard, kbd: "G O" },
-  { to: "/start", label: "Start run", icon: Rocket, kbd: "G S" },
-  { to: "/train", label: "Advanced", icon: Play, kbd: "G T" },
-  { to: "/models", label: "Models", icon: PackageSearch, kbd: "G M" },
-  { to: "/runs", label: "Runs", icon: Activity, kbd: "G R" },
-  { to: "/eval", label: "Eval", icon: BarChart3, kbd: "G E" },
-  { to: "/playground", label: "Playground", icon: MessageSquare, kbd: "G P" },
-  { to: "/registry", label: "Bundles", icon: Bookmark, kbd: "G B" },
-  { to: "/verifiers", label: "Verifiers", icon: ShieldCheck, kbd: "G V" },
-  { to: "/diagnostics", label: "Diagnostics", icon: Stethoscope, kbd: "G X" },
-  { to: "/results", label: "Results", icon: CheckCircle2, kbd: "G Y" },
-  { to: "/docs", label: "Docs", icon: BookOpen, kbd: "G D" },
-  { to: "/connect", label: "Connection", icon: Plug, kbd: "G C" },
-];
-
-export function Sidebar() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+export function Sidebar({
+  onOpenActivity,
+  onOpenCommand,
+}: {
+  onOpenActivity: () => void;
+  onOpenCommand: () => void;
+}) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const activity = useActivity(100);
+  const [systemOpen, setSystemOpen] = useState(() =>
+    SYSTEM_NAV.some((item) => isNavigationActive(pathname, item.to)),
+  );
+  const activeCount = (activity.data?.items ?? []).filter((item) =>
+    ["queued", "running", "blocked", "preparing"].includes(item.status),
+  ).length;
+  const attentionCount = (activity.data?.items ?? []).filter((item) =>
+    ["failed", "interrupted", "needs_reconciliation"].includes(item.status),
+  ).length;
 
   return (
-    <aside className="hidden h-screen w-56 flex-col border-r border-border bg-bg-subtle md:flex">
-      {/* Wordmark */}
-      <Link
-        to="/"
-        className="flex h-12 items-center gap-2.5 border-b border-border-subtle px-3.5 hover:bg-surface/40 transition-colors group"
-      >
-        <img
-          src="/mark.svg"
-          alt=""
-          width={20}
-          height={20}
-          className="opacity-95 group-hover:opacity-100 transition-opacity"
-        />
-        <span className="font-medium tracking-tight text-fg text-[13.5px]">
-          halo<span className="text-fg-subtle">-</span>forge
-        </span>
-      </Link>
+    <aside className="hidden h-screen w-56 shrink-0 flex-col border-r border-border bg-bg-subtle md:flex">
+      <div className="flex h-12 items-center gap-1 border-b border-border-subtle px-2">
+        <Link to="/" className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-1.5 py-1.5 hover:bg-surface/40">
+          <img src="/mark.svg" alt="" width={20} height={20} className="opacity-95 transition-opacity group-hover:opacity-100" />
+          <span className="truncate text-[13.5px] font-medium tracking-tight text-fg">halo<span className="text-fg-subtle">-</span>forge</span>
+        </Link>
+        <button type="button" onClick={onOpenCommand} className="grid h-7 w-7 place-items-center rounded-sm text-fg-disabled transition-colors hover:bg-surface hover:text-fg" title="Open command palette (⌘K)" aria-label="Open command palette">
+          <Search className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
-      {/* Primary nav */}
-      <nav className="flex-1 overflow-y-auto px-1.5 py-2.5">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2.5" aria-label="Workspace navigation">
         <SectionLabel>Workspace</SectionLabel>
         <ul className="space-y-px">
-          {NAV_ITEMS.map((item) => {
-            const active =
-              item.to === "/"
-                ? pathname === "/"
-                : pathname === item.to || pathname.startsWith(`${item.to}/`);
-            return (
-              <li key={item.to}>
-                <Link
-                  to={item.to}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "relative flex h-7 items-center gap-2.5 rounded-sm px-2 text-[13px] transition-colors group",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg-subtle",
-                    active
-                      ? "bg-accent-bg text-accent font-medium"
-                      : "text-fg-muted hover:bg-surface hover:text-fg",
-                  )}
-                >
-                  {/* Active edge marker — Logic Pro / DAW vocabulary
-                      for "this is the active panel". */}
-                  {active ? (
-                    <span
-                      aria-hidden
-                      className="absolute -left-1.5 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent"
-                    />
-                  ) : null}
-                  <item.icon className="h-3.5 w-3.5" />
-                  <span className="flex-1">{item.label}</span>
-                  {item.kbd ? (
-                    <kbd
-                      className={cn(
-                        "font-mono text-[10px] tracking-tight",
-                        active ? "text-accent/70" : "text-fg-disabled group-hover:text-fg-subtle",
-                      )}
-                    >
-                      {item.kbd}
-                    </kbd>
-                  ) : null}
-                </Link>
-              </li>
-            );
-          })}
+          {PRIMARY_NAV.map((item) => <NavigationLink key={item.id} item={item} active={isNavigationActive(pathname, item.to)} />)}
         </ul>
       </nav>
 
-      {/* Comparison tray — only renders when at least one run is pinned.
-          Lives between primary nav and Compute so it reads as "active
-          working set", not part of the static nav. */}
       <ComparisonTray />
 
-      {/* Appearance — sits above Compute because the chrome it controls
-          (whole-app theme) is more global than backend status. */}
-      <div className="border-t border-border-subtle px-2.5 py-2">
-        <SectionLabel>Appearance</SectionLabel>
-        <ThemeToggle />
+      <div className="border-t border-border-subtle px-1.5 py-2">
+        <SectionLabel>Operations</SectionLabel>
+        <button
+          type="button"
+          onClick={onOpenActivity}
+          className="group flex h-8 w-full items-center gap-2.5 rounded-sm px-2 text-[12.5px] text-fg-muted transition-colors hover:bg-surface hover:text-fg focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Activity className={cn("h-3.5 w-3.5", activeCount > 0 && "text-accent")} />
+          <span className="flex-1 text-left">Activity</span>
+          {attentionCount > 0 ? (
+            <span className="min-w-5 rounded-sm bg-danger-bg px-1 font-mono text-[9.5px] text-danger">{attentionCount}</span>
+          ) : activeCount > 0 ? (
+            <span className="min-w-5 rounded-sm bg-accent-bg px-1 font-mono text-[9.5px] text-accent">{activeCount}</span>
+          ) : (
+            <kbd className="font-mono text-[9.5px] text-fg-disabled">G A</kbd>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSystemOpen((value) => !value)}
+          aria-expanded={systemOpen}
+          className="group mt-px flex h-8 w-full items-center gap-2.5 rounded-sm px-2 text-[12.5px] text-fg-muted transition-colors hover:bg-surface hover:text-fg"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          <span className="flex-1 text-left">System</span>
+          <ChevronDown className={cn("h-3 w-3 text-fg-disabled transition-transform duration-150", systemOpen && "rotate-180")} />
+        </button>
+        {systemOpen ? (
+          <ul className="mt-1 space-y-px border-l border-border-subtle pl-2">
+            {SYSTEM_NAV.map((item) => <NavigationLink key={item.id} item={item} active={isNavigationActive(pathname, item.to)} compact />)}
+          </ul>
+        ) : null}
       </div>
 
-      {/* Compute panel */}
+      <div className="border-t border-border-subtle px-2.5 py-2">
+        <div className="flex items-center justify-between">
+          <SectionLabel>Appearance</SectionLabel>
+          <kbd className="pb-1.5 font-mono text-[9px] text-fg-disabled">⌘K</kbd>
+        </div>
+        <ThemeToggle />
+      </div>
       <ComputePanel />
     </aside>
   );
 }
 
-function ComparisonTray() {
-  const pinned = usePinnedRuns();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  if (pinned.length === 0) return null;
-  const active = pathname === "/runs/compare";
-
+function NavigationLink({ item, active, compact }: { item: (typeof PRIMARY_NAV)[number]; active: boolean; compact?: boolean }) {
   return (
-    <div className="border-t border-border-subtle px-1.5 py-2">
-      <SectionLabel>Comparison</SectionLabel>
+    <li>
       <Link
-        to="/runs/compare"
+        to={item.to}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "relative flex h-7 items-center gap-2.5 rounded-sm px-2 text-[13px] transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg-subtle",
-          active
-            ? "bg-accent-bg text-accent font-medium"
-            : "text-fg-muted hover:bg-surface hover:text-fg",
+          "relative flex items-center gap-2.5 rounded-sm px-2 text-[12.5px] transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+          compact ? "h-7" : "h-8",
+          active ? "bg-accent-bg text-accent font-medium" : "text-fg-muted hover:bg-surface hover:text-fg",
         )}
       >
-        {active ? (
-          <span
-            aria-hidden
-            className="absolute -left-1.5 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent"
-          />
-        ) : null}
+        {active ? <span aria-hidden className="absolute -left-1.5 inset-y-1.5 w-0.5 rounded-full bg-accent" /> : null}
+        <item.icon className="h-3.5 w-3.5" />
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        {!compact && item.shortcut ? <kbd className={cn("font-mono text-[9.5px] tracking-tight", active ? "text-accent/70" : "text-fg-disabled")}>{item.shortcut}</kbd> : null}
+      </Link>
+    </li>
+  );
+}
+
+function ComparisonTray() {
+  const pinned = usePinnedRuns();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  if (!pinned.length) return null;
+  const active = pathname === "/runs/compare";
+  return (
+    <div className="border-t border-border-subtle px-1.5 py-2">
+      <SectionLabel>Working set</SectionLabel>
+      <Link to="/runs/compare" aria-current={active ? "page" : undefined} className={cn("relative flex h-8 items-center gap-2.5 rounded-sm px-2 text-[12.5px] transition-colors", active ? "bg-accent-bg text-accent font-medium" : "text-fg-muted hover:bg-surface hover:text-fg")}>
+        {active ? <span aria-hidden className="absolute -left-1.5 inset-y-1.5 w-0.5 rounded-full bg-accent" /> : null}
         <GitCompareArrows className="h-3.5 w-3.5" />
         <span className="flex-1">Compare runs</span>
-        <span
-          className={cn(
-            "font-mono text-[10px] tabular-nums px-1.5 rounded-sm",
-            active
-              ? "bg-accent/15 text-accent"
-              : "bg-surface text-fg-subtle",
-          )}
-        >
-          {pinned.length}
-        </span>
+        <span className={cn("rounded-sm px-1.5 font-mono text-[9.5px]", active ? "bg-accent/15 text-accent" : "bg-surface text-fg-subtle")}>{pinned.length}</span>
       </Link>
     </div>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-fg-disabled">
-      {children}
-    </div>
-  );
+  return <div className="px-2 pb-1.5 pt-1 text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">{children}</div>;
 }
 
 function ComputePanel() {
@@ -210,85 +145,20 @@ function ComputePanel() {
   const mode = connectionMode();
   const authNeeded = isAuthRequiredError(error);
   const tokenStored = Boolean(getApiToken());
-
   return (
     <div className="border-t border-border-subtle p-2.5">
       <SectionLabel>Compute</SectionLabel>
       <div className="rounded-md border border-border-subtle bg-surface/60">
-        {isLoading ? (
-          <div className="h-12 animate-pulse" />
-        ) : authNeeded ? (
-          <div className="px-2.5 py-2 space-y-1.5">
-            <Badge tone="danger" dot size="sm">
-              Auth needed
-            </Badge>
-            <Link to="/connect" className="block text-[11px] text-accent hover:underline">
-              Enter token
-            </Link>
-          </div>
+        {isLoading ? <div className="h-12 animate-pulse" /> : authNeeded ? (
+          <div className="space-y-1.5 px-2.5 py-2"><Badge tone="danger" dot size="sm">Auth needed</Badge><Link to="/connect" className="block text-[11px] text-accent hover:underline">Enter token</Link></div>
         ) : isError || !data ? (
-          <div className="px-2.5 py-2 space-y-1.5">
-            <Badge tone="danger" dot size="sm">
-              Offline
-            </Badge>
-            {error instanceof ApiError ? (
-              <div className="font-mono text-[10px] text-fg-disabled">
-                {error.status}
-              </div>
-            ) : null}
-          </div>
+          <div className="space-y-1.5 px-2.5 py-2"><Badge tone="danger" dot size="sm">Offline</Badge>{error instanceof ApiError ? <div className="font-mono text-[10px] text-fg-disabled">{error.status}</div> : null}</div>
         ) : (
-          <div className="px-2.5 py-2 space-y-1.5">
-            {/* Top row: backend identity */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[11px] text-fg">
-                {prettyBackendName(data.name)}
-              </span>
-              {data.chip ? (
-                <span className="truncate font-mono text-[10px] text-fg-subtle">
-                  {data.chip.brand}
-                </span>
-              ) : null}
-              <span
-                aria-label="Online"
-                className="status-dot"
-                style={{
-                  background:
-                    data.name === "mlx"
-                      ? "var(--color-accent)"
-                      : data.name.startsWith("rocm")
-                        ? "var(--color-success)"
-                        : "var(--color-info)",
-                }}
-              />
-            </div>
-            {/* Bottom row: dtype + attention */}
-            <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-fg-subtle uppercase tracking-wider">
-              <span>{data.capabilities.preferred_dtype_str}</span>
-              <span>
-                {data.mlx_readiness?.executable ? "MLX ready" : data.capabilities.preferred_attn_impl}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[10px] uppercase tracking-wider">
-              <span className={mode === "remote" ? "text-warning" : "text-fg-subtle"}>
-                {mode === "remote" ? "Remote" : "Local"}
-              </span>
-              <Link
-                to="/connect"
-                className={cn(
-                  "hover:underline",
-                  tokenStored ? "text-success" : "text-fg-disabled",
-                )}
-              >
-                {tokenStored ? "token" : "no token"}
-              </Link>
-            </div>
-            {version.data ? (
-              <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[10px] uppercase tracking-wider text-fg-disabled">
-                <span>{version.data.release_channel}</span>
-                <span>{version.data.display_version}</span>
-              </div>
-            ) : null}
+          <div className="space-y-1.5 px-2.5 py-2">
+            <div className="flex items-center justify-between gap-2"><span className="font-mono text-[11px] text-fg">{prettyBackendName(data.name)}</span>{data.chip ? <span className="truncate font-mono text-[10px] text-fg-subtle">{data.chip.brand}</span> : null}<span aria-label="Online" className="status-dot" style={{ background: data.name === "mlx" ? "var(--color-accent)" : data.name.startsWith("rocm") ? "var(--color-success)" : "var(--color-info)" }} /></div>
+            <div className="flex items-center justify-between gap-2 font-mono text-[9.5px] uppercase tracking-wider text-fg-subtle"><span>{data.capabilities.preferred_dtype_str}</span><span>{data.mlx_readiness?.executable ? "MLX ready" : data.capabilities.preferred_attn_impl}</span></div>
+            <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[9.5px] uppercase tracking-wider"><span className={mode === "remote" ? "text-warning" : "text-fg-subtle"}>{mode}</span><Link to="/connect" className={cn("hover:underline", tokenStored ? "text-success" : "text-fg-disabled")}>{tokenStored ? "token" : "no token"}</Link></div>
+            {version.data ? <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-1.5 font-mono text-[9.5px] uppercase tracking-wider text-fg-disabled"><span>{version.data.release_channel}</span><span>{version.data.display_version}</span></div> : null}
           </div>
         )}
       </div>
@@ -297,20 +167,8 @@ function ComputePanel() {
 }
 
 function prettyBackendName(name: string): string {
-  switch (name) {
-    case "rocm_gfx1151":
-      return "ROCm · gfx1151";
-    case "rocm":
-      return "ROCm";
-    case "cuda":
-      return "CUDA";
-    case "mps":
-      return "Apple · MPS";
-    case "mlx":
-      return "Apple · MLX";
-    case "cpu":
-      return "CPU";
-    default:
-      return name;
-  }
+  if (name === "rocm_gfx1151") return "ROCm · gfx1151";
+  if (name === "mps") return "Apple · MPS";
+  if (name === "mlx") return "Apple · MLX";
+  return name.toUpperCase();
 }

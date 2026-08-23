@@ -32,7 +32,8 @@ Startup logs print canonical route URLs (`/`, `/training`, `/benchmark`, `/infer
 
 ## Internal vs Public
 
-- **Public frontend**: user-facing train, monitor, results, readiness, and docs flows
+- **Workstation dashboard**: user-facing Data, Train, Experiments, Runs,
+  Evaluate, Models, Activity, System, and docs flows
 - **NiceGUI console**: staff/internal workflows, advanced diagnostics, raw traces, and ops remediation
 
 The public frontend intentionally collapses research detail by default. This document focuses on the internal console.
@@ -151,9 +152,13 @@ Browse available datasets:
 - Preview samples
 - Filter by type/source
 
-### Results (`/results`)
+### Run Outputs
 
-Run results table:
+The legacy internal console includes a run-output table. The supported
+workstation dashboard owns this workflow under **Runs**, with trained outputs
+and derived artifacts under **Models**.
+
+The table provides:
 - Training, benchmark, inference, utility, and diagnostics outputs
 - Multi-select for comparison
 - Sort by any column

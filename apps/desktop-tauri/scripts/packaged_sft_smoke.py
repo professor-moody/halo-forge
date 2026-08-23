@@ -33,7 +33,8 @@ APP_RUNTIME = (
 APP_FRONTEND = APP_BUNDLE / "Contents/Resources/frontend"
 DIST_RUNTIME = (
     REPO_ROOT
-    / "apps/desktop-tauri/runtime/dist/halo-forge-runtime/halo-forge-runtime"
+    / "apps/desktop-tauri/runtime/dist/halo-forge-runtime"
+    / ("halo-forge-runtime.exe" if sys.platform == "win32" else "halo-forge-runtime")
 )
 DIST_FRONTEND = REPO_ROOT / "public_app/dist"
 ROUTES = (
@@ -45,6 +46,15 @@ ROUTES = (
     "/models",
     "/playground",
     "/connect",
+)
+ACCELERATOR_CHOICES = (
+    "auto",
+    "rocm",
+    "rocm_gfx1151",
+    "cuda",
+    "mps",
+    "mlx",
+    "cpu",
 )
 
 
@@ -58,6 +68,12 @@ def parse_args() -> argparse.Namespace:
         "--model",
         default="hf-internal-testing/tiny-random-gpt2",
         help="Tiny open model used for packaged SFT smoke.",
+    )
+    parser.add_argument(
+        "--accelerator",
+        choices=ACCELERATOR_CHOICES,
+        default="auto",
+        help="Accelerator passed to the packaged Halo Forge CLI (default: auto).",
     )
     return parser.parse_args()
 
@@ -87,15 +103,37 @@ def assert_port_free(port: int) -> None:
 
 
 def run_checked(cmd: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    """Run a command, surfacing its captured output when it fails.
+
+    This used to pass ``check=True`` and let ``CalledProcessError`` propagate.
+    The top-level handler prints ``str(exc)``, which for that exception is only
+    "Command [...] returned non-zero exit status 1" -- the stdout/stderr this
+    function captured was discarded, so a red packaged-runtime gate said that
+    training failed but never why. This is the only CI step that executes a real
+    optimizer step, so it is the step whose failures most need to be readable.
+    """
+    result = subprocess.run(
         cmd,
         cwd=str(cwd),
         env=env,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        check=True,
+        check=False,
     )
+    if result.returncode != 0:
+        captured = (result.stdout or "").strip()
+        # Tail-limit: a failing trainer can emit a lot, and the end is the part
+        # that carries the traceback.
+        if len(captured) > 8000:
+            captured = "...(truncated)...\n" + captured[-8000:]
+        raise RuntimeError(
+            f"command failed (exit {result.returncode}): {' '.join(cmd)}\n"
+            f"--- captured output (stdout+stderr) ---\n{captured or '(no output)'}"
+        )
+    return result
 
 
 def fetch(url: str, timeout: float = 2.0) -> str:
@@ -103,12 +141,29 @@ def fetch(url: str, timeout: float = 2.0) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def wait_for_health(port: int, process: subprocess.Popen[str]) -> dict[str, object]:
+def log_tail(path: Path, limit: int = 8000) -> str:
+    try:
+        captured = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as exc:
+        return f"(could not read {path}: {exc})"
+    if len(captured) > limit:
+        captured = "...(truncated)...\n" + captured[-limit:]
+    return captured or "(no output)"
+
+
+def wait_for_health(
+    port: int,
+    process: subprocess.Popen[str],
+    log_path: Path | None = None,
+) -> dict[str, object]:
     deadline = time.time() + 45
     last_error = ""
     while time.time() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(f"Dashboard exited early with code {process.returncode}")
+            detail = f"Dashboard exited early with code {process.returncode}"
+            if log_path is not None:
+                detail += f"\n--- dashboard output ---\n{log_tail(log_path)}"
+            raise RuntimeError(detail)
         try:
             payload = json.loads(fetch(f"http://127.0.0.1:{port}/api/public/health"))
             if payload.get("ok") is True:
@@ -132,7 +187,13 @@ def write_tiny_dataset(path: Path) -> None:
     )
 
 
-def run_sft_smoke(runtime: Path, frontend: Path, workdir: Path, model: str) -> dict[str, object]:
+def run_sft_smoke(
+    runtime: Path,
+    frontend: Path,
+    workdir: Path,
+    model: str,
+    accelerator: str,
+) -> dict[str, object]:
     data_dir = workdir / "data"
     output_dir = workdir / "sft-output"
     log_dir = workdir / "logs"
@@ -150,11 +211,11 @@ def run_sft_smoke(runtime: Path, frontend: Path, workdir: Path, model: str) -> d
         }
     )
     run_checked([str(runtime), "--desktop-self-check"], env=env, cwd=REPO_ROOT)
-    result = run_checked(
+    cli_command = [str(runtime), "-m", "halo_forge.cli"]
+    if accelerator != "auto":
+        cli_command.extend(["--accelerator", accelerator])
+    cli_command.extend(
         [
-            str(runtime),
-            "-m",
-            "halo_forge.cli",
             "sft",
             "train",
             "--model",
@@ -185,7 +246,10 @@ def run_sft_smoke(runtime: Path, frontend: Path, workdir: Path, model: str) -> d
             "2",
             "--no-lora",
             "--no-caffeinate",
-        ],
+        ]
+    )
+    result = run_checked(
+        cli_command,
         env=env,
         cwd=REPO_ROOT,
     )
@@ -238,7 +302,7 @@ def run_dashboard_route_smoke(runtime: Path, frontend: Path, workdir: Path, port
             text=True,
         )
         try:
-            health = wait_for_health(port, proc)
+            health = wait_for_health(port, proc, log_path)
             version = json.loads(fetch(f"http://127.0.0.1:{port}/api/public/version"))
             missing_routes: list[str] = []
             for route in ROUTES:
@@ -265,7 +329,7 @@ def main() -> int:
 
     workdir = Path(tempfile.mkdtemp(prefix="halo-forge-packaged-smoke-"))
     try:
-        sft = run_sft_smoke(runtime, frontend, workdir, args.model)
+        sft = run_sft_smoke(runtime, frontend, workdir, args.model, args.accelerator)
         dashboard = run_dashboard_route_smoke(runtime, frontend, workdir, args.port)
         payload = {
             "ok": True,

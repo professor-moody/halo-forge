@@ -48,6 +48,11 @@ from halo_forge.runtime_determinism import (
     build_run_id,
     set_global_seed,
 )
+from halo_forge.training_signal import (
+    complete_signal_boundary,
+    hashed_media_reference,
+    lineage_identity_from_metadata,
+)
 
 
 @dataclass
@@ -97,7 +102,11 @@ class VLMSampleResult:
     ground_truth: Optional[str]
     reward: float
     success: bool
-    details: Dict[str, Any]
+    details: Any
+    verifier_metadata: Dict[str, Any] = field(default_factory=dict)
+    source_metadata: Dict[str, Any] = field(default_factory=dict)
+    source_index: int = 0
+    candidate_ordinal: int = 0
 
 
 class VLMRAFTTrainer:
@@ -120,7 +129,7 @@ class VLMRAFTTrainer:
         trainer.train(samples)
     """
     
-    def __init__(self, config: VLMRAFTConfig):
+    def __init__(self, config: VLMRAFTConfig, signal_sink: Optional[Any] = None):
         """
         Initialize VLM RAFT trainer.
         
@@ -128,6 +137,7 @@ class VLMRAFTTrainer:
             config: Training configuration
         """
         self.config = config
+        self.signal_sink = signal_sink
         from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
 
         validate_neural_accelerator_opt_in(self.config, label="VLM RAFT")
@@ -173,13 +183,15 @@ class VLMRAFTTrainer:
         )
         self.adapter.load()
         
-        # Initialize verifier
-        self._log("Initializing VisionVerifier", "step")
-        self.verifier = VisionVerifier(
-            perception_weight=self.config.perception_weight,
-            reasoning_weight=self.config.reasoning_weight,
-            output_weight=self.config.output_weight
-        )
+        # Preserve an exact profile-backed verifier injected by Dataset/Train
+        # handoff; legacy launches still construct the built-in verifier here.
+        if self.verifier is None:
+            self._log("Initializing VisionVerifier", "step")
+            self.verifier = VisionVerifier(
+                perception_weight=self.config.perception_weight,
+                reasoning_weight=self.config.reasoning_weight,
+                output_weight=self.config.output_weight
+            )
     
     def get_learning_rate_for_cycle(self, cycle: int) -> float:
         """Calculate learning rate with decay."""
@@ -206,11 +218,11 @@ class VLMRAFTTrainer:
         self._log(f"Generating {len(prompts) * samples_per_prompt} samples "
                   f"({len(prompts)} prompts x {samples_per_prompt})", "step")
         
-        for sample in tqdm(prompts, desc="Generating"):
+        for source_index, sample in enumerate(tqdm(prompts, desc="Generating")):
             # Load image
             image = sample.load_image()
             
-            for _ in range(samples_per_prompt):
+            for candidate_ordinal in range(samples_per_prompt):
                 # Generate completion
                 output = self.adapter.generate(
                     image=image,
@@ -235,7 +247,11 @@ class VLMRAFTTrainer:
                     ground_truth=sample.ground_truth,
                     reward=verify_result.reward,
                     success=verify_result.success,
-                    details=verify_result.details
+                    details=verify_result.details,
+                    verifier_metadata=dict(getattr(verify_result, "metadata", {}) or {}),
+                    source_metadata=dict(sample.metadata or {}),
+                    source_index=source_index,
+                    candidate_ordinal=candidate_ordinal,
                 ))
         
         return results
@@ -489,6 +505,11 @@ class VLMRAFTTrainer:
                 "adapter_type": self.config.adapter_type or self._infer_adapter_type(self.config.model_name),
             },
         )
+        complete_signal_boundary(
+            self.signal_sink,
+            boundary_value=cycle,
+            checkpoint_path=checkpoint_dir,
+        )
         
         self._log(f"Checkpoint saved: {checkpoint_dir}", "ok")
     
@@ -535,6 +556,7 @@ class VLMRAFTTrainer:
         
         # 2. Filter samples
         filtered = self.filter_samples(samples)
+        self._capture_training_signals(samples, filtered, cycle=cycle)
         threshold_adjusted = above_threshold_count == 0 and len(filtered) > 0
         effective_threshold = (
             min((s.reward for s in filtered), default=self.config.reward_threshold)
@@ -662,6 +684,57 @@ class VLMRAFTTrainer:
         self._log(f"Cycle {cycle + 1} complete in {cycle_time/60:.1f} min", "ok")
         
         return metrics
+
+    def _capture_training_signals(
+        self,
+        samples: List[VLMSampleResult],
+        filtered: List[VLMSampleResult],
+        *,
+        cycle: int,
+    ) -> None:
+        sink = self.signal_sink
+        if sink is None:
+            return
+        kept = {id(value) for value in filtered}
+        for value in samples:
+            selected = id(value) in kept
+            sink.capture(
+                record=lineage_identity_from_metadata(value.source_metadata),
+                source_index=value.source_index,
+                source={"trainer": "vlm", "cycle": int(cycle)},
+                candidate_ordinal=value.candidate_ordinal,
+                occurrence_id=(
+                    f"cycle:{int(cycle)}:source:{value.source_index}:"
+                    f"candidate:{value.candidate_ordinal}"
+                ),
+                prompt=value.prompt,
+                context=None,
+                output=value.completion,
+                expected=value.ground_truth,
+                media=[hashed_media_reference("image", value.image)],
+                training_observation={
+                    "reward": value.reward,
+                    "success": value.success,
+                    "details": value.details,
+                    "metadata": value.verifier_metadata,
+                },
+                selected=selected,
+                selection_reason=(
+                    "kept_for_update"
+                    if selected
+                    else (
+                        "below_reward_threshold"
+                        if value.reward < self.config.reward_threshold
+                        else "dropped_by_keep_percent"
+                    )
+                ),
+                generation_settings={
+                    "temperature": self.config.temperature,
+                    "max_new_tokens": self.config.max_new_tokens,
+                    "samples_per_prompt": self.config.samples_per_prompt,
+                },
+                producer_model_hash=self.config.model_name,
+            )
     
     def train(
         self,
@@ -880,8 +953,9 @@ class VLMRAFTTrainer:
         """Clean up resources."""
         if self.adapter:
             self.adapter.cleanup()
-        if self.verifier:
-            self.verifier.cleanup()
+        verifier_cleanup = getattr(self.verifier, "cleanup", None)
+        if callable(verifier_cleanup):
+            verifier_cleanup()
         
         gc.collect()
         empty_accelerator_cache()

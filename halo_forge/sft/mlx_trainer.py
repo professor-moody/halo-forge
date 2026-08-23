@@ -31,7 +31,7 @@ import json
 import sys
 import tempfile
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
@@ -52,6 +52,21 @@ from halo_forge.training_recovery import attach_recovery_guidance
 
 class MLXTrainerUnavailable(RuntimeError):
     """Raised when the MLX backend is requested but mlx-lm isn't installed."""
+
+
+@dataclass(frozen=True)
+class _MLXStepPlan:
+    """Resolved step/schedule budget for one MLX SFT run.
+
+    ``micro_batch_iters`` is what mlx-lm calls ``iters`` (it counts data
+    batches); ``optimizer_steps`` is what the user means by "steps" and
+    what ``max_steps`` bounds.
+    """
+
+    micro_batch_iters: int
+    optimizer_steps: int
+    gradient_accumulation_steps: int
+    warmup_steps: int
 
 
 def _require_mlx_lm():
@@ -113,6 +128,10 @@ class MLXSFTTrainer:
         self.tokenizer: Any = None
         self.run_id: str = ""
         self.training_summary: Dict[str, Any] = {}
+        # Which training-critical knobs were *actually* applied. Populated in
+        # train() and copied into the summary / relaunch metadata so nothing
+        # downstream can claim a value that the backend ignored.
+        self.backend_config_applied: Dict[str, Any] = {}
         self.dataset_yield_diagnostics: Dict[str, Any] = {}
         self.dataset_representative_examples: list[dict[str, Any]] = []
         # Phase 5c: when set, the next `train()` will load the base model
@@ -158,6 +177,7 @@ class MLXSFTTrainer:
         cfg = self.config
         dataset_name = cfg.dataset
         train_file = cfg.train_file
+        validation_file = cfg.validation_file
 
         records: list[Dict[str, Any]] = []
         if dataset_name:
@@ -203,12 +223,33 @@ class MLXSFTTrainer:
         if cfg.max_samples is not None and len(records) > cfg.max_samples:
             records = records[: cfg.max_samples]
 
-        # Validation split — mirror the PyTorch trainer's behavior so loss
-        # curves are comparable across backends.
-        n_val = max(1, int(len(records) * cfg.validation_split)) if cfg.validation_split else 0
-        n_val = min(n_val, len(records) - 1)  # always keep ≥1 train sample
-        train_records = records[:-n_val] if n_val > 0 else records
-        val_records = records[-n_val:] if n_val > 0 else []
+        if validation_file:
+            validation_path = Path(validation_file).expanduser()
+            if not validation_path.is_file():
+                raise FileNotFoundError(
+                    f"validation_file not found: {validation_path}"
+                )
+            val_records: list[Dict[str, Any]] = []
+            with validation_path.open() as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if not line.strip():
+                        continue
+                    text = self._row_to_text(json.loads(line))
+                    if not text:
+                        raise ValueError(
+                            f"validation_file row {line_number} has no usable text"
+                        )
+                    val_records.append({"text": text})
+            if not val_records:
+                raise ValueError("validation_file contains no usable rows")
+            train_records = records
+            n_val = len(val_records)
+        else:
+            # Legacy/manual launches retain their deterministic derived split.
+            n_val = max(1, int(len(records) * cfg.validation_split)) if cfg.validation_split else 0
+            n_val = min(n_val, len(records) - 1)  # always keep ≥1 train sample
+            train_records = records[:-n_val] if n_val > 0 else records
+            val_records = records[-n_val:] if n_val > 0 else []
 
         data_dir.mkdir(parents=True, exist_ok=True)
         _write_jsonl(data_dir / "train.jsonl", train_records)
@@ -357,6 +398,30 @@ class MLXSFTTrainer:
             cfg.train_file = train_file
 
         self._validate_config()
+
+        # Training-critical knobs: resolve them against what the *installed*
+        # mlx / mlx-lm can do, before anything expensive happens. Anything
+        # that can't be honored either raises (gradient accumulation) or is
+        # routed through the standard unsupported-field warning.
+        from halo_forge.utils.backend_config import (
+            build_mlx_lr_schedule,
+            build_mlx_optimizer,
+            detect_mlx_capabilities,
+            mlx_training_knob_gaps,
+            resolve_mlx_gradient_accumulation,
+            warn_unsupported_for_mlx,
+        )
+
+        capabilities = detect_mlx_capabilities(
+            training_args_cls=deps["TrainingArgs"], optim_module=deps["optim"]
+        )
+        grad_accum = resolve_mlx_gradient_accumulation(
+            cfg, capabilities, trainer_label="MLX SFT"
+        )
+        knob_gaps = mlx_training_knob_gaps(capabilities)
+        if knob_gaps:
+            warn_unsupported_for_mlx(cfg, trainer_label="MLX SFT", fields=knob_gaps)
+
         self.run_id = build_run_id("sft_mlx")
         seed = set_global_seed(cfg.seed)
 
@@ -396,25 +461,56 @@ class MLXSFTTrainer:
             adapter_dir = output_dir / "final_model"
             adapter_dir.mkdir(parents=True, exist_ok=True)
 
-            iters = self._estimate_iters(n_train)
+            plan = self._resolve_step_plan(
+                n_train,
+                capabilities=capabilities,
+                gradient_accumulation_steps=grad_accum,
+            )
+            iters = plan.micro_batch_iters
             steps_per_eval = max(1, min(cfg.eval_steps, max(1, iters // 4)))
             steps_per_save = max(1, min(cfg.save_steps, max(1, iters // 2)))
 
-            args = deps["TrainingArgs"](
-                batch_size=cfg.batch_size,
-                iters=iters,
-                val_batches=max(1, min(25, n_val // max(1, cfg.batch_size))),
-                steps_per_report=10,
-                steps_per_eval=steps_per_eval,
-                steps_per_save=steps_per_save,
-                max_seq_length=cfg.max_seq_length,
-                grad_checkpoint=cfg.gradient_checkpointing,
-                adapter_file=str(adapter_dir / "adapters.safetensors"),
-            )
+            training_args_kwargs: Dict[str, Any] = {
+                "batch_size": cfg.batch_size,
+                "iters": iters,
+                "val_batches": max(1, min(25, n_val // max(1, cfg.batch_size))),
+                "steps_per_report": 10,
+                "steps_per_eval": steps_per_eval,
+                "steps_per_save": steps_per_save,
+                "max_seq_length": cfg.max_seq_length,
+                "grad_checkpoint": cfg.gradient_checkpointing,
+                "adapter_file": str(adapter_dir / "adapters.safetensors"),
+            }
+            if capabilities.grad_accumulation and capabilities.grad_accumulation_kwarg:
+                # mlx-lm applies the optimizer every N micro batches, which is
+                # exactly the semantics SFTConfig.gradient_accumulation_steps
+                # has on the PyTorch path.
+                training_args_kwargs[capabilities.grad_accumulation_kwarg] = grad_accum
+            args = deps["TrainingArgs"](**training_args_kwargs)
 
-            optimizer = deps["optim"].AdamW(
+            # Warmup + cosine anneal to match the PyTorch path's
+            # warmup_ratio / lr_scheduler_type="cosine"; falls back to the
+            # constant LR when warmup is off or unsupported.
+            learning_rate = build_mlx_lr_schedule(
+                deps["optim"],
                 learning_rate=cfg.learning_rate,
+                warmup_steps=plan.warmup_steps,
+                total_steps=plan.optimizer_steps,
+            )
+            optimizer = build_mlx_optimizer(
+                deps["optim"],
+                learning_rate=learning_rate,
                 weight_decay=cfg.weight_decay,
+                max_grad_norm=cfg.max_grad_norm,
+            )
+            self.backend_config_applied = _describe_applied_config(
+                cfg, capabilities=capabilities, plan=plan
+            )
+            print(
+                f"Step budget: {plan.optimizer_steps} optimizer steps "
+                f"({iters} micro batches x batch_size={cfg.batch_size}, "
+                f"grad_accum={plan.gradient_accumulation_steps}, "
+                f"warmup={plan.warmup_steps})"
             )
 
             # 5. mlx_lm.tuner.train wants dataset *objects*, not file paths,
@@ -499,7 +595,7 @@ class MLXSFTTrainer:
             duration=duration,
             train_loss_history=train_loss_history,
             eval_loss_history=eval_loss_history,
-            iters=iters,
+            plan=plan,
             adapter_path=adapter_dir,
             seed=seed,
             resume_from_checkpoint=resume_from_checkpoint,
@@ -513,10 +609,57 @@ class MLXSFTTrainer:
     # ------------------------------------------------------------------
 
     def _estimate_iters(self, n_train: int) -> int:
-        """Convert epochs → iter count the way mlx_lm.tuner expects."""
+        """Convert epochs / ``max_steps`` → iter count for mlx_lm.tuner.
+
+        mlx_lm counts ``iters`` in micro batches, so this is the *micro*
+        budget; ``max_steps`` bounds optimizer steps (as on the PyTorch
+        path) and is expanded by the accumulation factor here.
+        """
+        return self._resolve_step_plan(n_train).micro_batch_iters
+
+    def _resolve_step_plan(
+        self,
+        n_train: int,
+        *,
+        capabilities: Any = None,
+        gradient_accumulation_steps: Optional[int] = None,
+    ) -> _MLXStepPlan:
+        """Resolve the step / warmup budget honored for this run.
+
+        Args:
+            n_train: number of training records materialized.
+            capabilities: detected `MLXCapabilities`; when omitted the
+                conservative all-unsupported default is used (warmup off).
+            gradient_accumulation_steps: accumulation actually applied.
+                Defaults to the configured value.
+        """
+        from halo_forge.utils.backend_config import (
+            MLXCapabilities,
+            resolve_mlx_step_budget,
+            resolve_mlx_warmup_steps,
+        )
+
         cfg = self.config
-        steps_per_epoch = max(1, n_train // max(1, cfg.batch_size))
-        return max(1, steps_per_epoch * cfg.num_epochs)
+        accum = int(
+            gradient_accumulation_steps
+            if gradient_accumulation_steps is not None
+            else (cfg.gradient_accumulation_steps or 1)
+        )
+        caps = capabilities if capabilities is not None else MLXCapabilities()
+        micro_iters, optimizer_steps = resolve_mlx_step_budget(
+            micro_batches_per_epoch=max(1, n_train // max(1, cfg.batch_size)),
+            num_epochs=cfg.num_epochs,
+            gradient_accumulation_steps=accum,
+            max_steps=cfg.max_steps,
+        )
+        return _MLXStepPlan(
+            micro_batch_iters=micro_iters,
+            optimizer_steps=optimizer_steps,
+            gradient_accumulation_steps=accum,
+            warmup_steps=resolve_mlx_warmup_steps(
+                cfg, caps, optimizer_steps=optimizer_steps
+            ),
+        )
 
     def _build_summary(
         self,
@@ -526,18 +669,21 @@ class MLXSFTTrainer:
         duration: float,
         train_loss_history: list[float],
         eval_loss_history: list[float],
-        iters: int,
+        plan: _MLXStepPlan,
         adapter_path: Path,
         seed: int,
         resume_from_checkpoint: Optional[str],
     ) -> Dict[str, Any]:
         cfg = self.config
+        # `iters` is the micro-batch count; optimizer steps is what the
+        # effectiveness gates and `max_steps` are denominated in.
+        optimizer_steps = plan.optimizer_steps
         final_train_loss = train_loss_history[-1] if train_loss_history else None
         initial_train_loss = train_loss_history[0] if train_loss_history else final_train_loss
         final_eval_loss = eval_loss_history[-1] if eval_loss_history else None
         initial_eval_loss = eval_loss_history[0] if eval_loss_history else final_eval_loss
 
-        weights_updated = bool(train_loss_history) and iters > 0
+        weights_updated = bool(train_loss_history) and optimizer_steps > 0
         cycle_summary = build_cycle_summary(
             cycle=0,
             learning_rate=cfg.learning_rate,
@@ -545,12 +691,12 @@ class MLXSFTTrainer:
             samples_kept=n_train,
             cycle_duration_seconds=duration,
             update_metrics={
-                "train_steps_executed": iters,
+                "train_steps_executed": optimizer_steps,
                 "train_loss": final_train_loss,
                 "initial_train_loss": initial_train_loss,
                 "weights_updated": weights_updated,
                 "update_reason": "updated" if weights_updated else "no_optimizer_steps",
-                "optimizer_steps": iters,
+                "optimizer_steps": optimizer_steps,
                 "skipped_batches_non_finite": 0,
             },
             yield_diagnostics={
@@ -565,6 +711,8 @@ class MLXSFTTrainer:
                 "validation_examples": n_val,
                 "eval_loss": final_eval_loss,
                 "backend": "mlx",
+                "micro_batches_executed": plan.micro_batch_iters,
+                "gradient_accumulation_steps": plan.gradient_accumulation_steps,
             },
         )
 
@@ -595,6 +743,8 @@ class MLXSFTTrainer:
             },
         )
         summary["final_model_path"] = str(adapter_path)
+        # Report what the backend applied, not what was requested.
+        summary["backend_config_applied"] = dict(self.backend_config_applied)
         attach_effectiveness_contract(
             summary,
             minimum_samples_kept=max(1, n_train),
@@ -620,13 +770,42 @@ class MLXSFTTrainer:
                 "output_dir": cfg.output_dir,
                 "epochs": cfg.num_epochs,
                 "batch_size": cfg.batch_size,
-                "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
+                # Effective, not requested: relaunching with the requested
+                # value would not reproduce this run.
+                "gradient_accumulation_steps": plan.gradient_accumulation_steps,
+                "max_steps": cfg.max_steps,
                 "max_samples": cfg.max_samples,
                 "backend": "mlx",
             },
             representative_examples=self.dataset_representative_examples,
         )
         return summary
+
+
+def _describe_applied_config(
+    cfg: SFTConfig, *, capabilities: Any, plan: _MLXStepPlan
+) -> Dict[str, Any]:
+    """Record what the MLX backend actually applied for this run.
+
+    Requested-vs-applied is kept side by side for the knobs where they can
+    differ, so a summary reader can never mistake a dropped value for an
+    honored one.
+    """
+    clipping_applied = bool(capabilities.grad_clipping) and float(cfg.max_grad_norm or 0) > 0
+    return {
+        "backend": "mlx",
+        "gradient_accumulation_steps": plan.gradient_accumulation_steps,
+        "gradient_accumulation_steps_requested": int(cfg.gradient_accumulation_steps or 1),
+        "max_steps": cfg.max_steps,
+        "optimizer_steps_planned": plan.optimizer_steps,
+        "micro_batch_iters": plan.micro_batch_iters,
+        "warmup_steps": plan.warmup_steps,
+        "warmup_ratio": float(cfg.warmup_ratio or 0.0) if plan.warmup_steps else 0.0,
+        "warmup_ratio_requested": float(cfg.warmup_ratio or 0.0),
+        "max_grad_norm": float(cfg.max_grad_norm or 0.0) if clipping_applied else 0.0,
+        "max_grad_norm_requested": float(cfg.max_grad_norm or 0.0),
+        "backend_capabilities": asdict(capabilities),
+    }
 
 
 def _write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> None:

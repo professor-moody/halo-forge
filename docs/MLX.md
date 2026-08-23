@@ -118,7 +118,7 @@ curl localhost:8000/api/public/backend | jq
 On Apple Silicon, telemetry and backend responses also include parsed chip metadata when the host exposes it, for example `M3 Max` plus the system-reported GPU core count. Halo-forge surfaces this information only; it does not auto-tune batch sizes, LoRA ranks, or memory settings from the chip tier.
 
 The backend response also includes `mlx_readiness`, the same stable schema used
-by `halo-forge doctor mlx`. The dashboard Start flow recommends an MLX-format
+by `halo-forge doctor mlx`. **Train → Guided** recommends an MLX-format
 model only when that executable probe passes; otherwise it falls back to the
 MPS-safe first-run path and shows the readiness error.
 

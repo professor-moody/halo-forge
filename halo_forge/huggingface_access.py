@@ -18,6 +18,7 @@ HF_TOKEN_FILE_ENV = "HALO_FORGE_HF_TOKEN_FILE"
 KEYRING_SERVICE = "halo-forge"
 KEYRING_USERNAME = "huggingface-token"
 GATED_MODEL_ACTION = "connect_huggingface"
+_AUTO_KEYRING = object()
 
 
 def _default_token_file() -> Path:
@@ -51,11 +52,15 @@ class HuggingFaceAccessManager:
         *,
         token_file: Path | None = None,
         env: Mapping[str, str] | None = None,
-        keyring_module: Any | None = None,
+        keyring_module: Any = _AUTO_KEYRING,
     ) -> None:
         self.token_file = (token_file or _default_token_file()).expanduser()
         self.env = env if env is not None else os.environ
-        self.keyring = keyring_module if keyring_module is not None else _import_keyring()
+        # Omitting the argument enables workstation keychain discovery.  An
+        # explicit ``None`` disables keyring so callers can reliably request
+        # the credential-file fallback (including on hosts where keyring is
+        # installed and configured).
+        self.keyring = _import_keyring() if keyring_module is _AUTO_KEYRING else keyring_module
 
     def resolve(self, *, include_token: bool = False) -> TokenResolution:
         env_token = str(self.env.get(HF_TOKEN_ENV) or "").strip()

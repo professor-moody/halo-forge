@@ -582,6 +582,7 @@ def _run_python_dataset_benchmark(
             "pass_rate": result.pass_rate,
         },
         "samples": result.total,
+        "sample_results": result.samples,
     }
 
 
@@ -697,6 +698,7 @@ def _run_language_benchmark(
         },
         'by_category': result.by_category,
         'samples': result.total,
+        'sample_results': result.samples,
     }
     
     print(f"Results: {result.pass_rate:.1%} pass rate, pass@1={result.pass_at_k.get(1, 0):.1%}")

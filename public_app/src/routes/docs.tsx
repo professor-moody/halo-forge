@@ -23,10 +23,18 @@ export const Route = createFileRoute("/docs")({
 const INTENT_LINKS = [
   {
     icon: Play,
-    title: "First guided run",
-    body: "Use safe catalog defaults, backend detection, and preflight before launch.",
-    to: "/start",
-    action: "Open Start",
+    title: "Guided training",
+    body: "Use Train's guided mode for safe catalog defaults, backend detection, and preflight.",
+    to: "/train",
+    action: "Open Train",
+    internal: true,
+  },
+  {
+    icon: FileText,
+    title: "Use your own data",
+    body: "Choose a file or folder, map a verified scenario, validate it, and build an immutable dataset version.",
+    to: "/datasets/new",
+    action: "Add data",
     internal: true,
   },
   {
@@ -51,6 +59,13 @@ const INTENT_LINKS = [
     body: "ROCm, CUDA, Apple MPS, MLX, CPU caveats, and feature coverage.",
     to: "https://halo-forge.io/docs/getting-started/hardware/",
     action: "Read hardware notes",
+  },
+  {
+    icon: Terminal,
+    title: "Workstation surfaces",
+    body: "Desktop, local browser, remote browser, and CLI use one catalog with honest host-path semantics.",
+    to: "https://halo-forge.io/docs/reference/workstation-surfaces/",
+    action: "Compare surfaces",
   },
   {
     icon: Search,
@@ -96,10 +111,10 @@ const INTENT_LINKS = [
   },
   {
     icon: FileText,
-    title: "Local repo docs",
-    body: "Markdown references checked into this repository for offline use.",
-    to: "https://github.com/professor-moody/halo-forge/tree/main/docs",
-    action: "Browse repo docs",
+    title: "Website docs",
+    body: "Open the canonical public documentation site in your browser.",
+    to: "https://halo-forge.io/docs/",
+    action: "Open docs site",
   },
 ];
 
@@ -109,7 +124,7 @@ function DocsRoute() {
       <Topbar
         eyebrow="Workspace"
         title="Docs"
-        subtitle="Intent-based references for local and remote Halo Forge workstations."
+        subtitle="One catalog across desktop, local browser, remote browser, and CLI."
         actions={
           <Button asChild variant="ghost" size="sm">
             <a href="https://halo-forge.io/docs" target="_blank" rel="noreferrer">
@@ -140,14 +155,14 @@ function IntroPanel() {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <CardEyebrow>START HERE</CardEyebrow>
-          <CardTitle>One machine, one workflow</CardTitle>
+          <CardEyebrow>ONE WORKSPACE</CardEyebrow>
+          <CardTitle>Choose the surface that fits the job</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-[13px] text-fg-muted">
         <p>
-          Halo Forge turns a base model into a trained, evaluated, served artifact
-          on the workstation you control.
+          Desktop and browser interfaces use the same managed data, durable work,
+          runs, evaluations, and artifacts as the CLI.
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
           <Pill label="Train" value="SFT / RAFT / DPO / GRPO / VLM / audio" />
@@ -171,7 +186,8 @@ function RemotePanel() {
       <CardContent className="space-y-3 text-[13px] text-fg-muted">
         <p>
           Loopback stays zero-config. When the API is bound to a non-loopback host,
-          the same app can control that workstation with a bearer token.
+          the same app can control that workstation with a bearer token. Paths and
+          compute still belong to the workstation, not the client browser.
         </p>
         <code className="block rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 font-mono text-[11px] text-fg">
           halo-forge token create dashboard
@@ -182,7 +198,8 @@ function RemotePanel() {
         </div>
         <p>
           Manual two-machine QA: verify token-required access, invalid-token recovery,
-          runs list, run monitor, and Playground from the client machine.
+          runs list, run monitor, and Models → Serve & Test from the client
+          machine.
         </p>
       </CardContent>
     </Card>

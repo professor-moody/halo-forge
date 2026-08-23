@@ -39,6 +39,7 @@ from halo_forge.training_contracts import (
     write_json_atomic,
 )
 from halo_forge.training_recovery import attach_recovery_guidance
+from halo_forge.training_signal import complete_signal_boundary
 from halo_forge.utils.accelerator import (
     empty_accelerator_cache,
     get_device_map,
@@ -50,7 +51,15 @@ from halo_forge.utils.accelerator import (
 logger = logging.getLogger(__name__)
 
 
-def _build_reward_func(verifier_name: str, reward_threshold: float):
+def _build_reward_func(
+    verifier_name: str,
+    reward_threshold: float,
+    *,
+    signal_sink: Optional[Any] = None,
+    num_generations: int = 1,
+    generation_settings: Optional[Dict[str, Any]] = None,
+    producer_model_hash: Optional[str] = None,
+):
     """Resolve a halo-forge verifier and adapt it to TRL's reward API.
 
     TRL expects ``reward_func(prompts, completions, **kwargs) -> List[float]``.
@@ -62,9 +71,12 @@ def _build_reward_func(verifier_name: str, reward_threshold: float):
 
     verifier_cls = get_verifier(verifier_name)
     verifier = verifier_cls()
+    callback_state = {"next_source_index": 0, "invocation_ordinal": 0}
 
     def reward_func(prompts: List[str], completions: List[str], **kwargs) -> List[float]:
         rewards = []
+        invocation_ordinal = int(callback_state["invocation_ordinal"])
+        callback_state["invocation_ordinal"] = invocation_ordinal + 1
         try:
             if hasattr(verifier, "verify_batch"):
                 results = verifier.verify_batch(completions, prompts)
@@ -80,16 +92,80 @@ def _build_reward_func(verifier_name: str, reward_threshold: float):
                         results.append(verifier.verify(completion))
         except Exception as exc:
             logger.warning("Verifier %s raised during batch scoring: %s", verifier_name, exc)
-            return [0.0 for _ in completions]
+            results = [
+                {
+                    "reward": 0.0,
+                    "success": False,
+                    "error": str(exc),
+                    "details": "verification_exception",
+                }
+                for _ in completions
+            ]
 
-        for result in results:
+        width = max(1, int(num_generations))
+        base_source_index = callback_state["next_source_index"]
+        supplied_source_indexes = kwargs.get("_halo_source_index")
+        if not isinstance(supplied_source_indexes, (list, tuple)):
+            supplied_source_indexes = None
+        for index, completion in enumerate(completions):
+            result = (
+                results[index]
+                if index < len(results)
+                else {
+                    "reward": 0.0,
+                    "success": False,
+                    "error": "verifier_result_missing",
+                    "details": "verifier returned fewer results than completions",
+                }
+            )
             try:
-                reward = float(getattr(result, "reward", 0.0) or 0.0)
-                success = bool(getattr(result, "success", False))
-                rewards.append(reward if success and reward >= reward_threshold else 0.0)
+                get = result.get if isinstance(result, dict) else lambda name, default=None: getattr(result, name, default)
+                reward = float(get("reward", 0.0) or 0.0)
+                success = bool(get("success", False))
+                effective_reward = reward if success and reward >= reward_threshold else 0.0
+                rewards.append(effective_reward)
+                if signal_sink is not None:
+                    group_index = index // width
+                    if supplied_source_indexes:
+                        if len(supplied_source_indexes) == len(completions):
+                            source_index = int(supplied_source_indexes[index])
+                        elif group_index < len(supplied_source_indexes):
+                            source_index = int(supplied_source_indexes[group_index])
+                        else:
+                            source_index = base_source_index + group_index
+                    else:
+                        source_index = base_source_index + group_index
+                    candidate_ordinal = index % width
+                    signal_sink.capture(
+                        record=None,
+                        source_index=source_index,
+                        source={"trainer": "grpo", "backend": "hf"},
+                        candidate_ordinal=candidate_ordinal,
+                        occurrence_id=(
+                            f"reward-callback:{invocation_ordinal}:"
+                            f"source:{source_index}:candidate:{candidate_ordinal}"
+                        ),
+                        prompt=prompts[index] if index < len(prompts) else None,
+                        output=completion,
+                        expected=None,
+                        training_observation=result,
+                        selected=bool(success and reward >= reward_threshold),
+                        selection_reason=(
+                            "used_by_reward_function"
+                            if success and reward >= reward_threshold
+                            else (
+                                "verification_failed"
+                                if not success
+                                else "below_reward_threshold"
+                            )
+                        ),
+                        generation_settings=dict(generation_settings or {}),
+                        producer_model_hash=producer_model_hash,
+                    )
             except Exception as exc:
                 logger.warning("Verifier %s returned an invalid result: %s", verifier_name, exc)
                 rewards.append(0.0)
+        callback_state["next_source_index"] += (len(completions) + width - 1) // width
         return rewards
 
     reward_func.__name__ = f"halo_forge_{verifier_name}_reward"
@@ -132,14 +208,21 @@ def _load_prompts_dataset(
 
     if max_samples:
         ds = ds.select(range(min(max_samples, len(ds))))
+    # TRL forwards non-prompt dataset columns to reward functions. Carry the
+    # row ordinal through shuffling/batching so managed artifact lineage stays
+    # aligned instead of relying on callback order.
+    if "_halo_source_index" in ds.column_names:
+        ds = ds.remove_columns("_halo_source_index")
+    ds = ds.add_column("_halo_source_index", list(range(len(ds))))
     return ds
 
 
 class GRPOTrainer:
     """Halo-forge GRPO trainer (PyTorch path)."""
 
-    def __init__(self, config: Optional[GRPOConfig] = None):
+    def __init__(self, config: Optional[GRPOConfig] = None, signal_sink: Optional[Any] = None):
         self.config = config or GRPOConfig()
+        self.signal_sink = signal_sink
         from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="GRPO")
@@ -235,12 +318,24 @@ class GRPOTrainer:
 
         self.setup_model()
 
-        reward_func = _build_reward_func(cfg.verifier_name, cfg.reward_threshold)
+        reward_func = _build_reward_func(
+            cfg.verifier_name,
+            cfg.reward_threshold,
+            signal_sink=self.signal_sink,
+            num_generations=cfg.num_generations,
+            generation_settings={
+                "temperature": cfg.temperature,
+                "max_new_tokens": cfg.max_completion_length,
+                "num_generations": cfg.num_generations,
+            },
+            producer_model_hash=cfg.model_name,
+        )
 
         trl_args = _TRLGRPOConfig(
             output_dir=cfg.output_dir,
             overwrite_output_dir=True,
             num_train_epochs=cfg.num_epochs,
+            max_steps=cfg.max_steps if cfg.max_steps is not None else -1,
             per_device_train_batch_size=cfg.batch_size,
             per_device_eval_batch_size=cfg.batch_size,
             gradient_accumulation_steps=cfg.gradient_accumulation_steps,
@@ -289,6 +384,11 @@ class GRPOTrainer:
         trainer.save_model(str(final_output))
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(str(final_output))
+        complete_signal_boundary(
+            self.signal_sink,
+            boundary_value="final",
+            checkpoint_path=final_output,
+        )
 
         summary = self._build_summary(
             trainer=trainer,

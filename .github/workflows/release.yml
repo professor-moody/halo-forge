@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release, for example v2.0.0-alpha-1"
+        description: "Existing tag to release, for example v2.0.0-alpha-2"
         required: true
         type: string
 
@@ -25,7 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest]
+        # Keep the Linux package compatible with Tauri's documented baseline.
+        os: [macos-14, ubuntu-22.04, windows-latest]
 
     steps:
       - name: Checkout release ref
@@ -69,7 +70,7 @@ jobs:
 
       - name: Build bundled desktop runtime
         working-directory: apps/desktop-tauri
-        run: python3 scripts/build_runtime.py
+        run: python scripts/build_runtime.py
 
       - name: Install desktop dependencies
         working-directory: apps/desktop-tauri
@@ -78,15 +79,134 @@ jobs:
       - name: Cargo check desktop shell
         run: cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml
 
-      - name: Build unsigned macOS desktop app
+      - name: Detect macOS signing credentials
+        id: macos-signing
         if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Signing credentials are absent; producing an unsigned preview candidate."
+          fi
+
+      - name: Build signed macOS desktop app
+        if: runner.os == 'macOS' && steps.macos-signing.outputs.available == 'true'
         working-directory: apps/desktop-tauri
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CI: true
         run: npm run build -- --ci
 
-      - name: Build unsigned Linux desktop package
+      - name: Build unsigned macOS preview candidate
+        if: runner.os == 'macOS' && steps.macos-signing.outputs.available != 'true'
+        working-directory: apps/desktop-tauri
+        env:
+          CI: true
+        run: npm run build -- --ci
+
+      - name: Build Linux desktop package
         if: runner.os == 'Linux'
         working-directory: apps/desktop-tauri
-        run: npm run build -- --bundles deb --ci
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          VERBOSE: "1"
+        run: npm run build -- --bundles deb,appimage --ci --verbose
+
+      - name: Build Windows desktop package
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop-tauri
+        run: npm run build -- --bundles nsis --ci
+
+      - name: Validate signed and notarized macOS app
+        if: runner.os == 'macOS' && steps.macos-signing.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          app_bundle="$(find apps/desktop-tauri/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          dmg="$(find apps/desktop-tauri/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [ -z "$app_bundle" ] || [ -z "$dmg" ]; then
+            echo "Expected signed .app and .dmg outputs were not found." >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app_bundle"
+          xcrun stapler validate "$app_bundle"
+          xcrun stapler validate "$dmg"
+          spctl -a -vvv -t execute "$app_bundle"
+          spctl -a -vvv -t open --context context:primary-signature "$dmg"
+
+      - name: Smoke packaged macOS runtime
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop-tauri
+        run: npm run smoke:runtime -- --accelerator cpu
+
+      - name: Smoke Linux bundled runtime
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop-tauri
+        run: python scripts/packaged_sft_smoke.py --runtime runtime/dist/halo-forge-runtime/halo-forge-runtime --frontend ../../public_app/dist --accelerator cpu
+
+      - name: Smoke Windows bundled runtime
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop-tauri
+        run: python scripts/packaged_sft_smoke.py --runtime runtime/dist/halo-forge-runtime/halo-forge-runtime.exe --frontend ../../public_app/dist --accelerator cpu
+
+      - name: Verify upgrade and uninstall preservation contract
+        run: python apps/desktop-tauri/scripts/verify_install_contract.py --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle
+
+      - name: Record distribution qualification evidence
+        shell: bash
+        env:
+          MAC_SIGNED: ${{ steps.macos-signing.outputs.available }}
+        run: |
+          signature="unsigned"
+          if [ "${RUNNER_OS}" = "macOS" ] && [ "${MAC_SIGNED:-false}" = "true" ]; then
+            signature="signed_notarized"
+          fi
+          platform="$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+          python scripts/write_distribution_qualification.py \
+            --bundle-root apps/desktop-tauri/src-tauri/target/release/bundle \
+            --output "apps/desktop-tauri/src-tauri/target/release/bundle/distribution-capability-${platform}.json" \
+            --signature-state "$signature" \
+            --smoke-status passed
+
+      - name: Normalize macOS release artifact names
+        if: runner.os == 'macOS'
+        env:
+          MAC_SIGNED: ${{ steps.macos-signing.outputs.available }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          dmg_dir="apps/desktop-tauri/src-tauri/target/release/bundle/dmg"
+          dmg="$(find "$dmg_dir" -maxdepth 1 -name '*.dmg' -print -quit)"
+          signature_state="unsigned"
+          artifact_suffix="-unsigned-preview"
+          if [ "${MAC_SIGNED:-false}" = "true" ]; then
+            signature_state="signed_notarized"
+            artifact_suffix=""
+          fi
+          normalized="$dmg_dir/Halo-Forge_${version}_aarch64${artifact_suffix}.dmg"
+          if [ "$dmg" != "$normalized" ]; then
+            mv "$dmg" "$normalized"
+          fi
+          python scripts/write_macos_release_manifest.py \
+            --dmg "$normalized" \
+            --output apps/desktop-tauri/src-tauri/target/release/bundle/halo-forge-release-manifest.json \
+            --tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY" \
+            --signature-state "$signature_state"
 
       - name: Upload desktop release artifact
         uses: actions/upload-artifact@v4
@@ -94,8 +214,13 @@ jobs:
           name: halo-forge-release-${{ matrix.os }}
           path: |
             apps/desktop-tauri/src-tauri/target/release/bundle/**/*.dmg
+            apps/desktop-tauri/src-tauri/target/release/bundle/**/*.dmg.sha256
+            apps/desktop-tauri/src-tauri/target/release/bundle/**/halo-forge-release-manifest.json
+            apps/desktop-tauri/src-tauri/target/release/bundle/**/halo-forge-release-manifest.json.sha256
             apps/desktop-tauri/src-tauri/target/release/bundle/**/*.deb
             apps/desktop-tauri/src-tauri/target/release/bundle/**/*.AppImage
+            apps/desktop-tauri/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop-tauri/src-tauri/target/release/bundle/distribution-capability-*.json
           if-no-files-found: error
 
   github-release:
@@ -130,18 +255,22 @@ jobs:
             {
               echo "# Halo Forge ${version}"
               echo
-              echo "Unsigned desktop artifacts generated from ${tag}."
+              echo "Desktop qualification evidence generated from ${tag}."
             } > "$notes"
           fi
 
           prerelease=()
+          is_prerelease=false
           case "$version" in
-            *alpha*|*beta*|*rc*) prerelease=(--prerelease) ;;
+            *alpha*|*beta*|*rc*)
+              prerelease=(--prerelease)
+              is_prerelease=true
+              ;;
           esac
 
           mapfile -d '' assets < <(
             find release-artifacts -type f \
-              \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) \
+              \( -name '*.dmg' -o -name '*.dmg.sha256' -o -name 'halo-forge-release-manifest.json' -o -name 'halo-forge-release-manifest.json.sha256' -o -name 'distribution-capability-*.json' -o -name '*.deb' -o -name '*.AppImage' -o -path '*/nsis/*.exe' \) \
               -print0
           )
           if [ "${#assets[@]}" -eq 0 ]; then
@@ -152,8 +281,42 @@ jobs:
 
           upload_assets=()
           oversize_manifest="release-artifacts/OVERSIZE_RELEASE_ASSETS.txt"
+          preview_manifest="release-artifacts/PREVIEW_DESKTOP_ARTIFACTS.txt"
           max_asset_bytes=2147483647
+          macos_unsigned_preview=false
+          if grep -Rqs --include='halo-forge-release-manifest.json' '"notarization_status": "unsigned_preview"' release-artifacts; then
+            macos_unsigned_preview=true
+          fi
+          if grep -Rqs --include='halo-forge-release-manifest.json' '"signature_state": "unsigned"' release-artifacts; then
+            macos_unsigned_preview=true
+          fi
+          publish_unsigned_macos_preview=false
+          if [ "$macos_unsigned_preview" = true ] && [ "$is_prerelease" = true ]; then
+            publish_unsigned_macos_preview=true
+          fi
           for asset in "${assets[@]}"; do
+            case "$asset" in
+              *.dmg|*.dmg.sha256|*/halo-forge-release-manifest.json|*/halo-forge-release-manifest.json.sha256)
+                if [ "$macos_unsigned_preview" = true ] && [ "$publish_unsigned_macos_preview" != true ]; then
+                  {
+                    echo "$(basename "$asset")"
+                    echo "  size_bytes: $(wc -c < "$asset" | tr -d '[:space:]')"
+                    echo "  reason: Stable releases never publish an unsigned macOS package; it remains a workflow preview artifact."
+                    echo
+                  } >> "$preview_manifest"
+                  continue
+                fi
+                ;;
+              *.deb|*.AppImage|*.exe)
+                {
+                  echo "$(basename "$asset")"
+                  echo "  size_bytes: $(wc -c < "$asset" | tr -d '[:space:]')"
+                  echo "  reason: Unsigned Linux and Windows desktop packages remain workflow preview artifacts and are not presented as trusted normal installers."
+                  echo
+                } >> "$preview_manifest"
+                continue
+                ;;
+            esac
             size="$(wc -c < "$asset" | tr -d '[:space:]')"
             if [ "$size" -gt "$max_asset_bytes" ]; then
               {
@@ -171,22 +334,41 @@ jobs:
           if [ -f "$oversize_manifest" ]; then
             upload_assets+=("$oversize_manifest")
           fi
+          if [ -f "$preview_manifest" ]; then
+            upload_assets+=("$preview_manifest")
+          fi
           if [ "${#upload_assets[@]}" -eq 0 ]; then
             echo "No uploadable release assets found" >&2
             cat "$oversize_manifest" >&2 || true
             exit 1
           fi
 
+          publish_notes="$(mktemp)"
+          cp "$notes" "$publish_notes"
+          release_title="Halo Forge ${version}"
+          if [ "$publish_unsigned_macos_preview" = true ]; then
+            release_title="${release_title} (unsigned macOS developer preview)"
+            {
+              echo
+              echo "## macOS developer-preview warning"
+              echo
+              echo "The macOS DMG attached to this prerelease is unsigned and not notarized."
+              echo "It is for informed testing, is not a trusted normal installer, and may be blocked by Gatekeeper."
+              echo "Verify its SHA-256 checksum before opening it. Browser and CLI installation remain the supported path."
+              echo "Preview instructions: https://halo-forge.io/docs/getting-started/install-desktop/#unsigned-macos-developer-preview"
+            } >> "$publish_notes"
+          fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" \
-              --title "Halo Forge ${version}" \
-              --notes-file "$notes" \
+              --title "$release_title" \
+              --notes-file "$publish_notes" \
               "${prerelease[@]}"
             gh release upload "$tag" "${upload_assets[@]}" --clobber
           else
             gh release create "$tag" "${upload_assets[@]}" \
               --verify-tag \
-              --title "Halo Forge ${version}" \
-              --notes-file "$notes" \
+              --title "$release_title" \
+              --notes-file "$publish_notes" \
               "${prerelease[@]}"
           fi

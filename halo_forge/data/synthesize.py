@@ -73,6 +73,7 @@ class SynthesisResult:
     duration_seconds: float
     teacher_model: Optional[str] = None
     verifier_name: str = ""
+    verifier_profile_revision_id: Optional[str] = None
     rows: List[SynthesisRow] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -103,37 +104,24 @@ def _default_openai_teacher(
         HALOFORGE_TEACHER_BASE_URL — base url
         HALOFORGE_TEACHER_API_KEY  — bearer token
     """
-    resolved_base = (
-        base_url
-        or os.environ.get("HALOFORGE_TEACHER_BASE_URL")
-        or "http://127.0.0.1:8001/v1"
-    )
-    resolved_key = (
-        api_key or os.environ.get("HALOFORGE_TEACHER_API_KEY") or "EMPTY"
-    )
+    resolved_base = base_url or os.environ.get("HALOFORGE_TEACHER_BASE_URL")
 
     def _call(prompt: str) -> str:
-        import httpx  # local import — see module docstring of llm_judge.py
+        from halo_forge.data_lab.integrations import configured_teacher
 
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        with httpx.Client(timeout=timeout_s) as client:
-            resp = client.post(
-                f"{resolved_base.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {resolved_key}"},
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return str(data["choices"][0]["message"]["content"])
+        return configured_teacher(
+            prompt,
+            {
+                "endpoint_type": "openai_compatible",
+                "teacher_model": model,
+                "base_url": resolved_base or "http://127.0.0.1:8001/v1",
+                "api_key": api_key,
+                "system_prompt": system_prompt,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "timeout_seconds": timeout_s,
+            },
+        )
 
     return _call
 
@@ -173,11 +161,7 @@ def load_seeds(source: Any) -> List[str]:
         return out
 
     # Plain text — one prompt per line.
-    return [
-        line.strip()
-        for line in path.read_text().splitlines()
-        if line.strip()
-    ]
+    return [line.strip() for line in path.read_text().splitlines() if line.strip()]
 
 
 # ---------- main pipeline ---------------------------------------------------
@@ -191,6 +175,8 @@ def synthesize_dataset(
     teacher_model: str = "default",
     verifier_name: str = "json_structure",
     verifier_kwargs: Optional[Dict[str, Any]] = None,
+    verifier: Optional[Any] = None,
+    verifier_profile_revision_id: Optional[str] = None,
     n_per_prompt: int = 1,
     reward_threshold: float = 0.5,
     output_kind: str = "sft",  # "sft" | "preference"
@@ -222,27 +208,24 @@ def synthesize_dataset(
         progress_log_every: How often to log progress (0 disables).
     """
     if output_kind not in {"sft", "preference"}:
-        raise ValueError(
-            f"output_kind must be 'sft' or 'preference', got {output_kind!r}"
-        )
+        raise ValueError(f"output_kind must be 'sft' or 'preference', got {output_kind!r}")
     if output_kind == "preference" and n_per_prompt < 2:
         raise ValueError(
             "output_kind='preference' requires n_per_prompt >= 2 "
             "(best vs worst completion in each group)"
         )
 
-    seed_prompts = (
-        list(seeds) if isinstance(seeds, (list, tuple))
-        else load_seeds(seeds)
-    )
+    seed_prompts = list(seeds) if isinstance(seeds, (list, tuple)) else load_seeds(seeds)
     if not seed_prompts:
         raise ValueError("No seed prompts provided")
 
-    # Build verifier (lazy — registry is package-init seeded).
-    from halo_forge.rlvr.verifiers import get_verifier
+    # Build the legacy verifier lazily unless the caller supplied an exact
+    # profile-backed runtime bridge.
+    if verifier is None:
+        from halo_forge.rlvr.verifiers import get_verifier
 
-    verifier_cls = get_verifier(verifier_name)
-    verifier = verifier_cls(**(verifier_kwargs or {}))
+        verifier_cls = get_verifier(verifier_name)
+        verifier = verifier_cls(**(verifier_kwargs or {}))
 
     # Build teacher.
     if teacher is None:
@@ -271,23 +254,31 @@ def synthesize_dataset(
                 try:
                     completion = teacher(prompt)
                 except Exception as exc:
-                    logger.warning("Teacher failed on prompt %d/%d: %s",
-                                   seed_idx + 1, k + 1, exc)
-                    group.append(SynthesisRow(
-                        prompt=prompt, completion="",
-                        reward=0.0, accepted=False,
-                        rejected_reason="teacher_error",
-                    ))
+                    logger.warning("Teacher failed on prompt %d/%d: %s", seed_idx + 1, k + 1, exc)
+                    group.append(
+                        SynthesisRow(
+                            prompt=prompt,
+                            completion="",
+                            reward=0.0,
+                            accepted=False,
+                            rejected_reason="teacher_error",
+                        )
+                    )
                     n_generated += 1
                     continue
 
                 try:
-                    result = verifier.verify(completion)
+                    result = (
+                        verifier.verify(candidate=completion, prompt=prompt)
+                        if verifier_profile_revision_id
+                        else verifier.verify(completion)
+                    )
                     reward = float(result.reward)
                 except Exception as exc:
                     logger.warning(
                         "Verifier %s failed on completion: %s",
-                        verifier_name, exc,
+                        verifier_name,
+                        exc,
                     )
                     reward = 0.0
 
@@ -315,10 +306,15 @@ def synthesize_dataset(
             if output_kind == "sft":
                 accepted_in_group = [r for r in group if r.accepted]
                 for row in accepted_in_group:
-                    out_file.write(json.dumps({
-                        "prompt": row.prompt,
-                        "completion": row.completion,
-                    }) + "\n")
+                    out_file.write(
+                        json.dumps(
+                            {
+                                "prompt": row.prompt,
+                                "completion": row.completion,
+                            }
+                        )
+                        + "\n"
+                    )
                     n_accepted += 1
             else:  # preference
                 # Need at least one above-threshold AND at least one
@@ -334,21 +330,28 @@ def synthesize_dataset(
                 if best.reward <= worst.reward:
                     # Tied group — no preference signal.
                     continue
-                out_file.write(json.dumps({
-                    "prompt": prompt,
-                    "chosen": best.completion,
-                    "rejected": worst.completion,
-                    "chosen_reward": best.reward,
-                    "rejected_reward": worst.reward,
-                }) + "\n")
+                out_file.write(
+                    json.dumps(
+                        {
+                            "prompt": prompt,
+                            "chosen": best.completion,
+                            "rejected": worst.completion,
+                            "chosen_reward": best.reward,
+                            "rejected_reward": worst.reward,
+                        }
+                    )
+                    + "\n"
+                )
                 n_accepted += 1
 
             rows.extend(group)
             if progress_log_every and (seed_idx + 1) % progress_log_every == 0:
                 logger.info(
                     "[D1] %d/%d seeds, %d generated, %d kept (%.1f%%)",
-                    seed_idx + 1, len(seed_prompts),
-                    n_generated, n_accepted,
+                    seed_idx + 1,
+                    len(seed_prompts),
+                    n_generated,
+                    n_accepted,
                     100.0 * n_accepted / max(1, n_generated),
                 )
 
@@ -363,6 +366,7 @@ def synthesize_dataset(
         duration_seconds=time.time() - t0,
         teacher_model=teacher_model,
         verifier_name=verifier_name,
+        verifier_profile_revision_id=verifier_profile_revision_id,
         rows=rows,
     )
 

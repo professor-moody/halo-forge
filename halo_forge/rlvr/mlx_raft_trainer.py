@@ -26,6 +26,7 @@ Limits vs. PyTorch RAFT trainer (intentional, scoped):
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -36,6 +37,14 @@ from halo_forge.rlvr._shared import (
     print_filtering_summary,
     verify_and_filter_samples,
 )
+
+
+def _preserve_managed_cycle_state() -> bool:
+    """Whether a bounded managed process must leave its resume sidecar."""
+
+    return bool(os.environ.get("HALOFORGE_DIRECT_RUN_SEGMENT_ID")) and os.environ.get(
+        "HALOFORGE_DIRECT_RUN_SEGMENT_FINAL", "1"
+    ) != "1"
 from halo_forge.rlvr.mlx_rollout import MLXRolloutGenerator, MLXRolloutUnavailable
 from halo_forge.runtime_determinism import build_run_id, set_global_seed
 from halo_forge.sft.config import SFTConfig
@@ -46,6 +55,7 @@ from halo_forge.training_contracts import (
     write_json_atomic,
 )
 from halo_forge.training_recovery import attach_recovery_guidance
+from halo_forge.training_signal import complete_signal_boundary
 
 
 class MLXRAFTUnavailable(RuntimeError):
@@ -83,8 +93,10 @@ class MLXRAFTTrainer:
         rollout_model: Optional[str] = None,
         sft_config: Optional[SFTConfig] = None,
         chain_adapters: bool = True,
+        signal_sink: Optional[Any] = None,
     ) -> None:
         self.verifier = verifier
+        self.signal_sink = signal_sink
         self.config = config
         self.rollout_model = rollout_model or getattr(config, "base_model", None)
         if not self.rollout_model:
@@ -187,6 +199,15 @@ class MLXRAFTTrainer:
                 min_samples_per_cycle=getattr(cfg, "min_samples_per_cycle", None),
                 allow_compile_only_training=getattr(cfg, "allow_compile_only_training", False),
                 progress_logger=self._log,
+                signal_sink=self.signal_sink,
+                signal_source={"cycle": cycle + 1, "backend": "mlx"},
+                samples_per_prompt=getattr(cfg, "samples_per_prompt", 8),
+                generation_settings={
+                    "temperature": self._temperature_for_cycle(cycle),
+                    "max_new_tokens": getattr(cfg, "max_new_tokens", 512),
+                    "samples_per_prompt": getattr(cfg, "samples_per_prompt", 8),
+                },
+                producer_model_hash=self.rollout_model,
             )
             print_filtering_summary(stats)
             if not self.representative_examples:
@@ -220,13 +241,22 @@ class MLXRAFTTrainer:
                 cycle_summaries=cycle_summaries,
                 previous_adapter=previous_adapter,
             )
+            checkpoint_path = cycle_adapter if cycle_adapter.exists() else self.output_dir / f"cycle_{cycle}"
+            complete_signal_boundary(
+                self.signal_sink,
+                boundary_value=cycle + 1,
+                checkpoint_path=checkpoint_path,
+            )
 
         run_duration = time.time() - run_start
 
-        # Successful run: drop the cycle state sidecar so the next launch
-        # against this output_dir starts fresh instead of "resuming" a
-        # finished run.
-        self._clear_cycle_state()
+        # A managed non-final audit segment is a deliberately bounded
+        # successful process, not the end of the canonical run.  Preserve its
+        # verified cycle-state sidecar so the next scheduler attempt resumes
+        # at ``next_cycle`` instead of replaying cycles 1..N.  Normal/direct
+        # launches and the final managed segment retain the historical cleanup.
+        if not _preserve_managed_cycle_state():
+            self._clear_cycle_state()
 
         summary = self._build_run_summary(
             cycle_summaries=cycle_summaries,

@@ -15,6 +15,7 @@ What the manifest captures:
   - environment fingerprint: Python version, halo-forge version,
     key package versions (torch / mlx / transformers / peft / trl)
   - host fingerprint: backend name + accelerator-kind detection result
+  - managed runtime revision/digest, qualification, and occupancy evidence
 
 What the manifest deliberately does *not* capture:
   - Wall-clock timing (non-deterministic)
@@ -35,10 +36,14 @@ from halo_forge.replay.manifest import (
     EnvironmentFingerprint,
     ReplayManifest,
     capture_manifest,
+    compare_corpus_training_identities,
     compare_environments,
+    compare_reward_identities,
+    compare_verifier_identities,
     hash_dataset_file,
     load_manifest,
     save_manifest,
+    sync_reward_integrity_decision,
 )
 
 __all__ = [
@@ -47,8 +52,12 @@ __all__ = [
     "EnvironmentFingerprint",
     "ReplayManifest",
     "capture_manifest",
+    "compare_corpus_training_identities",
     "compare_environments",
+    "compare_reward_identities",
+    "compare_verifier_identities",
     "hash_dataset_file",
     "load_manifest",
     "save_manifest",
+    "sync_reward_integrity_decision",
 ]

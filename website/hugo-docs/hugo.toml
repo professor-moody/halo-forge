@@ -1,12 +1,13 @@
 baseURL = "https://halo-forge.io/"
-languageCode = "en-us"
+locale = "en-us"
 title = "halo forge"
 enableRobotsTXT = true
+disableKinds = ["taxonomy", "term"]
 
 [params]
   description = "Cross-vendor local finetuning workstation — SFT, DPO, GRPO, RAFT, RM with verifier-grounded rewards on ROCm, CUDA, Apple MLX, Apple MPS."
   github = "https://github.com/professor-moody/halo-forge"
-  version = "1.4.0"
+  version = "2.0.0-alpha-2"
 
 [markup]
   [markup.highlight]

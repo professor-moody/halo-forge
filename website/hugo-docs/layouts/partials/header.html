@@ -5,6 +5,7 @@
             <span class="logo-text">halo forge</span>
         </a>
         <ul class="nav-links">
+            <li><a href="/download/" {{ if eq .RelPermalink "/download/" }}class="active"{{ end }}>Download</a></li>
             <li><a href="/docs/" {{ if hasPrefix .RelPermalink "/docs/" }}class="active"{{ end }}>Docs</a></li>
             <li><a href="/docs/getting-started/quickstart/">Quick Start</a></li>
             <li><a href="{{ .Site.Params.github }}" target="_blank" rel="noopener">

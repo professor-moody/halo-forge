@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-PACKAGE_VERSION = "2.0.0a1"
-DISPLAY_VERSION = "2.0.0-alpha-1"
+PACKAGE_VERSION = "2.0.0a2"
+DISPLAY_VERSION = "2.0.0-alpha-2"
 RELEASE_CHANNEL = "alpha"
 
 

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Mapping, Optional
 
 
-CATALOG_VERSION = "2026.05"
+CATALOG_VERSION = "2026.07"
 
 
 def _estimate_memory_gb(parameter_count: str, memory_tier: str) -> Optional[float]:
@@ -98,6 +98,19 @@ def _entry(
     fit_notes: Iterable[str] = (),
     risk_level: Optional[str] = None,
 ) -> ModelCatalogEntry:
+    modality_values = tuple(modalities)
+    trainer_values = tuple(trainer_support)
+    # Continued pretraining uses the same verified causal-LM families as the
+    # existing text trainers.  It is a distinct objective and adapter, but
+    # base and instruct variants are intentionally treated alike.
+    if (
+        set(modality_values).issubset({"text", "code"})
+        and set(trainer_values).intersection(
+            {"sft", "raft", "grpo", "dpo", "orpo", "rm", "reasoning", "agentic"}
+        )
+        and "cpt" not in trainer_values
+    ):
+        trainer_values = (*trainer_values, "cpt")
     risk = risk_level
     if risk is None:
         risk = "experimental" if status == "experimental" else "caveated" if known_caveats or trust_remote_code_required else "safe"
@@ -117,9 +130,9 @@ def _entry(
         provider=provider,
         family=family,
         parameter_count=parameter_count,
-        modalities=tuple(modalities),
+        modalities=modality_values,
         tasks=tuple(tasks),
-        trainer_support=tuple(trainer_support),
+        trainer_support=trainer_values,
         backend_support=tuple(backend_support),
         memory_tier=memory_tier,
         recommended_use=recommended_use,
@@ -139,6 +152,76 @@ def _entry(
 
 
 _MODELS: tuple[ModelCatalogEntry, ...] = (
+    _entry(
+        "distilbert/distilbert-base-uncased",
+        "DistilBERT base",
+        "Hugging Face",
+        "DistilBERT",
+        "66M",
+        ("text",),
+        ("classification", "multilabel"),
+        ("classify",),
+        ("cpu", "cuda", "rocm_gfx1151", "rocm", "mps"),
+        "tiny",
+        "Recommended first proof model for text classification.",
+        recommended_first_run=True,
+    ),
+    _entry(
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "MiniLM L6 embeddings",
+        "Sentence Transformers",
+        "MiniLM",
+        "22M",
+        ("text",),
+        ("embeddings", "retrieval"),
+        ("embed",),
+        ("cpu", "cuda", "rocm_gfx1151", "rocm", "mps"),
+        "tiny",
+        "Fast local embedding proof runs and retrieval studies.",
+        recommended_first_run=True,
+    ),
+    _entry(
+        "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "MS MARCO MiniLM reranker",
+        "Sentence Transformers",
+        "MiniLM-CrossEncoder",
+        "22M",
+        ("text",),
+        ("reranking", "retrieval"),
+        ("rerank",),
+        ("cpu", "cuda", "rocm_gfx1151", "rocm", "mps"),
+        "tiny",
+        "Fast cross-encoder reranking proof runs.",
+        recommended_first_run=True,
+    ),
+    _entry(
+        "google/vit-base-patch16-224-in21k",
+        "ViT base 224",
+        "Google",
+        "ViT",
+        "86M",
+        ("vision",),
+        ("image-classification",),
+        ("classify",),
+        ("cpu", "cuda", "rocm_gfx1151", "rocm", "mps"),
+        "small",
+        "Verified image-classification head training.",
+        recommended_first_run=True,
+    ),
+    _entry(
+        "facebook/wav2vec2-base",
+        "Wav2Vec2 base",
+        "Meta",
+        "Wav2Vec2",
+        "95M",
+        ("audio",),
+        ("audio-classification",),
+        ("classify",),
+        ("cpu", "cuda", "rocm_gfx1151", "rocm", "mps"),
+        "small",
+        "Verified audio-classification head training.",
+        recommended_first_run=True,
+    ),
     _entry(
         "Qwen/Qwen2.5-Coder-0.5B",
         "Qwen2.5 Coder 0.5B",

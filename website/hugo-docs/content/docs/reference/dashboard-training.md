@@ -4,14 +4,24 @@ description: "Use the Halo Forge dashboard as the primary operator surface"
 weight: 22
 ---
 
-The dashboard is the normal path for local workstation training. The CLI remains the automation path, but the dashboard is designed for operators who want to choose a goal, check preflight, launch, monitor, serve, and inspect results without memorizing every flag.
+The dashboard is the normal interactive path for local workstation training.
+The CLI remains an equal automation path over the same catalog and services.
+Both support choosing a goal, checking preflight, launching, monitoring,
+evaluating, serving, and inspecting artifacts without changing data formats.
 
-## Start vs Train
+On ROCm and CUDA workstations, **Setup** first prepares and qualifies a pinned
+managed runtime. Train then uses that runtime automatically. A detected GPU is
+never shown as ready until the runtime has completed a real optimizer update
+and saved-artifact reload. See [Managed Accelerator Runtimes](/docs/reference/managed-runtimes/).
 
-- **Start** is the beginner-safe path. It stays SFT-only and chooses conservative defaults.
-- **Train** is the full method surface. It supports SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic training.
-- **Runs** monitors active and completed work.
-- **Results** answers what to do next: open the run, serve the final model, compare, or inspect local paths.
+## Guided vs Advanced Train
+
+- **Train → Guided** is the beginner-safe path with conservative defaults and
+  structured own-data selection.
+- **Train → Advanced** exposes direct method configuration for SFT, RAFT, DPO,
+  ORPO, RM, GRPO, VLM, audio, reasoning, and agentic training.
+- **Runs** monitors active and completed work and owns completed-run actions.
+- **Models** owns trained artifacts, serving, conversion, qualification, and export.
 
 ## Default Output Path
 
@@ -38,7 +48,12 @@ This avoids installed-app permission failures from repo-relative `models/...` pa
 | Agentic | tool-call traces or structured-output data |
 
 When a method is capability-gated, the dashboard shows the reason and keeps the CLI path documented.
+The guided picker only exposes methods certified for the active runtime,
+trainer adapter, and capacity adapter.
 
 ## Serving After Training
 
-When a run produces a final model or adapter path, open **Results** and choose **Serve model**. Halo Forge manages one local serve process at a time and sends Playground to the managed endpoint by default.
+When a run produces a final model or adapter, open **Runs → Artifacts** or the
+shared **Models** library and choose **Serve**. Halo Forge manages one local
+serve process at a time and sends **Models → Serve & Test** to the managed
+endpoint by default.

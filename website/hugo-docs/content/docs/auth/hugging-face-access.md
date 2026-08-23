@@ -32,7 +32,8 @@ Some models require accepting a license on Hugging Face before downloads work. H
 3. Return to **Connection → Hugging Face access** and save a read token.
 4. Use **Check access** from Models before serving or training.
 
-If serving fails because access is missing, Playground shows actions to connect Hugging Face, choose an open model, or open the model page.
+If serving fails because access is missing, **Models → Serve & Test** shows
+actions to connect Hugging Face, choose an open model, or open the model page.
 
 ## Remote workstation behavior
 

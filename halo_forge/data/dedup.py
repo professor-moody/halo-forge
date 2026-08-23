@@ -24,36 +24,23 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
+from halo_forge.data.primitives import normalize_text as _normalize_text
+from halo_forge.data.primitives import word_shingles as _shared_shingles
+
 
 # ---------- normalization ----------------------------------------------------
-
-
-_WS_RE = re.compile(r"\s+")
-
-
-def _normalize_text(text: str, *, case_sensitive: bool = False) -> str:
-    """Collapse whitespace, optionally lowercase. Used for exact-dedup
-    hashing so cosmetic-only diffs are folded to one bucket."""
-    text = _WS_RE.sub(" ", text or "").strip()
-    if not case_sensitive:
-        text = text.lower()
-    return text
 
 
 def _shingles(text: str, *, n: int = 5) -> List[str]:
     """Word n-gram shingles for MinHash. n=5 is the LLM dedup standard
     (matches the FineWeb-Edu / NeMo Curator pipelines)."""
-    tokens = text.split()
-    if len(tokens) <= n:
-        return [" ".join(tokens)] if tokens else []
-    return [" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
+    return _shared_shingles(text, n=n)
 
 
 # ---------- result shape ----------------------------------------------------
@@ -191,7 +178,9 @@ def fuzzy_dedup(
 
     t0 = time.time()
     lsh = MinHashLSH(threshold=threshold, num_perm=num_perm)
-    minhashes: List[Any] = []
+    # Signatures are deliberately not accumulated: the LSH index keeps the
+    # band data it needs for kept rows, and holding every MinHash alive costs
+    # ~1 KB/record — a gigabyte at the million-record scale advertised above.
     kept: List[int] = []
     removed: List[int] = []
 
@@ -201,7 +190,6 @@ def fuzzy_dedup(
         m = MinHash(num_perm=num_perm)
         for shingle in _shingles(normalized, n=shingle_n):
             m.update(shingle.encode("utf-8"))
-        minhashes.append(m)
 
         # Query first; if any candidate is above threshold, drop this row.
         if lsh.query(m):

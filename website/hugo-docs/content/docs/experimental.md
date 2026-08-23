@@ -80,7 +80,10 @@ The VisionVerifier uses multi-stage verification:
 
 ## Audio-Language
 
-Train audio models (ASR, TTS, Classification) using RLVR with task-specific verification.
+The repository contains multi-task audio verifier experiments, but the verified
+guided data-to-weight training path is currently Whisper-style ASR only. TTS
+and classification checks below are research components, not supported guided
+training claims.
 
 | Component | Status | Description |
 |-----------|--------|-------------|

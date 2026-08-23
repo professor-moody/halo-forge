@@ -47,6 +47,7 @@ from halo_forge.utils.accelerator import (
     get_torch_device,
     recommended_dtype,
 )
+from halo_forge.training_signal import complete_signal_boundary, lineage_identity_from_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,9 @@ class AgenticCompletion:
     reward: float = 0.0
     verified: bool = False
     result: Optional[ToolCallVerifyResult] = None
+    sample: Optional[ToolCallSample] = field(default=None, repr=False, compare=False)
+    source_index: int = 0
+    candidate_ordinal: int = 0
 
 
 @dataclass
@@ -145,7 +149,7 @@ class AgenticRAFTTrainer:
         trainer.train(samples)
     """
     
-    def __init__(self, config: AgenticRAFTConfig):
+    def __init__(self, config: AgenticRAFTConfig, signal_sink: Optional[Any] = None):
         """
         Initialize trainer.
         
@@ -153,6 +157,7 @@ class AgenticRAFTTrainer:
             config: Training configuration.
         """
         self.config = config
+        self.signal_sink = signal_sink
         from halo_forge.utils.neural_accelerators import validate_neural_accelerator_opt_in
 
         validate_neural_accelerator_opt_in(self.config, logger=logger, label="Agentic RAFT")
@@ -424,7 +429,7 @@ class AgenticRAFTTrainer:
             if i % 100 == 0:
                 logger.info(f"Processing sample {i + 1}/{len(samples)}")
             
-            completions = self._generate_completions(sample)
+            completions = self._generate_completions(sample, source_index=i)
             
             # Verify each completion
             for completion in completions:
@@ -441,6 +446,7 @@ class AgenticRAFTTrainer:
         
         # Filter completions
         filtered = self._filter_completions(all_completions)
+        self._capture_training_signals(all_completions, filtered, cycle=cycle)
         
         # Calculate metrics
         total_samples = len(all_completions)
@@ -597,6 +603,8 @@ class AgenticRAFTTrainer:
     def _generate_completions(
         self,
         sample: ToolCallSample,
+        *,
+        source_index: int = 0,
     ) -> List[AgenticCompletion]:
         """Generate completions for a sample.
         
@@ -628,7 +636,7 @@ class AgenticRAFTTrainer:
                 pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
             )
         
-        for output in outputs:
+        for candidate_ordinal, output in enumerate(outputs):
             generated_text = self.tokenizer.decode(
                 output[inputs["input_ids"].shape[1]:],
                 skip_special_tokens=False,
@@ -636,9 +644,68 @@ class AgenticRAFTTrainer:
             completions.append(AgenticCompletion(
                 prompt=prompt,
                 output=generated_text,
+                sample=sample,
+                source_index=source_index,
+                candidate_ordinal=candidate_ordinal,
             ))
         
         return completions
+
+    def _capture_training_signals(
+        self,
+        completions: List[AgenticCompletion],
+        filtered: List[AgenticCompletion],
+        *,
+        cycle: int,
+    ) -> None:
+        sink = self.signal_sink
+        if sink is None:
+            return
+        kept = {id(value) for value in filtered}
+        for value in completions:
+            sample = value.sample
+            metadata = sample.metadata if sample is not None else {}
+            selected = id(value) in kept
+            sink.capture(
+                record=lineage_identity_from_metadata(metadata),
+                source_index=value.source_index,
+                source={"trainer": "agentic", "cycle": int(cycle)},
+                candidate_ordinal=value.candidate_ordinal,
+                occurrence_id=(
+                    f"cycle:{int(cycle)}:source:{value.source_index}:"
+                    f"candidate:{value.candidate_ordinal}"
+                ),
+                prompt=value.prompt,
+                context={
+                    "messages": sample.messages if sample is not None else None,
+                    "tools": sample.tools if sample is not None else None,
+                    "is_irrelevant": sample.is_irrelevant if sample is not None else None,
+                },
+                output=value.output,
+                expected=sample.expected_calls if sample is not None else None,
+                training_observation=value.result or {
+                    "reward": value.reward,
+                    "success": value.verified,
+                    "error": "missing_verifier_result",
+                },
+                selected=selected,
+                selection_reason=(
+                    "kept_for_update"
+                    if selected
+                    else (
+                        "below_reward_threshold"
+                        if value.reward < self.config.reward_threshold
+                        else "dropped_by_keep_percent"
+                    )
+                ),
+                generation_settings={
+                    "temperature": self.config.temperature,
+                    "top_p": self.config.top_p,
+                    "max_new_tokens": self.config.max_new_tokens,
+                    "samples_per_prompt": self.config.samples_per_prompt,
+                },
+                producer_model_hash=self.config.model_name,
+            )
     
     def _filter_completions(
         self,
@@ -655,7 +722,11 @@ class AgenticRAFTTrainer:
         # Filter by threshold
         above_threshold = [
             c for c in completions
-            if is_training_eligible(c.result, self.config.reward_threshold)
+            if (
+                is_training_eligible(c.result, self.config.reward_threshold)
+                if c.result is not None
+                else c.reward >= self.config.reward_threshold
+            )
         ]
         
         # Sort by reward
@@ -738,6 +809,11 @@ class AgenticRAFTTrainer:
             update_metrics=cycle_metrics,
             model=self.model,
             tokenizer=self.tokenizer,
+        )
+        complete_signal_boundary(
+            self.signal_sink,
+            boundary_value=cycle,
+            checkpoint_path=checkpoint_dir,
         )
         
         logger.info(f"Checkpoint saved to {checkpoint_dir}")

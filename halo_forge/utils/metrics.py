@@ -268,6 +268,39 @@ class MetricsTracker:
         
         self.history.cycles.append(cycle_metrics)
         self._log_cycle_metrics(cycle_metrics)
+
+    def log_samples(self, cycle: int, rewards: List[float]) -> None:
+        """Log sample-level reward evidence without creating a fake cycle.
+
+        Agentic RAFT historically called this method even though it was not
+        implemented.  Keep raw rewards out of the summary log by default;
+        persist bounded aggregate evidence and use TensorBoard's histogram
+        storage when available.
+        """
+
+        finite_rewards = [
+            float(value)
+            for value in rewards
+            if isinstance(value, (int, float)) and float("-inf") < float(value) < float("inf")
+        ]
+        payload = {
+            "kind": "sample_rewards",
+            "cycle": int(cycle),
+            "count": len(finite_rewards),
+            "mean": (
+                sum(finite_rewards) / len(finite_rewards) if finite_rewards else None
+            ),
+            "min": min(finite_rewards) if finite_rewards else None,
+            "max": max(finite_rewards) if finite_rewards else None,
+        }
+        if self.enable_json:
+            sample_log = self.output_dir / "sample_metrics.jsonl"
+            with sample_log.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        if self.tb_writer and finite_rewards:
+            self.tb_writer.add_histogram("samples/reward", finite_rewards, int(cycle))
+            self.tb_writer.add_scalar("samples/reward_mean", payload["mean"], int(cycle))
+            self.tb_writer.flush()
     
     def _log_cycle_metrics(self, cycle_metrics: CycleMetrics):
         """Log cycle metrics to all outputs."""

@@ -61,7 +61,11 @@ class SweepResult:
 # ---------- samplers --------------------------------------------------------
 
 
-def _build_sampler(name: str, rng: random.Random):
+def _build_sampler(
+    name: str,
+    rng: random.Random,
+    direction: str = "minimize",
+):
     """Return a sampler with `next_params(search_space) -> dict`.
 
     Random is the always-available baseline. TPE (Optuna-backed) is the
@@ -73,7 +77,7 @@ def _build_sampler(name: str, rng: random.Random):
         return _RandomSampler(rng)
     if name == "tpe":
         try:
-            return _OptunaSampler(rng)
+            return _OptunaSampler(rng, direction=direction)
         except ImportError as exc:
             logger.warning(
                 "Optuna not installed; falling back to random sampling. (%s)",
@@ -110,7 +114,7 @@ class _GridSampler:
         # distributions we sample once at build time.
         from halo_forge.sweep.config import Choice
 
-        keys = list(space.params)
+        keys = sorted(space.params)
         per_key_values: List[List[Any]] = []
         for k in keys:
             dist = space.params[k]
@@ -143,22 +147,27 @@ class _OptunaSampler:
     """Lazy-imported TPE sampler. Each trial pulls from the same study
     so suggestions are informed by the in-progress history."""
 
-    def __init__(self, rng: random.Random):
+    def __init__(self, rng: random.Random, *, direction: str = "minimize"):
         import optuna  # noqa: F401  (forces ImportError early)
 
         self._optuna = optuna
+        normalized_direction = str(direction).strip().lower()
+        if normalized_direction not in {"minimize", "maximize"}:
+            raise ValueError("direction must be 'minimize' or 'maximize'")
         # Build the study with a fixed seed so the sweep is reproducible
         # under the same SweepConfig.seed.
         sampler = optuna.samplers.TPESampler(seed=rng.randint(0, 2**31 - 1))
-        self.study = optuna.create_study(direction="minimize", sampler=sampler)
+        self.study = optuna.create_study(direction=normalized_direction, sampler=sampler)
         self._trial_handles: Dict[int, Any] = {}
+        self._fallback_rng = rng
 
     def next_params(self, space, *, trial_id: int) -> Dict[str, Any]:
         from halo_forge.sweep.config import Choice, LogUniform, Uniform
 
         trial = self.study.ask()
         params: Dict[str, Any] = {}
-        for name, dist in space.params.items():
+        for name in sorted(space.params):
+            dist = space.params[name]
             if isinstance(dist, Choice):
                 params[name] = trial.suggest_categorical(name, dist.values)
             elif isinstance(dist, LogUniform):
@@ -166,7 +175,7 @@ class _OptunaSampler:
             elif isinstance(dist, Uniform):
                 params[name] = trial.suggest_float(name, dist.low, dist.high)
             else:
-                params[name] = dist.sample(__import__("random").Random())  # fallback
+                params[name] = dist.sample(self._fallback_rng)  # fallback
         self._trial_handles[trial_id] = trial
         return params
 
@@ -201,7 +210,7 @@ def run_sweep(
         SweepResult with per-trial outcomes and the best-so-far pointer.
     """
     rng = random.Random(config.seed)
-    sampler = _build_sampler(config.sampler, rng)
+    sampler = _build_sampler(config.sampler, rng, direction=config.direction)
 
     output_dir = Path(config.output_dir) if config.output_dir else None
     if output_dir:
@@ -222,9 +231,7 @@ def run_sweep(
             try:
                 metrics = runner(trial_id, params)
                 primary = metrics.get(config.metric)
-                primary_val = (
-                    float(primary) if isinstance(primary, (int, float)) else None
-                )
+                primary_val = float(primary) if isinstance(primary, (int, float)) else None
                 trial = TrialResult(
                     trial_id=trial_id,
                     params=params,
@@ -246,9 +253,8 @@ def run_sweep(
             sampler.report(trial_id, params, trial.primary_metric_value)
 
             # Update best-so-far.
-            if (
-                trial.primary_metric_value is not None
-                and config.is_better(trial.primary_metric_value, best_value)
+            if trial.primary_metric_value is not None and config.is_better(
+                trial.primary_metric_value, best_value
             ):
                 best_value = trial.primary_metric_value
                 best_id = trial.trial_id

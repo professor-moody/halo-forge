@@ -75,6 +75,25 @@ class CompletionRequest(BaseModel):
     stream: Optional[bool] = False
 
 
+class EmbeddingRequest(BaseModel):
+    model: str
+    input: str | List[str]
+    encoding_format: Literal["float"] = "float"
+
+
+class ClassificationRequest(BaseModel):
+    model: str
+    input: Any | List[Any]
+    top_k: int = Field(default=1, ge=1, le=100)
+
+
+class RerankRequest(BaseModel):
+    model: str
+    query: str
+    documents: List[str]
+    top_n: Optional[int] = Field(default=None, ge=1)
+
+
 class ChatCompletionChoice(BaseModel):
     index: int
     message: ChatMessage
@@ -290,6 +309,7 @@ def create_serving_app(
 
     state: dict[str, Any] = {
         "adapter": adapter,
+        "specialized_adapter": None,
         "model_name": model_name,
         "load_error": None,
     }
@@ -320,6 +340,36 @@ def create_serving_app(
                 state["load_error"] = _http_exception_to_load_error(mapped)
                 raise mapped from exc
         return state["adapter"]
+
+    def _get_specialized_adapter() -> Any:
+        candidate = state.get("specialized_adapter")
+        if candidate is not None:
+            return candidate
+        injected = state.get("adapter")
+        if injected is not None and any(
+            callable(getattr(injected, name, None))
+            for name in ("embed", "classify", "rerank")
+        ):
+            state["specialized_adapter"] = injected
+            return injected
+        try:
+            from halo_forge.lab_v11_v15.specialized import SpecializedServingRuntime
+
+            state["specialized_adapter"] = SpecializedServingRuntime(model_name)
+            state["load_error"] = None
+            return state["specialized_adapter"]
+        except Exception as exc:
+            mapped = _load_error_to_http_exception(exc, model_name=model_name)
+            if mapped.status_code == 500:
+                mapped = HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This artifact does not expose a verified classification, "
+                        "embedding, or reranking contract."
+                    ),
+                )
+            state["load_error"] = _http_exception_to_load_error(mapped)
+            raise mapped from exc
 
     @app.get("/v1/models", response_model=ModelList)
     def list_models() -> ModelList:
@@ -413,6 +463,65 @@ def create_serving_app(
             ),
         )
 
+    @app.post("/v1/embeddings")
+    def embeddings(req: EmbeddingRequest) -> dict[str, Any]:
+        runtime = _get_specialized_adapter()
+        inputs = [req.input] if isinstance(req.input, str) else list(req.input)
+        if not inputs:
+            raise HTTPException(status_code=400, detail="input must be non-empty")
+        try:
+            vectors = runtime.embed([str(value) for value in inputs])
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "object": "list",
+            "model": req.model or model_name,
+            "data": [
+                {"object": "embedding", "index": index, "embedding": vector}
+                for index, vector in enumerate(vectors)
+            ],
+            "usage": {
+                "prompt_tokens": sum(_approximate_tokens(str(value)) for value in inputs),
+                "total_tokens": sum(_approximate_tokens(str(value)) for value in inputs),
+            },
+        }
+
+    @app.post("/v1/classifications")
+    def classifications(req: ClassificationRequest) -> dict[str, Any]:
+        runtime = _get_specialized_adapter()
+        inputs = req.input if isinstance(req.input, list) else [req.input]
+        if not inputs:
+            raise HTTPException(status_code=400, detail="input must be non-empty")
+        try:
+            predictions = runtime.classify(list(inputs), top_k=req.top_k)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "object": "list",
+            "model": req.model or model_name,
+            "data": [
+                {"index": index, "predictions": value}
+                for index, value in enumerate(predictions)
+            ],
+        }
+
+    @app.post("/v1/rerank")
+    def rerank(req: RerankRequest) -> dict[str, Any]:
+        if not req.documents:
+            raise HTTPException(status_code=400, detail="documents must be non-empty")
+        runtime = _get_specialized_adapter()
+        try:
+            results = runtime.rerank(
+                req.query, list(req.documents), top_n=req.top_n
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "object": "list",
+            "model": req.model or model_name,
+            "results": results,
+        }
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         adapter = state.get("adapter")
@@ -425,6 +534,12 @@ def create_serving_app(
             "load_error": load_error,
             "started_at": started_at,
             "streaming_supported": True,
+            "specialized_adapter_loaded": state.get("specialized_adapter") is not None,
+            "specialized_endpoints": [
+                "/v1/embeddings",
+                "/v1/classifications",
+                "/v1/rerank",
+            ],
         }
 
     return app

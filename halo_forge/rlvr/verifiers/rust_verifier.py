@@ -17,7 +17,10 @@ import subprocess
 import tempfile
 import shutil
 import os
-import resource
+try:
+    import resource
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    resource = None
 import uuid
 from pathlib import Path
 from typing import Optional, List
@@ -317,6 +320,16 @@ opt-level = 2
         # Suppress color output for cleaner parsing
         env = os.environ.copy()
         env["CARGO_TERM_COLOR"] = "never"
+        # The shared execution runner isolates HOME.  Point rustup-backed cargo
+        # shims at the host toolchain explicitly so compilation remains usable
+        # while generated code still receives an isolated home directory.
+        host_home = Path(env.get("HOME") or Path.home()).expanduser()
+        cargo_home = Path(env.get("CARGO_HOME") or host_home / ".cargo").expanduser()
+        rustup_home = Path(env.get("RUSTUP_HOME") or host_home / ".rustup").expanduser()
+        if cargo_home.exists():
+            env["CARGO_HOME"] = str(cargo_home)
+        if rustup_home.exists():
+            env["RUSTUP_HOME"] = str(rustup_home)
         
         result = self._execution_runner.run(
             cmd,
@@ -360,14 +373,18 @@ opt-level = 2
             mem_bytes = self.memory_limit_mb * 1024 * 1024
             resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
             resource.setrlimit(resource.RLIMIT_CPU, (self.run_timeout, self.run_timeout))
-        
+
+        # `resource` and `preexec_fn` are POSIX-only. On Windows the process
+        # still runs, just without rlimit caps; the runner's timeout remains.
+        preexec_fn = set_limits if resource is not None else None
+
         try:
             result = self._execution_runner.run(
                 [executable],
                 input_text=self.stdin_input,
                 cwd=Path(executable).parent,
                 timeout=self.run_timeout,
-                preexec_fn=set_limits
+                preexec_fn=preexec_fn
             )
             
             if result.returncode == 0:

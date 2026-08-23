@@ -69,6 +69,9 @@ def _default_openai_judge(
     base_url: Optional[str],
     api_key: Optional[str],
     timeout_s: float,
+    seed: Optional[int] = None,
+    temperature: float = 0.0,
+    top_p: float = 1.0,
 ) -> JudgeCallable:
     """Build a JudgeCallable that hits any OpenAI-compatible chat endpoint.
 
@@ -85,15 +88,19 @@ def _default_openai_judge(
         import httpx  # local import — see module docstring
 
         with httpx.Client(timeout=timeout_s) as client:
+            request_body = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 8,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+            }
+            if seed is not None:
+                request_body["seed"] = int(seed)
             resp = client.post(
                 f"{resolved_base.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {resolved_key}"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 8,
-                    "temperature": 0.0,
-                },
+                json=request_body,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -162,6 +169,9 @@ class LLMJudgeVerifier(Verifier):
         api_key: Optional[str] = None,
         timeout_s: float = 30.0,
         max_workers: int = 4,
+        seed: Optional[int] = None,
+        temperature: float = 0.0,
+        top_p: float = 1.0,
     ):
         super().__init__(max_workers=max_workers)
         if scoring_scale < 2:
@@ -172,11 +182,17 @@ class LLMJudgeVerifier(Verifier):
         self.scale_max = self.scoring_scale
         self.judge_model = judge_model
         self.prompt = prompt
+        self.seed = seed
+        self.temperature = float(temperature)
+        self.top_p = float(top_p)
         self._judge: JudgeCallable = judge_callable or _default_openai_judge(
             model=judge_model,
             base_url=base_url,
             api_key=api_key,
             timeout_s=timeout_s,
+            seed=seed,
+            temperature=self.temperature,
+            top_p=self.top_p,
         )
 
     def _build_prompt(self, response: str, *, prompt: Optional[str] = None) -> str:
@@ -225,6 +241,7 @@ class LLMJudgeVerifier(Verifier):
                 reward=0.0,
                 details=f"Could not parse score from judge: {raw[:120]!r}",
                 error="unparseable_score",
+                metadata={"raw_output": raw, "parsed_value": None},
             )
 
         # Map [1, scale_max] to [0.0, 1.0]. The lowest score (1) earns 0.0
@@ -239,6 +256,7 @@ class LLMJudgeVerifier(Verifier):
             success=success,
             reward=float(reward),
             details=f"Judge scored {score}/{self.scale_max}",
+            metadata={"raw_output": raw, "parsed_value": score},
         )
 
 

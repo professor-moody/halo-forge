@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -43,7 +44,15 @@ from halo_forge.training_contracts import (
     write_json_atomic,
 )
 from halo_forge.training_recovery import attach_recovery_guidance
-from halo_forge.utils.backend_config import warn_unsupported_for_mlx
+from halo_forge.utils.backend_config import (
+    build_mlx_lr_schedule,
+    build_mlx_optimizer,
+    detect_mlx_capabilities,
+    mlx_training_knob_gaps,
+    resolve_mlx_step_budget,
+    resolve_mlx_warmup_steps,
+    warn_unsupported_for_mlx,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +235,38 @@ def _dpo_preference_loss(
     )
 
 
+def _accumulate_gradients(accumulated: Any, gradients: Any) -> Any:
+    """Add ``gradients`` into ``accumulated``, elementwise over the tree.
+
+    Deliberately written against ``+`` rather than ``mlx.utils.tree_map`` so
+    the accumulation logic is testable on plain numbers without importing
+    mlx. ``accumulated=None`` (first micro batch) returns ``gradients``.
+    """
+    if accumulated is None:
+        return gradients
+    if isinstance(gradients, dict):
+        return {
+            key: _accumulate_gradients(accumulated[key], value)
+            for key, value in gradients.items()
+        }
+    if isinstance(gradients, (list, tuple)):
+        combined = [
+            _accumulate_gradients(prev, value)
+            for prev, value in zip(accumulated, gradients)
+        ]
+        return type(gradients)(combined)
+    return accumulated + gradients
+
+
+def _scale_gradients(gradients: Any, factor: float) -> Any:
+    """Multiply every leaf of a gradient tree by ``factor``."""
+    if isinstance(gradients, dict):
+        return {key: _scale_gradients(value, factor) for key, value in gradients.items()}
+    if isinstance(gradients, (list, tuple)):
+        return type(gradients)([_scale_gradients(value, factor) for value in gradients])
+    return gradients * factor
+
+
 def _dpo_margin(
     *,
     chosen_logp: Any,
@@ -277,6 +318,8 @@ class MLXDPOTrainer:
         self.tokenizer: Any = None
         self.run_id: str = ""
         self.training_summary: Dict[str, Any] = {}
+        # Training-critical knobs as actually applied — see MLXSFTTrainer.
+        self.backend_config_applied: Dict[str, Any] = {}
 
     def train(
         self,
@@ -303,6 +346,7 @@ class MLXDPOTrainer:
 
         train_ds, val_ds = load_preference_dataset(
             train_file=cfg.train_file,
+            validation_file=cfg.validation_file,
             dataset=cfg.dataset,
             split=cfg.dataset_split,
             max_samples=cfg.max_samples,
@@ -332,9 +376,78 @@ class MLXDPOTrainer:
             self.model, num_layers=self._count_blocks() or 16, config=lora_cfg
         )
 
-        optimizer = deps["optim"].AdamW(
-            learning_rate=cfg.learning_rate, weight_decay=cfg.weight_decay
+        # Iterate by example: DPO batches are tricky to pad due to the
+        # variable prompt+response lengths; v1 keeps the loop sequential
+        # for clarity. Batched loss is a follow-up perf win. Gradient
+        # accumulation is what recovers the configured *effective* batch
+        # size on top of that one-pair-at-a-time loop.
+        rows = list(train_ds)
+
+        # This loop is ours, so accumulation is always available; the mlx
+        # optimizer module still decides whether warmup / clipping are.
+        capabilities = replace(
+            detect_mlx_capabilities(optim_module=deps["optim"]),
+            grad_accumulation=True,
         )
+        knob_gaps = mlx_training_knob_gaps(capabilities)
+        if knob_gaps:
+            warn_unsupported_for_mlx(cfg, trainer_label="MLX DPO", fields=knob_gaps)
+
+        grad_accum = max(1, int(cfg.gradient_accumulation_steps or 1))
+        micro_budget, planned_optimizer_steps = resolve_mlx_step_budget(
+            micro_batches_per_epoch=max(1, len(rows)),
+            num_epochs=cfg.num_epochs,
+            gradient_accumulation_steps=grad_accum,
+            max_steps=cfg.max_steps,
+        )
+        warmup_steps = resolve_mlx_warmup_steps(
+            cfg, capabilities, optimizer_steps=planned_optimizer_steps
+        )
+
+        optimizer = build_mlx_optimizer(
+            deps["optim"],
+            learning_rate=build_mlx_lr_schedule(
+                deps["optim"],
+                learning_rate=cfg.learning_rate,
+                warmup_steps=warmup_steps,
+                total_steps=planned_optimizer_steps,
+            ),
+            weight_decay=cfg.weight_decay,
+            max_grad_norm=cfg.max_grad_norm,
+        )
+        # The loop below scores one pair at a time, so `batch_size` is not
+        # applied at all: the effective batch is the accumulation factor
+        # alone. Say so rather than echoing the requested value back.
+        requested_batch_size = int(getattr(cfg, "batch_size", 1) or 1)
+        if requested_batch_size > 1:
+            line = (
+                f"[MLX DPO] Config field 'batch_size'={requested_batch_size!r} is not "
+                "honored on the MLX backend. The MLX DPO loop scores one preference "
+                f"pair at a time, so the effective batch is {grad_accum} pair(s) "
+                f"(gradient_accumulation_steps), not {requested_batch_size * grad_accum}. "
+                "Raise --gradient-accumulation to grow the effective batch."
+            )
+            logger.warning(line)
+            print(f"WARNING: {line}")
+
+        self.backend_config_applied = {
+            "backend": "mlx",
+            "batch_size": 1,
+            "batch_size_requested": requested_batch_size,
+            "effective_batch_size": grad_accum,
+            "gradient_accumulation_steps": grad_accum,
+            "gradient_accumulation_steps_requested": int(cfg.gradient_accumulation_steps or 1),
+            "max_steps": cfg.max_steps,
+            "optimizer_steps_planned": planned_optimizer_steps,
+            "micro_batch_budget": micro_budget,
+            "warmup_steps": warmup_steps,
+            "warmup_ratio": float(cfg.warmup_ratio or 0.0) if warmup_steps else 0.0,
+            "warmup_ratio_requested": float(cfg.warmup_ratio or 0.0),
+            "max_grad_norm": (
+                float(cfg.max_grad_norm or 0.0) if capabilities.grad_clipping else 0.0
+            ),
+            "max_grad_norm_requested": float(cfg.max_grad_norm or 0.0),
+        }
 
         loss_history: list[float] = []
         accuracy_history: list[float] = []
@@ -384,20 +497,27 @@ class MLXDPOTrainer:
 
         loss_and_grad = nn.value_and_grad(self.model, loss_fn)
 
-        # Iterate by example: DPO batches are tricky to pad due to the
-        # variable prompt+response lengths; v1 keeps the loop sequential
-        # for clarity. Batched loss is a follow-up perf win.
-        rows = list(train_ds)
         print(
             f"=" * 70
             + f"\nMLX DPO ({'reference-free' if cfg.reference_free else 'reference-model'}, {cfg.loss_type}) on {len(rows)} pairs\n"
             f"  beta={cfg.beta} learning_rate={cfg.learning_rate} epochs={cfg.num_epochs}\n"
+            f"  grad_accum={grad_accum} optimizer_steps={planned_optimizer_steps} "
+            f"warmup_steps={warmup_steps}\n"
             + "=" * 70
         )
         t0 = time.time()
         step = 0
+        optimizer_steps = 0
+        accumulated_grads: Any = None
+        budget_exhausted = False
         for epoch in range(cfg.num_epochs):
+            if budget_exhausted:
+                break
             for row in rows:
+                # `max_steps` (via micro_budget) is a hard ceiling, not a hint.
+                if step >= micro_budget:
+                    budget_exhausted = True
+                    break
                 prompt_ids = mx.array(self.tokenizer.encode(row["prompt"]))
                 chosen_ids = mx.array(self.tokenizer.encode(row["chosen"]))
                 rejected_ids = mx.array(self.tokenizer.encode(row["rejected"]))
@@ -420,8 +540,16 @@ class MLXDPOTrainer:
                 (loss_value, aux), grads = loss_and_grad(
                     self.model, prompt_ids, chosen_ids, rejected_ids
                 )
-                optimizer.update(self.model, grads)
-                mx.eval(self.model.parameters(), optimizer.state)
+                step += 1
+                accumulated_grads = _accumulate_gradients(accumulated_grads, grads)
+                if step % grad_accum == 0:
+                    self._apply_update(mx, optimizer, accumulated_grads, grad_accum)
+                    accumulated_grads = None
+                    optimizer_steps += 1
+                else:
+                    # Keep the accumulator materialized so the compute graph
+                    # doesn't grow across the whole accumulation window.
+                    mx.eval(accumulated_grads)
 
                 loss_scalar = float(loss_value)
                 chosen_logp, rejected_logp, margin = aux
@@ -429,7 +557,6 @@ class MLXDPOTrainer:
                 margin_history.append(float(margin))
                 accuracy_history.append(1.0 if float(chosen_logp) > float(rejected_logp) else 0.0)
 
-                step += 1
                 if step % cfg.logging_steps == 0:
                     avg_loss = sum(loss_history[-cfg.logging_steps:]) / max(
                         1, len(loss_history[-cfg.logging_steps:])
@@ -441,6 +568,13 @@ class MLXDPOTrainer:
                         f"  step {step:>5}  loss={avg_loss:.4f}  "
                         f"acc={avg_acc:.2f}  margin={float(margin):.3f}"
                     )
+
+        pending = step % grad_accum
+        if pending:
+            # Don't discard a partial accumulation window (small datasets can
+            # end mid-window); apply it scaled by what actually accumulated.
+            self._apply_update(mx, optimizer, accumulated_grads, pending)
+            optimizer_steps += 1
 
         elapsed = time.time() - t0
         # Save adapter
@@ -481,6 +615,7 @@ class MLXDPOTrainer:
             loss_history=loss_history,
             accuracy_history=accuracy_history,
             margin_history=margin_history,
+            optimizer_steps=optimizer_steps,
             duration_seconds=elapsed,
             train_dataset=train_ds,
             val_dataset=val_ds,
@@ -495,6 +630,17 @@ class MLXDPOTrainer:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+
+    def _apply_update(
+        self, mx: Any, optimizer: Any, gradients: Any, accumulated: int
+    ) -> None:
+        """Average the accumulated gradients and take one optimizer step."""
+        if gradients is None:
+            return
+        if accumulated > 1:
+            gradients = _scale_gradients(gradients, 1.0 / float(accumulated))
+        optimizer.update(self.model, gradients)
+        mx.eval(self.model.parameters(), optimizer.state)
 
     def _count_blocks(self) -> int:
         layers = getattr(self.model, "layers", None)
@@ -513,6 +659,7 @@ class MLXDPOTrainer:
         loss_history,
         accuracy_history,
         margin_history,
+        optimizer_steps,
         duration_seconds,
         train_dataset,
         val_dataset,
@@ -533,12 +680,14 @@ class MLXDPOTrainer:
             samples_kept=n_train,
             cycle_duration_seconds=duration_seconds,
             update_metrics={
-                "train_steps_executed": len(loss_history),
+                # Optimizer steps, not micro batches: with accumulation the
+                # two differ by `gradient_accumulation_steps`.
+                "train_steps_executed": int(optimizer_steps),
                 "train_loss": final_loss,
                 "initial_train_loss": initial_loss,
-                "weights_updated": len(loss_history) > 0,
-                "update_reason": "updated" if loss_history else "no_optimizer_steps",
-                "optimizer_steps": len(loss_history),
+                "weights_updated": int(optimizer_steps) > 0,
+                "update_reason": "updated" if optimizer_steps else "no_optimizer_steps",
+                "optimizer_steps": int(optimizer_steps),
                 "skipped_batches_non_finite": 0,
             },
             yield_diagnostics={
@@ -556,6 +705,10 @@ class MLXDPOTrainer:
                     if accuracy_history else None
                 ),
                 "reward_margin_final": margin_history[-1] if margin_history else None,
+                "micro_batches_executed": len(loss_history),
+                "gradient_accumulation_steps": self.backend_config_applied.get(
+                    "gradient_accumulation_steps", 1
+                ),
                 "beta": cfg.beta,
                 "loss_type": cfg.loss_type,
                 "reference_free": cfg.reference_free,
@@ -592,6 +745,8 @@ class MLXDPOTrainer:
             },
         )
         summary["final_model_path"] = str(final_output)
+        # Report what the backend applied, not what was requested.
+        summary["backend_config_applied"] = dict(self.backend_config_applied)
         attach_effectiveness_contract(
             summary,
             minimum_samples_kept=max(1, n_train),
@@ -616,7 +771,12 @@ class MLXDPOTrainer:
                 "dataset": dataset or "",
                 "output_dir": cfg.output_dir,
                 "epochs": cfg.num_epochs,
-                "batch_size": cfg.batch_size,
+                # Effective values, so a relaunch reproduces this run.
+                "batch_size": self.backend_config_applied.get("batch_size", 1),
+                "gradient_accumulation_steps": self.backend_config_applied.get(
+                    "gradient_accumulation_steps", 1
+                ),
+                "max_steps": cfg.max_steps,
                 "beta": cfg.beta,
                 "loss_type": cfg.loss_type,
                 "reference_free": cfg.reference_free,

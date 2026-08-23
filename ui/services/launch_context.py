@@ -42,6 +42,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "sft": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "epochs",
         "batch_size",
@@ -66,6 +68,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "raft": (
         "model",
         "prompts",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "verifier",
         "cycles",
@@ -90,6 +94,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "dpo": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "epochs",
         "batch_size",
@@ -105,6 +111,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "orpo": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "epochs",
         "batch_size",
@@ -118,6 +126,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "rm": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "epochs",
         "batch_size",
@@ -130,6 +140,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "grpo": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "epochs",
         "batch_size",
@@ -149,6 +161,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "vlm": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "cycles",
         "learning_rate",
@@ -165,6 +179,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "audio": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "cycles",
         "learning_rate",
@@ -182,6 +198,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "reasoning": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "cycles",
         "learning_rate",
@@ -195,6 +213,8 @@ _NORMALIZED_ARG_KEYS: Dict[str, tuple[str, ...]] = {
     "agentic": (
         "model",
         "dataset",
+        "dataset_version_id",
+        "dataset_split",
         "output_dir",
         "cycles",
         "learning_rate",
@@ -375,6 +395,14 @@ class LaunchContextV1:
 def normalize_launch_args(job_type: str, args: Mapping[str, Any]) -> Dict[str, Any]:
     """Normalize and filter launch args to a stable per-job-type schema."""
     allowed = _NORMALIZED_ARG_KEYS.get(job_type, ())
+    if job_type in {"sft", "raft", "dpo", "orpo", "rm", "grpo", "vlm", "audio", "reasoning", "agentic"}:
+        allowed = tuple(allowed) + (
+            "run_id",
+            "dataset_bindings",
+            "training_artifact",
+            "parent_run_id",
+            "validation_file",
+        )
     normalized: Dict[str, Any] = {}
     for key in allowed:
         if key not in args:

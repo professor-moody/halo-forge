@@ -17,7 +17,10 @@ import subprocess
 import tempfile
 import shutil
 import os
-import resource
+try:
+    import resource
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    resource = None
 import uuid
 from pathlib import Path
 from typing import Optional, List
@@ -319,14 +322,18 @@ class GoVerifier(Verifier):
             mem_bytes = self.memory_limit_mb * 1024 * 1024
             resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
             resource.setrlimit(resource.RLIMIT_CPU, (self.run_timeout, self.run_timeout))
-        
+
+        # `resource` and `preexec_fn` are POSIX-only. On Windows the process
+        # still runs, just without rlimit caps; the runner's timeout remains.
+        preexec_fn = set_limits if resource is not None else None
+
         try:
             result = self._execution_runner.run(
                 [executable],
                 input_text=self.stdin_input,
                 cwd=Path(executable).parent,
                 timeout=self.run_timeout,
-                preexec_fn=set_limits
+                preexec_fn=preexec_fn
             )
             
             if result.returncode == 0:

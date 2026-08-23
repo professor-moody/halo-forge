@@ -32,8 +32,14 @@ def detect_gpu_kind() -> str:
 
     One of: "rocm_gfx1151", "cuda", "mps", "cpu". Cheap and import-safe — does
     not raise if torch is missing or partially mocked (tests replace `torch`
-    with a SimpleNamespace that lacks `backends`); falls back to "cpu".
+    with a SimpleNamespace that lacks `backends`); falls back to "cpu". An
+    explicit CPU backend is authoritative, allowing operators and deterministic
+    smoke tests to opt out of an available GPU without hiding GPU availability
+    from the normal auto-detection path.
     """
+    if os.environ.get("HALOFORGE_BACKEND", "").strip().lower() == GPU_KIND_CPU:
+        return GPU_KIND_CPU
+
     try:
         import torch
     except ImportError:

@@ -32,6 +32,28 @@ def _make_record(**overrides):
     return RunRecord(**base)
 
 
+def _attach_evaluation(db, run_id: str, *, subject_type: str = "run", status: str = "completed"):
+    suite = db.create_benchmark_suite(name=f"suite-{run_id}-{subject_type}-{status}")
+    revision = db.create_benchmark_suite_revision(
+        suite_id=suite.id,
+        content_hash=f"hash-{run_id}-{subject_type}-{status}",
+        items=[{"id": "one"}],
+        primary_metric="score",
+        direction="maximize",
+    )
+    evaluation = db.create_evaluation(
+        suite_revision_id=revision.id,
+        adapter_id="dataset",
+        adapter_version="1",
+        subject_type=subject_type,
+        subject_ref=run_id,
+        subject_hash=f"subject-{run_id}",
+        reuse_key=f"reuse-{run_id}-{subject_type}-{status}",
+        request={},
+    )
+    return db.update_evaluation(evaluation.id, status=status, stage=status)
+
+
 @pytest.fixture
 def db():
     from halo_forge.run_db import RunDatabase
@@ -58,6 +80,49 @@ def test_schema_initializes_clean(db):
     # model_registry) doesn't require touching this test.
     from halo_forge.run_db.schema import SCHEMA_VERSION
     assert cur.fetchone()["value"] == str(SCHEMA_VERSION)
+
+
+def test_run_lineage_accepts_preallocated_child_before_run_indexing(db):
+    db.record_fork(child_run_id="pending-child", parent_run_id="completed-parent")
+    lineage = db.get_lineage("pending-child")
+    assert lineage["ancestors"][0]["parent_run_id"] == "completed-parent"
+    assert db.get_run("pending-child") is None
+
+
+def test_schema_v5_removes_lineage_child_fk_without_losing_edges(tmp_path):
+    from halo_forge.run_db import RunDatabase
+
+    path = tmp_path / "v4-lineage.db"
+    legacy = RunDatabase(str(path))
+    legacy.upsert_run(_make_record(run_id="legacy-child"))
+    with legacy._lock:
+        legacy._conn.execute("DROP TABLE run_lineage")
+        legacy._conn.execute(
+            """
+            CREATE TABLE run_lineage (
+                child_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+                parent_run_id TEXT NOT NULL,
+                forked_at_cycle INTEGER,
+                notes TEXT,
+                PRIMARY KEY (child_run_id, parent_run_id)
+            )
+            """
+        )
+        legacy._conn.execute(
+            "INSERT INTO run_lineage VALUES ('legacy-child', 'legacy-parent', 2, 'kept')"
+        )
+        legacy._conn.execute(
+            "UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'"
+        )
+        legacy._conn.commit()
+    legacy.close()
+
+    migrated = RunDatabase(str(path))
+    assert migrated._conn.execute("PRAGMA foreign_key_list(run_lineage)").fetchall() == []
+    assert migrated.get_parents("legacy-child") == [
+        {"parent_run_id": "legacy-parent", "forked_at_cycle": 2, "notes": "kept"}
+    ]
+    migrated.close()
 
 
 def test_upsert_and_get(db):
@@ -125,14 +190,17 @@ def test_filter_by_timestamp_range(db):
 
 
 def test_filter_by_eval_present(db):
-    db.upsert_run(_make_record(run_id="with", final_train_loss=0.5))
-    db.upsert_run(_make_record(run_id="without", final_train_loss=None))
+    db.upsert_run(_make_record(run_id="with", final_train_loss=None))
+    db.upsert_run(_make_record(run_id="without", final_train_loss=0.5))
+    db.upsert_run(_make_record(run_id="running", final_train_loss=0.2))
+    _attach_evaluation(db, "with")
+    _attach_evaluation(db, "running", status="running")
     from halo_forge.run_db import RunFilter
 
     has = db.list_runs(RunFilter(has_eval=True))
     assert {r.run_id for r in has} == {"with"}
     none = db.list_runs(RunFilter(has_eval=False))
-    assert {r.run_id for r in none} == {"without"}
+    assert {r.run_id for r in none} == {"without", "running"}
 
 
 def test_sort_and_pagination(db):
@@ -179,6 +247,8 @@ def test_count_runs_applies_eval_and_update_filters(db):
     db.upsert_run(_make_record(run_id="eval-updated", final_train_loss=0.5, weights_updated=True))
     db.upsert_run(_make_record(run_id="eval-not-updated", final_train_loss=0.7, weights_updated=False))
     db.upsert_run(_make_record(run_id="no-eval", final_train_loss=None, weights_updated=True))
+    _attach_evaluation(db, "eval-updated")
+    _attach_evaluation(db, "eval-not-updated", subject_type="final_model")
     from halo_forge.run_db import RunFilter
 
     assert db.count_runs(RunFilter(has_eval=True)) == 2

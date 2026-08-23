@@ -54,6 +54,7 @@ struct DesktopState(Mutex<RuntimeState>);
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(DesktopState(Mutex::new(RuntimeState {
             child: None,
@@ -65,7 +66,11 @@ pub fn run() {
                 None,
             ),
         })))
-        .invoke_handler(tauri::generate_handler![desktop_status, desktop_retry])
+        .invoke_handler(tauri::generate_handler![
+            desktop_status,
+            desktop_retry,
+            desktop_create_support_bundle
+        ])
         .setup(|app| {
             start_runtime(app.handle().clone());
             Ok(())
@@ -109,6 +114,38 @@ fn desktop_retry(app: AppHandle) -> DesktopStatus {
         .expect("desktop state lock poisoned")
         .status
         .clone()
+}
+
+#[tauri::command]
+fn desktop_create_support_bundle(app: AppHandle, categories: Vec<String>) -> Result<String, String> {
+    let repo_root = dev_repo_root();
+    let bundled = bundled_runtime_dir_if_available(&app);
+    let mut command = if let Some(runtime_dir) = bundled {
+        StdCommand::new(runtime_executable_in_dir(&runtime_dir))
+    } else {
+        let mut command = StdCommand::new(repo_python_executable(&repo_root));
+        command.args(["-m", "halo_forge.cli"]);
+        command
+    };
+    command.args(["support", "bundle", "create", "--json"]);
+    for category in categories {
+        command.args(["--category", category.as_str()]);
+    }
+    let output = command
+        .env("HALO_FORGE_REPO_ROOT", repo_root)
+        .env("PYTHONUTF8", "1")
+        .output()
+        .map_err(|error| format!("Could not start the support-bundle command: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("Support-bundle output was not valid JSON: {error}"))?;
+    payload
+        .get("storage_path")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "The support bundle finished without a storage path.".to_string())
 }
 
 fn start_runtime(app: AppHandle) {
@@ -196,29 +233,22 @@ fn start_runtime(app: AppHandle) {
             }
         };
         let repo_root = dev_repo_root();
+        // Launch the verified runtime from the resource directory directly.
+        // This is intentionally not a shell script sidecar: Windows packages
+        // receive the PyInstaller .exe, while macOS/Linux receive their native
+        // executable, and all three retain identical ownership/shutdown logic.
         let bundled_runtime = bundled_runtime_dir_if_available(&app);
-        let sidecar = match app.shell().sidecar("halo-forge-runtime") {
-            Ok(sidecar) => sidecar,
-            Err(err) => {
-                set_status(
-                    &app,
-                    "runtime_missing",
-                    "Halo Forge runtime sidecar is missing.",
-                    Some(err.to_string()),
-                    Some(log_path),
-                );
-                mark_not_starting(&app);
-                return;
-            }
+        let mut runtime_command = if let Some(runtime_dir) = bundled_runtime {
+            app.shell().command(runtime_executable_in_dir(&runtime_dir))
+        } else {
+            let python = repo_python_executable(&repo_root);
+            app.shell().command(python).args(["-m", "halo_forge.cli"])
         };
-
-        let mut sidecar_command = sidecar
+        runtime_command = runtime_command
             .env("HALO_FORGE_FRONTEND_DIST", frontend_dist)
-            .env("HALO_FORGE_REPO_ROOT", repo_root);
-        if let Some(runtime_dir) = bundled_runtime {
-            sidecar_command = sidecar_command.env("HALO_FORGE_BUNDLED_RUNTIME", runtime_dir);
-        }
-        let spawn_result = sidecar_command
+            .env("HALO_FORGE_REPO_ROOT", repo_root)
+            .env("PYTHONUTF8", "1");
+        let spawn_result = runtime_command
             .args([
                 "dashboard",
                 "--no-build",
@@ -319,7 +349,7 @@ fn validate_runtime_inputs(app: &AppHandle) -> Result<(), StartupError> {
         return Ok(());
     }
 
-    let python = dev_repo_root().join(".venv/bin/python");
+    let python = repo_python_executable(&dev_repo_root());
     if python.is_file() {
         return Ok(());
     }
@@ -365,9 +395,8 @@ fn record_sidecar_event(app: &AppHandle, log_path: &PathBuf, event: CommandEvent
             if health_ok() {
                 append_log(
                     log_path,
-                    "Runtime parent exited while the dashboard still answers; stopping owned dashboard listener.",
+                    "Runtime exited while the dashboard port still answers; the listener was not killed because its process identity is no longer owned.",
                 );
-                stop_dashboard_listener();
             }
             set_status(
                 app,
@@ -424,10 +453,6 @@ fn stop_owned_sidecar(app: &AppHandle) {
         let pid = child.pid();
         stop_descendant_processes(pid);
         let _ = child.kill();
-        if wait_for_dashboard_to_stop(Duration::from_secs(2)) {
-            return;
-        }
-        stop_dashboard_listener();
         let _ = wait_for_dashboard_to_stop(Duration::from_secs(2));
     }
 }
@@ -441,7 +466,16 @@ fn stop_descendant_processes(root_pid: u32) {
     signal_pids(&descendants, "KILL");
 }
 
-#[cfg(not(unix))]
+#[cfg(target_os = "windows")]
+fn stop_descendant_processes(root_pid: u32) {
+    // /T owns the full runtime tree (dashboard plus supervised worker), and
+    // /F prevents a hidden console process from surviving desktop shutdown.
+    let _ = StdCommand::new("taskkill")
+        .args(["/PID", &root_pid.to_string(), "/T", "/F"])
+        .status();
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
 fn stop_descendant_processes(_root_pid: u32) {}
 
 #[cfg(unix)]
@@ -490,39 +524,6 @@ fn wait_for_dashboard_to_stop(timeout: Duration) -> bool {
     !port_is_in_use(DASHBOARD_HOST, DASHBOARD_PORT)
 }
 
-#[cfg(unix)]
-fn stop_dashboard_listener() {
-    let mut pids = dashboard_listener_pids();
-    pids.sort_unstable();
-    pids.dedup();
-    signal_pids(&pids, "TERM");
-    thread::sleep(Duration::from_millis(300));
-    if port_is_in_use(DASHBOARD_HOST, DASHBOARD_PORT) {
-        signal_pids(&pids, "KILL");
-    }
-}
-
-#[cfg(not(unix))]
-fn stop_dashboard_listener() {}
-
-#[cfg(unix)]
-fn dashboard_listener_pids() -> Vec<u32> {
-    let lsof_query = format!("TCP:{DASHBOARD_PORT}");
-    let Ok(output) = StdCommand::new("lsof")
-        .args(["-nP", "-t", "-i", &lsof_query, "-sTCP:LISTEN"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| line.trim().parse::<u32>().ok())
-        .collect()
-}
-
 fn dev_repo_root() -> PathBuf {
     std::env::var_os("HALO_FORGE_REPO_ROOT")
         .map(PathBuf::from)
@@ -558,7 +559,25 @@ fn bundled_runtime_executable(app: &AppHandle) -> PathBuf {
 }
 
 fn runtime_executable_in_dir(dir: &PathBuf) -> PathBuf {
-    dir.join("halo-forge-runtime")
+    #[cfg(target_os = "windows")]
+    {
+        return dir.join("halo-forge-runtime.exe");
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        dir.join("halo-forge-runtime")
+    }
+}
+
+fn repo_python_executable(repo_root: &PathBuf) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        return repo_root.join(".venv/Scripts/python.exe");
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        repo_root.join(".venv/bin/python")
+    }
 }
 
 fn run_bundled_self_check(
@@ -568,6 +587,7 @@ fn run_bundled_self_check(
     let output = StdCommand::new(runtime_exe)
         .arg("--desktop-self-check")
         .env("HALO_FORGE_FRONTEND_DIST", frontend_dist)
+        .env("PYTHONUTF8", "1")
         .output()
         .map_err(|err| {
             StartupError::new(

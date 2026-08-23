@@ -1,13 +1,17 @@
 ---
 title: "Documentation"
-description: "Cross-vendor local finetuning workstation — SFT, DPO, GRPO, RAFT, RM with verifier-grounded rewards on ROCm, CUDA, Apple MLX, Apple MPS."
+description: "Cross-vendor local model-training workstation for corpus adaptation, supervised and preference tuning, verifier-guided learning, evaluation, and serving."
 ---
+
+The latest Lab capabilities cover
+[outcome validation, controlled studies, grounded data, specialized task
+models, and deterministic environments](labs-v11-v15/).
 
 ## What halo-forge is
 
 A workstation tool that takes a base model and turns it into a finetuned, evaluated, served artifact — without leaving the local machine.
 
-The single thing that makes it different from every adjacent project (axolotl, llama-factory, unsloth, mlx-lm-lora, torchtune): **it runs natively on every modern accelerator**, not just CUDA.
+Halo Forge keeps one guided data-to-training workflow across supported accelerator backends. ROCm and CUDA guided paths are exposed only after their pinned managed runtime passes real hardware qualification.
 
 Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train, evaluate, serve, and save the run into a bundle when it is worth comparing.
 
@@ -16,16 +20,21 @@ Pick a goal. Choose a catalog model. Pick an algorithm and verifier. Train, eval
 | I want to... | Start here |
 |---|---|
 | Train my first local model | [Quick Start](/docs/getting-started/quickstart/) |
+| Adapt a model to local documents | [Corpus Adaptation](/docs/data/corpus-adaptation/) |
 | Control a training workstation remotely | [Public Frontend: remote workstation](/docs/reference/public-frontend/#remote-workstation) |
 | Pick the right base model | [Choose a Model](/docs/getting-started/choose-a-model/) |
 | See runnable examples | [Usage Scenarios](/docs/getting-started/scenarios/) |
 | Run on Apple Silicon | [Hardware Notes](/docs/getting-started/hardware/) and [Apple Silicon MLX Quickstart](/docs/getting-started/apple-silicon-mlx/) |
 | Serve or export a trained artifact | [Serve / convert / merge](/docs/serving/) |
+| Review failures or unlabeled data | [Review Studio](/docs/review-studio/) |
+| Check whether a training reward remains trustworthy | [Reward Integrity](/docs/reward-integrity/) |
 
 ## Capabilities
 
 ### Trainers
 
+- **CPT** — continued causal pretraining over reviewed document corpora with
+  deterministic tokenizer packing and explicit LoRA/full adaptation.
 - **SFT** — supervised finetuning with QLoRA / LoRA / DoRA / rsLoRA / PiSSA. PyTorch on every torch backend; MLX-native on Apple Silicon.
 - **DPO** — preference optimization (sigmoid / IPO / hinge / KTO-pair / RPO / cDPO). PyTorch via TRL; MLX-native DPO supports sigmoid, IPO, hinge, and KTO-pair in reference-free and reference-model modes.
 - **GRPO** — verifier-grounded policy gradient (DeepSeek-R1 / Tülu 3 family). PyTorch via TRL; MLX-native reference-free and reference-model GRPO.
@@ -43,6 +52,13 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 
 ### Data pipeline
 
+- **Dataset Lab** — immutable local and pinned Hugging Face versions for text,
+  preference, tool-use, VLM, audio, and extracted document-corpus training
+  data.
+- **Review Studio** — deterministic development-data proposals, one- or
+  blinded two-pass human review, immutable label sets, and reviewed child
+  dataset versions. Protected holdout, operational, test, and canary evidence
+  cannot enter acquisition.
 - **Synthesize** — generate completions from seed prompts via a teacher model + verifier filter.
 - **Dedup** — exact (SHA-256) + fuzzy (MinHash + LSH).
 - **Score** — heuristic quality scoring + threshold / top-K filter.
@@ -60,6 +76,11 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 
 - **lm-evaluation-harness** — `halo-forge eval --tasks core` runs MMLU / GSM8K / HumanEval / IFEval / ARC etc.
 - **Mid-training probe** — `halo-forge probe` runs a small held-out benchmark and diffs against a baseline; catches catastrophic forgetting in single-digit minutes.
+- **Reward Integrity** — deterministically retains the exact outputs scored by
+  verifier-guided training and rescores those same outputs with an independent
+  qualified sentinel. Unsupported capture stays report-only; Hugging Face RAFT
+  and MLX GRPO are truthfully final-boundary-only, while Hugging Face GRPO is
+  step-resumable when `max_steps` is configured.
 
 ### Reproducibility
 
@@ -107,9 +128,11 @@ Pluggable registry — drop a `.py` in `~/.halo-forge/verifiers/` or use `@regis
 
 ### Data pipeline
 - [Overview](/docs/data/)
+- [Review Studio](/docs/review-studio/) — acquisition, annotation, adjudication, and immutable label sets
 
 ### Evaluation
 - [lm-eval + mid-training probe](/docs/eval/)
+- [Reward Integrity](/docs/reward-integrity/) — training-signal capture, same-output sentinel audits, and reviewed gates
 
 ### Inference + serving
 - [Serve / convert / merge](/docs/serving/)

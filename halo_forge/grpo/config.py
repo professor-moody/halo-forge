@@ -83,6 +83,8 @@ class GRPOConfig:
     # Training
     output_dir: str = "models/grpo"
     num_epochs: int = 1
+    # Absolute optimizer-step ceiling for a resumable sweep segment.
+    max_steps: Optional[int] = None
     batch_size: int = 1
     gradient_accumulation_steps: int = 16
     learning_rate: float = 1e-6  # GRPO needs an even smaller LR than DPO
@@ -106,6 +108,8 @@ class GRPOConfig:
     rollout_engine: str = "auto"
 
     def __post_init__(self):
+        if self.max_steps is not None and int(self.max_steps) <= 0:
+            raise ValueError("max_steps must be positive when provided")
         if self.target_modules is None:
             self.target_modules = [
                 "q_proj", "k_proj", "v_proj", "o_proj",

@@ -25,6 +25,7 @@ from halo_forge.sweep.config import (
     SearchSpace,
     SweepConfig,
     Uniform,
+    distribution_from_dict,
 )
 from halo_forge.sweep.runner import (
     SweepResult,
@@ -34,6 +35,7 @@ from halo_forge.sweep.runner import (
 
 __all__ = [
     "Choice",
+    "distribution_from_dict",
     "LogUniform",
     "SearchSpace",
     "SweepConfig",

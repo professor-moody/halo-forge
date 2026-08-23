@@ -1,0 +1,190 @@
+from __future__ import annotations
+
+import io
+import runpy
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+import pytest
+
+
+BUILD_SCRIPT = Path("apps/desktop-tauri/scripts/build_runtime.py")
+SMOKE_SCRIPT = Path("apps/desktop-tauri/scripts/packaged_sft_smoke.py")
+
+
+def test_packaged_smoke_discovers_windows_runtime_executable(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    namespace = runpy.run_path(str(SMOKE_SCRIPT))
+
+    assert namespace["DIST_RUNTIME"].name == "halo-forge-runtime.exe"
+
+
+def test_desktop_runtime_configures_utf8_stdio(monkeypatch) -> None:
+    import halo_forge.desktop_runtime as desktop_runtime
+
+    stdout_bytes = io.BytesIO()
+    stderr_bytes = io.BytesIO()
+    stdout = io.TextIOWrapper(stdout_bytes, encoding="cp1252")
+    stderr = io.TextIOWrapper(stderr_bytes, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    desktop_runtime._configure_utf8_stdio()
+
+    assert stdout.encoding == "utf-8"
+    assert stderr.encoding == "utf-8"
+    stdout.write("╔═ Halo Forge ═╗\n")
+    stdout.flush()
+    assert stdout_bytes.getvalue().decode("utf-8") == "╔═ Halo Forge ═╗\n"
+
+
+def test_dashboard_early_exit_includes_captured_log(tmp_path: Path) -> None:
+    namespace = runpy.run_path(str(SMOKE_SCRIPT))
+    log_path = tmp_path / "dashboard.log"
+    log_path.write_text("dashboard traceback marker\n", encoding="utf-8")
+
+    class ExitedProcess:
+        returncode = 1
+
+        @staticmethod
+        def poll() -> int:
+            return 1
+
+    with pytest.raises(RuntimeError, match="dashboard traceback marker"):
+        namespace["wait_for_health"](8765, ExitedProcess(), log_path)
+
+
+def test_packaged_smoke_decodes_runtime_output_as_utf8(tmp_path: Path, monkeypatch) -> None:
+    namespace = runpy.run_path(str(SMOKE_SCRIPT))
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, stdout="✓ runtime output\n")
+
+    monkeypatch.setattr(namespace["subprocess"], "run", fake_run)
+
+    result = namespace["run_checked"](["runtime", "--check"], {}, tmp_path)
+
+    assert result.stdout == "✓ runtime output\n"
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"
+
+
+def test_windows_torch_license_tree_is_archived_without_dropping_notices(
+    tmp_path: Path, monkeypatch
+) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    monkeypatch.setattr(namespace["platform"], "system", lambda: "Windows")
+
+    bundle = tmp_path / "halo-forge-runtime"
+    licenses = bundle / "_internal" / "torch-2.13.0.dist-info" / "licenses"
+    nested = (
+        licenses
+        / "third_party"
+        / "kineto"
+        / "libkineto"
+        / "third_party"
+        / "prometheus-cpp"
+        / "LICENSE.txt"
+    )
+    nested.parent.mkdir(parents=True)
+    nested.write_text("third-party notice\n", encoding="utf-8")
+    (licenses / "LICENSE").write_text("torch license\n", encoding="utf-8")
+
+    archives = namespace["archive_windows_torch_licenses"](bundle)
+
+    assert len(archives) == 1
+    assert not licenses.exists()
+    assert archives[0].name == "licenses.zip"
+    with zipfile.ZipFile(archives[0]) as archive:
+        assert archive.read("LICENSE").decode() == "torch license\n"
+        assert archive.read(nested.relative_to(licenses).as_posix()).decode() == (
+            "third-party notice\n"
+        )
+
+
+def test_non_windows_runtime_keeps_torch_license_tree(tmp_path: Path, monkeypatch) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    monkeypatch.setattr(namespace["platform"], "system", lambda: "Darwin")
+    bundle = tmp_path / "halo-forge-runtime"
+    licenses = bundle / "_internal" / "torch-2.13.0.dist-info" / "licenses"
+    licenses.mkdir(parents=True)
+    (licenses / "LICENSE").write_text("torch license\n", encoding="utf-8")
+
+    assert namespace["archive_windows_torch_licenses"](bundle) == ()
+    assert (licenses / "LICENSE").is_file()
+
+
+def test_linux_runtime_prunes_torch_tooling_but_keeps_shared_memory_helper(
+    tmp_path: Path, monkeypatch
+) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    monkeypatch.setattr(namespace["platform"], "system", lambda: "Linux")
+    torch_bin = tmp_path / "halo-forge-runtime" / "_internal" / "torch" / "bin"
+    torch_bin.mkdir(parents=True)
+    for name in (
+        "FileStoreTest",
+        "HashStoreTest",
+        "TCPStoreTest",
+        "protoc",
+        "test_profiler_collection",
+        "test_shim",
+        "torch_shm_manager",
+    ):
+        (torch_bin / name).write_text(name, encoding="utf-8")
+
+    removed = namespace["prune_linux_torch_tooling"](tmp_path / "halo-forge-runtime")
+
+    assert {path.name for path in removed} == {
+        "FileStoreTest",
+        "HashStoreTest",
+        "TCPStoreTest",
+        "protoc",
+        "test_profiler_collection",
+        "test_shim",
+    }
+    assert (torch_bin / "torch_shm_manager").is_file()
+
+
+def test_non_linux_runtime_keeps_torch_tooling(tmp_path: Path, monkeypatch) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    monkeypatch.setattr(namespace["platform"], "system", lambda: "Darwin")
+    torch_bin = tmp_path / "halo-forge-runtime" / "_internal" / "torch" / "bin"
+    torch_bin.mkdir(parents=True)
+    test_binary = torch_bin / "test_shim"
+    test_binary.write_text("test shim", encoding="utf-8")
+
+    assert namespace["prune_linux_torch_tooling"](tmp_path / "halo-forge-runtime") == ()
+    assert test_binary.is_file()
+
+
+def test_dashboard_runtime_seeds_cpu_torch_before_project_install(
+    tmp_path: Path, monkeypatch
+) -> None:
+    namespace = runpy.run_path(str(BUILD_SCRIPT))
+    constraints = tmp_path / "constraints"
+    constraints.mkdir()
+    (constraints / "release.txt").write_text(
+        "pyinstaller==6.19.0\nsetuptools==83.0.0\ntorch==2.13.0\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+
+    def capture(cmd: list[str], **_kwargs) -> None:
+        calls.append(cmd)
+
+    install = namespace["install_runtime_deps"]
+    monkeypatch.setitem(install.__globals__, "run", capture)
+    install(
+        Path("python"),
+        tmp_path,
+        profile="linux-dashboard",
+    )
+
+    torch_call = next(call for call in calls if "torch" in call)
+    project_call = next(call for call in calls if call[-1] == ".")
+    assert "https://download.pytorch.org/whl/cpu" in torch_call
+    assert calls.index(torch_call) < calls.index(project_call)

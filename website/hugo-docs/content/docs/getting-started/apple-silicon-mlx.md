@@ -54,7 +54,7 @@ halo-forge --accelerator mlx sft train \
   --max-samples 200
 ```
 
-The dashboard `/start` flow uses the same readiness check. If MLX is ready, it
+The dashboard **Train → Guided** flow uses the same readiness check. If MLX is ready, it
 prefills an MLX first-run model and launches with `accelerator=mlx`. If MLX is
 installed but cannot execute, it shows the readiness error and falls back to a
 safer MPS choice.

@@ -32,6 +32,7 @@ class DPOConfig:
 
     # Data
     train_file: Optional[str] = None  # Local JSONL with prompt/chosen/rejected
+    validation_file: Optional[str] = None
     dataset: Optional[str] = None  # HuggingFace dataset id
     dataset_split: str = "train"
     max_samples: Optional[int] = None
@@ -81,6 +82,8 @@ class DPOConfig:
     # Training
     output_dir: str = "models/dpo"
     num_epochs: int = 1
+    # Absolute optimizer-step ceiling for a resumable sweep segment.
+    max_steps: Optional[int] = None
     batch_size: int = 1  # DPO doubles memory (chosen + rejected per row)
     gradient_accumulation_steps: int = 16
     learning_rate: float = 5e-6  # DPO needs much smaller LR than SFT
@@ -104,6 +107,8 @@ class DPOConfig:
     early_stopping_threshold: float = 0.0
 
     def __post_init__(self):
+        if self.max_steps is not None and int(self.max_steps) <= 0:
+            raise ValueError("max_steps must be positive when provided")
         if self.target_modules is None:
             # Default for Qwen / Llama family. Same default as SFTConfig.
             self.target_modules = [

@@ -1,12 +1,18 @@
 ---
 title: "Public Frontend"
-description: "User-facing local and remote workstation surface for training, monitoring, results, and docs"
+description: "One managed workstation interface across desktop, local browser, remote browser, and CLI"
 weight: 6
 ---
 
 The public Halo Forge frontend is the default product surface for normal training work. It is a Vite + React + TanStack Router app in `public_app/`, backed by the FastAPI public API under `/api/public/*`.
 
-Use it for guided first runs, full Train launches across every supported method, live run monitoring, results review, model selection, verifier browsing, playground checks, and remote workstation access.
+Use it for own-data preparation, guided or advanced Train launches, live run
+monitoring, completed-run inspection, model selection, evaluation, verifier
+work, serving tests, and remote workstation access.
+
+Desktop, local-browser, remote-browser, and CLI operations use the same
+catalog and services. See [Workstation Surfaces](/docs/reference/workstation-surfaces/)
+for host-path and platform semantics.
 
 ## Run locally
 
@@ -48,14 +54,18 @@ npm run qa:visual
 
 ## Product flow
 
-- **Start**: goal-based first run for Code, Reasoning, Tool use, or Apple Silicon with safe SFT defaults and preflight.
-- **Train**: goal-first launch surface for SFT, RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, and agentic methods.
-- **Runs**: live progress, plain-language status, logs, samples, cancellation, recovery actions, and comparison pins.
-- **Results**: completed run outcomes, output paths, logs, comparison, and serve-ready artifact actions.
-- **Models**: catalog fit labels and a **Serve** action for one local model at a time.
-- **Playground**: chat against the dashboard-managed local serve by default, with external endpoint settings available when needed.
-- **Docs**: intent-based links for first run, remote setup, models, hardware, verifiers, CLI, and troubleshooting.
-- **Connection**: token entry and connection test for remote workstation access.
+- **Overview**: workstation health, current work, recent runs, and next actions.
+- **Data**: add your own file/folder data, build immutable versions, and review labels.
+- **Train**: guided and advanced launches for every capability-declared method.
+- **Experiments**: deterministic repeats, sweeps, boundaries, and evidence.
+- **Runs**: active and completed work, metrics, data bindings, evaluations, artifacts, logs, recovery, and comparison.
+- **Evaluate**: suites, launches, immutable evidence, comparisons, failure review, verifiers, and training audits.
+- **Models**: catalog, trained artifacts, cached models, and **Serve & Test**.
+- **Activity**: queue, resource owner, blockers, progress, telemetry, retry history, and direct actions.
+- **System / Connection**: diagnostics, tokens, remote connection, and workstation configuration.
+
+Legacy deep links may redirect, but current documentation and controls use these
+names exclusively.
 
 ## Serve from the dashboard
 
@@ -64,11 +74,14 @@ Serving v1 manages one local `halo-forge serve` process at a time on `127.0.0.1:
 1. Open **Models**.
 2. Pick a small model such as `mlx-community/Qwen2.5-0.5B-Instruct-bf16`.
 3. Click **Serve**.
-4. Open **Playground** and wait for **Local serving** to show `ready`.
+4. Open **Models → Serve & Test** and wait for **Local serving** to show
+   `ready`.
 5. Send a message.
 6. Click **Stop** before serving a different model.
 
-Completed runs with a final model artifact also expose **Serve model** from **Results**. If another model is already serving, the dashboard blocks the second launch and tells you to stop the current server first.
+Completed runs expose their artifacts from **Runs → Artifacts** and the shared
+**Models** library. If another model is already serving, the dashboard blocks
+the second launch and tells you to stop the current server first.
 
 ## Desktop app development
 
@@ -90,7 +103,15 @@ npm ci
 npm run build
 ```
 
-macOS arm64 and Linux are the v1 desktop targets. Windows, signing, and notarization are out of scope for the current desktop-ui branch.
+The desktop build matrix covers macOS arm64 DMG, Linux x86-64 AppImage/deb, and
+Windows x86-64 NSIS candidates. Browser and CLI installs are supported on all
+three operating systems. The verified release manifest—not a source version—
+determines whether a desktop candidate is supported or preview-only. Unsigned
+candidates are never presented as trusted normal installers.
+
+The desktop shell additionally exposes a narrowly scoped native file/folder
+chooser for Dataset Lab. Browser surfaces keep upload and explicit host-path
+fallbacks; they do not lose workflow parity.
 
 ## Remote workstation
 
@@ -136,6 +157,6 @@ Use the public frontend for default product workflows. Use internal tools only f
 
 - One primary action per state.
 - Plain-language status first, research detail second.
-- Start is the first-run path; Train is for RAFT, DPO, ORPO, RM, GRPO, VLM, audio, reasoning, agentic, and direct configuration.
+- Train Guided is the first-run path; Train Advanced exposes direct configuration.
 - Remote v1 controls one workstation and uses bearer tokens.
 - Capability copy should follow backend/readiness truth, not hand-written claims.

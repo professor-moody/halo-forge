@@ -523,7 +523,15 @@ def _load_cli_source() -> str:
 
 
 def _check_source_tokens(source: str, tokens: Iterable[str]) -> bool:
-    return all(token in source for token in tokens)
+    # These readiness probes verify that CLI wiring is present, not which
+    # quote style a formatter chose.  Accept equivalent Python string syntax
+    # so a harmless formatter pass cannot downgrade production readiness.
+    return all(
+        token in source
+        or token.replace("'", '"') in source
+        or token.replace('"', "'") in source
+        for token in tokens
+    )
 
 
 def _check_path(

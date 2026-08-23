@@ -1,16 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
+  AlertTriangle,
   ArrowUpRight,
+  CheckCircle2,
+  CircleDashed,
+  Clock3,
   Cpu,
   Plus,
   RefreshCw,
   Zap,
 } from "lucide-react";
-import { useDashboard, useRuns, useBackendInfo } from "@/lib/hooks";
+import { useActivity, useDashboard, useRuns, useBackendInfo } from "@/lib/hooks";
+import { api, type ActivityItem, type ResearchDecisionRecord } from "@/lib/api";
 import { Topbar } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardEyebrow } from "@/components/ui/card";
 import { compactNumber, relativeTime, cn } from "@/lib/utils";
 import type { RunListItem } from "@/lib/api";
 
@@ -35,6 +41,9 @@ function OverviewRoute() {
   const dashboard = useDashboard();
   const runs = useRuns({ limit: 8 });
   const backend = useBackendInfo();
+  const activity = useActivity(100);
+  const decisions = useQuery({ queryKey: ["research-decisions", "overview"], queryFn: () => api.listResearchDecisions({ limit: 6 }), retry: false });
+  const readiness = useQuery({ queryKey: ["workstation-readiness"], queryFn: () => api.workstationReadiness(), retry: false });
 
   const lastRefreshed = dashboard.dataUpdatedAt
     ? relativeTime(dashboard.dataUpdatedAt)
@@ -62,9 +71,15 @@ function OverviewRoute() {
               <RefreshCw className={dashboard.isFetching ? "animate-spin" : undefined} />
             </Button>
             <Button asChild variant="primary" size="md">
-              <Link to="/start" search={{ goal: undefined }}>
+              <Link to="/datasets/new" search={{ example: undefined }}>
                 <Plus />
-                Start run
+                Train on your data
+              </Link>
+            </Button>
+            <Button asChild variant="secondary" size="md">
+              <Link to="/datasets/new" search={{ example: "1" }}>
+                <Zap />
+                Try a working example
               </Link>
             </Button>
           </>
@@ -82,16 +97,20 @@ function OverviewRoute() {
         }
       />
 
-      <div className="px-5 py-5 space-y-4">
+      <div className="px-5 py-5">
+        {readiness.data?.status === "blocked" ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-warning/35 bg-warning/5 px-4 py-3"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 text-warning" /><div><p className="text-sm font-medium text-fg">{readiness.data.display_status}</p><p className="mt-0.5 text-xs text-fg-muted">{readiness.data.summary}</p></div></div><Button asChild variant="primary" size="sm"><Link to="/setup">Fix setup</Link></Button></div> : null}
         <StatRibbon items={items} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="lg:col-span-2">
+        <div className="mt-4 grid min-h-[520px] border-y border-border-subtle xl:grid-cols-[260px_minmax(0,1fr)_300px]">
+          <CurrentWork items={activity.data?.items ?? []} loading={activity.isLoading} />
+          <div className="min-w-0 border-b border-border-subtle xl:border-b-0 xl:border-r">
             <RecentRunsCard items={items} loading={runs.isLoading} />
           </div>
-          <div>
+          <aside className="bg-bg-subtle/20">
+            <AttentionList items={activity.data?.items ?? []} />
+            <RecentDecisions items={decisions.data?.items ?? []} />
             <SystemCard />
-          </div>
+          </aside>
         </div>
       </div>
     </>
@@ -130,7 +149,7 @@ function StatRibbon({ items }: { items: RunListItem[] }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+    <div className="grid grid-cols-2 divide-x divide-y divide-border-subtle border border-border-subtle lg:grid-cols-4 lg:divide-y-0">
       {tiles.map((tile) => (
         <StatTile key={tile.label} {...tile} />
       ))}
@@ -147,8 +166,7 @@ type StatTileSpec = {
 
 function StatTile({ label, value, hint, tone }: StatTileSpec) {
   return (
-    <Card className="bg-surface/80">
-      <CardContent className="px-3.5 py-3">
+    <div className="bg-surface/25 px-3.5 py-3">
         <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-fg-disabled">
           {label}
         </div>
@@ -165,8 +183,7 @@ function StatTile({ label, value, hint, tone }: StatTileSpec) {
             <span className="font-mono text-[11px] text-fg-subtle">{hint}</span>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -176,11 +193,11 @@ function StatTile({ label, value, hint, tone }: StatTileSpec) {
 
 function RecentRunsCard({ items, loading }: { items: RunListItem[]; loading: boolean }) {
   return (
-    <Card>
-      <CardHeader>
+    <section>
+      <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
         <div className="flex items-center gap-2">
-          <CardEyebrow>ACTIVITY</CardEyebrow>
-          <CardTitle>Recent runs</CardTitle>
+          <span className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">Completed and active</span>
+          <span className="text-[13px] font-medium text-fg">Recent runs</span>
         </div>
         <Button asChild variant="ghost" size="sm">
           <Link to="/runs">
@@ -188,8 +205,8 @@ function RecentRunsCard({ items, loading }: { items: RunListItem[]; loading: boo
             <ArrowUpRight />
           </Link>
         </Button>
-      </CardHeader>
-      <CardContent className="p-0">
+      </header>
+      <div>
         {loading ? (
           <div className="space-y-px">
             {[0, 1, 2, 3].map((i) => (
@@ -263,8 +280,8 @@ function RecentRunsCard({ items, loading }: { items: RunListItem[]; loading: boo
             </tbody>
           </table>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -319,14 +336,46 @@ function EmptyRunsState() {
         <Zap className="h-4 w-4 text-fg-subtle" />
       </div>
       <div className="mt-3 text-[13px] font-medium text-fg">No runs yet</div>
-      <div className="mt-1 text-xs text-fg-muted max-w-[36ch]">
-        Launch a training job to populate this list. RAFT and SFT both surface here.
-      </div>
+      <div className="mt-1 text-xs text-fg-muted max-w-[36ch]">Start with your own files or use a small verified example to prove the complete path.</div>
       <Button asChild variant="primary" size="sm" className="mt-3.5">
-        <Link to="/start" search={{ goal: undefined }}>Start guided run</Link>
+        <Link to="/datasets/new" search={{ example: undefined }}>Train on your data</Link>
       </Button>
     </div>
   );
+}
+
+function CurrentWork({ items, loading }: { items: ActivityItem[]; loading: boolean }) {
+  const active = items.filter((item) => ["queued", "running", "preparing", "blocked", "awaiting_review"].includes(item.status)).slice(0, 10);
+  return (
+    <aside className="border-b border-border-subtle bg-bg-subtle/20 xl:border-b-0 xl:border-r">
+      <div className="border-b border-border-subtle px-4 py-3"><div className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">Current work</div><p className="mt-1 text-[10.5px] text-fg-subtle">Queue position and attention required.</p></div>
+      <div className="divide-y divide-border-subtle">
+        {active.map((item) => <CurrentWorkRow key={item.id} item={item} />)}
+        {loading ? <OverviewMessage icon={Activity} label="Loading workstation" /> : null}
+        {!loading && !active.length ? <OverviewMessage icon={CheckCircle2} label="Workstation is clear" detail="New training and evaluation work will appear here." success /> : null}
+      </div>
+      <div className="border-t border-border-subtle px-4 py-3"><Button asChild size="sm" variant="ghost"><Link to="/sweeps"><Plus /> New experiment</Link></Button></div>
+    </aside>
+  );
+}
+
+function CurrentWorkRow({ item }: { item: ActivityItem }) {
+  const progress = typeof item.progress_percent === "number" ? item.progress_percent : item.progress_total ? (item.progress_current ?? 0) / item.progress_total * 100 : null;
+  const Icon = item.status === "awaiting_review" ? AlertTriangle : item.status === "blocked" ? Clock3 : item.status === "running" ? Activity : CircleDashed;
+  return <div className={cn("px-4 py-3", item.status === "awaiting_review" && "bg-warning-bg/30")}><div className="flex items-start gap-2.5"><Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", item.status === "awaiting_review" || item.status === "blocked" ? "text-warning" : item.status === "running" ? "text-accent" : "text-fg-disabled")} /><div className="min-w-0 flex-1"><div className="truncate text-[11.5px] font-medium capitalize text-fg">{item.title || item.kind.replaceAll("_", " ")}</div><div className="mt-1 flex items-center justify-between gap-2 font-mono text-[9px] uppercase text-fg-disabled"><span className="truncate">{item.status.replaceAll("_", " ")}</span><span>{item.queue_position ? `queue ${item.queue_position}` : item.stage || ""}</span></div>{progress != null ? <div className="mt-2 h-0.5 bg-surface-pressed"><div className="h-full bg-accent transition-[width] motion-reduce:transition-none" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} /></div> : null}</div></div></div>;
+}
+
+function AttentionList({ items }: { items: ActivityItem[] }) {
+  const attention = items.filter((item) => ["awaiting_review", "failed", "interrupted", "needs_reconciliation", "blocked"].includes(item.status)).slice(0, 5);
+  return <section><div className="flex items-center justify-between border-b border-border-subtle px-4 py-3"><div><div className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">Attention required</div><div className="mt-1 text-[10.5px] text-fg-subtle">Review gates and recover failures.</div></div><Badge tone={attention.length ? "warning" : "neutral"} size="sm">{attention.length}</Badge></div><div className="divide-y divide-border-subtle">{attention.map((item) => <div key={item.id} className="px-4 py-2.5"><div className="flex items-center gap-2"><AlertTriangle className="h-3 w-3 shrink-0 text-warning" /><span className="truncate text-[10.5px] font-medium text-fg">{item.title || item.kind.replaceAll("_", " ")}</span></div><div className="mt-1 pl-5 text-[9.5px] capitalize text-fg-disabled">{item.status.replaceAll("_", " ")}</div></div>)}{!attention.length ? <OverviewMessage icon={CheckCircle2} label="Nothing needs review" success /> : null}</div></section>;
+}
+
+function RecentDecisions({ items }: { items: ResearchDecisionRecord[] }) {
+  return <section className="border-t border-border-subtle"><div className="border-b border-border-subtle px-4 py-3"><div className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">Recent decisions</div><p className="mt-1 text-[10.5px] text-fg-subtle">Append-only evidence selections.</p></div><div className="divide-y divide-border-subtle">{items.slice(0, 4).map((item) => <div key={item.id} className="px-4 py-2.5"><div className="line-clamp-2 text-[10.5px] leading-relaxed text-fg-muted">{item.rationale}</div><div className="mt-1 font-mono text-[9px] text-fg-disabled">{relativeTime(item.created_at)} · {String(item.selected_subject.trial_id ?? item.selected_subject.run_id ?? item.id).slice(0, 12)}</div></div>)}{!items.length ? <OverviewMessage icon={CircleDashed} label="No research decisions yet" detail="Analyze a completed cohort to record one." /> : null}</div></section>;
+}
+
+function OverviewMessage({ icon: Icon, label, detail, success }: { icon: typeof Activity; label: string; detail?: string; success?: boolean }) {
+  return <div className="px-4 py-6 text-center"><Icon className={cn("mx-auto h-4 w-4 text-fg-disabled", success && "text-success")} /><div className="mt-2 text-[10.5px] text-fg-muted">{label}</div>{detail ? <div className="mt-1 text-[9.5px] leading-relaxed text-fg-disabled">{detail}</div> : null}</div>;
 }
 
 /* ------------------------------------------------------------------------
@@ -337,15 +386,15 @@ function SystemCard() {
   const { data, isLoading } = useBackendInfo();
 
   return (
-    <Card>
-      <CardHeader>
+    <section className="border-t border-border-subtle">
+      <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
         <div className="flex items-center gap-2">
-          <CardEyebrow>SYSTEM</CardEyebrow>
-          <CardTitle>Compute</CardTitle>
+          <span className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-fg-disabled">System</span>
+          <span className="text-[12.5px] font-medium text-fg">Compute</span>
         </div>
         <Cpu className="h-3.5 w-3.5 text-fg-disabled" />
-      </CardHeader>
-      <CardContent className="text-[13px] divide-y divide-border-subtle p-0">
+      </header>
+      <div className="divide-y divide-border-subtle text-[13px]">
         {isLoading ? (
           <div className="space-y-2 p-3.5">
             <div className="h-3 animate-pulse rounded-sm bg-surface-hover" />
@@ -392,8 +441,8 @@ function SystemCard() {
             />
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 

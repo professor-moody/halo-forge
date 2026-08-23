@@ -7,6 +7,7 @@ Dataset loaders for math and reasoning problems.
 from halo_forge.reasoning.data.loaders import (
     MathSample,
     MathDataset,
+    LocalMathManifestLoader,
     GSM8KLoader,
     MATHLoader,
     load_math_dataset,
@@ -17,6 +18,7 @@ from halo_forge.reasoning.data.loaders import (
 __all__ = [
     "MathSample",
     "MathDataset",
+    "LocalMathManifestLoader",
     "GSM8KLoader",
     "MATHLoader",
     "load_math_dataset",

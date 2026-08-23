@@ -1,154 +1,104 @@
 ---
 title: "Replay manifests"
-description: "`halo-forge replay <run_dir>` regenerates the exact launch command for a captured run, optionally relaunching it. Every shipped trainer writes a `replay.json` manifest next to the `training_summary.json`, capturing every input that influenced the run."
+description: "Reconstruct a captured launch and verify data, runtime, capacity, and real training-path identity with replay manifest v14."
 weight: 50
 ---
 
-
-`halo-forge replay <run_dir>` regenerates the exact launch command for a captured run, optionally relaunching it. Every shipped trainer writes a `replay.json` manifest next to the `training_summary.json`, capturing every input that influenced the run.
+`halo-forge replay <run_dir>` inspects a captured run and reconstructs its
+launch command. Add `--launch` to run it again.
 
 ```bash
-halo-forge replay ./models/dpo
-# Reproducible launch command:
-#   halo-forge dpo train --model Qwen/Qwen2.5-3B --dataset ultrafeedback ...
-
-halo-forge replay ./models/dpo --launch         # relaunch in a subprocess
-halo-forge replay ./models/dpo --launch --force # relaunch even on env drift
+halo-forge replay ./models/raft
+halo-forge replay ./models/raft --launch
 ```
 
-## What the manifest captures
+Every shipped trainer writes `replay.json` beside `training_summary.json`.
+Current manifests use format v14; v1-v13 remain readable.
 
-```json
-{
-  "manifest_version": 1,
-  "run_id": "dpo-1730000000000",
-  "modality": "dpo",
-  "timestamp": "2026-05-07T11:42:00+0000",
-  "model_name": "Qwen/Qwen2.5-3B-Instruct",
-  "seed": 42,
-  "pythonhashseed": "42",
-  "config": { /* full DPOConfig as dict */ },
-  "dataset": {
-    "kind": "huggingface",
-    "id": "HuggingFaceH4/ultrafeedback_binarized",
-    "revision": null
-  },
-  "environment": {
-    "python": "3.13.12",
-    "platform": "Darwin arm64",
-    "backend": "mlx",
-    "packages": {
-      "halo_forge": "1.4.0",
-      "torch": "2.5.0",
-      "mlx": "0.31.2",
-      "mlx_lm": "0.31.3",
-      "transformers": "4.49.0",
-      "peft": "0.14.0",
-      "trl": "0.29.1",
-      ...
-    }
-  },
-  "cli_args": ["dpo", "train", "--model", "Qwen/Qwen2.5-3B-Instruct", ...]
-}
-```
+## What v14 captures
 
-### Captured
+Replay v14 records everything through v13, plus the exact real training-path
+revision and certification. V13 added the managed runtime digest, host/device
+identity, core qualification, and accelerator coexistence decision. V14 adds:
 
-- **Run identity**: `run_id`, `modality`, `timestamp`, `model_name`.
-- **Seed bundle**: training seed + `PYTHONHASHSEED` + accelerator seed. Re-applied at replay time via `set_global_seed`.
-- **Dataset identity**:
-  - Local files → SHA-256 + size, streamed so multi-GB JSONLs don't OOM.
-  - HuggingFace → id + revision, so a renamed/updated dataset is detected.
-- **Full config snapshot** (dataclass → dict).
-- **Environment fingerprint**: Python version, platform, active backend, and pinned versions of `halo_forge`, `torch`, `mlx`, `mlx_lm`, `transformers`, `peft`, `trl`, `accelerate`, `datasets`, `bitsandbytes`, `vllm`, `numpy`.
-- **Literal argv** that produced the run.
+- pinned certification fixture and exact model commit;
+- real trainer and capacity-adapter versions;
+- before/after parameter evidence and reloadable artifact evidence;
+- host identity and current path-certification identity; and
+- workstation beta-qualification identity when that full evidence gate exists.
 
-### Deliberately not captured
+- canonical run ID, modality, model, timestamp, literal launch arguments,
+  seeds, full resolved configuration, backend, platform, and package versions;
+- local dataset hashes, pinned Hugging Face source identity, or immutable
+  Dataset Lab role bindings and content-addressed trainer artifacts;
+- immutable verifier profile, implementation, configuration, reward contract,
+  qualification, and runtime identity;
+- reward-system revision, ordered auditors, reward mapping, retention protocol,
+  integrity profile, selected boundaries, signal capability, trace manifests,
+  audit decisions, and runtime compatibility; and
+- corpus extraction/version identity, tokenizer and packing hashes, budget
+  semantics, LoRA/full adaptation mode, and CPT training-artifact identity;
+- proof outcome and reviewed full-run decisions;
+- controlled adaptation study protocols, arms, assignments, and deviations;
+- specialized task, label-schema, model-head, processor, loss, and retrieval
+  identities; and
+- deterministic environment, fixture, tool, episode, snapshot, and trajectory
+  identities.
 
-- Wall-clock timing (non-deterministic across hosts).
-- GPU compute precision (handled by `torch.use_deterministic_algorithms` at replay time).
-- Full dataset contents — we hash instead. A divergent dataset surfaces as a hash mismatch at replay.
+Versioned sections are present only when the corresponding workflow was used.
+Large datasets and signal traces are hashed or referenced, not embedded in the
+manifest. Their checksum bundles remain in Dataset Lab and Reward Integrity
+storage.
 
-## Environment diff
+## Drift checks
 
-`halo-forge replay <run_dir>` automatically diffs the captured environment fingerprint against the active host. Sample output:
+Replay displays environment differences before showing the reconstructed
+command. Launch behavior is stricter:
 
-```
-Environment differs from the captured run:
-            python: '3.13.12' -> '3.12.5'
-          platform: 'Darwin arm64' -> 'Linux x86_64'
-           backend: 'mlx' -> 'cuda'
-     packages.torch: '2.5.0' -> '2.4.0'
-       packages.trl: '0.29.1' -> '0.31.0'
-```
+| Difference | Default | Explicit override |
+|---|---|---|
+| Python, platform, backend, or package environment | refuse | `--force` |
+| Local dataset content | refuse | `--allow-dataset-drift` |
+| Verifier identity/runtime | refuse | `--allow-verifier-drift --verifier-drift-reason "..."` |
+| Reward system, auditors, protocol, profile, boundaries, capability, or trace identity | refuse | `--allow-reward-drift --reward-drift-reason "..."` |
 
-Drift doesn't refuse the replay (sometimes re-running on a different host is the point — comparing reproducibility across MLX vs CUDA, or validating that a torch upgrade didn't change behavior). It does loud-warn so you have the information to interpret divergence.
+Verifier and reward overrides require a reason. Halo Forge appends that reason
+and the exact differences to `replay_overrides.jsonl`. The launch is then
+intentional, but it is no longer an exact replay.
 
-`--launch --force` skips the env-match gate.
+Legacy raw-verifier runs stay readable and carry `legacy_unqualified` rather
+than fabricated qualification. Older runs without training-signal traces are
+never described as reward-integrity monitored.
 
-## Why dataset hashing matters
+## Manifest versions
 
-The classic reproducibility failure: a training run completes, six months pass, the dataset gets quietly rebuilt with new examples, and the "replay" silently trains on different data. The hash catches this:
+| Version | Added identity |
+|---:|---|
+| v1 | run, seed, config, dataset, environment, and arguments |
+| v2 | managed dataset roles and trainer artifacts |
+| v3 | immutable verifier reliability and qualification/runtime state |
+| v4 | reward system, auditors, protocol, integrity profile, signal capability, traces, boundaries, and decisions |
+| v5 | corpus extraction/version, tokenizer and packing, budget, adaptation, and CPT artifact identity |
+| v6 | proof outcome and full-run decision |
+| v7 | adaptation study protocol and assignments |
+| v8 | specialized task and task-artifact contract |
+| v9 | environment, episode-suite, snapshot, and trajectory identity |
+| v10 | prepared evaluations, study assignments, grounding verification, environment execution, and reviewed decisions |
+| v11 | immutable dataset repair, repaired-record set, source fingerprint, workstation readiness, and platform capability |
+| v12 | immutable training plan, prepared-model commit, capacity evidence, safe adjustment, confirmation, and run binding |
+| v13 | managed runtime, host/device, core qualification, occupancy, and contention evidence |
+| v14 | real training-path certification, fixture, model commit, adapter versions, host, and workstation qualification |
 
-- Local-file datasets: SHA-256 over the file. Change one byte → hash differs.
-- HF datasets: id + revision (when set). Newer revision → mismatch.
+The current replay format v14 uses `MANIFEST_VERSION = 14`. The loader supplies empty versioned
+sections when reading older manifests,
+preserving history without inferring evidence. A future-format manifest loads
+with a warning; only fields the current client understands can participate in
+its checks.
 
-A `dataset.sha256` mismatch at replay is the single most informative signal for "this isn't actually a replay."
+## Limits
 
-## Programmatic API
-
-```python
-from halo_forge.replay import (
-    capture_manifest, save_manifest, load_manifest,
-    compare_environments, EnvironmentFingerprint,
-)
-
-manifest = capture_manifest(
-    run_id=run.run_id,
-    modality="dpo",
-    model_name=cfg.model_name,
-    seed=cfg.seed,
-    config=cfg,
-    dataset_id="HuggingFaceH4/ultrafeedback_binarized",
-    cli_args=sys.argv[1:],
-)
-save_manifest(manifest, output_dir)
-
-# At replay time:
-loaded = load_manifest(output_dir)
-diff = compare_environments(loaded.environment, EnvironmentFingerprint.capture().to_dict())
-if not diff["matched"]:
-    print("Environment drift:", diff["differences"])
-```
-
-## Manifest versioning
-
-`MANIFEST_VERSION = 1`. A future-version manifest still loads; the loader warns and serves the seed + config (the load-bearing fields for replay) without refusing. Older clients can replay newer-format manifests as long as the field names they care about are stable.
-
-## Storage
-
-Manifests live next to `training_summary.json`:
-
-```
-models/dpo/
-  ├── adapter_config.json
-  ├── adapters.safetensors
-  ├── final_model/
-  ├── replay.json                ← here
-  └── training_summary.json
-```
-
-About 5-10 KB per manifest. The dataset SHA-256 is the dominant fixed cost; the env fingerprint is small.
-
-## What replay catches that other approaches miss
-
-- **Dataset swap** — caught by the hash mismatch.
-- **Code drift** — the `halo_forge` package version is captured; a non-trivial version bump surfaces as env diff.
-- **Backend-detection drift** — `environment.backend` captures what halo-forge actually selected; useful for debugging "it ran on MLX last time, why is it picking MPS now?"
-- **Seed regression** — random seeds are explicit in the manifest, not implicit in `--seed 42` getting silently dropped.
-
-## Roadmap
-
-- **Compute-precision capture** — record `torch.use_deterministic_algorithms` state, cudnn determinism flags, MLX deterministic mode if/when MLX exposes one.
-- **Run forking** (F-Q) — replay manifests will be the foundation; "fork from cycle 3 with one knob changed" needs a place to declare what was forked from what.
-- **Cross-machine replay verification** — score divergence across hosts; surface "your reproduction differs from the captured run's checkpoint by X%".
+Replay captures launch identity; it does not claim bit-for-bit numerical
+equivalence across accelerator families. Reward Integrity separately audits the
+exact retained outputs used during verifier-guided training. See
+[Reward Integrity](/docs/reward-integrity/) for same-output sentinel behavior,
+capture coverage, and reviewed pause rules.

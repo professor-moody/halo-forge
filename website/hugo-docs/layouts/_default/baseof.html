@@ -20,8 +20,16 @@
     (function() {
         const pages = [
             { title: "Quick Start", section: "Getting Started", url: "/docs/getting-started/quickstart/" },
+            { title: "Download", section: "Getting Started", url: "/download/" },
+            { title: "Install Desktop", section: "Getting Started", url: "/docs/getting-started/install-desktop/" },
             { title: "Toolbox Setup", section: "Getting Started", url: "/docs/getting-started/toolbox/" },
             { title: "Hardware Notes", section: "Getting Started", url: "/docs/getting-started/hardware/" },
+            { title: "Dataset Lab", section: "Lab Workflows", url: "/docs/data/", keywords: "data recipes versions multimodal" },
+            { title: "Review Studio", section: "Lab Workflows", url: "/docs/review-studio/", keywords: "human feedback active data acquisition annotation label adjudication" },
+            { title: "Experiments", section: "Lab Workflows", url: "/docs/sweep/", keywords: "repeat sweep adaptive checkpoint evidence" },
+            { title: "Evaluation", section: "Lab Workflows", url: "/docs/eval/", keywords: "benchmark compare metrics" },
+            { title: "Artifact Studio", section: "Lab Workflows", url: "/docs/artifact-studio/", keywords: "models merge convert qualify promote export" },
+            { title: "Serving", section: "Lab Workflows", url: "/docs/serving/", keywords: "inference endpoint serve test" },
             { title: "Full Pipeline", section: "Training", url: "/docs/training-pipeline/full-pipeline/" },
             { title: "Data Generation", section: "Training", url: "/docs/training-pipeline/data-generation/" },
             { title: "SFT Training", section: "Training", url: "/docs/training-pipeline/sft/" },
@@ -59,7 +67,8 @@
             
             const matches = pages.filter(p => 
                 p.title.toLowerCase().includes(q) || 
-                p.section.toLowerCase().includes(q)
+                p.section.toLowerCase().includes(q) ||
+                (p.keywords && p.keywords.toLowerCase().includes(q))
             ).slice(0, 6);
             
             matches.forEach(p => {

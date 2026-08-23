@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   AudioLines,
@@ -8,8 +8,12 @@ import {
   CheckCircle2,
   CircleDashed,
   Code2,
+  Copy,
+  Database,
   Eye,
+  GitCompareArrows,
   Loader2,
+  Package,
   Play,
   Settings2,
   ShieldCheck,
@@ -18,7 +22,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { Topbar } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +35,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { RadioCard, RadioCardGroup } from "@/components/ui/radio-card";
 import {
   Select,
@@ -49,19 +54,52 @@ import {
   useTrainingVerifiers,
   useWorkspaceInfo,
 } from "@/lib/hooks";
-import type { BackendInfo, ModelCatalogEntry, TrainingMode, TrainingTemplate } from "@/lib/api";
+import type {
+  BackendInfo,
+  DatasetBinding,
+  DatasetJob,
+  DatasetVersion,
+  ModelCatalogEntry,
+  TrainingMode,
+  TrainingDatasetArtifact,
+  TrainingTemplate,
+  VerifierProfile,
+  RewardIntegrityForkContext,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  EMPTY_REWARD_AUDIT_BINDING,
+  RewardAuditBindingEditor,
+  type RewardAuditBindingValue,
+} from "@/components/research/reward-audit-binding";
 
 export const Route = createFileRoute("/train")({
   component: TrainConfiguratorRoute,
-  validateSearch: (search): { template?: string; model?: string; mode?: string } => ({
+  validateSearch: (search): {
+    template?: string;
+    model?: string;
+    mode?: string;
+    datasetVersion?: string;
+    datasetSplit?: string;
+    parentRun?: string;
+    fork_reward_audit?: string;
+    goal?: string;
+  } => ({
     template: typeof search.template === "string" ? search.template : undefined,
     model: typeof search.model === "string" ? search.model : undefined,
     mode: typeof search.mode === "string" ? search.mode : undefined,
+    datasetVersion:
+      typeof search.datasetVersion === "string" ? search.datasetVersion : undefined,
+    datasetSplit:
+      typeof search.datasetSplit === "string" ? search.datasetSplit : undefined,
+    parentRun: typeof search.parentRun === "string" ? search.parentRun : undefined,
+    fork_reward_audit:
+      typeof search.fork_reward_audit === "string" ? search.fork_reward_audit : undefined,
+    goal: typeof search.goal === "string" ? search.goal : undefined,
   }),
 });
 
-type GoalKey = "code" | "reasoning" | "tool-use" | "vision" | "audio" | "preferences";
+type GoalKey = "code" | "reasoning" | "tool-use" | "vision" | "audio" | "preferences" | "task-models";
 type Accelerator = "auto" | "mlx";
 type TrainingSource = {
   key: string;
@@ -82,6 +120,9 @@ const TRAINING_MODES: TrainingMode[] = [
   "audio",
   "reasoning",
   "agentic",
+  "classify",
+  "embed",
+  "rerank",
 ];
 
 const DEFAULT_RAFT_PROMPTS = "data/rlvr/humaneval_prompts.jsonl";
@@ -93,6 +134,13 @@ const GOALS: Array<{
   icon: LucideIcon;
   modes: TrainingMode[];
 }> = [
+  {
+    key: "task-models",
+    label: "Task models",
+    description: "Classification, embeddings, and reranking with compact specialist models.",
+    icon: Package,
+    modes: ["classify", "embed", "rerank"],
+  },
   {
     key: "code",
     label: "Code",
@@ -142,6 +190,11 @@ const METHOD_COPY: Record<TrainingMode, { label: string; description: string; ca
     label: "SFT",
     description: "Learn from labeled examples. Best first step for almost every project.",
   },
+  cpt: {
+    label: "Continued pretraining",
+    description: "Adapt a causal language model to a reviewed document corpus.",
+    caveat: "Use the guided own-data workflow to preserve extraction and packing provenance.",
+  },
   raft: {
     label: "RAFT",
     description: "Generate, verify, keep, train. Simple verifier-grounded improvement.",
@@ -181,12 +234,28 @@ const METHOD_COPY: Record<TrainingMode, { label: string; description: string; ca
     label: "Agentic",
     description: "Tool-use and function-calling traces with structured verification.",
   },
+  classify: {
+    label: "Classification",
+    description: "Train a text, image, or audio classification head from reviewed labels.",
+  },
+  embed: {
+    label: "Embeddings",
+    description: "Train a bi-encoder with in-batch multiple-negative ranking loss.",
+  },
+  rerank: {
+    label: "Reranker",
+    description: "Train a cross-encoder from relevance scores or reviewed ordering.",
+  },
 };
 
 const METHOD_GUIDANCE: Record<TrainingMode, { headline: string; detail: string }> = {
   sft: {
     headline: "Best default when you have examples.",
     detail: "Halo Forge will train on the selected dataset and write the run under the workstation run folder.",
+  },
+  cpt: {
+    headline: "Adapt a model to a document corpus.",
+    detail: "Use Train on your data to extract documents, publish an immutable corpus, preview packing, and set an explicit token or pass budget.",
   },
   raft: {
     headline: "Good when answers can be checked.",
@@ -224,10 +293,23 @@ const METHOD_GUIDANCE: Record<TrainingMode, { headline: string; detail: string }
     headline: "Tool-use and function-calling path.",
     detail: "Use structured traces and schema checks when the model needs to call tools reliably.",
   },
+  classify: {
+    headline: "Predict one or more reviewed classes.",
+    detail: "Halo Forge verifies the label map, processor, model head, and a fixed-input round trip.",
+  },
+  embed: {
+    headline: "Train retrieval representations.",
+    detail: "Anchor-positive pairs use a verified bi-encoder objective and preserve retrieval-corpus identity.",
+  },
+  rerank: {
+    headline: "Improve candidate ordering.",
+    detail: "Query-document relevance trains a verified cross-encoder scoring head.",
+  },
 };
 
 const DEFAULTS: Record<TrainingMode, Partial<ConfigState>> = {
   sft: { dataset: "codealpaca", epochs: 1, batchSize: 2, learningRate: "2e-4", maxSamples: 200 },
+  cpt: { dataset: "", epochs: 1, batchSize: 1, learningRate: "2e-5" },
   raft: { dataset: DEFAULT_RAFT_PROMPTS, cycles: 1, samplesPerPrompt: 4, verifier: "execution" },
   dpo: { dataset: "ultrafeedback", epochs: 1, batchSize: 1, learningRate: "5e-6", beta: "0.1", lossType: "sigmoid" },
   orpo: { dataset: "ultrafeedback", epochs: 1, batchSize: 1, learningRate: "8e-6", beta: "0.1" },
@@ -237,6 +319,9 @@ const DEFAULTS: Record<TrainingMode, Partial<ConfigState>> = {
   audio: { dataset: "librispeech", cycles: 1, samplesPerPrompt: 2, task: "asr" },
   reasoning: { dataset: "gsm8k", cycles: 1, maxSamples: 64, learningRate: "1e-5" },
   agentic: { dataset: "xlam_sft", cycles: 1, maxSamples: 64, learningRate: "5e-5" },
+  classify: { dataset: "", epochs: 1, batchSize: 4, learningRate: "2e-5", maxSamples: 200 },
+  embed: { dataset: "", epochs: 1, batchSize: 8, learningRate: "2e-5", maxSamples: 200 },
+  rerank: { dataset: "", epochs: 1, batchSize: 8, learningRate: "2e-5", maxSamples: 200 },
 };
 
 const RAFT_PROMPT_ALIASES: Record<string, string> = {
@@ -276,6 +361,7 @@ const PREFERENCE_SOURCES: TrainingSource[] = [
 
 const MODALITY_SOURCES: Record<TrainingMode, TrainingSource[]> = {
   sft: [],
+  cpt: [],
   raft: RAFT_PROMPT_SOURCES,
   dpo: PREFERENCE_SOURCES,
   orpo: PREFERENCE_SOURCES,
@@ -301,6 +387,9 @@ const MODALITY_SOURCES: Record<TrainingMode, TrainingSource[]> = {
     { key: "xlam_sft", description: "Tool-use and function-calling examples.", size_hint: "small", domain: "agentic" },
     { key: "glaive_sft", description: "Function-calling instruction examples.", size_hint: "medium", domain: "agentic" },
   ],
+  classify: [],
+  embed: [],
+  rerank: [],
 };
 
 interface ConfigState {
@@ -309,12 +398,28 @@ interface ConfigState {
   model: string;
   dataset: string;
   customDatasetFile: string;
+  datasetVersionId: string;
+  datasetSplit: string;
+  datasetBindings: DatasetBinding[];
+  parentRunId: string;
+  forkRewardAuditId: string;
+  forkRewardDecisionId: string;
+  forkCheckpointHash: string;
+  forkCheckpointPath: string;
+  forkCheckpointOccurrenceId: string;
+  forkCheckpointSnapshotPath: string;
+  forkBoundaryUnit: string;
+  forkBoundaryValue: number;
+  forkResumeMode: string;
   accelerator: Accelerator;
   verifier: string;
+  verifierProfileRevisionId: string;
+  rewardAudit: RewardAuditBindingValue;
   task: string;
   epochs: number;
   batchSize: number;
   learningRate: string;
+  seed: number;
   cycles: number;
   samplesPerPrompt: number;
   maxSamples: number;
@@ -334,12 +439,28 @@ function defaultConfig(): ConfigState {
     model: "",
     dataset: "codealpaca",
     customDatasetFile: "",
+    datasetVersionId: "",
+    datasetSplit: "train",
+    datasetBindings: [],
+    parentRunId: "",
+    forkRewardAuditId: "",
+    forkRewardDecisionId: "",
+    forkCheckpointHash: "",
+    forkCheckpointPath: "",
+    forkCheckpointOccurrenceId: "",
+    forkCheckpointSnapshotPath: "",
+    forkBoundaryUnit: "",
+    forkBoundaryValue: 0,
+    forkResumeMode: "",
     accelerator: "auto",
     verifier: "execution",
+    verifierProfileRevisionId: "",
+    rewardAudit: EMPTY_REWARD_AUDIT_BINDING,
     task: "asr",
     epochs: 1,
     batchSize: 2,
     learningRate: "2e-4",
+    seed: 42,
     cycles: 1,
     samplesPerPrompt: 4,
     maxSamples: 200,
@@ -355,20 +476,79 @@ function defaultConfig(): ConfigState {
 
 function TrainConfiguratorRoute() {
   const backend = useBackendInfo();
+  const managedRuntimeCapabilities = useQuery({
+    queryKey: ["managed-runtime-capabilities"],
+    queryFn: () => api.managedRuntimeCapabilities(),
+    retry: false,
+    refetchInterval: 15_000,
+  });
   const workspace = useWorkspaceInfo();
   const datasets = useTrainingDatasets();
   const verifiers = useTrainingVerifiers();
   const preflight = useTrainingPreflight();
   const launch = useTrainingLaunch();
-  const { template: templateId, model: modelId, mode } = Route.useSearch();
+  const {
+    template: templateId,
+    model: modelId,
+    mode,
+    datasetVersion,
+    datasetSplit,
+    parentRun,
+    fork_reward_audit: forkRewardAuditId,
+    goal,
+  } = Route.useSearch();
 
   const [config, setConfig] = useState<ConfigState>(defaultConfig);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [launchedRun, setLaunchedRun] = useState<Record<string, unknown> | null>(null);
+  const retriedArtifactJobs = useRef(new Set<string>());
+  const verifierProfiles = useQuery({
+    queryKey: ["verifier-profiles", "train", config.modality],
+    queryFn: () => api.listVerifierProfiles({ qualification: "pass", limit: 200 }),
+    enabled: ["raft", "grpo", "reasoning", "agentic", "vlm", "audio"].includes(config.modality),
+    retry: false,
+  });
   const models = useTrainingModels({ mode: config.modality });
+  const managedVersions = useQuery({
+    queryKey: ["training", "dataset-versions", config.modality],
+    queryFn: () => api.trainingDatasetVersions(config.modality),
+  });
+  const managedArtifacts = useQuery({
+    queryKey: ["dataset-versions", config.datasetVersionId, "training-artifacts"],
+    queryFn: () => api.listTrainingArtifacts(config.datasetVersionId),
+    enabled: Boolean(config.datasetVersionId),
+    refetchInterval: (query) =>
+      query.state.data?.items.some((artifact) => ["queued", "rendering", "running"].includes(artifact.status))
+        ? 2_000
+        : false,
+    retry: false,
+  });
   const mlxModels = useModelCatalog({ mode: config.modality, backend: "mlx" });
   const mlxReadiness = backend.data?.mlx_readiness;
   const mlxReady = mlxReadiness?.executable === true;
+  const managedFamily = backend.data?.name?.startsWith("rocm")
+    ? "rocm"
+    : backend.data?.name === "cuda" ? "cuda" : null;
+  const managedRuntime = managedRuntimeCapabilities.data?.items.find(
+    (item) => item.accelerator_family === managedFamily,
+  );
+  const trainingPaths = useQuery({
+    queryKey: ["training-paths", managedFamily],
+    queryFn: () => api.trainingPaths(managedFamily as "rocm" | "cuda"),
+    enabled: Boolean(managedFamily),
+    retry: false,
+    refetchInterval: 15_000,
+  });
+  const selectedTrainingPath = trainingPaths.data?.paths.find(
+    (item) => item.trainer_mode === config.modality && item.model_id === config.model,
+  );
+  const certifySelectedPath = useMutation({
+    mutationFn: () => api.certifyTrainingPath(
+      selectedTrainingPath!.path_revision_id,
+      selectedTrainingPath!.runtime_revision_id!,
+    ),
+    onSuccess: () => void trainingPaths.refetch(),
+  });
   const modelSuggestions = useMemo(
     () => (mlxReady ? (mlxModels.data?.items ?? []) : (models.data?.items ?? [])),
     [mlxReady, mlxModels.data?.items, models.data?.items],
@@ -381,10 +561,28 @@ function TrainConfiguratorRoute() {
     () => allCatalogModels.find((item) => item.id === config.model) ?? null,
     [allCatalogModels, config.model],
   );
-  const currentPreflightStatus = preflightStatus(preflight, config);
   const payload = useMemo(
     () => buildLaunchPayload(config, workspace.data?.default_run_root),
     [config, workspace.data?.default_run_root],
+  );
+  const pendingArtifactJobId =
+    preflight.isSuccess && preflight.data.status === "preparing_dataset"
+      ? preflight.data.job_id ?? null
+      : null;
+  const artifactPreparationJob = useQuery({
+    queryKey: ["dataset-jobs", pendingArtifactJobId],
+    queryFn: () => api.datasetJob(pendingArtifactJobId!),
+    enabled: Boolean(pendingArtifactJobId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return !status || ["queued", "running"].includes(status) ? 1_000 : false;
+    },
+    retry: false,
+  });
+  const currentPreflightStatus = preflightStatus(
+    preflight,
+    config,
+    artifactPreparationJob.data,
   );
 
   const templateQuery = useQuery({
@@ -392,6 +590,30 @@ function TrainConfiguratorRoute() {
     queryFn: () => api.trainingTemplate(templateId!),
     enabled: Boolean(templateId),
   });
+  const parentConfigQuery = useQuery({
+    queryKey: ["runs", parentRun, "launch-config"],
+    queryFn: () => api.runLaunchConfig(parentRun!),
+    enabled: Boolean(parentRun),
+    retry: false,
+  });
+  const rewardForkQuery = useQuery({
+    queryKey: ["reward-integrity-audit", forkRewardAuditId, "fork-context"],
+    queryFn: () => api.rewardIntegrityForkContext(forkRewardAuditId!),
+    enabled: Boolean(forkRewardAuditId),
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!goal) return;
+    if (goal === "apple-silicon") {
+      setConfig((prev) => ({ ...prev, goal: "code", modality: "sft", accelerator: "mlx" }));
+      return;
+    }
+    if (isGoalKey(goal)) {
+      const suggestedMode = GOALS.find((item) => item.key === goal)?.modes[0] ?? "sft";
+      setConfig((prev) => ({ ...prev, goal, modality: suggestedMode }));
+    }
+  }, [goal]);
 
   useEffect(() => {
     if (!modelId) return;
@@ -402,6 +624,43 @@ function TrainConfiguratorRoute() {
       accelerator: isMlxModel(modelId) ? "mlx" : prev.accelerator,
     }));
   }, [modelId, mode]);
+
+  useEffect(() => {
+    if (!isTrainingMode(mode)) return;
+    setConfig((prev) => ({ ...prev, modality: mode }));
+  }, [mode]);
+
+  useEffect(() => {
+    if (!datasetVersion) return;
+    const selectedSplit = datasetSplit || "train";
+    setConfig((prev) => ({
+      ...prev,
+      datasetVersionId: datasetVersion,
+      datasetSplit: selectedSplit,
+      datasetBindings: upsertBinding(prev.datasetBindings, {
+        role: "train",
+        dataset_version_id: datasetVersion,
+        split: selectedSplit,
+      }),
+    }));
+  }, [datasetVersion, datasetSplit]);
+
+  useEffect(() => {
+    if (!parentRun || !parentConfigQuery.data || config.parentRunId === parentRun) return;
+    setConfig((prev) =>
+      applyResolvedLaunchConfig(
+        prev,
+        parentRun,
+        parentConfigQuery.data.resolved_config,
+        parentConfigQuery.data.datasets,
+      ),
+    );
+  }, [parentRun, parentConfigQuery.data, config.parentRunId]);
+
+  useEffect(() => {
+    if (!forkRewardAuditId || !rewardForkQuery.data || config.forkRewardAuditId === forkRewardAuditId) return;
+    setConfig((prev) => applyRewardAuditForkContext(prev, rewardForkQuery.data));
+  }, [forkRewardAuditId, rewardForkQuery.data, config.forkRewardAuditId]);
 
   useEffect(() => {
     if (!templateQuery.data || config.templateId === templateQuery.data.id) return;
@@ -431,12 +690,28 @@ function TrainConfiguratorRoute() {
     config.model,
     config.dataset,
     config.customDatasetFile,
+    config.datasetVersionId,
+    config.datasetSplit,
+    config.datasetBindings,
+    config.parentRunId,
+    config.forkRewardAuditId,
+    config.forkRewardDecisionId,
+    config.forkCheckpointHash,
+    config.forkCheckpointPath,
+    config.forkCheckpointOccurrenceId,
+    config.forkCheckpointSnapshotPath,
+    config.forkBoundaryUnit,
+    config.forkBoundaryValue,
+    config.forkResumeMode,
     config.accelerator,
     config.verifier,
+    config.verifierProfileRevisionId,
+    config.rewardAudit,
     config.task,
     config.epochs,
     config.batchSize,
     config.learningRate,
+    config.seed,
     config.cycles,
     config.samplesPerPrompt,
     config.maxSamples,
@@ -449,14 +724,38 @@ function TrainConfiguratorRoute() {
     workspace.data?.default_run_root,
   ]);
 
+  useEffect(() => {
+    const job = artifactPreparationJob.data;
+    if (!job || !["completed", "succeeded"].includes(job.status)) return;
+    if (retriedArtifactJobs.current.has(job.id)) return;
+    retriedArtifactJobs.current.add(job.id);
+    void managedArtifacts.refetch();
+    preflight.mutate(payload);
+    // The mutation/query objects are stable React Query handles; key this retry
+    // strictly to the persisted job transition and current launch payload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artifactPreparationJob.data?.id, artifactPreparationJob.data?.status, payload]);
+
   return (
     <>
       <Topbar
         eyebrow="Workspace"
         title="Train"
-        subtitle="Choose a goal and method; Halo Forge generates a conservative launch you can inspect."
+        subtitle="Choose a managed dataset version, goal, and method; Halo Forge generates a conservative launch you can inspect."
         actions={
           <>
+            <Button asChild variant="primary" size="sm">
+              <Link to="/datasets/new" search={{ example: undefined }}>
+                <Database />
+                Train on your data
+              </Link>
+            </Button>
+            <Button asChild variant="secondary" size="sm">
+              <Link to="/datasets/new" search={{ example: "1" }}>
+                <Sparkles />
+                Try a working example
+              </Link>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link to="/train/templates">
                 <Sparkles />
@@ -492,6 +791,30 @@ function TrainConfiguratorRoute() {
       <div className="px-5 py-5 space-y-4">
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
           <div className="space-y-4">
+            {managedFamily ? (
+              <div className={`flex flex-wrap items-center justify-between gap-3 border-l-2 px-4 py-3 ${selectedTrainingPath?.state === "path_verified" ? "border-success bg-success-bg" : "border-warning bg-warning-bg"}`}>
+                <div>
+                  <p className="text-xs font-medium text-fg">{!managedRuntime?.available ? "Training runtime needs preparation" : selectedTrainingPath?.state === "path_verified" ? "This training path is verified" : "This training path needs verification"}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-fg-muted">{!managedRuntime?.available ? "Hardware detection alone is not treated as training readiness. Prepare and qualify the managed runtime before launching." : selectedTrainingPath?.summary ?? "Choose a model with a real certification profile. Generic tensor checks do not unlock guided training."}</p>
+                </div>
+                {!managedRuntime?.available ? <Button asChild size="sm" variant="primary"><Link to="/setup">Prepare {managedFamily === "rocm" ? "AMD" : "NVIDIA"} training</Link></Button> : selectedTrainingPath?.state === "unavailable" ? <Button size="sm" variant="secondary" disabled><ShieldCheck />Not available yet</Button> : selectedTrainingPath && selectedTrainingPath.state !== "path_verified" ? <Button size="sm" variant="primary" onClick={() => certifySelectedPath.mutate()} disabled={certifySelectedPath.isPending || selectedTrainingPath.state === "verification_in_progress"}>{certifySelectedPath.isPending || selectedTrainingPath.state === "verification_in_progress" ? <Loader2 className="animate-spin" /> : <ShieldCheck />}{selectedTrainingPath.state === "verification_in_progress" ? "Verifying in Activity" : "Verify this training path"}</Button> : null}
+              </div>
+            ) : null}
+            {parentRun ? (
+              <ForkContext
+                runId={parentRun}
+                loading={parentConfigQuery.isLoading}
+                error={parentConfigQuery.isError ? (parentConfigQuery.error as Error).message : null}
+              />
+            ) : null}
+            {forkRewardAuditId ? (
+              <RewardAuditForkContext
+                auditId={forkRewardAuditId}
+                context={rewardForkQuery.data}
+                loading={rewardForkQuery.isLoading}
+                error={rewardForkQuery.isError ? (rewardForkQuery.error as Error).message : null}
+              />
+            ) : null}
             <GoalSection
               config={config}
               onChange={(goal) =>
@@ -510,9 +833,21 @@ function TrainConfiguratorRoute() {
               setConfig={setConfig}
               datasets={datasets.data?.items ?? []}
               verifiers={verifiers.data?.items ?? []}
+              qualifiedVerifierProfiles={verifierProfiles.data?.items ?? []}
               modelSuggestions={modelSuggestions}
               selectedModel={selectedModel}
               mlxReady={mlxReady}
+              managedVersions={managedVersions.data?.items ?? []}
+              managedArtifacts={managedArtifacts.data?.items ?? []}
+              managedArtifactsLoading={managedArtifacts.isLoading}
+            />
+            <RewardAuditBindingEditor
+              trainerMode={config.modality}
+              backendFamily={config.accelerator === "mlx" || isMlxModel(config.model) ? "mlx" : "hf"}
+              value={config.rewardAudit}
+              onChange={(rewardAudit) => setConfig((prev) => ({ ...prev, rewardAudit }))}
+              totalBudget={cycleMode(config.modality) ? config.cycles : config.maxSamples}
+              budgetUnit={cycleMode(config.modality) ? "cycle" : "step"}
             />
             <AdvancedOptions
               config={config}
@@ -526,13 +861,20 @@ function TrainConfiguratorRoute() {
           <div className="xl:sticky xl:top-4 self-start space-y-3">
             <PreflightPanel
               preflightStatus={currentPreflightStatus}
-              checks={buildPreflightChecks(config, preflight, backend.data?.name, mlxReadiness)}
+              checks={buildPreflightChecks(
+                config,
+                preflight,
+                backend.data?.name,
+                mlxReadiness,
+                artifactPreparationJob.data,
+              )}
             />
             <LaunchPanel
               config={config}
               payload={payload}
               selectedModel={selectedModel}
               preflight={preflight}
+              artifactPreparationJob={artifactPreparationJob.data}
               launch={launch}
               onLaunched={(data) => setLaunchedRun(data)}
             />
@@ -632,21 +974,40 @@ function LaunchInputs({
   setConfig,
   datasets,
   verifiers,
+  qualifiedVerifierProfiles,
   modelSuggestions,
   selectedModel,
   mlxReady,
+  managedVersions,
+  managedArtifacts,
+  managedArtifactsLoading,
 }: {
   config: ConfigState;
   setConfig: (updater: (c: ConfigState) => ConfigState) => void;
   datasets: TrainingSource[];
   verifiers: Array<{ key: string; label: string; toolchain: string }>;
+  qualifiedVerifierProfiles: VerifierProfile[];
   modelSuggestions: ModelCatalogEntry[];
   selectedModel: ModelCatalogEntry | null;
   mlxReady: boolean;
+  managedVersions: DatasetVersion[];
+  managedArtifacts: TrainingDatasetArtifact[];
+  managedArtifactsLoading: boolean;
 }) {
   const sources = sourcesForMode(config.modality, datasets);
   const isCustom = config.dataset === "__custom__";
-  const needsVerifier = config.modality === "raft" || config.modality === "grpo";
+  const isManaged = Boolean(config.datasetVersionId);
+  const requiresVerifier = config.modality === "raft" || config.modality === "grpo";
+  const supportsVerifierProfile = supportsVerifierBinding(config.modality);
+  const trainBinding = config.datasetBindings.find((binding) => binding.role === "train");
+  const compatibleVerifierProfiles = qualifiedVerifierProfiles.filter((profile) => {
+    const revision = profile.latest_revision;
+    return revision
+      && revision.qualification_state === "pass"
+      && revision.overridden !== true
+      && revision.runtime_compatible !== false
+      && isVerifierModalityCompatible(revision.modality, config.modality);
+  });
 
   return (
     <Card>
@@ -706,64 +1067,145 @@ function LaunchInputs({
           </div>
         ) : null}
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          <FormField label={sourceLabel(config.modality)}>
-            <Select
-              value={config.dataset}
-              onValueChange={(value) => setConfig((prev) => ({ ...prev, dataset: value }))}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {sources.map((source) => (
-                  <SelectItem key={source.key} value={source.key}>
-                    {source.key}
-                  </SelectItem>
-                ))}
-                <SelectItem value="__custom__">Custom local file</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormField>
-          {isCustom ? (
-            <FormField label="Local JSONL path">
-              <Input
-                value={config.customDatasetFile}
-                onChange={(event) => setConfig((prev) => ({ ...prev, customDatasetFile: event.target.value }))}
-                placeholder="/path/to/training.jsonl"
+        <div className="space-y-3 rounded-md border border-border-subtle bg-bg-subtle/25 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-medium text-fg">Managed dataset version</div>
+              <div className="mt-0.5 text-[10px] text-fg-muted">Select the immutable version prepared in Data. Its supplied validation split is preserved exactly.</div>
+            </div>
+            {isManaged ? <Badge tone="success" dot size="sm">ready for preflight</Badge> : <Badge tone="warning" size="sm">choose data</Badge>}
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+            <FormField label="Dataset version">
+              <SearchPicker
+                value={config.datasetVersionId}
+                onChange={(versionId) => {
+                  const version = managedVersions.find((item) => item.id === versionId);
+                  const splits = Object.keys(version?.split_counts ?? {});
+                  const split = splits.includes("train") ? "train" : splits[0] || "train";
+                  setConfig((prev) => ({
+                    ...prev,
+                    datasetVersionId: versionId,
+                    datasetSplit: split,
+                    datasetBindings: versionId
+                      ? upsertBinding(prev.datasetBindings.filter((binding) => binding.role !== "train"), { role: "train", dataset_version_id: versionId, split })
+                      : prev.datasetBindings.filter((binding) => binding.role !== "train"),
+                  }));
+                }}
+                options={managedVersions.filter((version) => ["ready", "completed"].includes(version.status)).map((version, index) => ({
+                  value: version.id,
+                  label: version.label || `Dataset version ${index + 1}`,
+                  description: `${version.row_count?.toLocaleString() || "—"} rows · ${Object.keys(version.split_counts || {}).join(", ") || "train"}`,
+                  status: version.status,
+                  keywords: `${version.content_hash || ""} ${version.recipe_hash || ""}`,
+                }))}
+                placeholder="Choose a compatible prepared version"
+                emptyLabel="No prepared version is available for this method"
               />
             </FormField>
-          ) : (
-            <FormField label="Dataset note">
-              <div className="min-h-9 rounded-md border border-border bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
-                {sources.find((source) => source.key === config.dataset)?.description ?? "Registered dataset or source."}
-              </div>
-            </FormField>
-          )}
-        </div>
-
-        {needsVerifier ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            <FormField label="Verifier">
+            <FormField label="Training split">
               <Select
-                value={config.verifier}
-                onValueChange={(value) => setConfig((prev) => ({ ...prev, verifier: value }))}
+                value={config.datasetSplit}
+                disabled={!config.datasetVersionId}
+                onValueChange={(split) => setConfig((prev) => ({ ...prev, datasetSplit: split, datasetBindings: upsertBinding(prev.datasetBindings, { role: "train", dataset_version_id: prev.datasetVersionId, split }) }))}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Training split"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {verifiers.map((verifier) => (
-                    <SelectItem key={verifier.key} value={verifier.key}>
-                      {verifier.key}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="json_schema">json_schema</SelectItem>
-                  <SelectItem value="llm_judge">llm_judge</SelectItem>
+                  {(Object.keys(managedVersions.find((version) => version.id === config.datasetVersionId)?.split_counts ?? {}).filter((split) => !["test", "canary"].includes(split)).length
+                    ? Object.keys(managedVersions.find((version) => version.id === config.datasetVersionId)?.split_counts ?? {}).filter((split) => !["test", "canary"].includes(split))
+                    : ["train"]).map((split) => <SelectItem key={split} value={split}>{split}</SelectItem>)}
                 </SelectContent>
               </Select>
             </FormField>
+          </div>
+          {!isManaged ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-accent bg-accent-bg/45 px-3 py-2.5">
+              <div><div className="text-[11px] font-medium text-fg">Need to prepare your source?</div><div className="mt-0.5 text-[10px] text-fg-muted">The guided flow inspects, maps, splits, and validates it before training.</div></div>
+              <div className="flex flex-wrap gap-2"><Button variant="primary" size="sm" asChild><Link to="/datasets/new" search={{ example: undefined }}><Database />Train on your data</Link></Button><Button variant="secondary" size="sm" asChild><Link to="/datasets/new" search={{ example: "1" }}><Sparkles />Try a working example</Link></Button></div>
+            </div>
+          ) : null}
+          {isManaged ? (
+            <ManagedArtifactStatus
+              artifacts={managedArtifacts}
+              mode={config.modality}
+              loading={managedArtifactsLoading}
+            />
+          ) : null}
+          <details className="border-t border-border-subtle pt-2">
+            <summary className="cursor-pointer text-[9.5px] uppercase tracking-wider text-fg-disabled hover:text-fg">Advanced · roles, built-ins, and manual paths</summary>
+            <div className="mt-3 space-y-4">
+              <div>
+                <div className="mb-1 text-[10px] font-medium text-fg">Managed dataset bindings</div>
+                <div className="mb-2 text-[10px] text-fg-muted">Assign additional immutable versions by role. Test and canary are stored for evaluation only and never reach the trainer.</div>
+                <DatasetBindingEditor
+                  versions={managedVersions}
+                  bindings={config.datasetBindings}
+                  onChange={(bindings) => setConfig((prev) => {
+                    const nextTrain = bindings.find((binding) => binding.role === "train");
+                    return { ...prev, datasetBindings: bindings, datasetVersionId: nextTrain?.dataset_version_id || "", datasetSplit: nextTrain?.split || "train" };
+                  })}
+                />
+              </div>
+              {!isManaged ? (
+                <div className="grid gap-3 border-t border-border-subtle pt-3 lg:grid-cols-2">
+                  <FormField label={sourceLabel(config.modality)}>
+                    <Select value={config.dataset} onValueChange={(value) => setConfig((prev) => ({ ...prev, dataset: value }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{sources.map((source) => <SelectItem key={source.key} value={source.key}>{source.key}</SelectItem>)}<SelectItem value="__custom__">Custom local file</SelectItem></SelectContent>
+                    </Select>
+                  </FormField>
+                  {isCustom ? <FormField label="Local JSONL path"><Input value={config.customDatasetFile} onChange={(event) => setConfig((prev) => ({ ...prev, customDatasetFile: event.target.value }))} placeholder="/path/to/training.jsonl" /></FormField> : <FormField label="Dataset note"><div className="min-h-9 rounded-md border border-border bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">{sources.find((source) => source.key === config.dataset)?.description ?? "Registered dataset or source."}</div></FormField>}
+                </div>
+              ) : null}
+              {trainBinding ? <Button type="button" size="sm" variant="ghost" onClick={() => setConfig((prev) => ({ ...prev, datasetBindings: [], datasetVersionId: "", datasetSplit: "train" }))}>Clear managed bindings</Button> : null}
+            </div>
+          </details>
+        </div>
+
+        {supportsVerifierProfile ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <FormField label={requiresVerifier ? "Qualified verifier profile" : "Qualified verifier profile · optional"}>
+              <SearchPicker
+                value={config.verifierProfileRevisionId}
+                onChange={(value) => setConfig((prev) => ({ ...prev, verifierProfileRevisionId: value, verifier: value ? "" : prev.verifier }))}
+                options={compatibleVerifierProfiles.flatMap((profile) => profile.latest_revision ? [{ value: profile.latest_revision.id, label: profile.name, description: `${profile.latest_revision.family.replace("_", " ")} · ${profile.latest_revision.modality} · ${profile.latest_revision.alias || profile.latest_revision.qualification_state || "qualified"}`, status: profile.latest_revision.qualification_state, keywords: `${profile.latest_revision.content_hash || ""} ${profile.description || ""}` }] : [])}
+                placeholder="Choose a compatible qualified verifier"
+                emptyLabel="No pass-qualified verifier profile is available"
+              />
+              {requiresVerifier ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[9.5px] uppercase tracking-wider text-fg-disabled hover:text-fg">
+                    Advanced · legacy raw verifier
+                  </summary>
+                  <div className="mt-2">
+                    <div className="mb-1 text-[9.5px] font-medium text-fg-subtle">Verifier toolchain</div>
+                    <Select
+                      value={config.verifier || "execution"}
+                      onValueChange={(value) => setConfig((prev) => ({ ...prev, verifier: value, verifierProfileRevisionId: "" }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {verifiers.map((verifier) => <SelectItem key={verifier.key} value={verifier.key}>{verifier.key}</SelectItem>)}
+                        <SelectItem value="json_schema">json_schema</SelectItem>
+                        <SelectItem value="llm_judge">llm_judge</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-[9.5px] leading-4 text-warning">
+                      Raw verifiers remain runnable as legacy unqualified inputs and cannot provide exact reliability replay.
+                    </p>
+                  </div>
+                </details>
+              ) : null}
+            </FormField>
             <FormField label="Verifier note">
               <div className="min-h-9 rounded-md border border-border bg-bg-subtle px-3 py-2 text-[12px] text-fg-muted">
-                {config.modality === "grpo"
-                  ? "GRPO uses the verifier as the reward function."
-                  : "RAFT verifies generations before training on kept samples."}
+                {config.verifierProfileRevisionId
+                  ? "Exact profile revision, qualification scope, and runtime identity are captured in replay."
+                  : !requiresVerifier
+                    ? "Optional reliability binding for this trainer. Guided selection only shows compatible pass-qualified revisions."
+                    : config.modality === "grpo"
+                    ? "GRPO uses this legacy unqualified verifier as the reward function."
+                    : "RAFT uses this legacy unqualified verifier to filter generations."}
               </div>
             </FormField>
           </div>
@@ -771,19 +1213,147 @@ function LaunchInputs({
 
         {config.modality === "audio" ? (
           <FormField label="Audio task">
-            <Select
-              value={config.task}
-              onValueChange={(value) => setConfig((prev) => ({ ...prev, task: value }))}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asr">ASR</SelectItem>
-                <SelectItem value="classification">Classification</SelectItem>
-                <SelectItem value="tts">TTS</SelectItem>
-              </SelectContent>
-            </Select>
+            <Select value="asr" onValueChange={() => setConfig((prev) => ({ ...prev, task: "asr" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="asr">Speech recognition (ASR)</SelectItem></SelectContent></Select>
+            <p className="mt-1 text-[10px] leading-4 text-fg-subtle">Guided audio training currently supports Whisper-style transcription. Classification and text-to-speech remain hidden until they have verified trainer contracts.</p>
           </FormField>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+const DATASET_ROLES = ["train", "validation", "test", "canary"] as const;
+
+function DatasetBindingEditor({
+  versions,
+  bindings,
+  onChange,
+}: {
+  versions: DatasetVersion[];
+  bindings: DatasetBinding[];
+  onChange: (bindings: DatasetBinding[]) => void;
+}) {
+  function setVersion(role: string, versionId: string) {
+    const withoutRole = bindings.filter((binding) => binding.role !== role);
+    if (!versionId) return onChange(withoutRole);
+    const version = versions.find((item) => item.id === versionId);
+    const splits = Object.keys(version?.split_counts ?? {});
+    const split = splits.includes(role)
+      ? role
+      : role === "validation" && splits.includes("val")
+        ? "val"
+        : splits.includes("train")
+          ? "train"
+          : splits[0] || "train";
+    onChange([...withoutRole, { role, dataset_version_id: versionId, split }]);
+  }
+
+  function setSplit(role: string, split: string) {
+    onChange(bindings.map((binding) => binding.role === role ? { ...binding, split } : binding));
+  }
+
+  return (
+    <div className="divide-y divide-border-subtle border-y border-border-subtle">
+      {DATASET_ROLES.map((role) => {
+        const binding = bindings.find((item) => item.role === role);
+        const selectedVersion = versions.find((version) => version.id === binding?.dataset_version_id);
+        const splits = Array.from(new Set([
+          ...(binding?.split ? [binding.split] : []),
+          ...Object.keys(selectedVersion?.split_counts ?? {}),
+        ]));
+        return (
+          <div key={role} className="grid gap-2 py-2 md:grid-cols-[90px_minmax(220px,1fr)_150px] md:items-center">
+            <div>
+              <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-subtle">{role}</span>
+              {role === "train" ? <span className="ml-1 text-danger">*</span> : null}
+            </div>
+            <select
+              value={binding?.dataset_version_id || ""}
+              onChange={(event) => setVersion(role, event.target.value)}
+              className="h-8 min-w-0 rounded-md border border-border bg-bg px-2 font-mono text-[10.5px] text-fg"
+            >
+              <option value="">{role === "train" ? "Choose compatible version" : "Not bound"}</option>
+              {binding && !selectedVersion ? <option value={binding.dataset_version_id}>{binding.dataset_version_id}</option> : null}
+              {versions.map((version) => <option key={version.id} value={version.id}>{version.label || version.id} · {formatRowCount(version.row_count)}</option>)}
+            </select>
+            <select
+              value={binding?.split || ""}
+              onChange={(event) => setSplit(role, event.target.value)}
+              disabled={!binding}
+              className="h-8 rounded-md border border-border bg-bg px-2 font-mono text-[10.5px] text-fg disabled:opacity-40"
+            >
+              {!binding ? <option value="">No split</option> : null}
+              {(splits.length ? splits : [binding?.split || "train"]).map((split) => <option key={split} value={split}>{split}{selectedVersion?.split_counts?.[split] !== undefined ? ` · ${selectedVersion.split_counts[split]}` : ""}</option>)}
+            </select>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ManagedArtifactStatus({ artifacts, mode, loading }: { artifacts: TrainingDatasetArtifact[]; mode: TrainingMode; loading: boolean }) {
+  const artifact = artifacts.find((item) => item.trainer_mode === mode && item.status === "ready")
+    ?? artifacts.find((item) => item.trainer_mode === mode);
+  if (loading) return <div className="flex items-center gap-2 border-t border-border-subtle pt-2 text-[10px] text-fg-muted"><Loader2 className="h-3 w-3 animate-spin text-accent" />Checking trainer artifact readiness…</div>;
+  if (!artifact) return <div className="flex items-center gap-2 border-t border-border-subtle pt-2 text-[10px] text-fg-muted"><Package className="h-3 w-3 text-fg-disabled" />A content-addressed {mode} artifact will be prepared atomically during preflight.</div>;
+  const progress = Math.max(0, Math.min(100, artifact.progress_percent ?? (artifact.status === "ready" ? 100 : 0)));
+  return <div className="border-t border-border-subtle pt-2"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><Package className="h-3 w-3 text-accent" /><span className="text-[10px] font-medium text-fg">{artifact.adapter_id}@{artifact.adapter_version}</span><Badge tone={artifact.status === "ready" ? "success" : artifact.status === "failed" ? "danger" : "accent"} dot size="sm">{artifact.status}</Badge></div><div className="mt-1 truncate font-mono text-[9.5px] text-fg-disabled">{artifact.artifact_hash || artifact.stage || artifact.id}</div></div><span className="font-mono text-[10px] text-fg-muted">{progress.toFixed(0)}%</span></div><div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-subtle"><div className={cn("h-full transition-all", artifact.status === "failed" ? "bg-danger" : "bg-accent")} style={{ width: `${progress}%` }} /></div></div>;
+}
+
+function ForkContext({ runId, loading, error }: { runId: string; loading: boolean; error: string | null }) {
+  return (
+    <Card className="border-accent/35 bg-accent/5">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-fg">
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <Copy className="h-3.5 w-3.5 text-accent" />}
+            Clone in Train
+          </div>
+          <div className="mt-1 truncate font-mono text-[10.5px] text-fg-muted">parent_run_id = {runId}</div>
+          <div className="mt-0.5 text-[10.5px] text-fg-subtle">The resolved launch config and dataset bindings are prefilled; the backend records the exact diff on launch.</div>
+          {error ? <div className="mt-1 text-[10.5px] text-danger">Could not load resolved config: {error}</div> : null}
+        </div>
+        <Button variant="ghost" size="sm" asChild><Link to="/runs/$runId" params={{ runId }}>Open parent</Link></Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RewardAuditForkContext({
+  auditId,
+  context,
+  loading,
+  error,
+}: {
+  auditId: string;
+  context?: RewardIntegrityForkContext;
+  loading: boolean;
+  error: string | null;
+}) {
+  const checkpoint = context?.checkpoint;
+  const boundary = checkpoint
+    ? `${checkpoint.boundary_unit || "boundary"} ${checkpoint.boundary_value ?? "final"}`
+    : "audited boundary";
+  return (
+    <Card className="border-accent/35 bg-accent/5">
+      <CardContent className="px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[12px] font-medium text-fg">
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <GitCompareArrows className="h-3.5 w-3.5 text-accent" />}
+              Fork from reviewed checkpoint
+            </div>
+            <div className="mt-1 text-[10.5px] text-fg-subtle">
+              {context ? `${boundary} · ${context.resume_mode === "resume_boundary" ? "resume exact trainer state" : "initialize from the published checkpoint"}` : "Resolving immutable audit and checkpoint lineage…"}
+            </div>
+          </div>
+          {context?.parent_run_id ? <Button variant="ghost" size="sm" asChild><Link to="/runs/$runId" params={{ runId: context.parent_run_id }}>Open parent</Link></Button> : null}
+        </div>
+        {checkpoint ? <dl className="mt-3 grid gap-2 border-t border-border-subtle pt-3 sm:grid-cols-2"><div><dt className="text-[9px] uppercase tracking-wider text-fg-disabled">Checkpoint hash</dt><dd className="mt-0.5 truncate font-mono text-[9.5px] text-fg-muted" title={checkpoint.content_hash}>{checkpoint.content_hash}</dd></div><div><dt className="text-[9px] uppercase tracking-wider text-fg-disabled">Artifact</dt><dd className="mt-0.5 truncate font-mono text-[9.5px] text-fg-muted">{checkpoint.occurrence_id || "sealed checkpoint path"}</dd></div></dl> : null}
+        {context && !context.launch_ready ? <div role="alert" className="mt-3 border-l-2 border-danger bg-danger/5 px-3 py-2 text-[10px] text-danger">This fork cannot launch until the checkpoint is available: {context.blockers.join(", ")}.</div> : null}
+        {error ? <div role="alert" className="mt-3 text-[10.5px] text-danger">Could not restore the reviewed fork: {error}</div> : null}
+        <div className="mt-2 font-mono text-[8.5px] text-fg-disabled">audit {auditId}</div>
       </CardContent>
     </Card>
   );
@@ -823,6 +1393,7 @@ function AdvancedOptions({
             <FormField label="Learning rate">
               <Input value={config.learningRate} onChange={(event) => setConfig((prev) => ({ ...prev, learningRate: event.target.value }))} />
             </FormField>
+            <NumberField label="Seed" value={config.seed} onChange={(value) => setConfig((prev) => ({ ...prev, seed: value }))} />
             <NumberField label="Max samples / limit" value={config.maxSamples} onChange={(value) => setConfig((prev) => ({ ...prev, maxSamples: value }))} />
             {cycleMode(config.modality) ? (
               <>
@@ -889,6 +1460,7 @@ function LaunchPanel({
   payload,
   selectedModel,
   preflight,
+  artifactPreparationJob,
   launch,
   onLaunched,
 }: {
@@ -896,10 +1468,24 @@ function LaunchPanel({
   payload: Record<string, unknown>;
   selectedModel: ModelCatalogEntry | null;
   preflight: ReturnType<typeof useTrainingPreflight>;
+  artifactPreparationJob?: DatasetJob;
   launch: ReturnType<typeof useTrainingLaunch>;
   onLaunched: (data: Record<string, unknown>) => void;
 }) {
-  const disabled = !canLaunch(config) || launch.isPending || (preflight.isSuccess && !preflight.data.ok);
+  const [reservedRunId, setReservedRunId] = useState<string | null>(null);
+  const payloadIdentity = JSON.stringify(payload);
+  useEffect(() => setReservedRunId(null), [payloadIdentity]);
+  const preparingArtifact =
+    preflight.isSuccess &&
+    (preflight.data.status === "preparing_dataset" || preflight.data.ready === false);
+  const artifactFailed = Boolean(
+    preparingArtifact &&
+      artifactPreparationJob &&
+      ["failed", "cancelled"].includes(artifactPreparationJob.status),
+  );
+  const readyToLaunch =
+    preflight.isSuccess && preflight.data.ok && !preparingArtifact && !artifactFailed;
+  const disabled = !canLaunch(config) || launch.isPending || !readyToLaunch;
   const launchCopy = launchHint(config.modality);
   return (
     <Card>
@@ -908,7 +1494,7 @@ function LaunchPanel({
           <CardEyebrow>LAUNCH</CardEyebrow>
           <CardTitle>Launch summary</CardTitle>
         </div>
-        <Badge tone={preflight.isSuccess && preflight.data.ok ? "success" : "neutral"} size="sm">
+        <Badge tone={readyToLaunch ? "success" : artifactFailed ? "danger" : "neutral"} size="sm">
           {config.modality}
         </Badge>
       </CardHeader>
@@ -917,8 +1503,11 @@ function LaunchPanel({
           rows={[
             ["method", config.modality],
             ["model", String(payload.model ?? "-")],
-            [sourceLabel(config.modality).toLowerCase(), String(payload.dataset ?? payload.prompts ?? "-")],
-            ["output", String(payload.output_dir ?? "-")],
+            [
+              sourceLabel(config.modality).toLowerCase(),
+              String(payload.dataset_version_id ?? payload.dataset ?? payload.prompts ?? "-"),
+            ],
+            ["output root", String(payload.output_root ?? payload.output_dir ?? "-")],
             ["memory", selectedModel?.estimated_memory_gb ? `~${selectedModel.estimated_memory_gb}GB` : selectedModel?.memory_tier ?? "-"],
           ]}
         />
@@ -942,18 +1531,35 @@ function LaunchPanel({
           className="w-full"
           disabled={disabled}
           onClick={() => {
-            launch.mutate(payload, {
-              onSuccess: (data) => onLaunched(data as Record<string, unknown>),
+            const launchPayload = reservedRunId
+              ? { ...payload, run_id: reservedRunId }
+              : payload;
+            launch.mutate(launchPayload, {
+              onSuccess: (data) => {
+                if (data.status === "preparing_dataset") {
+                  const runId = typeof data.run_id === "string" ? data.run_id : null;
+                  setReservedRunId(runId);
+                  preflight.mutate(runId ? { ...payload, run_id: runId } : payload);
+                  return;
+                }
+                setReservedRunId(null);
+                onLaunched(data as Record<string, unknown>);
+              },
             });
           }}
         >
-          {launch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          Launch {METHOD_COPY[config.modality].label}
+          {launch.isPending || preparingArtifact ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {preparingArtifact ? "Preparing dataset artifact" : `Launch ${METHOD_COPY[config.modality].label}`}
         </Button>
         {disabled && !launch.isPending ? (
           <div className="text-[11px] text-fg-muted">
-            {disabledReason(config, preflight)}
+            {disabledReason(config, preflight, artifactPreparationJob)}
           </div>
+        ) : null}
+        {(preflight.isError || (preflight.isSuccess && !preflight.data.ok && !preparingArtifact)) ? (
+          <Button asChild variant="ghost" size="sm" className="w-full">
+            <Link to="/diagnostics">Create support bundle</Link>
+          </Button>
         ) : null}
       </CardContent>
     </Card>
@@ -1020,8 +1626,11 @@ function LaunchSuccess({ data, payload }: { data: Record<string, unknown>; paylo
           rows={[
             ["run id", runId || "-"],
             ["model", String(payload.model ?? "-")],
-            ["source", String(payload.dataset ?? payload.prompts ?? "-")],
-            ["output", String(payload.output_dir ?? "-")],
+            [
+              "source",
+              String(payload.dataset_version_id ?? payload.dataset ?? payload.prompts ?? "-"),
+            ],
+            ["output root", String(payload.output_root ?? payload.output_dir ?? "-")],
           ]}
         />
         <div className="flex flex-wrap gap-2">
@@ -1034,7 +1643,7 @@ function LaunchSuccess({ data, payload }: { data: Record<string, unknown>; paylo
             <Link to="/runs">View runs</Link>
           </Button>
           <Button asChild size="sm" variant="ghost">
-            <Link to="/results">Serve when complete</Link>
+              <Link to="/models" search={{ tab: "artifacts", artifact: undefined }}>Open Models when complete</Link>
           </Button>
         </div>
       </CardContent>
@@ -1089,7 +1698,11 @@ function buildLaunchPayload(c: ConfigState, runRoot?: string): Record<string, un
   const root = runRoot || "~/.halo-forge/runs";
   const outputDir = `${root}/${c.modality}-${c.templateId ?? c.goal}-${slug(c.model || "model")}`;
   const isCustom = c.dataset === "__custom__";
-  const source = isCustom ? c.customDatasetFile : c.dataset;
+  const source = c.datasetVersionId
+    ? undefined
+    : isCustom
+      ? c.customDatasetFile
+      : c.dataset;
   const lr = parseFloat(c.learningRate);
   const beta = parseFloat(c.beta);
   const rewardThreshold = parseFloat(c.rewardThreshold);
@@ -1098,8 +1711,29 @@ function buildLaunchPayload(c: ConfigState, runRoot?: string): Record<string, un
     mode: c.modality,
     model: c.model,
     output_dir: outputDir,
+    output_root: root,
     accelerator,
+    seed: c.seed,
     no_caffeinate: true,
+    dataset_version_id: c.datasetVersionId || undefined,
+    dataset_split: c.datasetVersionId ? c.datasetSplit || "train" : undefined,
+    dataset_bindings: c.datasetBindings.length ? c.datasetBindings : undefined,
+    parent_run_id: c.parentRunId || undefined,
+    source_reward_integrity_audit_id: c.forkRewardAuditId || undefined,
+    source_reward_integrity_decision_id: c.forkRewardDecisionId || undefined,
+    fork_checkpoint_hash: c.forkCheckpointHash || undefined,
+    fork_checkpoint_path: c.forkCheckpointPath || undefined,
+    fork_checkpoint_occurrence_id: c.forkCheckpointOccurrenceId || undefined,
+    fork_checkpoint_snapshot_path: c.forkCheckpointSnapshotPath || undefined,
+    fork_boundary_unit: c.forkBoundaryUnit || undefined,
+    fork_boundary_value: c.forkRewardAuditId ? c.forkBoundaryValue : undefined,
+    fork_resume_mode: c.forkResumeMode || undefined,
+    verifier_profile_revision_id: supportsVerifierBinding(c.modality) ? c.verifierProfileRevisionId || undefined : undefined,
+    reward_system_revision_id: c.rewardAudit.enabled ? c.rewardAudit.rewardSystemRevisionId || undefined : undefined,
+    reward_audit_protocol_revision_id: c.rewardAudit.enabled ? c.rewardAudit.auditProtocolRevisionId || undefined : undefined,
+    reward_integrity_profile_revision_id: c.rewardAudit.enabled ? c.rewardAudit.integrityProfileRevisionId || undefined : undefined,
+    reward_audit_boundaries: c.rewardAudit.enabled ? parseAuditBoundaries(c.rewardAudit.auditBoundaries) : undefined,
+    development_suite_revision_id: c.rewardAudit.enabled ? c.rewardAudit.developmentSuiteRevisionId || undefined : undefined,
   };
 
   if (c.modality === "sft") {
@@ -1115,8 +1749,8 @@ function buildLaunchPayload(c: ConfigState, runRoot?: string): Record<string, un
   if (c.modality === "raft") {
     return stripEmpty({
       ...common,
-      prompts: resolveRaftPrompts(source),
-      verifier: c.verifier,
+      prompts: source ? resolveRaftPrompts(source) : undefined,
+      verifier: c.verifierProfileRevisionId ? undefined : c.verifier,
       cycles: c.cycles,
       samples_per_prompt: c.samplesPerPrompt,
       keep_percent: 0.5,
@@ -1167,11 +1801,21 @@ function buildLaunchPayload(c: ConfigState, runRoot?: string): Record<string, un
       max_samples: c.maxSamples,
       beta: Number.isFinite(beta) ? beta : undefined,
       reference_free: c.referenceFree,
-      verifier: c.verifier,
+      verifier: c.verifierProfileRevisionId ? undefined : c.verifier,
       num_generations: c.numGenerations,
       epsilon: 0.2,
       temperature: 0.9,
       reward_threshold: Number.isFinite(rewardThreshold) ? rewardThreshold : 0,
+    });
+  }
+  if (["classify", "embed", "rerank"].includes(c.modality)) {
+    return stripEmpty({
+      ...common,
+      dataset: source,
+      epochs: c.epochs,
+      batch_size: c.batchSize,
+      learning_rate: Number.isFinite(lr) ? lr : undefined,
+      max_samples: c.maxSamples,
     });
   }
   return stripEmpty({
@@ -1193,6 +1837,7 @@ function buildPreflightChecks(
   preflight: ReturnType<typeof useTrainingPreflight>,
   backendName: string | undefined,
   mlxReadiness: BackendInfo["mlx_readiness"] | undefined,
+  artifactPreparationJob?: DatasetJob,
 ): PreflightCheck[] {
   const wantsMlx = config.accelerator === "mlx" || isMlxModel(config.model);
   const checks: PreflightCheck[] = [
@@ -1209,7 +1854,9 @@ function buildPreflightChecks(
     {
       label: sourceLabel(config.modality),
       status:
-        config.dataset === "__custom__"
+        config.datasetVersionId
+          ? "ok"
+          : config.dataset === "__custom__"
           ? config.customDatasetFile.trim()
             ? "ok"
             : "warning"
@@ -1217,7 +1864,9 @@ function buildPreflightChecks(
             ? "ok"
             : "pending",
       detail:
-        config.dataset === "__custom__"
+        config.datasetVersionId
+          ? `${config.datasetVersionId} · ${config.datasetSplit || "train"}`
+          : config.dataset === "__custom__"
           ? config.customDatasetFile || "Provide a path to a JSONL file"
           : config.dataset,
     },
@@ -1235,9 +1884,23 @@ function buildPreflightChecks(
 
   if (config.modality === "raft" || config.modality === "grpo") {
     checks.push({
-      label: "Verifier toolchain",
-      status: config.verifier ? "ok" : "pending",
-      detail: config.verifier || "Pick a verifier",
+      label: "Verifier identity",
+      status: hasVerifier(config) ? "ok" : "pending",
+      detail: config.verifierProfileRevisionId
+        ? `Qualified revision · ${config.verifierProfileRevisionId}`
+        : config.verifier
+          ? `Legacy unqualified · ${config.verifier}`
+          : "Pick a verifier",
+    });
+  }
+
+  if (config.rewardAudit.enabled) {
+    checks.push({
+      label: "Training signal audit",
+      status: rewardAuditReady(config.rewardAudit) ? "ok" : "pending",
+      detail: rewardAuditReady(config.rewardAudit)
+        ? `Same-output audit · ${config.rewardAudit.auditBoundaries || "resolved boundaries"}`
+        : "Choose a reward system, capture protocol, and integrity policy",
     });
   }
 
@@ -1249,7 +1912,26 @@ function buildPreflightChecks(
     });
   }
 
-  if (preflight.isPending) {
+  if (
+    preflight.isSuccess &&
+    (preflight.data.status === "preparing_dataset" || preflight.data.ready === false)
+  ) {
+    const failed =
+      artifactPreparationJob &&
+      ["failed", "cancelled"].includes(artifactPreparationJob.status);
+    const progress =
+      artifactPreparationJob?.progress_percent ??
+      preflight.data.artifact_preparation?.progress_percent;
+    const stage =
+      artifactPreparationJob?.stage ?? preflight.data.artifact_preparation?.stage;
+    checks.push({
+      label: "Training dataset artifact",
+      status: failed ? "error" : "loading",
+      detail: failed
+        ? artifactPreparationJob?.error ?? "Artifact preparation did not complete"
+        : `${stage || "queued"}${typeof progress === "number" ? ` · ${progress.toFixed(0)}%` : ""}`,
+    });
+  } else if (preflight.isPending) {
     checks.push({ label: "Server preflight", status: "loading", detail: "Validating launch..." });
   } else if (preflight.isError) {
     checks.push({ label: "Server preflight", status: "error", detail: (preflight.error as Error).message });
@@ -1281,9 +1963,12 @@ function applyTemplate(prev: ConfigState, template: TrainingTemplate): ConfigSta
         ? "__custom__"
         : next.dataset,
     verifier: typeof template.verifier === "string" ? template.verifier : next.verifier,
+    verifierProfileRevisionId: "",
+    rewardAudit: EMPTY_REWARD_AUDIT_BINDING,
     epochs: numberFrom(hp.epochs, next.epochs),
     batchSize: numberFrom(hp.batch_size, next.batchSize),
     learningRate: stringFrom(hp.learning_rate, next.learningRate),
+    seed: numberFrom(hp.seed, next.seed),
     cycles: numberFrom(hp.cycles, next.cycles),
     samplesPerPrompt: numberFrom(hp.samples_per_prompt, next.samplesPerPrompt),
     maxSamples: numberFrom(hp.max_samples, next.maxSamples),
@@ -1301,6 +1986,8 @@ function withModeDefaults(config: ConfigState, modality: TrainingMode): ConfigSt
     ...defaults,
     modality,
     templateId: null,
+    verifierProfileRevisionId: config.modality === modality ? config.verifierProfileRevisionId : "",
+    rewardAudit: config.modality === modality ? config.rewardAudit : EMPTY_REWARD_AUDIT_BINDING,
     accelerator: config.accelerator === "mlx" ? "mlx" : (defaults.accelerator as Accelerator | undefined) ?? "auto",
   };
 }
@@ -1315,6 +2002,22 @@ function sourceLabel(mode: TrainingMode): string {
   if (mode === "grpo") return "Prompt dataset";
   if (preferenceMode(mode) || mode === "rm") return "Preference dataset";
   return "Dataset";
+}
+
+function supportsVerifierBinding(mode: TrainingMode): boolean {
+  return ["raft", "grpo", "reasoning", "agentic", "vlm", "audio"].includes(mode);
+}
+
+function hasVerifier(config: ConfigState): boolean {
+  return Boolean(config.verifierProfileRevisionId || config.verifier);
+}
+
+function isVerifierModalityCompatible(verifierModality: string, trainingMode: TrainingMode): boolean {
+  const normalized = verifierModality.toLowerCase().replace(/[-\s]/g, "_");
+  if (trainingMode === "vlm") return ["vlm", "vision", "image", "multimodal"].includes(normalized);
+  if (trainingMode === "audio") return ["audio", "speech"].includes(normalized);
+  if (trainingMode === "agentic") return ["agentic", "tool", "tool_use", "text"].includes(normalized);
+  return ["text", "reasoning", trainingMode].includes(normalized);
 }
 
 function cycleMode(mode: TrainingMode): boolean {
@@ -1359,21 +2062,59 @@ function stripEmpty(o: Record<string, unknown>): Record<string, unknown> {
 
 function canLaunch(c: ConfigState): boolean {
   if (!c.model.trim()) return false;
+  if (c.rewardAudit.enabled && !rewardAuditReady(c.rewardAudit)) return false;
+  if (c.datasetVersionId) return !(c.modality === "grpo" && !hasVerifier(c)) && !(c.modality === "audio" && !c.task);
   if (c.dataset === "__custom__" && !c.customDatasetFile.trim()) return false;
   if (!c.dataset) return false;
-  if (c.modality === "grpo" && !c.verifier) return false;
+  if (c.modality === "grpo" && !hasVerifier(c)) return false;
   if (c.modality === "audio" && !c.task) return false;
   return true;
+}
+
+function rewardAuditReady(value: RewardAuditBindingValue): boolean {
+  return Boolean(value.rewardSystemRevisionId && value.auditProtocolRevisionId && value.integrityProfileRevisionId);
+}
+
+function parseAuditBoundaries(value: string): Array<number | string> | undefined {
+  const items = value.split(",").map((part) => part.trim()).filter(Boolean).slice(0, 4).map((part) => {
+    if (part.endsWith("%")) return part;
+    const numeric = Number(part);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : part;
+  });
+  return items.length ? items : undefined;
 }
 
 function disabledReason(
   c: ConfigState,
   preflight: ReturnType<typeof useTrainingPreflight>,
+  artifactPreparationJob?: DatasetJob,
 ): string {
   if (!c.model.trim()) return "Choose or type a base model before launching.";
+  if (c.rewardAudit.enabled && !rewardAuditReady(c.rewardAudit)) return "Complete the reward system, capture protocol, and integrity policy before launching an audited run.";
+  if (c.datasetVersionId) {
+    if (c.modality === "grpo" && !hasVerifier(c)) return "Choose a verifier before launching GRPO.";
+    if (c.modality === "audio" && !c.task) return "Choose the audio task before launching.";
+    if (
+      preflight.isSuccess &&
+      (preflight.data.status === "preparing_dataset" || preflight.data.ready === false)
+    ) {
+      if (artifactPreparationJob?.status === "failed") {
+        return artifactPreparationJob.error ?? "Dataset artifact preparation failed.";
+      }
+      if (artifactPreparationJob?.status === "cancelled") {
+        return "Dataset artifact preparation was cancelled.";
+      }
+      return "Rendering and validating the immutable trainer artifact.";
+    }
+    if (preflight.isSuccess && !preflight.data.ok) {
+      return preflight.data.suggested_fixes[0] ?? "Resolve the preflight issue above before launching.";
+    }
+    if (!preflight.isSuccess) return "Waiting for server preflight.";
+    return "Waiting for launch requirements.";
+  }
   if (!c.dataset) return "Choose a dataset or source before launching.";
   if (c.dataset === "__custom__" && !c.customDatasetFile.trim()) return "Add the local JSONL path for the custom dataset.";
-  if (c.modality === "grpo" && !c.verifier) return "Choose a verifier before launching GRPO.";
+  if (c.modality === "grpo" && !hasVerifier(c)) return "Choose a verifier before launching GRPO.";
   if (c.modality === "audio" && !c.task) return "Choose the audio task before launching.";
   if (preflight.isSuccess && !preflight.data.ok) {
     return preflight.data.suggested_fixes[0] ?? "Resolve the preflight issue above before launching.";
@@ -1421,11 +2162,23 @@ function launchHint(mode: TrainingMode): { headline: string; detail: string } {
 function preflightStatus(
   preflight: ReturnType<typeof useTrainingPreflight>,
   config: ConfigState,
+  artifactPreparationJob?: DatasetJob,
 ): "idle" | "loading" | "ok" | "error" {
   if (!canLaunch(config)) return "idle";
   if (preflight.isPending) return "loading";
   if (preflight.isError) return "error";
-  if (preflight.isSuccess) return preflight.data.ok ? "ok" : "error";
+  if (preflight.isSuccess) {
+    if (
+      preflight.data.status === "preparing_dataset" ||
+      preflight.data.ready === false
+    ) {
+      return artifactPreparationJob &&
+        ["failed", "cancelled"].includes(artifactPreparationJob.status)
+        ? "error"
+        : "loading";
+    }
+    return preflight.data.ok ? "ok" : "error";
+  }
   return "idle";
 }
 
@@ -1433,8 +2186,126 @@ function isTrainingMode(value: unknown): value is TrainingMode {
   return typeof value === "string" && TRAINING_MODES.includes(value as TrainingMode);
 }
 
+function isGoalKey(value: unknown): value is GoalKey {
+  return typeof value === "string" && GOALS.some((goal) => goal.key === value);
+}
+
 function isMlxModel(model: string | undefined): boolean {
   return Boolean(model && model.startsWith("mlx-community/"));
+}
+
+function upsertBinding(bindings: DatasetBinding[], next: DatasetBinding): DatasetBinding[] {
+  return [...bindings.filter((binding) => binding.role !== next.role), next];
+}
+
+function applyResolvedLaunchConfig(
+  previous: ConfigState,
+  parentRunId: string,
+  raw: Record<string, unknown>,
+  recordedBindings: DatasetBinding[],
+): ConfigState {
+  const mode = isTrainingMode(raw.mode) ? raw.mode : previous.modality;
+  const rawBindings = Array.isArray(raw.dataset_bindings)
+    ? raw.dataset_bindings.filter(isDatasetBinding)
+    : [];
+  const bindings = recordedBindings.length ? recordedBindings : rawBindings;
+  const train = bindings.find((binding) => binding.role === "train");
+  const source = stringValue(raw.dataset ?? raw.prompts, previous.dataset);
+  return {
+    ...withModeDefaults(previous, mode),
+    parentRunId,
+    goal: goalForMode(mode),
+    modality: mode,
+    model: stringValue(raw.model, previous.model),
+    dataset: source || previous.dataset,
+    customDatasetFile: source.startsWith("/") || source.endsWith(".jsonl") ? source : previous.customDatasetFile,
+    datasetVersionId: train?.dataset_version_id ?? stringValue(raw.dataset_version_id, ""),
+    datasetSplit: train?.split ?? stringValue(raw.dataset_split, "train"),
+    datasetBindings: bindings.length
+      ? bindings
+      : raw.dataset_version_id
+        ? [{ role: "train", dataset_version_id: String(raw.dataset_version_id), split: stringValue(raw.dataset_split, "train") }]
+        : [],
+    accelerator: raw.accelerator === "mlx" ? "mlx" : previous.accelerator,
+    verifier: stringValue(raw.verifier, previous.verifier),
+    verifierProfileRevisionId: stringValue(raw.verifier_profile_revision_id, ""),
+    rewardAudit: {
+      enabled: Boolean(raw.reward_system_revision_id),
+      rewardSystemRevisionId: stringValue(raw.reward_system_revision_id, ""),
+      auditProtocolRevisionId: stringValue(raw.reward_audit_protocol_revision_id, ""),
+      integrityProfileRevisionId: stringValue(raw.reward_integrity_profile_revision_id, ""),
+      auditBoundaries: Array.isArray(raw.reward_audit_boundaries) ? raw.reward_audit_boundaries.join(", ") : "",
+      developmentSuiteRevisionId: stringValue(raw.development_suite_revision_id, ""),
+    },
+    task: stringValue(raw.task, previous.task),
+    epochs: finiteNumber(raw.epochs, previous.epochs),
+    batchSize: finiteNumber(raw.batch_size, previous.batchSize),
+    learningRate: stringValue(raw.learning_rate, previous.learningRate),
+    seed: finiteNumber(raw.seed, previous.seed),
+    cycles: finiteNumber(raw.cycles, previous.cycles),
+    samplesPerPrompt: finiteNumber(raw.samples_per_prompt, previous.samplesPerPrompt),
+    maxSamples: finiteNumber(raw.max_samples ?? raw.limit, previous.maxSamples),
+    beta: stringValue(raw.beta, previous.beta),
+    lossType: stringValue(raw.loss_type, previous.lossType),
+    referenceFree: raw.reference_free === true,
+    numGenerations: finiteNumber(raw.num_generations ?? raw.group_size, previous.numGenerations),
+    rewardThreshold: stringValue(raw.reward_threshold, previous.rewardThreshold),
+    allowPrototypeTrain: raw.allow_prototype_train === true,
+    templateId: typeof raw.template_id === "string" ? raw.template_id : null,
+  };
+}
+
+function applyRewardAuditForkContext(
+  previous: ConfigState,
+  context: RewardIntegrityForkContext,
+): ConfigState {
+  const resolved = applyResolvedLaunchConfig(
+    previous,
+    context.parent_run_id,
+    context.train_context,
+    [],
+  );
+  return {
+    ...resolved,
+    forkRewardAuditId: context.audit_id,
+    forkRewardDecisionId: context.decision.id,
+    forkCheckpointHash: context.checkpoint.content_hash,
+    forkCheckpointPath: context.checkpoint.path || "",
+    forkCheckpointOccurrenceId: context.checkpoint.occurrence_id || "",
+    forkCheckpointSnapshotPath: context.checkpoint.snapshot_path || "",
+    forkBoundaryUnit: context.checkpoint.boundary_unit || "",
+    forkBoundaryValue: context.checkpoint.boundary_value ?? 0,
+    forkResumeMode: context.resume_mode,
+  };
+}
+
+function isDatasetBinding(value: unknown): value is DatasetBinding {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.role === "string" && typeof item.dataset_version_id === "string" && typeof item.split === "string";
+}
+
+function goalForMode(mode: TrainingMode): GoalKey {
+  if (["classify", "embed", "rerank"].includes(mode)) return "task-models";
+  if (mode === "vlm") return "vision";
+  if (mode === "audio") return "audio";
+  if (["dpo", "orpo", "rm"].includes(mode)) return "preferences";
+  if (mode === "agentic") return "tool-use";
+  if (mode === "reasoning") return "reasoning";
+  return "code";
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  const candidate = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(candidate) ? candidate : fallback;
+}
+
+function formatRowCount(value: number | null | undefined): string {
+  return typeof value === "number" ? `${new Intl.NumberFormat().format(value)} rows` : "row count unknown";
 }
 
 function slug(s: string): string {

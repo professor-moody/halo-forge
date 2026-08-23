@@ -5,6 +5,9 @@ import {
   Cpu,
   CheckCircle2,
   CircleAlert,
+  Copy,
+  Database,
+  FlaskConical,
   Layers,
   Loader2,
   Pin,
@@ -18,7 +21,16 @@ import {
   Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { api, type CycleMetric, type RunCost, type RunDetail, type RunLive } from "@/lib/api";
+import {
+  api,
+  type CycleMetric,
+  type DatasetBinding,
+  type Evaluation,
+  type ModelArtifactOccurrence,
+  type RunCost,
+  type RunDetail,
+  type RunLive,
+} from "@/lib/api";
 import { useEventSource } from "@/lib/event-source";
 import { queryKeys } from "@/lib/hooks";
 import { Topbar } from "@/components/shell";
@@ -35,6 +47,8 @@ import { MetricChart, type MetricSeries } from "@/components/charts/metric-chart
 import { CycleScrubber } from "@/components/run/cycle-scrubber";
 import { LogsPanel } from "@/components/run/logs-panel";
 import { SampleInspector } from "@/components/run/sample-inspector";
+import { RunCheckpointTrajectory } from "@/components/research/adaptive-workspace";
+import { RunIntegrityStrip, RunRewardAuditWorkspace } from "@/components/research/reward-integrity-workspace";
 import {
   PINNED_RUNS_LIMIT,
   pinRun,
@@ -43,7 +57,26 @@ import {
 } from "@/lib/pinned-runs";
 import { cn, relativeTime } from "@/lib/utils";
 
+type RunTaskTab = "monitor" | "metrics" | "data" | "evaluation" | "artifacts" | "logs";
+
+const RUN_TASK_TABS: Array<{ id: RunTaskTab; label: string }> = [
+  { id: "monitor", label: "Monitor" },
+  { id: "metrics", label: "Metrics" },
+  { id: "data", label: "Data" },
+  { id: "evaluation", label: "Evaluation" },
+  { id: "artifacts", label: "Artifacts" },
+  { id: "logs", label: "Logs" },
+];
+
 export const Route = createFileRoute("/runs/$runId")({
+  validateSearch: (search: Record<string, unknown>): { tab?: RunTaskTab; evidence?: "evaluations" | "training-audits"; audit?: string; sample?: string; page?: number; classification?: string } => ({
+    tab: isRunTaskTab(search.tab) ? search.tab : undefined,
+    evidence: search.evidence === "training-audits" ? "training-audits" : search.evidence === "evaluations" ? "evaluations" : undefined,
+    audit: typeof search.audit === "string" ? search.audit : undefined,
+    sample: typeof search.sample === "string" ? search.sample : undefined,
+    page: typeof search.page === "number" && Number.isFinite(search.page) ? Math.max(1, Math.floor(search.page)) : undefined,
+    classification: typeof search.classification === "string" ? search.classification : undefined,
+  }),
   component: RunDetailRoute,
 });
 
@@ -63,6 +96,9 @@ export const Route = createFileRoute("/runs/$runId")({
 
 function RunDetailRoute() {
   const { runId } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const activeTab = search.tab ?? "monitor";
   const queryClient = useQueryClient();
   const detailQuery = useQuery<RunDetail>({
     queryKey: queryKeys.runDetail(runId),
@@ -71,6 +107,20 @@ function RunDetailRoute() {
     refetchIntervalInBackground: false,
   });
   const data = detailQuery.data;
+  const evaluationsQuery = useQuery({
+    queryKey: ["evaluations", "run", runId],
+    queryFn: () => api.listEvaluations({ runId }),
+    enabled: Boolean(data),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+  const artifactsQuery = useQuery({
+    queryKey: ["artifacts", "run", runId],
+    queryFn: () => api.listModelArtifacts({ runId, limit: 100 }),
+    enabled: Boolean(data) && activeTab === "artifacts",
+    retry: false,
+  });
   const detailStatus = data?.status ?? "";
   const detailIsLive = isJobRunning(detailStatus);
   const liveStream = useEventSource<RunLive>(
@@ -138,6 +188,37 @@ function RunDetailRoute() {
                 Cancel run
               </Button>
             ) : null}
+            {!isLive && data ? (
+              <Button variant="ghost" size="sm" asChild>
+                <Link
+                  to="/train"
+                  search={{
+                    template: undefined,
+                    model: undefined,
+                    mode: undefined,
+                    datasetVersion: undefined,
+                    datasetSplit: undefined,
+                    parentRun: runId,
+                  }}
+                >
+                  <Copy />Clone in Train
+                </Link>
+              </Button>
+            ) : null}
+            {!isLive && data ? (
+              <Button variant="primary" size="sm" asChild>
+                <Link to="/eval" search={{ runId, suite: undefined, evaluation: undefined }}>
+                  <FlaskConical />Evaluate
+                </Link>
+              </Button>
+            ) : null}
+            {data ? (
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/datasets/review" search={{ new: "1", source: "run_samples", sourceRef: runId, baseRef: undefined }}>
+                  <CheckCircle2 />Review samples
+                </Link>
+              </Button>
+            ) : null}
             <Button
               variant={isPinned ? "primary" : "ghost"}
               size="sm"
@@ -193,6 +274,8 @@ function RunDetailRoute() {
         }
       />
 
+      <RunTaskTabs runId={runId} active={activeTab} />
+
       {detailQuery.isLoading ? (
         <LoadingState />
       ) : detailQuery.isError ? (
@@ -201,55 +284,122 @@ function RunDetailRoute() {
         <ErrorState message="Run not found." />
       ) : (
         <div className="px-5 py-5 space-y-4">
-          <LiveSummary data={data} live={live} streamStatus={liveStream.status} streamError={liveStream.error} />
-          {isLive || live?.stage ? <StageRail live={live} status={displayStatus} /> : null}
-          {data.failure_summary ? <FailureSummaryCard data={data.failure_summary} /> : null}
-          <StatRibbon data={data} />
-
-          {/* Cycle scrubber — playback head for the charts below. */}
-          {cycleMetrics.length > 1 ? (
-            <Card>
-              <CardContent className="px-4 py-2.5">
-                <CycleScrubber
-                  cycles={cycleMetrics.map((c) => c.cycle)}
-                  focus={focusCycle}
-                  onFocusChange={setFocusCycle}
-                />
-              </CardContent>
-            </Card>
+          {activeTab === "monitor" ? (
+            <>
+              <LiveSummary data={data} live={live} streamStatus={liveStream.status} streamError={liveStream.error} />
+              <RunIntegrityStrip runId={runId} />
+              {isLive || live?.stage ? <StageRail live={live} status={displayStatus} /> : null}
+              {(data.run_group_id || data.details?.run_group_id) ? <RunCheckpointTrajectory runGroupId={String(data.run_group_id || data.details?.run_group_id)} runId={runId} /> : null}
+              {data.failure_summary ? <FailureSummaryCard data={data.failure_summary} /> : null}
+              <StatRibbon data={data} />
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="lg:col-span-2"><LiveNowCard data={data} live={live} /></div>
+                <div className="space-y-3">
+                  <RunSummaryCard data={data} />
+                  <CostCard cost={data.details?.cost} />
+                  <YieldCard yieldData={data.details?.yield_diagnostics} />
+                </div>
+              </div>
+            </>
           ) : null}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div className="lg:col-span-2 space-y-3">
-              <LossCard cycles={slicedCycles} livePoints={liveMetricPoints} stage={live?.stage ?? null} />
-              <RewardCard cycles={slicedCycles} modality={String(data.modality)} />
+          {activeTab === "metrics" ? (
+            <>
+              {cycleMetrics.length > 1 ? (
+                <Card><CardContent className="px-4 py-2.5"><CycleScrubber cycles={cycleMetrics.map((c) => c.cycle)} focus={focusCycle} onFocusChange={setFocusCycle} /></CardContent></Card>
+              ) : null}
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <LossCard cycles={slicedCycles} livePoints={liveMetricPoints} stage={live?.stage ?? null} />
+                <RewardCard cycles={slicedCycles} modality={String(data.modality)} />
+              </div>
+              <CycleTable cycles={cycleMetrics} modality={String(data.modality)} />
+            </>
+          ) : null}
+
+          {activeTab === "data" ? (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(280px,0.7fr)_minmax(460px,1.3fr)]">
+              <DatasetBindingsCard bindings={data.datasets ?? []} />
+              <SampleInspector runId={runId} availableCycles={cycleMetrics.map((c) => c.cycle)} enabled={String(data.modality) === "raft"} />
             </div>
-            <div className="space-y-3">
-              <LiveNowCard data={data} live={live} />
-              <RunSummaryCard data={data} />
-              <CostCard cost={data.details?.cost} />
+          ) : null}
+
+          {activeTab === "evaluation" ? (
+            <div className="overflow-hidden rounded-lg border border-border bg-bg">
+              <nav className="flex gap-1 overflow-x-auto border-b border-border bg-bg-subtle/35 px-3" aria-label="Run evidence">
+                <Link to="/runs/$runId" params={{ runId }} search={{ tab: "evaluation", evidence: "evaluations" }} className={cn("relative h-10 px-3 text-[10.5px] leading-10", (search.evidence ?? "evaluations") === "evaluations" ? "font-medium text-fg" : "text-fg-subtle hover:text-fg")}>Evaluations{(search.evidence ?? "evaluations") === "evaluations" ? <span className="absolute inset-x-2 bottom-0 h-0.5 bg-accent" /> : null}</Link>
+                <Link to="/runs/$runId" params={{ runId }} search={{ tab: "evaluation", evidence: "training-audits" }} className={cn("relative h-10 px-3 text-[10.5px] leading-10", search.evidence === "training-audits" ? "font-medium text-fg" : "text-fg-subtle hover:text-fg")}>Training audits{search.evidence === "training-audits" ? <span className="absolute inset-x-2 bottom-0 h-0.5 bg-accent" /> : null}</Link>
+              </nav>
+              {search.evidence === "training-audits" ? <RunRewardAuditWorkspace runId={runId} selectedAuditId={search.audit} selectedSampleId={search.sample} page={search.page ?? 1} classification={search.classification} onAudit={(audit) => navigate({ to: "/runs/$runId", params: { runId }, search: { ...search, tab: "evaluation", evidence: "training-audits", audit, sample: undefined, page: 1 }, replace: true })} onSample={(sample) => navigate({ to: "/runs/$runId", params: { runId }, search: { ...search, sample }, replace: true })} onPage={(page) => navigate({ to: "/runs/$runId", params: { runId }, search: { ...search, page, sample: undefined }, replace: true })} onClassification={(classification) => navigate({ to: "/runs/$runId", params: { runId }, search: { ...search, classification, page: 1, sample: undefined }, replace: true })} /> : <EvaluationHistoryCard runId={runId} items={evaluationsQuery.data?.items ?? data.evaluations ?? []} loading={evaluationsQuery.isLoading} />}
+            </div>
+          ) : null}
+
+          {activeTab === "artifacts" ? (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(460px,1.4fr)_minmax(280px,0.6fr)]">
+              <RunArtifactsPanel items={artifactsQuery.data?.items ?? []} loading={artifactsQuery.isLoading} error={artifactsQuery.isError ? (artifactsQuery.error as Error).message : null} finalModelAvailable={Boolean(data.details?.final_model_available)} />
               <LineageCard runId={runId} />
-              <YieldCard yieldData={data.details?.yield_diagnostics} />
             </div>
-          </div>
+          ) : null}
 
-          <CycleTable cycles={cycleMetrics} modality={String(data.modality)} />
-
-          {/* Phase D v2 panels — sample inspector + logs. Sample inspector
-              is RAFT-only; logs surface for any run with a TeeWriter log
-              alongside its output_dir (else the panel renders an
-              "available: false" state with the reason from the API). */}
-          <SampleInspector
-            runId={runId}
-            availableCycles={cycleMetrics.map((c) => c.cycle)}
-            enabled={String(data.modality) === "raft"}
-          />
-
-          <LogsPanel runId={runId} tail={500} height={420} />
+          {activeTab === "logs" ? <LogsPanel runId={runId} tail={500} height={560} /> : null}
         </div>
       )}
     </>
   );
+}
+
+function RunTaskTabs({ runId, active }: { runId: string; active: RunTaskTab }) {
+  return (
+    <nav aria-label="Run detail" className="sticky top-[49px] z-10 flex overflow-x-auto border-b border-border bg-bg-subtle/95 px-3 backdrop-blur md:px-5">
+      {RUN_TASK_TABS.map((tab) => (
+        <Link
+          key={tab.id}
+          to="/runs/$runId"
+          params={{ runId }}
+          search={{ tab: tab.id }}
+          aria-current={active === tab.id ? "page" : undefined}
+          className={cn("relative flex h-11 shrink-0 items-center px-3 text-[12px] transition-colors", active === tab.id ? "font-medium text-fg" : "text-fg-subtle hover:text-fg")}
+        >
+          {tab.label}
+          {active === tab.id ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" /> : null}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+function RunArtifactsPanel({ items, loading, error, finalModelAvailable }: { items: ModelArtifactOccurrence[]; loading: boolean; error: string | null; finalModelAvailable: boolean }) {
+  return (
+    <Card>
+      <CardHeader><div><CardEyebrow>OUTPUTS</CardEyebrow><CardTitle>Published artifacts</CardTitle></div><Badge tone={items.length ? "success" : "neutral"} size="sm">{items.length}</Badge></CardHeader>
+      <CardContent className="p-0">
+        {loading ? <div className="flex items-center gap-2 px-4 py-8 text-xs text-fg-muted"><Loader2 className="h-4 w-4 animate-spin" />Loading artifact occurrences</div> : error ? <div className="px-4 py-6 text-xs text-danger">{error}</div> : items.length ? (
+          <div className="divide-y divide-border-subtle">
+            {items.map((item) => (
+              <Link key={item.id} to="/models" search={{ tab: "artifacts", artifact: item.id }} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-bg-subtle/60">
+                <div className="min-w-0"><div className="truncate text-xs font-medium text-fg">{runArtifactTitle(item)}</div><div className="mt-1 truncate font-mono text-[10px] text-fg-disabled">{item.content_hash || item.id}</div></div>
+                <div className="shrink-0 text-right"><Badge tone={item.integrity === "verified" ? "success" : "neutral"} size="sm">{item.integrity || "indexed"}</Badge><div className="mt-1 text-[10px] text-fg-disabled">{[item.format, item.quantization || item.dtype].filter(Boolean).join(" · ")}</div></div>
+              </Link>
+            ))}
+          </div>
+        ) : <div className="px-4 py-8 text-center text-xs text-fg-muted">{finalModelAvailable ? "The final model is available but has not been indexed into the artifact library yet." : "No checkpoint or final artifact has been published for this run."}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function runArtifactTitle(item: ModelArtifactOccurrence): string {
+  const modelName = item.model_name?.trim();
+  const isFilesystemPath = Boolean(modelName && (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(modelName)));
+  if (modelName && !isFilesystemPath) return modelName;
+  return item.kind
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function isRunTaskTab(value: unknown): value is RunTaskTab {
+  return RUN_TASK_TABS.some((tab) => tab.id === value);
 }
 
 function LiveSummary({
@@ -1095,6 +1245,73 @@ function LineageGroup({
   );
 }
 
+function DatasetBindingsCard({ bindings }: { bindings: DatasetBinding[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardEyebrow>DATA</CardEyebrow>
+          <CardTitle>Dataset bindings</CardTitle>
+          <Database className="h-3.5 w-3.5 text-fg-disabled" />
+        </div>
+        <Badge tone={bindings.length ? "success" : "neutral"} size="sm">{bindings.length}</Badge>
+      </CardHeader>
+      <CardContent className="p-0">
+        {bindings.length ? (
+          <div className="divide-y divide-border-subtle">
+            {bindings.map((binding) => {
+              const body = (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-subtle">{binding.role}</span>
+                    <span className="font-mono text-[10px] text-fg-muted">{binding.split}</span>
+                  </div>
+                  <div className="mt-1 truncate font-mono text-[10.5px] text-accent" title={binding.dataset_version_id}>{binding.dataset_name || binding.dataset_version_id}</div>
+                  <div className="mt-0.5 truncate font-mono text-[9.5px] text-fg-disabled" title={binding.content_hash || undefined}>{binding.content_hash?.slice(0, 16) || "legacy identity"}{binding.artifact_hash ? ` · artifact ${binding.artifact_hash.slice(0, 12)}` : ""}</div>
+                </>
+              );
+              return binding.dataset_id ? (
+                <Link key={`${binding.role}-${binding.dataset_version_id}`} to="/datasets/$datasetId/versions/$versionId" params={{ datasetId: binding.dataset_id, versionId: binding.dataset_version_id }} search={{ split: binding.split }} className="block px-3.5 py-2.5 hover:bg-surface-hover/30">{body}</Link>
+              ) : (
+                <div key={`${binding.role}-${binding.dataset_version_id}`} className="px-3.5 py-2.5">{body}</div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-3.5 py-4 text-[11px] leading-4 text-fg-muted">Legacy run: no immutable Dataset Lab identity was attached.</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EvaluationHistoryCard({ runId, items, loading }: { runId: string; items: Evaluation[]; loading: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardEyebrow>EVAL</CardEyebrow>
+          <CardTitle>Evaluation history</CardTitle>
+          <FlaskConical className="h-3.5 w-3.5 text-fg-disabled" />
+        </div>
+        <Button variant="ghost" size="sm" asChild><Link to="/eval" search={{ runId, suite: undefined, evaluation: undefined }}>Open lab</Link></Button>
+      </CardHeader>
+      <CardContent className="p-0">
+        {loading ? <div className="px-3.5 py-4 text-[11px] text-fg-muted">Loading evaluations…</div> : items.length ? (
+          <div className="divide-y divide-border-subtle">
+            {items.slice(0, 6).map((evaluation) => (
+              <Link key={evaluation.id} to="/eval" search={{ runId, suite: undefined, evaluation: evaluation.id }} className="flex items-start justify-between gap-3 px-3.5 py-2.5 hover:bg-surface-hover/30">
+                <div className="min-w-0"><div className="truncate font-mono text-[10.5px] text-accent">{evaluation.id}</div><div className="mt-0.5 truncate text-[10px] text-fg-subtle">{evaluation.suite_name || evaluation.suite_revision_id}</div></div>
+                <div className="shrink-0 text-right"><Badge tone={evaluationTone(evaluation.status)} dot size="sm">{evaluation.status}</Badge><div className="mt-1 font-mono text-[10px] text-fg-muted">{formatEvalMetric(evaluation)}</div></div>
+              </Link>
+            ))}
+          </div>
+        ) : <div className="px-3.5 py-4 text-[11px] leading-4 text-fg-muted">No completed evaluation is attached. Training loss is not counted as evaluation evidence.</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
 function YieldCard({
   yieldData,
 }: {
@@ -1410,4 +1627,18 @@ function isJobRunning(status: string | undefined): boolean {
   if (!status) return false;
   const s = status.toLowerCase();
   return s === "running" || s === "active" || s === "in_progress" || s === "pending";
+}
+
+function evaluationTone(status: string): "neutral" | "accent" | "success" | "warning" | "danger" {
+  if (status === "completed") return "success";
+  if (status === "failed") return "danger";
+  if (status === "cancelled") return "warning";
+  if (["queued", "running"].includes(status)) return "accent";
+  return "neutral";
+}
+
+function formatEvalMetric(evaluation: Evaluation): string {
+  const metric = evaluation.primary_metric ?? evaluation.metrics?.[0];
+  if (!metric) return "—";
+  return `${metric.name} ${typeof metric.value === "number" ? metric.value.toFixed(4) : "—"}`;
 }

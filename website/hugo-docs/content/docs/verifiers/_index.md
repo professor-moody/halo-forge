@@ -7,6 +7,10 @@ Verifiers are the heart of RLVR — they provide the reward signal that guides t
 
 > **Important**: Verifiers are **training infrastructure**, not benchmarks. For benchmark reporting (comparing to papers), see [Evaluation](/docs/eval/).
 
+Use [Reward Integrity](/docs/reward-integrity/) when a verifier-guided trainer
+must capture the exact outputs it rewarded and compare them with an independent
+qualified sentinel during training.
+
 ## Plugin registry
 
 Halo-forge ships a plugin registry for verifiers. Three coexisting registration paths funnel into one dict:
