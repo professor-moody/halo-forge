@@ -169,6 +169,7 @@ jobs:
         shell: bash
         env:
           MAC_SIGNED: ${{ steps.macos-signing.outputs.available }}
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           signature="unsigned"
           if [ "${RUNNER_OS}" = "macOS" ] && [ "${MAC_SIGNED:-false}" = "true" ]; then
