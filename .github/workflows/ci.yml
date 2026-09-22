@@ -33,6 +33,9 @@ jobs:
       - name: Syntax compile check
         run: python -m compileall -q halo_forge ui tests
 
+      - name: CLI registration and dispatch regression checks
+        run: python -m pytest -q tests/test_m0_cli_readiness.py
+
       - name: Release interface, docs, and scenario contracts
         run: python scripts/check_release_interfaces.py
 
@@ -42,10 +45,7 @@ jobs:
             --baseline-file tests/baselines/modality_runtime_baseline.v1.json \
             --check
 
-      # Readiness/report steps below are gated with --strict wherever the tree
-      # is actually clean. Where it is not, the step stays non-strict *and*
-      # carries a TODO(ci-strict) naming the modules that must be fixed first,
-      # so the exception is visible in review instead of invisible.
+      # Every supported module participates in the strict readiness gates.
       - name: Ops module readiness contract gate
         run: |
           python3 scripts/run_ops_module_matrix.py \
@@ -54,33 +54,27 @@ jobs:
             --report-file results/readiness/ops_modules_readiness.v1.json \
             --strict
 
-      # TODO(ci-strict): drop the exception and append --strict once the
-      # `ui_ops` module passes. It currently reports status=fail because
-      # run_ops_e2e_reliability.py cannot find the `serve-public` parser
-      # command in halo_forge/cli.py (the command exists; the detector is
-      # stale), which drags launch_ok/stop_ok/relaunch_ok to false. This
-      # script has no per-module allowlist flag, so the whole step must stay
-      # non-strict until that is resolved.
-      - name: Ops E2E launch reliability report (informational)
+      - name: Ops E2E launch reliability gate
         run: |
           python3 scripts/run_ops_e2e_reliability.py \
             --fixture-pack v1 \
             --write-report \
-            --report-file results/readiness/ops_e2e_launch_reliability.v1.json
+            --report-file results/readiness/ops_e2e_launch_reliability.v1.json \
+            --strict
 
-      # TODO(ci-strict): same `ui_ops` / `serve-public` detector failure as the
-      # step above (6 errors). run_ops_dataset_burnin.py has no per-module
-      # allowlist flag either, so this step stays non-strict for now.
-      - name: Ops dataset burn-in report (informational)
+      - name: Ops dataset burn-in gate
         run: |
           python3 scripts/run_ops_dataset_burnin.py \
             --burnin-profile tiny-v1 \
+            --compare-baseline \
+            --baseline-file tests/baselines/ops_dataset_burnin_baseline.v1.json \
             --write-report \
-            --report-file results/readiness/ops_dataset_burnin.v1.json
+            --report-file results/readiness/ops_dataset_burnin.v1.json \
+            --strict
 
       # The three all-module reports below stay non-strict so the uploaded
       # artifacts keep covering every module. Gating happens in the dedicated
-      # strict step that follows, which uses --module as an explicit allowlist.
+      # strict step that follows, which includes every module.
       - name: All-module readiness report (informational)
         run: |
           python3 scripts/run_all_module_matrix.py \
@@ -103,41 +97,24 @@ jobs:
             --write-report \
             --report-file results/readiness/all_module_bootstrap.v1.json
 
-      # Strict gate over the all-module matrix/qualification/bootstrap runs.
-      # `plot` and `benchmark_code` are excluded on purpose: both report
-      # status=fail today ("missing one or more plot CLI command contracts" /
-      # "missing one or more benchmark CLI command contracts").
-      # TODO(ci-strict): fix those two modules and delete the --module
-      # allowlists so every module gates. Adding a module to the product must
-      # also add it here, otherwise it gates nowhere.
-      - name: All-module readiness strict gate (allowlisted modules)
+      - name: All-module readiness strict gate
         run: |
           mkdir -p results/readiness/gate
           python3 scripts/run_all_module_matrix.py \
             --fixture-pack v1 \
-            --module agentic --module audio --module benchmark_non_code \
-            --module config --module data --module inference --module info \
-            --module raft --module reasoning --module sft --module ui_ops \
-            --module vlm \
             --write-report \
             --report-file results/readiness/gate/all_modules_readiness.gate.json \
             --strict
           python3 scripts/run_all_module_qualification.py \
             --qualification-profile fixture-v1 \
             --fixture-pack v1 \
-            --module agentic --module audio --module benchmark_non_code \
-            --module config --module data --module inference --module info \
-            --module raft --module reasoning --module sft --module ui_ops \
-            --module vlm \
             --write-report \
             --report-file results/readiness/gate/all_module_qualification.gate.json \
+            --compare-baseline \
+            --baseline-file tests/baselines/all_module_qualification_baseline.v1.json \
             --strict
           python3 scripts/run_all_module_bootstrap.py \
             --bootstrap-profile contract-v1 \
-            --module agentic --module audio --module benchmark_non_code \
-            --module config --module data --module inference --module info \
-            --module raft --module reasoning --module sft --module ui_ops \
-            --module vlm \
             --write-report \
             --report-file results/readiness/gate/all_module_bootstrap.gate.json \
             --strict

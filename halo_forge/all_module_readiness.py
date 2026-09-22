@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
+from halo_forge.cli_readiness import has_cli_command
 from halo_forge.diagnostics import (
     ISSUE_SCOPES,
     ISSUE_SEVERITIES,
@@ -515,25 +516,6 @@ def _from_ops_module(entry: OpsModuleReadiness, module_name: Optional[str] = Non
     return readiness
 
 
-def _load_cli_source() -> str:
-    cli_path = Path.cwd() / "halo_forge" / "cli.py"
-    if not cli_path.exists():
-        return ""
-    return cli_path.read_text(encoding="utf-8")
-
-
-def _check_source_tokens(source: str, tokens: Iterable[str]) -> bool:
-    # These readiness probes verify that CLI wiring is present, not which
-    # quote style a formatter chose.  Accept equivalent Python string syntax
-    # so a harmless formatter pass cannot downgrade production readiness.
-    return all(
-        token in source
-        or token.replace("'", '"') in source
-        or token.replace('"', "'") in source
-        for token in tokens
-    )
-
-
 def _check_path(
     checks: Dict[str, ReadinessCheck],
     *,
@@ -635,8 +617,7 @@ def _validate_config_module(*, output_dir: Path, require_artifacts: bool) -> All
     checks: Dict[str, ReadinessCheck] = {}
     evidence: Dict[str, Any] = {"output_dir": str(output_dir)}
 
-    cli_source = _load_cli_source()
-    has_contract = _check_source_tokens(cli_source, ("config_parser", "validate", "cmd_config_validate"))
+    has_contract = has_cli_command("config", "validate")
     checks["cli_config_validate"] = ReadinessCheck(
         name="cli_config_validate",
         status="pass" if has_contract else "fail",
@@ -678,10 +659,9 @@ def _validate_data_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
     checks: Dict[str, ReadinessCheck] = {}
     evidence: Dict[str, Any] = {"output_dir": str(output_dir)}
 
-    cli_source = _load_cli_source()
-    has_prepare = _check_source_tokens(cli_source, ("data_subparsers.add_parser('prepare'", "cmd_data_prepare"))
-    has_generate = _check_source_tokens(cli_source, ("data_subparsers.add_parser('generate'", "cmd_data_generate"))
-    has_validate = _check_source_tokens(cli_source, ("data_subparsers.add_parser('validate'", "cmd_data_validate"))
+    has_prepare = has_cli_command("data", "prepare")
+    has_generate = has_cli_command("data", "generate")
+    has_validate = has_cli_command("data", "validate")
 
     checks["cli_data_prepare"] = ReadinessCheck(
         name="cli_data_prepare",
@@ -736,8 +716,7 @@ def _validate_info_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
     checks: Dict[str, ReadinessCheck] = {}
     evidence: Dict[str, Any] = {"output_dir": str(output_dir)}
 
-    cli_source = _load_cli_source()
-    has_info = _check_source_tokens(cli_source, ("subparsers.add_parser('info'", "cmd_info"))
+    has_info = has_cli_command("info")
     checks["cli_info"] = ReadinessCheck(
         name="cli_info",
         status="pass" if has_info else "fail",
@@ -777,15 +756,8 @@ def _validate_plot_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
     checks: Dict[str, ReadinessCheck] = {}
     evidence: Dict[str, Any] = {"output_dir": str(output_dir)}
 
-    cli_source = _load_cli_source()
-    has_training = _check_source_tokens(
-        cli_source,
-        ("plot_subparsers.add_parser('training'", "cmd_plot_training"),
-    )
-    has_benchmarks = _check_source_tokens(
-        cli_source,
-        ("plot_subparsers.add_parser('benchmarks'", "cmd_plot_benchmarks"),
-    )
+    has_training = has_cli_command("plot", "training")
+    has_benchmarks = has_cli_command("plot", "benchmarks")
     checks["cli_plot_training"] = ReadinessCheck(
         name="cli_plot_training",
         status="pass" if has_training else "fail",
@@ -839,8 +811,7 @@ def _validate_sft_module(*, output_dir: Path, require_artifacts: bool) -> AllMod
         "launch_context": str(output_dir / "launch_context.json"),
     }
 
-    cli_source = _load_cli_source()
-    has_sft = _check_source_tokens(cli_source, ("sft_subparsers.add_parser('train'", "cmd_sft_train"))
+    has_sft = has_cli_command("sft", "train")
     checks["cli_sft_train"] = ReadinessCheck(
         name="cli_sft_train",
         status="pass" if has_sft else "fail",
@@ -894,8 +865,7 @@ def _validate_raft_module(*, output_dir: Path, require_artifacts: bool) -> AllMo
         "latest_checkpoint": str(output_dir / "latest_checkpoint.json"),
     }
 
-    cli_source = _load_cli_source()
-    has_raft = _check_source_tokens(cli_source, ("raft_subparsers.add_parser('train'", "cmd_raft_train"))
+    has_raft = has_cli_command("raft", "train")
     checks["cli_raft_train"] = ReadinessCheck(
         name="cli_raft_train",
         status="pass" if has_raft else "fail",
@@ -957,13 +927,9 @@ def _validate_benchmark_code_module(*, output_dir: Path, require_artifacts: bool
         "output_dir": str(output_dir),
     }
 
-    cli_source = _load_cli_source()
-    has_run = _check_source_tokens(
-        cli_source,
-        ("bench_subparsers.add_parser('run'", "def cmd_benchmark(args):"),
-    )
-    has_full = _check_source_tokens(cli_source, ("bench_subparsers.add_parser('full'", "cmd_benchmark_full"))
-    has_eval = _check_source_tokens(cli_source, ("bench_subparsers.add_parser('eval'", "cmd_benchmark_eval"))
+    has_run = has_cli_command("benchmark", "run")
+    has_full = has_cli_command("benchmark", "full")
+    has_eval = has_cli_command("benchmark", "eval")
     checks["cli_benchmark_run"] = ReadinessCheck(
         name="cli_benchmark_run",
         status="pass" if has_run else "fail",
