@@ -549,8 +549,9 @@ def _validate_ui_ops_module(repo_root: Path) -> OpsE2EModuleResult:
                 errors.append(f"missing endpoint in public_api/app.py: {endpoint}")
 
     if cli_path.exists():
-        cli_source = cli_path.read_text(encoding="utf-8")
-        if "'serve-public'" not in cli_source:
+        from halo_forge.cli_readiness import has_cli_command
+
+        if not has_cli_command("serve-public"):
             errors.append("missing serve-public parser command in halo_forge/cli.py")
 
     status = _status(errors, warnings)

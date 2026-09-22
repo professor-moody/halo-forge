@@ -10315,15 +10315,8 @@ def cmd_audio_train(args):
     print("  halo-forge vlm benchmark --dataset docvqa --model path/to/model")
 
 
-def main():
-    if sys.version_info >= (3, 14):
-        print(
-            "halo-forge supports Python >=3.10,<3.14. "
-            f"Current interpreter is {sys.version.split()[0]}. "
-            "Create a Python 3.10-3.13 environment and rerun the command.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+def build_parser() -> argparse.ArgumentParser:
+    """Build the shipped CLI contract without parsing or executing a command."""
     parser = argparse.ArgumentParser(
         prog="halo-forge",
         description="Multi-backend RLVR training framework for AMD ROCm, Apple Silicon, and CUDA",
@@ -13809,7 +13802,19 @@ def main():
     # retired in favor of the Vite + React frontend at `public_app/`.
     # If you got here from an old script: `cd public_app && npm run dev`.
 
-    # Parse arguments and dispatch
+    return parser
+
+
+def main():
+    if sys.version_info >= (3, 14):
+        print(
+            "halo-forge supports Python >=3.10,<3.14. "
+            f"Current interpreter is {sys.version.split()[0]}. "
+            "Create a Python 3.10-3.13 environment and rerun the command.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    parser = build_parser()
     args = parser.parse_args()
 
     # Plumb --accelerator into HALOFORGE_BACKEND so every downstream
